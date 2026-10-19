@@ -198,7 +198,9 @@ export default function BoutiqueApp() {
         .mod-tile { transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1); }
         .mod-tile:not(:disabled):hover { transform: translateY(-3px) scale(1.03); }
       `}</style>
-      <div style={{ flex: 1, minWidth: 0, padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
+      {/* Import commande : pleine largeur comme l'écran du site — à 1400 px ses 16
+          colonnes débordaient et cachaient « Total HT » et le × de suppression. */}
+      <div style={{ flex: 1, minWidth: 0, padding: '24px 32px', maxWidth: section === 'import' ? 'none' : 1400, margin: '0 auto' }}>
 
         {/* ── Accueil boutique : tuiles des modules ── */}
         {!section && (

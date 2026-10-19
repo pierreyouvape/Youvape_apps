@@ -57,14 +57,16 @@ function CardLabel({ n, title, required }) {
   );
 }
 
-function Th({ label, align = 'left', width }) {
+// stickyRight : colonne épinglée au bord droit (le × reste visible quand le tableau défile)
+function Th({ label, align = 'left', width, stickyRight }) {
   return (
     <th style={{
       padding: '12px 14px', fontSize: 11.5, fontWeight: 800,
       color: C.grisF, textTransform: 'uppercase', letterSpacing: '0.04em',
       textAlign: align, whiteSpace: 'nowrap',
       background: '#FAFBFC', borderBottom: `1px solid ${C.grisCL}`,
-      position: 'sticky', top: 0, zIndex: 2,
+      position: 'sticky', top: 0, zIndex: stickyRight ? 3 : 2,
+      ...(stickyRight ? { right: 0 } : {}),
       width,
     }}>{label}</th>
   );
@@ -892,7 +894,7 @@ export default function ImportTab({ shop, token }) {
                           <Th label="Dernier prix payé" align="right" width={130} />
                           <Th label="Remise %" align="center" width={90} />
                           <Th label="Total HT" align="right" width={105} />
-                          <Th label="" width={40} />
+                          <Th label="" width={40} stickyRight />
                         </tr>
                       </thead>
                       <tbody>
@@ -911,7 +913,7 @@ export default function ImportTab({ shop, token }) {
                                 <td style={{ ...cell, textAlign: 'right', fontWeight: 600, color: C.rouge }}>
                                   {item.unit_price != null ? item.unit_price.toFixed(2) + ' €' : '—'}
                                 </td>
-                                <td style={{ ...cell, textAlign: 'center' }}>
+                                <td style={{ ...cell, textAlign: 'center', position: 'sticky', right: 0, background: 'inherit' }}>
                                   <button onClick={() => handleRemoveItem(idx)} style={{ background: '#FBE8EA', color: '#C24555', border: '1px solid #F4C5CB', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>×</button>
                                 </td>
                               </tr>
@@ -1107,8 +1109,8 @@ export default function ImportTab({ shop, token }) {
                                 )}
                               </td>
                               {/* Supprimer */}
-                              <td style={{ ...cell, textAlign: 'center' }}>
-                                <button onClick={() => handleRemoveItem(idx)} style={{ background: '#FBE8EA', color: '#C24555', border: '1px solid #F4C5CB', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>×</button>
+                              <td style={{ ...cell, textAlign: 'center', position: 'sticky', right: 0, background: 'inherit' }}>
+                                <button onClick={() => handleRemoveItem(idx)} title="Retirer la ligne (échantillon, article non commandé…) : elle ne sera ni commandée ni mise en stock" style={{ background: '#FBE8EA', color: '#C24555', border: '1px solid #F4C5CB', borderRadius: 6, width: 28, height: 28, cursor: 'pointer', fontSize: 16, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>×</button>
                               </td>
                             </tr>
                           );
