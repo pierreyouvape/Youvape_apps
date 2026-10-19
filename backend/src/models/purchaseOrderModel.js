@@ -1899,6 +1899,8 @@ const purchaseOrderModel = {
       );
       const comptageEnCours = new Set(enComptage.map(r => r.purchase_order_id));
       let preserved = 0;
+      // Lignes dont BMS avait un autre prix que le nôtre : le nôtre est gardé.
+      let prixGardes = 0;
 
       for (const bmsOrder of orders) {
         const supplierId = supplierByBmsId.get(bmsOrder.supplier_id);
@@ -1998,6 +2000,9 @@ const purchaseOrderModel = {
 
         const { id: poId, inserted } = orderResult.rows[0];
         let comptagesArchives = [];
+        // Prix connus chez nous, par produit (à défaut par réf.), dans l'ordre
+        // des lignes : deux lots d'un même produit gardent chacun le leur.
+        const prixLocaux = new Map();
         const nouvelleLigneParBms = new Map();
         const nouvellesLignesParRef = new Map();
 
@@ -2040,6 +2045,30 @@ const purchaseOrderModel = {
             [poId]
           );
           comptagesArchives = aRattacher;
+          // NOS PRIX FONT FOI, PAS CEUX DE BMS (19/10/2026).
+          //
+          // Les tarifs se gèrent désormais sur le VPS : écran de commande, boutons
+          // de tarif du contrôle de facture. Le premier n'écrit que chez nous, et
+          // cette synchro remettait le prix BMS dans l'heure — commande LCA 361181,
+          // pods Argus à 8,22 € la pièce au lieu de 4,11 €, facture annoncée
+          // -387,19 € d'écart pour -17,29 € réels. On garde donc le prix À LA PIÈCE
+          // et la remise de chaque ligne déjà connue ; seule une ligne nouvelle
+          // (ajoutée dans BMS) prend le prix de BMS.
+          const { rows: lignesLocales } = await client.query(
+            `SELECT product_id, supplier_sku, unit_price, discount_percent,
+                    GREATEST(COALESCE(units_per_qty, 1), 1) AS units_per_qty
+               FROM purchase_order_items
+              WHERE purchase_order_id = $1 AND item_type IS DISTINCT FROM 'discount'
+              ORDER BY id`,
+            [poId]
+          );
+          for (const l of lignesLocales) {
+            if (l.unit_price == null) continue;
+            const cle = l.product_id != null ? `p${l.product_id}` : `r${l.supplier_sku || ''}`;
+            const file = prixLocaux.get(cle) || [];
+            file.push(l);
+            prixLocaux.set(cle, file);
+          }
           // Supprimer les anciens items pour les remplacer
           await client.query('DELETE FROM purchase_order_items WHERE purchase_order_id = $1', [poId]);
         }
@@ -2110,6 +2139,24 @@ const purchaseOrderModel = {
             }
           }
 
+          // La remise de la ligne BMS : `price` y reste le tarif brut. Sans elle,
+          // la commande Cosmer 103455 (-15 % fid sur chaque ligne) entrait au
+          // FIFO 15 % trop cher, et le PMP avec.
+          let remise = parseFloat(item.discount_percent) || 0;
+          const locale = (prixLocaux.get(productId != null ? `p${productId}` : `r${item.supplier_sku || item.sku || ''}`) || []).shift();
+          if (locale) {
+            // Ramené à la pièce puis à l'unité de la ligne réécrite : l'unité
+            // (pièce ou lot) peut changer d'une lecture BMS à l'autre.
+            const prixLocal = (parseFloat(locale.unit_price) / locale.units_per_qty)
+              * Math.max(parseInt(unitsPerQty) || 1, 1);
+            if (unitPrice == null || Math.abs(prixLocal - unitPrice) >= 0.00005
+                || Math.abs((parseFloat(locale.discount_percent) || 0) - remise) >= 0.005) {
+              prixGardes++;
+            }
+            unitPrice = prixLocal;
+            remise = parseFloat(locale.discount_percent) || 0;
+          }
+
           const { rows: [nouvelle] } = await client.query(`
             INSERT INTO purchase_order_items (
               purchase_order_id, product_id, supplier_sku,
@@ -2132,10 +2179,7 @@ const purchaseOrderModel = {
             // types, et une synchro qui échoue sur une inférence est un mauvais
             // endroit pour l'apprendre.
             recuEnPieces,
-            // La remise de la ligne BMS : `price` y reste le tarif brut. Sans elle,
-            // la commande Cosmer 103455 (-15 % fid sur chaque ligne) entrait au
-            // FIFO 15 % trop cher, et le PMP avec.
-            parseFloat(item.discount_percent) || 0,
+            remise,
           ]);
           if (item.id != null) nouvelleLigneParBms.set(String(item.id), nouvelle.id);
           if (nouvelle.supplier_sku) {
@@ -2196,6 +2240,8 @@ const purchaseOrderModel = {
         // Commandes dont les lignes n'ont pas été remplacées, une réception les
         // comptant. Compté à part pour que ça se voie dans les journaux du cron.
         preserved,
+        // Lignes où BMS avait un autre prix que le VPS, et où le VPS l'a emporté.
+        localPricesKept: prixGardes,
         reconciled,
         orders: results
       };

@@ -241,7 +241,9 @@ const syncBmsOrders = async () => {
     // remplacées pour ne pas emporter le comptage. Dit seulement quand ça arrive.
     const preservees = result.preserved > 0
       ? `, ${result.preserved} en réception (lignes conservées)` : '';
-    console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)${preservees}`);
+    const prixGardes = result.localPricesKept > 0
+      ? `, ${result.localPricesKept} prix VPS gardé(s) contre BMS` : '';
+    console.log(`✅ BMS sync: ${result.created} créée(s), ${result.updated} mise(s) à jour, ${result.skipped} ignorée(s)${preservees}${prixGardes}`);
   } catch (error) {
     console.error('❌ Erreur sync BMS auto:', error.message);
     sendAlert(

@@ -7,11 +7,13 @@
  *
  * DEUX PARTIS PRIS QUI ONT COÛTÉ CHER À TROUVER
  *
- * 1. LA COMMANDE EST LUE EN DIRECT DANS BMS, jamais dans la copie locale.
- *    Les prix sont corrigés dans BMS pendant le contrôle, et la synchro locale
- *    ne repasse qu'après : sur la commande 356948, la base disait 4 409,95 €
- *    quand BMS disait 4 149,55 €. Contrôler sur la copie locale, c'est
- *    réclamer des écarts qui n'existent plus.
+ * 1. LA COMMANDE EST LUE SUR LE VPS, plus dans BMS (19/10/2026).
+ *    Jusque-là, BMS faisait foi parce que les prix s'y corrigeaient : la base
+ *    locale retardait d'une synchro (commande 356948 : 4 409,95 € chez nous,
+ *    4 149,55 € chez BMS). Les tarifs se gèrent désormais ici, la synchro garde
+ *    nos prix (cf. purchaseOrderModel.syncFromBMS), et c'est BMS qui retarde :
+ *    commande LCA 361181, pods Argus à 8,22 € la pièce dans BMS contre 4,11 €
+ *    réels, facture annoncée -387,19 € d'écart pour -17,29 €.
  *
  * 2. LE RAPPROCHEMENT PASSE PAR LE PRODUIT, pas par la chaîne de caractères.
  *    611 lignes de commande (3 %) portent le SKU interne faute de référence
@@ -29,7 +31,6 @@ const pool = require('../config/database');
 const { cleanPdfText, isPdf } = require('../utils/pdfText');
 const invoiceParsers = require('../parsers/invoices');
 const supplierRefModel = require('../models/supplierRefModel');
-const bmsApiModel = require('../models/bmsApiModel');
 const { compareInvoiceToOrder, listDifferences, listTariffUpdates, listControlRows } = require('../utils/invoiceCompare');
 const { attachMatchKeys } = require('../utils/invoiceMatching');
 const { resolveCompleteRefs } = require('../utils/refResolution');
@@ -98,35 +99,35 @@ async function findOrderByRef(supplierId, orderRef, db = pool) {
   return rows[0] || null;
 }
 
-/** Lignes de la commande telles que BMS les donne À L'INSTANT (cf. parti pris 1). */
-async function fetchOrderLines(bmsPoId) {
-  const data = await bmsApiModel.apiCall(`/supplier/purchase-orders/${bmsPoId}`);
-  const po = data.data || data;
+/**
+ * Lignes de la commande telles que le VPS les connaît (cf. parti pris 1).
+ *
+ * Même forme que la lecture BMS qu'elle remplace : `qty × price` est le montant
+ * de la ligne, dans l'unité de la ligne (pièce, ou lot de `units_per_qty` chez
+ * les fournisseurs « à l'unité »). Les remises de pied saisies sur la commande
+ * ne sont pas des lignes de produit : la facture a les siennes.
+ */
+async function loadOrderLines(order, db = pool) {
+  const { rows } = await db.query(
+    `SELECT poi.supplier_sku, p.sku, poi.product_name, poi.qty_ordered, poi.unit_price,
+            COALESCE(poi.units_per_qty, 1) AS units_per_qty
+       FROM purchase_order_items poi
+       LEFT JOIN products p ON p.id = poi.product_id
+      WHERE poi.purchase_order_id = $1
+        AND poi.item_type IS DISTINCT FROM 'discount'
+      ORDER BY poi.id`,
+    [order.id],
+  );
   return {
-    reference: po.reference,
-    verified: po.verified == null ? null : !!Number(po.verified),
-    // BMS compte en PACKS (`qty` = nombre de packs, `price` = prix du pack), les
-    // factures parfois en pièces, parfois en packs — et pas les mêmes selon le
-    // fournisseur : LCA et Highbuy facturent le pack comme BMS, Levest et Cloud
-    // Vapor la pièce. On ne convertit donc RIEN ici.
-    //
-    // Convertir la commande en pièces a été essayé le 28/09/2026 : ça rend
-    // lisible l'écran Levest, mais ça fait exploser le réclamable LCA de 40,60 €
-    // à 94,33 € — la ligne #REF11324-36716, commandée ET facturée par packs de
-    // 200, se retrouvait comparée « 200 × 0,27 € » contre « 1 × 60,00 € », et son
-    // écart de tarif passait de 6,00 € à 59,73 €.
-    //
-    // Ce qui tranche vraiment, c'est l'ARGENT : qty × price est le même des deux
-    // côtés du conditionnement, et le verdict « conditionnement » reconnaît
-    // l'écart de quantité à montant égal. `packQty` est transmis pour que l'écran
-    // puisse expliquer la quantité affichée.
-    lines: (po.items || []).map((i) => ({
-      ref: i.supplier_sku || i.sku || null,
-      sku: i.sku || null,
-      productName: i.name || null,
-      qty: Number(i.qty) || 0,
-      price: Number(i.price) || 0,
-      packQty: Number(i.qty_pack) || 1,
+    reference: order.bms_reference || order.order_number,
+    verified: order.verified == null ? null : !!order.verified,
+    lines: rows.map((r) => ({
+      ref: r.supplier_sku || r.sku || null,
+      sku: r.sku || null,
+      productName: r.product_name || null,
+      qty: Number(r.qty_ordered) || 0,
+      price: Number(r.unit_price) || 0,
+      packQty: Number(r.units_per_qty) || 1,
     })),
   };
 }
@@ -259,7 +260,7 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
     };
   }
 
-  const bmsOrder = await fetchOrderLines(order.bms_po_id);
+  const bmsOrder = await loadOrderLines(order, db);
   const soldees = await findClosedSkus(order.id, db);
   for (const l of bmsOrder.lines) l.closed = !!l.sku && soldees.has(String(l.sku).trim().toLowerCase());
 
