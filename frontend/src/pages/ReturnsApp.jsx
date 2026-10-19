@@ -621,6 +621,12 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
     post('points', { withShipping, deductEuros: deductNum }, `${points} points crédités.`);
   };
 
+  // Plugin WPLoyalty pas encore branché : on crédite dans WordPress, on le note ici.
+  const creditPointsManually = () => {
+    if (!window.confirm(`Les ${points} points (${euro(totalEuros)}) ont bien été crédités à la main dans WPLoyalty${ret.billing_email ? ` à ${ret.billing_email}` : ''} ?\n\nL’app n’envoie rien : elle enregistre seulement l’issue.`)) return;
+    post('points', { withShipping, deductEuros: deductNum, manual: true }, `${points} points notés comme crédités à la main.`);
+  };
+
   const done = ret.treated_at && !editing;
 
   const cancelOutcome = async () => {
@@ -628,6 +634,7 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
     if (ret.reship_label_id > 0) lines.push('', `L’étiquette ${ret.outcome_ref} sera annulée (chez le transporteur quand c’est possible, sinon marquée annulée dans l’historique).`);
     if (Number(ret.replacement_order_id) > 0) lines.push('', `⚠ La commande de renvoi #${ret.replacement_order_id} reste dans WooCommerce : à annuler à la main.`);
     if (ret.loyalty_credited_at) lines.push('', `Les ${ret.loyalty_points} points seront retirés dans WPLoyalty.`);
+    else if (ret.outcome === 'points') lines.push('', '⚠ Points crédités à la main : à retirer à la main dans WPLoyalty.');
     if (ret.refund_wp_id) lines.push('', 'Le remboursement WooCommerce sera détaché du retour.');
     if (!window.confirm(lines.join('\n'))) return;
     setSaving(true);
@@ -740,9 +747,12 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
                 {' = '}<strong>{euro(totalEuros)}</strong> → <strong style={{ color: points > 0 ? RETURNS_COLOR : C.red }}>{points} points</strong>
                 <span style={{ color: C.greyT }}> · motif « Avoir commande N°{ret.wp_order_id} »</span>
               </div>
-              <div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button type="button" onClick={creditPoints} disabled={points < 1 || saving} style={btn('primary', points < 1 || saving)}>
                   Créditer les points
+                </button>
+                <button type="button" onClick={creditPointsManually} disabled={points < 1 || saving} style={btn('ghost', points < 1 || saving)}>
+                  Déjà crédités à la main
                 </button>
               </div>
             </div>

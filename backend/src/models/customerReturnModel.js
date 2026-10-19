@@ -1118,6 +1118,9 @@ const cancelOutcome = async (id, user) => {
     } catch (error) {
       todo.push(`retirer les ${r.loyalty_points} points dans WPLoyalty (refus : ${error.response?.data?.message || error.message})`);
     }
+  } else if (r.outcome === 'points' && r.treated_at) {
+    // Points crédités à la main : l'app ne sait pas ce qui a été fait.
+    todo.push(`retirer à la main dans WPLoyalty les points notés « ${r.outcome_ref || '—'} »`);
   }
   if (r.refund_wp_id) done.push(`remboursement WooCommerce n°${r.refund_wp_id} détaché`);
 
@@ -1144,10 +1147,16 @@ const cancelOutcome = async (id, user) => {
  * Avoir en points WPLoyalty. Le SERVEUR calcule : prix payé des pièces
  * retournées, + port en option, − un montant à déduire (étiquette retour
  * fournie…), × 100 (Pierre, 14/10/2026).
+ *
+ * `manual` : points crédités à la main dans WPLoyalty (plugin pas encore
+ * branché, Pierre 19/10/2026). Même calcul, l'issue est enregistrée sans
+ * appel ; `loyalty_credited_at` reste vide, l'app ne les retirera donc pas
+ * d'elle-même si l'issue est annulée.
  */
-const creditPoints = async (id, { withShipping, deductEuros }, user) => {
+const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => {
   const r = await loadForAction(id);
-  if (!r.billing_email) throw httpError(400, 'Commande sans email client.');
+  if (!manual && !r.billing_email) throw httpError(400, 'Commande sans email client.');
+  if (r.loyalty_credited_at) throw httpError(409, 'Points déjà crédités pour ce retour.');
   const deduct = Number(String(deductEuros ?? 0).replace(',', '.'));
   if (!Number.isFinite(deduct) || deduct < 0 || deduct > 10000) throw httpError(400, 'Montant à déduire invalide.');
 
@@ -1161,6 +1170,15 @@ const creditPoints = async (id, { withShipping, deductEuros }, user) => {
     deductEuros: deduct,
   });
   if (b.points < 1) throw httpError(400, `Rien à créditer : ${breakdownText(b)} = ${b.euros.toFixed(2).replace('.', ',')} €.`);
+
+  if (manual) {
+    const detail = `${b.points} points (${breakdownText(b)}) crédités à la main`;
+    await markTreated(id, user.id, 'points', detail.slice(0, 255));
+    await noteTicket(r.ticket_id, user, [
+      `<strong>Retour n°${id} — avoir commande N°${r.wp_order_id} : ${escapeHtml(detail)}</strong> dans WPLoyalty${r.billing_email ? ` (${escapeHtml(r.billing_email)})` : ''}`,
+    ]);
+    return get(id);
+  }
 
   // Verrou avant l'appel : un double clic ne crédite pas deux fois.
   const { rowCount } = await pool.query(
