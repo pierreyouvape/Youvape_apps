@@ -163,6 +163,7 @@ const VERDICTS = {
   credited: { rank: 8, label: 'Compensé par avoir', tone: 'green', action: 'Avoir reçu du fournisseur, rien à réclamer' },
   voucher_credited: { rank: 8, label: 'Compensé par bon', tone: 'green', action: 'Bon de réduction promis par le fournisseur, rien à réclamer' },
   closed: { rank: 9, label: 'Soldé à la réception', tone: 'grey', action: 'Non livré, non facturé : rien à payer' },
+  other_invoice: { rank: 9, label: 'Sur une autre facture', tone: 'grey', action: 'Facturé sur une autre facture de la commande : rien à payer ici' },
   packaging: { rank: 9, label: 'Conditionnement', tone: 'grey', action: 'Unités contre packs : même marchandise, même montant' },
   // Complété à l'affichage par le facteur déduit (« vendu par 2 »), quand on l'a.
 
@@ -177,7 +178,7 @@ const VERDICTS = {
  * pas, ni l'inverse. Un geste suppose en plus un écart matériel — au-delà du
  * garde-fou d'arrondi.
  */
-const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit', 'credited', 'voucher_credited'];
+const VERDICTS_SANS_GESTE = ['ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'other_invoice', 'shipping', 'credit', 'credited', 'voucher_credited'];
 const appelleUnGeste = (l) => !!l.verdict && !VERDICTS_SANS_GESTE.includes(l.verdict) && !!l.material;
 
 /**
@@ -1210,6 +1211,11 @@ function ControlTab({ suppliers, mobile, onSaved }) {
               {/* Le TTC est ce qui sortira de la banque : c'est lui qu'on
                   rapproche du règlement, pas le HT du contrôle de tarif. */}
               <Kpi label="Facture TTC" value={eur(result.invoice.totalTtc)} />
+              {/* Plusieurs factures pour une commande : c'est leur somme qui
+                  se compare à la commande, d'où ce montant à côté du sien. */}
+              {Number(totals.otherInvoices) !== 0 && totals.otherInvoices != null && (
+                <Kpi label={`Autres factures (${(result.invoice.otherDocuments || []).join(', ')})`} value={eur(totals.otherInvoices)} />
+              )}
               <Kpi label="Commande HT" value={eur(totals.order)} />
               <Kpi label="Écart" value={signedEur(totals.gap)} tone={totals.gap > 0 ? 'red' : (totals.gap < 0 ? 'green' : 'grey')} />
               <Kpi label="Réclamable" value={eur(summary.claimable)} tone={summary.claimable > 0 ? 'red' : 'grey'} />

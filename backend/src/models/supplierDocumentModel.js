@@ -125,7 +125,7 @@ const ecartReclamableSql = (filtre = '') => `
     FROM supplier_document_lines l2
    WHERE l2.document_id = d.id
      AND l2.verdict IS NOT NULL
-     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
+     AND l2.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'other_invoice', 'shipping', 'credit')
      AND l2.material ${filtre}`;
 const ECART_RECLAMABLE_SQL = ecartReclamableSql();
 
@@ -186,8 +186,10 @@ async function insertLines(client, documentId, lines) {
         l.ref || null,
         l.label || null,
         ['product', 'shipping', 'discount', 'voucher', 'other'].includes(l.verdict) ? l.verdict : (l.kind || 'product'),
-        l.qtyInvoiced != null ? l.qtyInvoiced : l.qty,
-        l.invoicedTotal != null ? l.invoicedTotal : l.lineTotalHt,
+        // La part de CE document quand la ligne est partagée avec une autre
+        // facture de la commande (cf. invoiceCompare, otherDocument).
+        l.ownQty != null ? l.ownQty : (l.qtyInvoiced != null ? l.qtyInvoiced : l.qty),
+        l.ownTotal != null ? l.ownTotal : (l.invoicedTotal != null ? l.invoicedTotal : l.lineTotalHt),
         l.productId || null,
         l.qtyOrdered != null ? l.qtyOrdered : null,
         l.expectedUnitPrice != null ? l.expectedUnitPrice : null,
@@ -333,7 +335,7 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             (SELECT count(*) FROM supplier_document_lines l
               WHERE l.document_id = d.id
                 AND l.verdict IS NOT NULL
-                AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
+                AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'other_invoice', 'shipping', 'credit')
                 AND l.material
                 AND NOT ${COMPENSEE_SQL}) AS difference_count,
             -- Où en est la mise en stock de la ou des commandes rapprochées :
@@ -413,7 +415,7 @@ async function getDocument(id, db = pool) {
       `SELECT l.*, av.montant AS credited_amount,
               COALESCE(av.numeros, ag.numeros) AS credited_by,
               (l.verdict IS NOT NULL
-               AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'shipping', 'credit')
+               AND l.verdict NOT IN ('ok', 'free', 'discount', 'voucher', 'rounding', 'packaging', 'closed', 'other_invoice', 'shipping', 'credit')
                AND ${COMPENSEE_SQL}) AS compensee,
               -- Rendu par un bon promis plutôt que par un avoir : l'écran le dit.
               (av.numeros IS NULL AND ag.numeros IS NULL AND ${BON_SQL}) AS par_bon

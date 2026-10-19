@@ -102,12 +102,22 @@ function groupByRef(lines) {
   for (const line of lines) {
     const key = matchKeyOf(line);
     if (!map.has(key)) {
-      map.set(key, { ref: line.ref, label: line.label || null, productId: line.productId || null, qty: 0, total: 0, parts: 0 });
+      map.set(key, { ref: line.ref, label: line.label || null, productId: line.productId || null, qty: 0, total: 0, parts: 0, ownParts: 0, ownQty: 0, ownTotal: 0, otherDocs: [] });
     }
     const g = map.get(key);
     g.qty += Number(line.qty) || 0;
     g.total += Number(line.lineTotalHt) || 0;
     g.parts += 1;
+    // Une ligne d'une AUTRE facture de la même commande (cf. otherDocument) :
+    // elle compte dans le rapprochement, mais n'appartient pas à ce document.
+    if (line.otherDocument) {
+      if (!g.otherDocs.includes(line.otherDocument)) g.otherDocs.push(line.otherDocument);
+    } else {
+      g.ownParts += 1;
+      g.ownQty += Number(line.qty) || 0;
+      g.ownTotal += Number(line.lineTotalHt) || 0;
+      if (line.ref) g.ref = g.ref || line.ref;
+    }
     if (!g.label && line.label) g.label = line.label;
   }
   return map;
@@ -292,11 +302,16 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     if (!ord) {
       // Facturé sans avoir été commandé. À 0 €, c'est un geste commercial (PLV,
       // échantillon) : à tracer, pas à réclamer.
+      const ailleurs = inv.ownParts === 0 && inv.otherDocs.length > 0;
       results.push({
         ref: inv.ref,
         label: inv.label,
-        verdict: invoicedTotal === 0 ? 'free' : 'not_ordered',
-        material: Math.abs(invoicedTotal) >= threshold,
+        // Déjà porté par une autre facture de la commande : c'est elle qui le traite.
+        verdict: ailleurs ? 'other_invoice' : (invoicedTotal === 0 ? 'free' : 'not_ordered'),
+        material: !ailleurs && Math.abs(invoicedTotal) >= threshold,
+        otherDocuments: inv.otherDocs.length > 0 ? inv.otherDocs : undefined,
+        ownQty: inv.otherDocs.length > 0 ? inv.ownQty : undefined,
+        ownTotal: inv.otherDocs.length > 0 ? round2(inv.ownTotal) : undefined,
         qtyOrdered: null,
         qtyInvoiced: inv.qty,
         expectedUnitPrice: null,
@@ -445,7 +460,20 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       gapQty: isPackaging || unitMismatch ? 0 : gapQty,
       gapPrice: isPackaging || unitMismatch ? gap : gapPrice,
       gap,
+      // Facturé, en tout ou partie, sur une autre facture de la commande. La
+      // part de CE document est gardée à part : c'est elle qu'on enregistre,
+      // sans quoi la facture suivante recompterait celle des autres.
+      otherDocuments: inv.otherDocs.length > 0 ? inv.otherDocs : undefined,
+      ownQty: inv.otherDocs.length > 0 ? inv.ownQty : undefined,
+      ownTotal: inv.otherDocs.length > 0 ? round2(inv.ownTotal) : undefined,
     });
+    // ENTIÈREMENT sur une autre facture : rien à traiter ici, c'est l'autre
+    // document qui porte la ligne (et son éventuel écart de tarif).
+    if (inv.ownParts === 0 && inv.otherDocs.length > 0) {
+      const r = results[results.length - 1];
+      r.verdict = 'other_invoice';
+      r.material = false;
+    }
   }
 
   // 2. Commandé et absent de la facture : reliquat, rupture, ou facture partielle.
@@ -526,7 +554,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // Un bon à valoir n'est ni un produit ni une remise de CETTE commande : il
   // rembourse une facture précédente (cf. invoiceVouchers). Il ne se répartit
   // donc sur rien, et n'explique aucun écart.
-  const produits = results.filter((r) => !['discount', 'voucher', 'shipping', 'other'].includes(r.verdict));
+  // Les lignes d'une autre facture ne reçoivent rien des remises de celle-ci.
+  const produits = results.filter((r) => !['discount', 'voucher', 'shipping', 'other', 'other_invoice'].includes(r.verdict));
 
   const footerDiscount = round2(remises.reduce((acc, r) => acc + r.invoicedTotal, 0));
   const productTotal = round2(produits.reduce((acc, r) => acc + r.invoicedTotal, 0));
@@ -791,7 +820,12 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   }
 
   // ─── Totaux ───────────────────────────────────────────────────────────────
-  const invoiceParsed = round2(invoiceLines.reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
+  // Ce document seul : c'est lui que le total imprimé doit retrouver.
+  const invoiceParsed = round2(invoiceLines.filter((l) => !l.otherDocument)
+    .reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
+  // Ce que les AUTRES factures de la commande ont déjà facturé.
+  const otherInvoices = round2(invoiceLines.filter((l) => l.otherDocument)
+    .reduce((s, l) => s + (Number(l.lineTotalHt) || 0), 0));
   // Quand le document ne couvre pas toute la commande (un avoir), la confronter
   // au total de la commande n'a aucun sens : l'avoir JoshNoa de 13,80 € affichait
   // « écart −1 671,94 € » en face des 1 658,14 € de la commande S309145. On ne
@@ -813,7 +847,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
 
   // Ventilation additive : la somme des six familles vaut exactement l'écart global,
   // pour qu'aucun euro ne se perde entre le tableau et le total affiché.
-  let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0, packagingGap = 0;
+  let claimable = 0, inOurFavour = 0, minorGap = 0, roundingGap = 0, qtyGap = 0, extrasGap = 0, packagingGap = 0, otherInvoicesGap = 0;
   const EXTRA_VERDICTS = ['not_ordered', 'free', 'shipping', 'discount', 'voucher', 'other', 'credit'];
 
   for (const r of results) {
@@ -822,6 +856,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       continue;
     }
     if (r.verdict === 'closed') continue;
+    if (r.verdict === 'other_invoice') {
+      otherInvoicesGap += r.gap;   // l'écart éventuel se traite sur l'autre facture
+      continue;
+    }
     if (r.verdict === 'packaging') {
       packagingGap += r.gap;   // résidu d'arrondi d'un simple changement d'unité
       continue;
@@ -848,8 +886,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       readGap,
       reconciles,
       order: orderTotal,
+      otherInvoices,
       // Un avoir EST l'écart : il ne se retranche pas d'un montant commandé.
-      gap: creditNote ? invoiceParsed : round2(invoiceParsed - orderTotal),
+      // Plusieurs factures pour une commande : c'est leur SOMME qui se compare.
+      gap: creditNote ? invoiceParsed : round2(invoiceParsed + otherInvoices - orderTotal),
       // Remise globale du pied de facture (négative) et le taux qu'elle représente.
       footerDiscount,
       discountRate: Math.round(discountRate * 10000) / 10000,
@@ -865,6 +905,7 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       qtyGap: round2(qtyGap),
       extrasGap: round2(extrasGap),
       packagingGap: round2(packagingGap),
+      otherInvoicesGap: round2(otherInvoicesGap),
       // Orphelins de part et d'autre dont les montants se répondent : très
       // probablement les mêmes articles, avec une référence que le PDF a rendue
       // illisible. Affirmer « facturé non commandé » serait faux.
@@ -925,6 +966,7 @@ const DIFFERENCE_KINDS = {
   qty_price:          { rank: 1,  label: 'Quantité et tarif',     action: 'Ajuster la commande et réclamer le tarif' },
   missing_in_invoice: { rank: 2,  label: 'Commandé, non facturé', action: 'Reliquat ou manquant : vérifier la livraison' },
   closed:             { rank: 9,  label: 'Soldé à la réception',  action: 'Non livré, non facturé : rien à payer' },
+  other_invoice:      { rank: 9,  label: 'Sur une autre facture', action: "Facturé sur une autre facture de la commande : rien à payer ici" },
   qty:                { rank: 3,  label: 'Quantité',              action: 'Ajuster la quantité de la commande' },
   price:              { rank: 4,  label: 'Tarif',                 action: 'Réclamer un avoir, ou aligner le tarif si le prix a changé' },
   not_ordered:        { rank: 5,  label: 'Facturé, non commandé', action: 'Article ajouté : accepter ou contester' },
@@ -966,6 +1008,8 @@ function listDifferences(comparison) {
   const lines = (comparison && comparison.lines) || [];
   return lines
     .filter((l) => l.verdict !== 'ok'
+      // Facturé ailleurs sans écart : ce n'est pas une différence de CE document.
+      && !(l.verdict === 'other_invoice' && Math.abs(l.gap || 0) < 0.005)
       && (l.verdict !== 'discount' || Math.abs(l.netGap || 0) >= 0.005))
     .map((l) => ({
       ...l,
@@ -1012,7 +1056,7 @@ function listTariffUpdates(comparison, options = {}) {
   // FAC/2026/04474 étaient dans ce cas, sans aucun bouton pour en sortir.
   const seuil = Number.isFinite(options.threshold) ? options.threshold : 0.0005;
   // Un avoir n'est pas un prix d'achat : 3,46 € d'extourne n'est pas le tarif du produit.
-  const hors = ['packaging', 'missing_in_invoice', 'closed', 'free', 'not_ordered', 'shipping', 'discount', 'voucher', 'other', 'credit'];
+  const hors = ['packaging', 'missing_in_invoice', 'closed', 'other_invoice', 'free', 'not_ordered', 'shipping', 'discount', 'voucher', 'other', 'credit'];
 
   // Le coût réel EXPRIMÉ DANS L'UNITÉ DE LA COMMANDE BMS — c'est la seule que
   // `packQty`, `alignTariffs` et `applyTariffs` savent convertir.

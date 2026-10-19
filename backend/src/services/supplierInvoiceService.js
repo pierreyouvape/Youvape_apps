@@ -261,18 +261,53 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
   }
 
   const bmsOrder = await loadOrderLines(order, db);
+
+  // PLUSIEURS FACTURES POUR UNE COMMANDE : c'est leur somme qui se compare à
+  // la commande. LCA a facturé la 361704 en deux (F2610418141, 120,00 € et
+  // F2610418130, 2 617,19 €) : contrôlée seule, chacune voyait l'autre comme un
+  // manque, -2 617,19 € d'un côté et -120,00 € de l'autre, pour une commande
+  // facturée au centime. Les lignes déjà enregistrées des AUTRES factures entrent
+  // donc dans le rapprochement, marquées comme telles (jamais les avoirs, qui ont
+  // leur propre lecture, ni un second dépôt du même numéro).
+  let autresFactures = [];
+  if (invoice.docType !== 'credit_note') {
+    const { rows: autres } = await db.query(
+      `SELECT d.number, l.supplier_sku, l.label, l.qty, l.line_total_ht
+         FROM supplier_document_orders o
+         JOIN supplier_documents d ON d.id = o.document_id
+         JOIN supplier_document_lines l ON l.document_id = d.id
+        WHERE o.purchase_order_id = $1
+          AND d.doc_type = 'invoice'
+          AND ($2::int IS NULL OR d.id <> $2::int)
+          AND ($3::text IS NULL OR d.number <> $3::text)
+          AND l.kind = 'product'
+          AND COALESCE(l.verdict, '') NOT IN ('missing_in_invoice', 'closed', 'other_invoice')
+          AND (COALESCE(l.qty, 0) <> 0 OR COALESCE(l.line_total_ht, 0) <> 0)
+        ORDER BY d.id, l.line_no`,
+      [order.id, documentId || null, invoice.number || null],
+    );
+    autresFactures = autres.map((a) => ({
+        ref: a.supplier_sku,
+        label: a.label,
+        qty: Number(a.qty) || 0,
+        lineTotalHt: Number(a.line_total_ht) || 0,
+        kind: 'product',
+        otherDocument: a.number,
+      }));
+    invoice.otherDocuments = [...new Set(autres.map((a) => a.number))];
+  }
   const soldees = await findClosedSkus(order.id, db);
   for (const l of bmsOrder.lines) l.closed = !!l.sku && soldees.has(String(l.sku).trim().toLowerCase());
 
   const refProducts = await findRefProducts(
     supplierId,
-    [...invoice.lines.map((l) => l.ref), ...bmsOrder.lines.map((l) => l.ref)],
+    [...invoice.lines.map((l) => l.ref), ...autresFactures.map((l) => l.ref), ...bmsOrder.lines.map((l) => l.ref)],
     db,
   );
   const skuProducts = await findSkuProducts(bmsOrder.lines.map((l) => l.sku), db);
 
   const keyed = attachMatchKeys({
-    invoiceLines: invoice.lines,
+    invoiceLines: [...invoice.lines, ...autresFactures],
     orderLines: bmsOrder.lines,
     refProducts,
     skuProducts,

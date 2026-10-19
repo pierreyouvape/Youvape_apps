@@ -1291,6 +1291,43 @@ test('un tarif garde la réf. de la facture et le produit quand la commande port
   assert.ok(close(t.realPrice, 3.863, 0.0001), `prix ${t.realPrice}`);
 });
 
+/* ─── Plusieurs factures pour une commande ────────────────────────────── */
+
+test('LCA 361704 : deux factures pour une commande se complètent, aucune ne voit l’autre comme un manque', () => {
+  // Commande : filtres ×180 à 1,50 € + coils ×60 à 5,4263 €. Facture A :
+  // 80 filtres (120,00 €). Facture B : 100 filtres + les 60 coils.
+  const order = { lines: [
+    { ref: 'FILTRE', qty: 180, price: 1.5 },
+    { ref: 'COIL', qty: 60, price: 5.4263 },
+  ] };
+  const A = [{ ref: 'FILTRE', qty: 80, lineTotalHt: 120 }];
+  const B = [{ ref: 'FILTRE', qty: 100, lineTotalHt: 150 }, { ref: 'COIL', qty: 60, lineTotalHt: 325.58 }];
+
+  // Contrôle de A, B déjà enregistrée.
+  const ra = compareInvoiceToOrder({
+    invoice: { totalHt: 120, lines: [...A, ...B.map((l) => ({ ...l, otherDocument: 'B' }))] },
+    order,
+  });
+  assert.ok(close(ra.totals.gap, 0), `écart A ${ra.totals.gap}`);
+  assert.strictEqual(ra.totals.invoiceParsed, 120);
+  assert.ok(ra.totals.reconciles, 'A doit retomber sur son total imprimé');
+  assert.strictEqual(byRef(ra, 'COIL').verdict, 'other_invoice');
+  assert.strictEqual(byRef(ra, 'FILTRE').verdict, 'ok');
+  // La ligne partagée n'enregistre que la part de A.
+  assert.strictEqual(byRef(ra, 'FILTRE').ownQty, 80);
+  assert.strictEqual(byRef(ra, 'FILTRE').ownTotal, 120);
+  assert.strictEqual(listDifferences(ra).length, 0);
+  assert.strictEqual(listTariffUpdates(ra).length, 0);
+
+  // Contrôle de B, A déjà enregistrée : même conclusion.
+  const rb = compareInvoiceToOrder({
+    invoice: { totalHt: 475.58, lines: [...B, ...A.map((l) => ({ ...l, otherDocument: 'A' }))] },
+    order,
+  });
+  assert.ok(close(rb.totals.gap, 0), `écart B ${rb.totals.gap}`);
+  assert.strictEqual(rb.summary.qtyGap, 0);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

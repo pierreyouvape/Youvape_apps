@@ -76,9 +76,10 @@ async function applyTariffs(req, res) {
  * de contrôle — le message réclamait encore contre 2,90 € et 2,83 €. Un échec
  * ici (PDF introuvable…) ne fait pas échouer le tarif, déjà inscrit.
  */
-async function recontrolerFacturesDe(orderId) {
+async function recontrolerFacturesDe(orderId, saufDocumentId = null) {
   const faits = [];
   for (const id of await supplierDocumentModel.listDocumentIdsForOrder(orderId)) {
+    if (saufDocumentId && id === saufDocumentId) continue;
     try {
       const document = await supplierDocumentModel.getDocument(id);
       if (!document || (document.orders[0] || {}).id !== orderId) continue;
@@ -191,6 +192,13 @@ async function uploadDocument(req, res) {
         error: `La facture ${analysis.invoice.number} de ${analysis.supplier.name} est déjà enregistrée`,
         existing: saved.existing,
       });
+    }
+
+    // Les AUTRES factures de la commande se lisaient sans celle-ci : leur
+    // contrôle enregistré annonçait en manque ce qu'elle facture. On les
+    // rejoue (cf. analyseInvoice, plusieurs factures pour une commande).
+    if (analysis.order && analysis.order.id && analysis.invoice.docType !== 'credit_note') {
+      await recontrolerFacturesDe(analysis.order.id, saved.document && saved.document.id);
     }
 
     return res.status(201).json({
@@ -445,9 +453,14 @@ async function getOrderLifecycle(req, res) {
 /** DELETE /api/supplier-invoices/:id — retirer un dépôt erroné. */
 async function deleteDocument(req, res) {
   try {
-    const removed = await supplierDocumentModel.deleteDocument(parseInt(req.params.id, 10));
+    const id = parseInt(req.params.id, 10);
+    // Ses commandes AVANT la suppression : les autres factures qui comptaient
+    // sur lui doivent être recontrôlées sans.
+    const avant = await supplierDocumentModel.getDocument(id);
+    const removed = await supplierDocumentModel.deleteDocument(id);
     if (!removed) return res.status(404).json({ error: 'Document introuvable' });
     if (removed.file_path) docStore.removeDocument(removed.file_path);
+    for (const o of (avant && avant.orders) || []) await recontrolerFacturesDe(o.id);
     return res.json({ deleted: true });
   } catch (error) {
     console.error('[supplier-invoices] suppression :', error.message);
