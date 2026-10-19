@@ -199,13 +199,21 @@ Deux champs, deux rôles, et les confondre a coûté un aller-retour le 30/09/20
 | `price` de l'**association** | `/supplier/products` | N'entre dans aucun de nos chiffres (ci-dessus) |
 | `price` de la **ligne de commande** | `/supplier/purchase-orders/{id}` | **Référence du contrôle de facture** |
 
-Le contrôle de facture ne lit PAS notre `purchase_order_items` pour ses colonnes
-« Tarif BMS » et « Commande HT » : il interroge `/supplier/purchase-orders/{id}`
-**à l'instant** (parti pris assumé, cf. `supplierInvoiceService.fetchOrderLines`).
-Un tarif corrigé chez nous sans être reporté là-bas ne change donc rien à l'écran,
-et l'écart réapparaît à la facture suivante. `supplierDocumentModel.applyTariffs`
-fait les trois écritures : `supplier_refs.pack_price`, `purchase_order_items.unit_price`
-et la ligne BMS.
+**Depuis le 19/10/2026 (`f507a5e`), le VPS fait foi pour les prix d'achat, plus BMS.**
+Le contrôle de facture lit notre `purchase_order_items` (`supplierInvoiceService.loadOrderLines`),
+et `syncFromBMS` **garde le prix à la pièce et la remise** de chaque ligne déjà connue
+(seule une ligne nouvelle, ajoutée dans BMS, prend le prix BMS ; compteur `localPricesKept`).
+Avant, la synchro horaire remettait le prix BMS par-dessus une correction faite dans l'écran
+de commande (LCA 361181 : pods Argus à 8,22 € au lieu de 4,11 €, facture annoncée −387,19 €
+pour −17,29 €). **Un prix se corrige sur le VPS ; corrigé seulement dans BMS, il ne remonte
+plus.** `supplierDocumentModel.applyTariffs` écrit toujours aux trois endroits
+(`supplier_refs.pack_price`, `purchase_order_items.unit_price`, ligne BMS) tant que BMS existe.
+
+⚠️ **Les QUANTITÉS, elles, viennent encore de BMS** à chaque remplacement de lignes, relues
+avec les conditionnements d'aujourd'hui : sur de vieux bons, la relecture peut différer (LCA
+301672 : 20 pièces reçues relues 2). Ne jamais lancer de resynchro massive sans l'avoir
+rejouée sur une copie de la base ; pour réparer une colonne, préférer un script ciblé
+(ex. `scripts/backfillOrphanPoLines.js`).
 
 ⚠️ **`/v2/purchase-orders/{id}/items` pagine à DIX sans le dire.** Seul `meta.total`
 trahit le reste. Toujours passer par `bmsApiModel.getPurchaseOrderItems`, qui pagine —
