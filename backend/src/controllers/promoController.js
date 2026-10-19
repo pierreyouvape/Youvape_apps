@@ -31,22 +31,38 @@ const dayDiff = (a, b) => Math.round((b - a) / 86400000);
  * Prix catalogue TTC (`price`, `discounted_price`) vs coût HT (`computed_cost`) :
  * on repasse systématiquement le prix en HT avant de calculer une marge.
  */
-function computeLine(item, { vatRate, basePriceMode }) {
+function computeLine(item, { vatRate, basePriceMode, live = false, startDate = null }) {
   const vat = 1 + (num(vatRate) ?? 20) / 100;
   const price = num(item.price);
   const discounted = num(item.discounted_price);
   const cost = num(item.cost_price);
   const stock = parseInt(item.stock, 10) || 0;
 
+  // Opération en cours : le tarif remisé WooCommerce contient DÉJÀ la remise de
+  // l'opé, on ne la réapplique pas. Le prix promo est le tarif réellement en
+  // ligne, et la référence « avant opé » est la photo prise à l'ajout du produit
+  // quand elle précède le début de l'opé (sinon on n'a pas mieux que le tarif actuel).
+  const start = parseYmd(startDate);
+  const snapAt = item.snapshot_at ? new Date(item.snapshot_at) : null;
+  const snapUsable = live && snapAt && (!start || snapAt < start);
+  const refPrice = snapUsable ? (num(item.snap_price) ?? price) : price;
+  const refDiscounted = snapUsable
+    ? (num(item.snap_discounted_price) ?? num(item.snap_price) ?? price)
+    : discounted;
+
   // Base sur laquelle s'applique la remise saisie.
-  const base = basePriceMode === 'discounted' ? (discounted ?? price) : price;
+  const base = live
+    ? (basePriceMode === 'discounted' ? (refDiscounted ?? refPrice) : refPrice)
+    : (basePriceMode === 'discounted' ? (discounted ?? price) : price);
 
   const discountPercent = num(item.discount_percent) ?? 0;
   const forced = num(item.promo_price);
   // Un prix promo saisi à la main prime sur le pourcentage.
-  const promoTtc = forced !== null
-    ? forced
-    : (base !== null ? base * (1 - discountPercent / 100) : null);
+  const promoTtc = live
+    ? (discounted ?? price)
+    : forced !== null
+      ? forced
+      : (base !== null ? base * (1 - discountPercent / 100) : null);
 
   // Remise effective par rapport au prix de vente public (référence client).
   const effectiveDiscount = (price && promoTtc !== null) ? (1 - promoTtc / price) * 100 : null;
@@ -66,7 +82,9 @@ function computeLine(item, { vatRate, basePriceMode }) {
   };
 
   // Situation actuelle = tarif réellement appliqué aujourd'hui (remise WDR incluse).
-  const current = marginOf(discounted ?? price);
+  // Opé en cours : ce tarif EST le prix promo, on compare donc au tarif d'avant l'opé.
+  const currentTtc = live ? (refDiscounted ?? refPrice) : (discounted ?? price);
+  const current = marginOf(currentTtc);
   const promo = marginOf(promoTtc);
 
   return {
@@ -78,7 +96,10 @@ function computeLine(item, { vatRate, basePriceMode }) {
     effective_discount_percent: round2(effectiveDiscount),
     undiscounted_price: round2(undiscounted),
     total_discount_percent: round2(totalDiscount),
-    current_price_ttc: round2(discounted ?? price),
+    current_price_ttc: round2(currentTtc),
+    promo_live: live,
+    // Remise réellement constatée en ligne par rapport à la base d'avant l'opé.
+    live_discount_percent: live && base && promoTtc !== null ? round2((1 - promoTtc / base) * 100) : null,
     current_margin_eur: round2(current.eur),
     current_margin_pct: round2(current.pct),
     promo_margin_eur: round2(promo.eur),
@@ -91,6 +112,14 @@ function computeLine(item, { vatRate, basePriceMode }) {
     below_cost: promo.eur !== null ? promo.eur < 0 : false,
   };
 }
+
+/** Une opé « En cours » est déjà appliquée sur le site : voir computeLine. */
+const lineOpts = (op) => ({
+  vatRate: op.vat_rate,
+  basePriceMode: op.base_price_mode,
+  live: op.status === 'running',
+  startDate: op.start_date,
+});
 
 /* ─── Opérations ─────────────────────────────────────────────── */
 
@@ -123,7 +152,7 @@ exports.getOperation = async (req, res) => {
     if (!op) return res.status(404).json({ success: false, error: 'Opération introuvable' });
 
     const rawItems = await promoModel.listItems(op.id);
-    const opts = { vatRate: op.vat_rate, basePriceMode: op.base_price_mode };
+    const opts = lineOpts(op);
     const items = rawItems.map((it) => computeLine(it, opts));
 
     // Totaux : marge « potentielle » = marge unitaire × stock disponible.
@@ -364,7 +393,7 @@ exports.getAnalysis = async (req, res) => {
     const delta = (a, b) => round2((a || 0) - (b || 0));
     const pctDelta = (a, b) => (b ? round2((((a || 0) - b) / b) * 100) : (a ? null : 0));
 
-    const opts = { vatRate: op.vat_rate, basePriceMode: op.base_price_mode };
+    const opts = lineOpts(op);
     const rows = items.map((it) => {
       const line = computeLine(it, opts);
       const current = shape(curMap.get(String(it.wp_product_id)));
@@ -451,7 +480,7 @@ exports.exportCsv = async (req, res) => {
     const op = await promoModel.getOperation(req.params.id);
     if (!op) return res.status(404).json({ success: false, error: 'Opération introuvable' });
 
-    const opts = { vatRate: op.vat_rate, basePriceMode: op.base_price_mode };
+    const opts = lineOpts(op);
     const items = (await promoModel.listItems(op.id)).map((it) => computeLine(it, opts));
 
     const header = ['SKU', 'Produit', 'Stock', 'En arrivage', 'Ventes 30j', 'Prix achat HT', 'Prix sans remise TTC',

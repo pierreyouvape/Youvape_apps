@@ -242,7 +242,7 @@ const PromoDetail = () => {
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
     const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price',
-      'current_margin_pct', 'discount_percent', 'promo_price_ttc', 'total_discount_percent',
+      'current_margin_pct', 'discount_percent', 'live_discount_percent', 'promo_price_ttc', 'total_discount_percent',
       'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur'];
     if (numeric.includes(key)) {
       const n = parseFloat(it[key]);
@@ -317,6 +317,7 @@ const PromoDetail = () => {
       discounted_price: range(g.items, 'discounted_price'),
       current_margin_pct: range(g.items, 'current_margin_pct'),
       discount_percent: range(g.items, 'discount_percent'),
+      live_discount_percent: range(g.items, 'live_discount_percent'),
       promo_price_ttc: range(g.items, 'promo_price_ttc'),
       total_discount_percent: range(g.items, 'total_discount_percent'),
       promo_margin_pct: range(g.items, 'promo_margin_pct'),
@@ -408,6 +409,18 @@ const PromoDetail = () => {
                             {eur(it.current_margin_eur)}<br />
                             <span style={{ fontSize: 11 }}>{pct(it.current_margin_pct)}</span>
                           </td>
+                          {it.promo_live ? (
+                            <>
+                              <td style={{ ...tdR, background: '#FDF2F8' }}
+                                title={`Remise constatée en ligne sur ${eur(it.base_price)} (tarif avant l'opé)`}>
+                                {it.live_discount_percent === null ? '—' : `−${pct(it.live_discount_percent)}`}
+                              </td>
+                              <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700, color: C.promoF }}
+                                title="Opé en cours : tarif réellement en ligne (la remise est déjà dans le tarif remisé)">
+                                {eur(it.promo_price_ttc)}
+                              </td>
+                            </>
+                          ) : (<>
                           <td style={{ ...tdR, background: '#FDF2F8' }}>
                             <input
                               value={discountVal}
@@ -442,6 +455,7 @@ const PromoDetail = () => {
                               style={{ ...inputStyle, width: 80, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: C.promoF }}
                             />
                           </td>
+                          </>)}
                           <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}
                             title={it.undiscounted_price !== it.price
                               ? `Prix sans remise ${it.undiscounted_price} € (le prix de vente est déjà soldé)`
@@ -515,6 +529,8 @@ const PromoDetail = () => {
   }
 
   const st = statusInfo(operation.status);
+  // Opé en cours : le tarif remisé contient déjà la remise, rien n'est re-remisé (calcul côté serveur).
+  const live = operation.status === 'running';
 
   return (
     <AppShell currentPath="/promos">
@@ -693,9 +709,14 @@ const PromoDetail = () => {
                       <SortTh column="cost_price" label="Prix achat HT" title="Prix d'achat HT (PMP FIFO, sinon coût WooCommerce)" />
                       <SortTh column="price" label="Prix vente TTC" />
                       <SortTh column="discounted_price" label="Tarif remisé" title="Tarif remisé actuellement actif (Woo Discount Rules)" />
-                      <SortTh column="current_margin_pct" label="Marge actuelle" title="Marge au tarif actuellement appliqué (tri sur le %)" />
-                      <SortTh column="discount_percent" label="Remise %" promo
-                        title={operation.base_price_mode === 'discounted'
+                      <SortTh column="current_margin_pct" label={live ? 'Marge avant opé' : 'Marge actuelle'}
+                        title={live
+                          ? "Marge au tarif d'avant l'opération (photo prise à l'ajout du produit), tri sur le %"
+                          : 'Marge au tarif actuellement appliqué (tri sur le %)'} />
+                      <SortTh column={live ? 'live_discount_percent' : 'discount_percent'} label="Remise %" promo
+                        title={live
+                          ? "Opé en cours : remise constatée entre le tarif d'avant l'opé et le tarif en ligne (le tarif remisé contient déjà la remise)"
+                          : operation.base_price_mode === 'discounted'
                           ? 'Pourcentage appliqué au tarif remisé (ou au prix de vente si aucune remise en cours)'
                           : 'Pourcentage appliqué au prix de vente public, en ignorant la remise en cours'}>
                         <div style={{ fontSize: 10, fontWeight: 600, color: C.promoF, textTransform: 'none' }}>
@@ -756,6 +777,11 @@ const PromoDetail = () => {
                                 <td style={tdR}>{rangeText(g.price, eur)}</td>
                                 <td style={{ ...tdR, color: C.orange }}>{rangeText(g.discounted_price, eur)}</td>
                                 <td style={tdR}>{rangeText(g.current_margin_pct, (v) => pct(v))}</td>
+                                {live ? (
+                                  <td style={{ ...tdR, background: '#FDF2F8' }}>
+                                    {rangeText(g.live_discount_percent, (v) => `−${pct(v)}`)}
+                                  </td>
+                                ) : (
                                 <td style={{ ...tdR, background: '#FDF2F8' }} onClick={(e) => e.stopPropagation()}>
                                   <input
                                     defaultValue={g.discount_percent?.uniform ? String(g.discount_percent.min) : ''}
@@ -773,6 +799,7 @@ const PromoDetail = () => {
                                     style={{ ...inputStyle, width: 62, textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}
                                   />
                                 </td>
+                                )}
                                 <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>{rangeText(g.promo_price_ttc, eur)}</td>
                                 <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}>
                                   {rangeText(g.total_discount_percent, (v) => `−${pct(v)}`)}
