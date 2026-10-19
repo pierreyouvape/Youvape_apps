@@ -316,7 +316,8 @@ const declareUnclaimed = async (wpOrderId, user) => {
       await noteTicket(ticketId, user, note);
       await savModel.updateStatus(ticketId, 'ouvert');
     } else {
-      ticketId = (await createTicket(order, `Colis non réclamé revenu — commande #${wpOrderId}`,
+      // Sujet lu par le client dans l'objet de nos réponses (Pierre, 19/10/2026).
+      ticketId = (await createTicket(order, `Votre commande YouVape N°${wpOrderId}`,
         note.map(l => `<p>${l}</p>`).join(''), user.name || user.email)).id;
     }
     await pool.query('UPDATE customer_returns SET ticket_id = $2 WHERE id = $1', [ret.id, ticketId]);

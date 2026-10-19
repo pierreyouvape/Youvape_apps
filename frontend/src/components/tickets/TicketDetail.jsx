@@ -81,6 +81,11 @@ function mentionsAttachment(html) {
 
 // ─── Icônes ───────────────────────────────────────────────────────────────────
 const Ic = {
+  Pencil: ({ size = 13, color = C.grisM }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  ),
   Back: ({ size = 14, color = 'currentColor' }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
@@ -2046,6 +2051,53 @@ const COMPOSER_HEIGHT_KEY = 'yv.tickets.composerHeight';
 const COMPOSER_MIN_HEIGHT = 180;
 const COMPOSER_DEFAULT_HEIGHT = 280;
 
+/**
+ * Sujet du ticket, modifiable au clic (droit écriture). Il devient l'objet de
+ * nos réponses au client ; le fil tient par le « [SAV #id] » de l'objet, pas
+ * par le reste : le changer ne casse pas la conversation.
+ */
+function SubjectTitle({ subject, onChange, isMobile }) {
+  const { canWrite } = useTicketsAccess();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(subject || '');
+
+  const titleStyle = {
+    fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.grisTF,
+    fontFamily: "'Tilt Warp', cursive", letterSpacing: '-0.2px', lineHeight: 1.25, margin: 0,
+  };
+
+  const start = () => { setDraft(subject || ''); setEditing(true); };
+  const save = () => {
+    const next = draft.trim().slice(0, 200);
+    setEditing(false);
+    if (next && next !== subject) onChange(next);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus value={draft} maxLength={200}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); save(); }
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        style={{
+          ...titleStyle, width: '100%', minWidth: isMobile ? 0 : 420, boxSizing: 'border-box',
+          border: `1px solid ${TICKETS_COLOR}`, borderRadius: 6, padding: '2px 6px', background: C.blanc, outline: 'none',
+        }}
+      />
+    );
+  }
+  if (!canWrite || !onChange) return <h1 style={titleStyle}>{subject}</h1>;
+  return (
+    <h1 onClick={start} title="Modifier le sujet" style={{ ...titleStyle, cursor: 'text', display: 'flex', alignItems: 'center', gap: 8 }}>
+      {subject || '(sans objet)'} <Ic.Pencil />
+    </h1>
+  );
+}
+
 function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afterActionMode, onChangeAfterActionMode, onAdvance, onCloseTicket, onApplyMacroSubject, isMobile = false }) {
   const { user } = useContext(AuthContext);
   // Présence : qui d'autre est sur ce ticket, et qui y écrit.
@@ -2127,11 +2179,8 @@ function ConversationPanel({ ticket, onReplySent, onStatusChange, playMode, afte
         borderBottom: `1px solid ${C.grisCL}`,
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16,
       }}>
-        <div>
-          <h1 style={{
-            fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.grisTF,
-            fontFamily: "'Tilt Warp', cursive", letterSpacing: '-0.2px', lineHeight: 1.25, margin: 0,
-          }}>{ticket.subject}</h1>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <SubjectTitle key={ticket.id} subject={ticket.subject} onChange={onApplyMacroSubject} isMobile={isMobile} />
           <div style={{ fontSize: 12.5, color: C.grisM, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
             Via <Ic.Mail size={12} /> {source} · ouvert le{' '}
             <strong style={{ color: C.grisF }}>{formatDateUTC(ticket.created_at)}</strong>
