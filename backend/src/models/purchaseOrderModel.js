@@ -351,6 +351,105 @@ const purchaseOrderModel = {
    * là-bas) n'est donc pas écrite non plus : redéposer le document plus tard
    * la reprendra.
    */
+  /**
+   * Ajoute un surplus à la ligne d'un produit déjà présent dans la commande,
+   * chez nous puis dans BMS (PUT de la ligne, en pièces, conditionnement 1).
+   *
+   * Le prix à la pièce devient la moyenne pondérée des deux lots : le montant
+   * de la ligne vaut exactement ce qui a été commandé puis facturé en plus.
+   * La quantité reçue n'est pas touchée : la différence reste à réceptionner.
+   */
+  addToExistingLine: async (order, product, item, orderInPacks) => {
+    const packChoisi = purchaseOrderModel.packChoisi(item.units_per_qty);
+    let packNew = packChoisi;
+    if (packNew === null) {
+      if (orderInPacks) {
+        const { rows: [ps] } = await pool.query(
+          'SELECT pack_qty FROM product_suppliers WHERE product_id = $1 AND supplier_id = $2',
+          [product.id, order.supplier_id]
+        );
+        packNew = parseInt(ps?.pack_qty, 10) || 1;
+      } else {
+        packNew = 1;
+      }
+    }
+    const pieces = (parseInt(item.qty_ordered, 10) || 0) * packNew;
+    if (pieces <= 0) throw new Error('quantité nulle');
+    const prixDoc = parseFloat(item.unit_price);
+    if (!(prixDoc > 0)) throw new Error('prix manquant');
+    const netPieceNew = (prixDoc / packNew) * (1 - (parseFloat(item.discount_percent) || 0) / 100);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows: lignes } = await client.query(`
+        SELECT id, qty_ordered, unit_price, discount_percent,
+               GREATEST(COALESCE(units_per_qty, 1), 1) AS u
+        FROM purchase_order_items
+        WHERE purchase_order_id = $1 AND product_id = $2 AND item_type IS DISTINCT FROM 'discount'
+        ORDER BY id
+        FOR UPDATE
+      `, [order.id, product.id]);
+      if (lignes.length !== 1) {
+        throw new Error(`${lignes.length} lignes de ce produit dans la commande : ajout à faire à la main`);
+      }
+      const l = lignes[0];
+      const u = parseInt(l.u, 10);
+      if (pieces % u !== 0) {
+        throw new Error(`${pieces} pièces ne font pas un nombre entier de lots de ${u}`);
+      }
+      const oldQty = parseFloat(l.qty_ordered);
+      const oldPieces = oldQty * u;
+      const netPieceOld = (parseFloat(l.unit_price) / u) * (1 - (parseFloat(l.discount_percent) || 0) / 100);
+      const totalPieces = oldPieces + pieces;
+      const memePrix = Math.abs(netPieceOld - netPieceNew) < 0.00005;
+      const netPiece = memePrix
+        ? netPieceOld
+        : (oldPieces * netPieceOld + pieces * netPieceNew) / totalPieces;
+
+      await client.query(`
+        UPDATE purchase_order_items
+           SET qty_ordered = $2,
+               unit_price = $3,
+               discount_percent = $4
+         WHERE id = $1
+      `, [
+        l.id,
+        oldQty + pieces / u,
+        memePrix ? l.unit_price : Math.round(netPiece * u * 10000) / 10000,
+        memePrix ? l.discount_percent : 0,
+      ]);
+
+      if (order.bms_po_id) {
+        if (!product.sku) throw new Error('produit sans SKU, BMS ne peut pas le référencer');
+        const norm = (v) => String(v || '').toLowerCase().trim();
+        const bmsLignes = (await bmsApiModel.getPurchaseOrderItems(order.bms_po_id))
+          .filter((b) => norm(b.sku) === norm(product.sku));
+        if (bmsLignes.length !== 1) {
+          throw new Error(`${bmsLignes.length} ligne(s) de ce produit dans le bon BMS ${order.bms_po_id}`);
+        }
+        const b = bmsLignes[0];
+        const bmsPieces = Number(b.qty) * (Number(b.qty_pack) || 1);
+        if (bmsPieces !== oldPieces) {
+          throw new Error(`BMS porte ${bmsPieces} pièces, la commande ${oldPieces} : resynchroniser d'abord`);
+        }
+        // Écrit dans BMS EN DERNIER : un échec annule la transaction locale.
+        await bmsApiModel.apiCall(
+          `/v2/purchase-orders/${order.bms_po_id}/items/${b.id}`, 'PUT',
+          { qty: totalPieces, qty_pack: 1, price: Math.round(netPiece * 10000) / 10000 },
+        );
+      }
+
+      await client.query('COMMIT');
+      return { pieces, totalPieces };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  },
+
   addItems: async (orderId, data) => {
     const { rows: [order] } = await pool.query(`
       SELECT po.*, s.code AS supplier_code, s.bms_id AS bms_supplier_id
@@ -401,10 +500,22 @@ const purchaseOrderModel = {
         failed.push({ name: label, error: 'produit introuvable' });
         continue;
       }
-      // `extra` : lot supplémentaire d'un produit déjà présent (surplus livré
-      // puis facturé à part). Il part en SECONDE ligne, à réceptionner.
-      if (presentIds.has(product.id) && !item.extra) {
-        alreadyPresent.push({ name: label });
+      if (presentIds.has(product.id)) {
+        if (!item.extra) {
+          alreadyPresent.push({ name: label });
+          continue;
+        }
+        // `extra` : surplus livré puis facturé à part (LCA F2610418141, 80
+        // filtres de plus sur la 361704). BMS refuse deux lignes du même
+        // produit sur un bon (400 « combinaison purchase_order_id,
+        // pop_product_id existe déjà ») : la quantité s'AJOUTE à la ligne en
+        // place, qui reste à réceptionner pour la différence.
+        try {
+          const r = await purchaseOrderModel.addToExistingLine(order, product, item, orderInPacks);
+          added.push({ name: label, sku: product.sku, qty: r.pieces, merged: true });
+        } catch (e) {
+          failed.push({ name: label, sku: product.sku, error: e.message });
+        }
         continue;
       }
 

@@ -104,9 +104,8 @@ test('INVARIANT : ce qui est déclaré envoyé est exactement ce qui part', () =
 
 console.log('\nRéception — même produit sur deux lignes du bon');
 
-// LCA 361704 : 100 filtres reçus, puis 80 de surplus ajoutés en seconde ligne
-// (import « ajouter en supplément »). Chaque ligne locale doit viser SA ligne
-// BMS, sinon le surplus se réceptionne sur la ligne déjà soldée.
+// Deux lots du même produit sur un bon : chaque ligne locale doit viser SA
+// ligne BMS, sinon la réception de la seconde part sur la première.
 test('deux lignes du même produit visent deux lignes BMS distinctes', () => {
   const bms = [
     { id: 501, supplierSku: '#REF9337-62437', sku: 'FILTRE-W' },

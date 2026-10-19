@@ -493,7 +493,8 @@ const ImportPdfPage = () => {
   const inExistingOrder = (item) => !!existingOrder && item.matched && wpInOrder.has(item.product_id);
   // Ligne déjà présente que l'on ajoute quand même, en lot supplémentaire :
   // surplus livré puis facturé à part (LCA F2610418141 : 80 filtres de plus
-  // sur la 361704). Elle part en seconde ligne, pour être réceptionnée.
+  // sur la 361704). Sa quantité s'ajoute à la ligne en place (BMS refuse deux
+  // lignes du même produit), qui reste à réceptionner pour la différence.
   const itemsToAdd = matchedItems.filter(i => !inExistingOrder(i) || i.extra);
   const toggleExtra = (idx) => {
     setItems(prev => prev.map((item, i) => (i === idx ? { ...item, extra: !item.extra } : item)));
@@ -944,7 +945,7 @@ const ImportPdfPage = () => {
                       {existingOrder.bms_po_id ? ', dans notre commande comme dans le bon BMS' : ''}.
                       <br />
                       Surplus livré puis facturé à part ? Cochez « ajouter en supplément » : la quantité
-                      du document part en seconde ligne, à réceptionner ensuite.
+                      du document s'ajoute à la ligne de la commande, et la différence reste à réceptionner.
                     </div>
                   )}
 
@@ -1110,7 +1111,7 @@ const ImportPdfPage = () => {
                                           déjà dans la commande
                                         </span>
                                         <label
-                                          title="Surplus livré et facturé à part : la quantité de ce document est ajoutée en seconde ligne, à réceptionner ensuite."
+                                          title="Surplus livré et facturé à part : la quantité de ce document s'ajoute à celle de la commande, et la différence reste à réceptionner."
                                           style={{ fontSize: 11.5, fontWeight: 600, color: item.extra ? '#5D49D6' : C.grisF, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                         >
                                           <input type="checkbox" checked={!!item.extra} onChange={() => toggleExtra(idx)} />

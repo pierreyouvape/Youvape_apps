@@ -149,10 +149,9 @@ const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
  * qui fait foi. Trois tentatives, de la plus précise à la plus tolérante.
  */
 function matchBmsLine(ligne, lignesBms, prises = new Set()) {
-  // Un même produit peut figurer DEUX fois sur un bon (surplus ajouté en
-  // seconde ligne, cf. purchaseOrderModel.addItems) : sans écarter les lignes
-  // BMS déjà rapprochées, les deux visaient la première, et la réception du
-  // surplus partait sur la ligne déjà soldée.
+  // Un même produit sur deux lignes locales (deux lots repris d'un vieux bon) :
+  // sans écarter les lignes BMS déjà rapprochées, les deux visaient la
+  // première, et la réception de la seconde partait sur la mauvaise ligne.
   lignesBms = lignesBms.filter((b) => !prises.has(b.id));
   // 1. La référence fournisseur, quand les deux côtés en ont une.
   if (ligne.supplier_sku) {
