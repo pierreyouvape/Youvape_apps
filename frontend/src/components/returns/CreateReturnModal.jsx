@@ -67,8 +67,9 @@ export default function CreateReturnModal({ wpOrderId, ticketId, concernedProduc
     setReason(r);
     // Une issue déjà faite ne bouge pas (le serveur l'ignore aussi).
     if (!existing?.treated_at) setOutcome(DEFAULT_OUTCOME[r]);
-    // Commande non récupérée : c'est toute la commande qui revient.
-    if (r === 'non_recupere') {
+    // Commande non récupérée ou renvoyée par erreur par le transporteur :
+    // c'est toute la commande qui revient.
+    if (r === 'non_recupere' || r === 'retour_transporteur') {
       setReturnRequired(true);
       setQty(Object.fromEntries(lines.filter(l => !l.bundleOf && l.returnable).map(l => [l.orderItemId, l.returnable])));
     }

@@ -12,6 +12,7 @@ const REASONS = {
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
   erreur_adressage: "Erreur d'adressage",
+  retour_transporteur: 'Retour transporteur par erreur',
   // Déclaré par son propre bouton (declareLost), jamais par « Créer un retour ».
   colis_perdu: 'Colis perdu',
 };

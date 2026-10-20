@@ -13,6 +13,7 @@ export const REASONS = {
   retractation: 'Rétractation',
   non_recupere: 'Commande non récupérée',
   erreur_adressage: "Erreur d'adressage",
+  retour_transporteur: 'Retour transporteur par erreur',
   colis_perdu: 'Colis perdu',
 };
 
@@ -34,6 +35,7 @@ export const DEFAULT_OUTCOME = {
   retractation: 'remboursement',
   non_recupere: 'points',
   erreur_adressage: 'points',
+  retour_transporteur: 'renvoi',
   colis_perdu: 'renvoi',
 };
 
