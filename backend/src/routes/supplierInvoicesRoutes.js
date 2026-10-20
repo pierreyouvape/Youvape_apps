@@ -46,6 +46,9 @@ router.delete('/vouchers/:voucherId', canWrite, controller.deleteVoucher);
 router.post('/vouchers/:voucherId/apply-prices', canWrite, controller.applyVoucherPrices);
 router.get('/orders/:orderId/lifecycle', canRead, controller.getOrderLifecycle);
 
+// Déclarée avant '/:id' comme les autres routes fixes.
+router.post('/archive', canRead, controller.downloadArchive);
+
 router.get('/', canRead, controller.listDocuments);
 router.post('/', canWrite, upload.single('file'), controller.uploadDocument);
 

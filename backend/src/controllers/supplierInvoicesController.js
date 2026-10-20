@@ -17,6 +17,8 @@ const supplierInvoiceService = require('../services/supplierInvoiceService');
 const supplierDocumentModel = require('../models/supplierDocumentModel');
 const supplierVoucherModel = require('../models/supplierVoucherModel');
 const fs = require('fs');
+const path = require('path');
+const JSZip = require('jszip');
 const docStore = require('../utils/supplierDocStore');
 const lifecycleModel = require('../models/orderLifecycleModel');
 const { buildClaimMessage } = require('../utils/invoiceClaimMessage');
@@ -271,6 +273,45 @@ async function downloadDocument(req, res) {
     return res.download(absolute, name);
   } catch (error) {
     console.error('[supplier-invoices] téléchargement :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/**
+ * POST /api/supplier-invoices/archive — les fichiers de plusieurs documents
+ * dans un seul ZIP (la sélection visible à l'écran, pour le comptable).
+ * Un fichier absent du serveur est signalé dans un MANQUANTS.txt plutôt que
+ * de faire échouer toute l'archive.
+ */
+async function downloadArchive(req, res) {
+  try {
+    const ids = [...new Set((req.body.ids || []).map((x) => parseInt(x, 10)).filter(Number.isInteger))];
+    if (ids.length === 0) return res.status(400).json({ error: 'Aucun document demandé' });
+    if (ids.length > 500) return res.status(400).json({ error: '500 documents au plus par archive' });
+
+    const documents = await supplierDocumentModel.listFilesForArchive(ids);
+    const zip = new JSZip();
+    const used = new Set();
+    const missing = [];
+    for (const d of documents) {
+      const absolute = d.file_path ? docStore.resolveDocument(d.file_path) : null;
+      if (!absolute) { missing.push(`${d.supplier_name} — ${d.number}`); continue; }
+      const ext = path.extname(d.file_path) || '.pdf';
+      const prefix = d.doc_type === 'credit_note' ? 'avoir_' : '';
+      const base = docStore.safeBasename(`${d.supplier_name}_${prefix}${d.number}`.replace(/[\\/]/g, '-')).replace(/\.+$/, '');
+      let name = `${base}${ext}`;
+      for (let i = 2; used.has(name); i += 1) name = `${base}_${i}${ext}`;
+      used.add(name);
+      zip.file(name, fs.readFileSync(absolute));
+    }
+    if (missing.length) zip.file('MANQUANTS.txt', `Fichiers introuvables sur le serveur :\n${missing.join('\n')}\n`);
+
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="factures-fournisseurs.zip"');
+    return res.send(buffer);
+  } catch (error) {
+    console.error('[supplier-invoices] archive :', error.message);
     return res.status(500).json({ error: error.message || 'Erreur serveur' });
   }
 }
@@ -745,6 +786,7 @@ module.exports = {
   listDocuments,
   getDocument,
   downloadDocument,
+  downloadArchive,
   updateStatus,
   getClaimMessage,
   deleteDocument,

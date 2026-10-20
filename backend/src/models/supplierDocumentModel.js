@@ -1014,7 +1014,24 @@ async function listDocumentIdsForOrder(orderId, db = pool) {
   return rows.map((r) => r.document_id);
 }
 
+/**
+ * Les fichiers d'une sélection de documents, pour l'archive ZIP : juste ce qu'il
+ * faut pour nommer chaque fichier, sans les lignes que charge `getDocument`.
+ */
+async function listFilesForArchive(ids, db = pool) {
+  const { rows } = await db.query(
+    `SELECT d.id, d.number, d.doc_type, d.doc_date, d.file_path, s.name AS supplier_name
+       FROM supplier_documents d
+       JOIN suppliers s ON s.id = d.supplier_id
+      WHERE d.id = ANY($1::int[])
+      ORDER BY s.name, d.doc_date DESC NULLS LAST, d.id DESC`,
+    [ids],
+  );
+  return rows;
+}
+
 module.exports = {
+  listFilesForArchive,
   replaceLines,
   listDocumentIdsForOrder,
   // `alignTariffs` n'est plus exportée : elle n'a plus qu'un appelant, juste

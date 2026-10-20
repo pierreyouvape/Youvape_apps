@@ -1407,6 +1407,18 @@ async function downloadFile(id, label) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+/** Les fichiers de plusieurs documents en un seul ZIP. */
+async function downloadArchive(ids) {
+  const res = await axios.post(`${BASE}/archive`, { ids }, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `factures-fournisseurs-${new Date().toISOString().slice(0, 10)}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 /* ═══════════════════════════════════════════════════════════
  * ONGLET 2 — Factures (les documents rangés)
  *
@@ -1504,6 +1516,25 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
     [chosen],
   );
   const chosenTotal = chosen.reduce((s, r) => s + Number(r.remaining_amount), 0);
+
+  // « Tout cocher » ne porte que sur les lignes visibles qui ont un reste à
+  // payer : les autres ont leur case désactivée et ne se règlent pas.
+  const selectable = rows.filter((r) => Math.abs(Number(r.remaining_amount) || 0) > 0.009);
+  const allChecked = selectable.length > 0 && selectable.every((r) => selected[r.id]);
+  const someChecked = selectable.some((r) => selected[r.id]);
+  const toggleAll = () => setSelected(allChecked ? {} : Object.fromEntries(selectable.map((r) => [r.id, true])));
+
+  const [zipping, setZipping] = useState(false);
+  const zipVisible = async () => {
+    setZipping(true);
+    try {
+      await downloadArchive(rows.map((r) => r.id));
+    } catch (e) {
+      let msg = e.message;
+      try { msg = JSON.parse(await e.response.data.text()).error || msg; } catch { /* corps non JSON */ }
+      window.alert(msg);
+    } finally { setZipping(false); }
+  };
 
   const settle = async () => {
     setBusy(true); setError(null);
@@ -1618,6 +1649,11 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
         />
         <Kpi label="Reste à payer" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
         <Kpi label="Différences relevées" value={totalEcarts} tone={totalEcarts > 0 ? 'red' : 'green'} />
+        <div style={{ alignSelf: 'center' }}>
+          <Btn variant="ghost" onClick={zipVisible} disabled={zipping || rows.length === 0}>
+            {zipping ? 'Préparation du ZIP…' : `⬇ Télécharger les ${rows.length} documents (ZIP)`}
+          </Btn>
+        </div>
       </div>
 
       {chosen.length > 0 && (
@@ -1683,7 +1719,12 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={{ ...th, width: 34 }}></th>
+                <th style={{ ...th, width: 34 }}>
+                  <input type="checkbox" checked={allChecked} disabled={selectable.length === 0}
+                    ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                    title={allChecked ? 'Tout décocher' : `Cocher les ${selectable.length} documents visibles à régler`}
+                    onChange={toggleAll} />
+                </th>
                 <th style={th}>Commande</th>
                 <th style={th}>N° commande</th>
                 <th style={th}>Facture</th>
