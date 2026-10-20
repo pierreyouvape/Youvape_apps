@@ -37,8 +37,12 @@ depuis le **dépôt du site**, géré par l'agence :
 Générer le zip (depuis la racine de ce dépôt) :
 
 ```bash
-zip -r youvape-loyalty.zip youvape-loyalty -x '*.DS_Store'
+zip -r youvape-loyalty.zip youvape-loyalty -x '*.DS_Store' -x '*.md'
 ```
+
+⚠️ **Ce fichier n'entre JAMAIS dans le zip** (`-x '*.md'`) : c'est une note interne (serveur,
+chemins, SSH, emplacement des clés). Il est parti dans le 1er zip du 16/10, l'agence l'a
+relevé le 20/10 — le zip a été refait sans lui.
 
 ## 3. Vérifier la version en ligne
 
