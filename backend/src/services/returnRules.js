@@ -268,6 +268,21 @@ const replacementShipping = (denomination, reason = null) => ({
 });
 
 /**
+ * Réseau de points relais d'une méthode d'expédition (ligne active de
+ * `shipping_method_carrier_map`), `null` pour un envoi sans point. Un point
+ * relais ne se reprend que sur le même réseau : choisir à la main une autre
+ * méthode (Pierre, 20/10/2026) ne doit pas envoyer un point Mondial Relay à
+ * Chronopost.
+ */
+const relayNetwork = (m) => {
+  if (!m) return null;
+  if (m.carrier_code === 'mondial_relay') return 'mondial_relay';
+  if (m.carrier_code === 'chronopost' && ['relais', '2shop'].includes(m.delivery_mode)) return 'chronopost';
+  if (m.carrier_code === 'colissimo' && m.delivery_mode === 'relais') return 'colissimo';
+  return null;
+};
+
+/**
  * Remboursement WooCommerce à rattacher à un retour : le premier de la
  * commande, fait après la création du retour, que personne n'a encore pris.
  * WooCommerce date en heure de Paris : `createdAt` doit donc être l'heure de
@@ -287,6 +302,7 @@ module.exports = {
   pointsBreakdown,
   breakdownText,
   replacementShipping,
+  relayNetwork,
   pickRefund,
   REASONS,
   LOST_REASON,

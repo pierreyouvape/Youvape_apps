@@ -33,7 +33,7 @@ const { createTicket } = require('./pickingPackingModel');
 const {
   REASONS, LOST_REASON, CARRIER_RETURN_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
-  suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
+  suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
@@ -831,8 +831,14 @@ const replacementPreview = async (id) => {
     shippingMethod: r.shipping_method,
     plan: r.shipping_method ? replacementShipping(r.shipping_method, r.reason) : null,
     relayPoint: r.relay_point,
+    methods: await replacementMethods(),
   };
 };
+
+/** Méthodes qu'on peut choisir à la main pour un renvoi : les dénominations actives. */
+const replacementMethods = async () => (await shippingMethodMapModel.listActive())
+  .map(m => ({ method: m.denomination, network: relayNetwork(m) }))
+  .sort((a, b) => a.method.localeCompare(b.method, 'fr'));
 
 /** Stock BMS d'une déclinaison choisie à la place, lu à l'instant. */
 const productStock = async (productId) => {
@@ -861,6 +867,14 @@ const pickupMetaFor = (wcOrder, methodId) => (wcOrder.meta_data || [])
     ? { key: m.key, value: { ...m.value, shipping_method: methodId } }
     : { key: m.key, value: m.value }));
 
+/**
+ * Le point relais d'origine part-il avec le renvoi ? Toujours avec la méthode
+ * prévue par la règle (comme avant le choix manuel) ; avec une méthode choisie
+ * à la main, seulement si elle est sur le même réseau de points.
+ */
+const keepRelay = (plan, planned, network, originNetwork) =>
+  plan.method === planned.method || (!!network && network === originNetwork);
+
 /** Ligne d'expédition WooCommerce d'une méthode, reprise d'une commande récente qui la porte. */
 const shippingLineFor = async (denomination) => {
   const { rows: [o] } = await pool.query(
@@ -878,7 +892,7 @@ const shippingLineFor = async (denomination) => {
  * articles à 0 €, « SAV commande N°… » en note interne, statut En cours
  * pour qu'elle suive le parcours habituel (BMS, picking, packing).
  */
-const createReplacement = async (id, items, user) => {
+const createReplacement = async (id, items, user, method = null) => {
   const r = await loadForAction(id);
   if (r.replacement_order_id) throw httpError(400, `Commande de renvoi déjà créée (#${r.replacement_order_id || '…'}).`);
   if (!r.shipping_method) throw httpError(400, 'Méthode d’expédition de la commande inconnue.');
@@ -897,7 +911,8 @@ const createReplacement = async (id, items, user) => {
   if (returned.length !== wanted.size) throw httpError(400, 'Article inconnu dans ce retour.');
   for (const [, q] of wanted) if (!Number.isInteger(q) || q < 1) throw httpError(400, 'Quantité invalide.');
 
-  // Ce qui part réellement : l'article retourné, ou une autre déclinaison du MÊME produit.
+  // Ce qui part réellement : l'article retourné, ou n'importe quel autre
+  // produit publié (Pierre, 20/10/2026 — avant : une autre déclinaison seulement).
   const lines = [];
   for (const l of returned) {
     const swapId = swaps.get(l.id);
@@ -907,11 +922,11 @@ const createReplacement = async (id, items, user) => {
     }
     const { rows: [alt] } = await pool.query(
       `SELECT id, sku, post_title AS name, wp_product_id, wp_parent_id, product_type
-         FROM products WHERE id = $1 AND product_type = 'variation' AND post_status = 'publish'
-          AND wc_deleted_at IS NULL AND wp_parent_id = $2`,
-      [swapId, l.wp_parent_id]
+         FROM products WHERE id = $1 AND product_type IN ('simple', 'variation') AND post_status = 'publish'
+          AND wc_deleted_at IS NULL AND COALESCE(sku, '') <> ''`,
+      [swapId]
     );
-    if (l.product_type !== 'variation' || !alt) throw httpError(400, `« ${l.name} » : on ne peut renvoyer qu’une autre déclinaison du même produit.`);
+    if (!alt) throw httpError(400, `« ${l.name} » : le produit choisi à la place n’est pas publié (ou n’a pas de SKU).`);
     lines.push({ ...alt, id: l.id, returnedName: l.name });
   }
 
@@ -926,7 +941,16 @@ const createReplacement = async (id, items, user) => {
       : `Stock insuffisant — ${short.join(' ; ')}.`);
   }
 
-  const plan = replacementShipping(r.shipping_method, r.reason);
+  // Méthode choisie à la main (Pierre, 20/10/2026), sinon celle prévue par la règle.
+  const planned = replacementShipping(r.shipping_method, r.reason);
+  const methods = await shippingMethodMapModel.listActive();
+  const chosenMethod = method ? methods.find(m => m.denomination === method) : null;
+  if (method && !chosenMethod) throw httpError(400, `Méthode d’expédition inconnue : « ${method} ».`);
+  const plan = chosenMethod ? { method: chosenMethod.denomination } : planned;
+  // Le point relais d'origine ne suit que sur le même réseau ; la méthode prévue
+  // par la règle le garde toujours (Chronopost Relais → 2Shop : même réseau).
+  const network = relayNetwork(methods.find(m => m.denomination === plan.method));
+  const originNetwork = r.relay_point?.network || null;
 
   // Verrou contre le double clic : 0 = création en cours.
   const { rowCount } = await pool.query(
@@ -961,7 +985,9 @@ const createReplacement = async (id, items, user) => {
         total: '0.00',
       }],
       // Sans elles, BMS n'a pas de point relais (commande 1269103, 14/10/2026).
-      meta_data: pickupMetaFor(origin, shippingLine.method_id),
+      meta_data: keepRelay(plan, planned, network, originNetwork || relayPointOf(metaOf(origin.meta_data))?.network)
+        ? pickupMetaFor(origin, shippingLine.method_id)
+        : [],
     });
   } catch (error) {
     await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
@@ -989,7 +1015,8 @@ const createReplacement = async (id, items, user) => {
     await importOrder(newId);
     // Notre base n'a le point que depuis le 07/09/2026 : sinon, celui de WooCommerce.
     const relay = r.relay_point || relayPointOf(metaOf(origin.meta_data));
-    if (relay) await orderModel.setManualRelayPoint(newId, relay);
+    if (relay && keepRelay(plan, planned, network, relay.network)) await orderModel.setManualRelayPoint(newId, relay);
+    else if (network) warnings.push(`Aucun point relais ${plan.method} repris : à saisir dans le détail de la commande #${newId}.`);
   } catch (error) {
     warnings.push(`Commande créée, mais pas encore dans notre base (${error.message}) : le point relais sera à saisir.`);
   }

@@ -13,7 +13,7 @@
 const assert = require('assert');
 const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
-  suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
+  suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
   lotRemaining, checkLot, suggestLot,
 } = require('../src/services/returnRules');
 
@@ -127,6 +127,16 @@ assert.deepStrictEqual(replacementShipping('2Shop'), { method: '2Shop' });
 assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h', 'colis_perdu'), { method: 'Chronopost Relais 24h' }, 'colis perdu : méthode d’origine');
 assert.deepStrictEqual(replacementShipping('Chronopost Domicile 24h', 'colis_perdu'), { method: 'Chronopost Domicile 24h' });
 assert.deepStrictEqual(replacementShipping('Chronopost Relais 24h', 'defaut'), { method: '2Shop' });
+
+// Réseau de points d'une méthode : le point d'origine ne suit que sur le même réseau.
+assert.strictEqual(relayNetwork({ carrier_code: 'mondial_relay', delivery_mode: '24R' }), 'mondial_relay');
+assert.strictEqual(relayNetwork({ carrier_code: 'chronopost', delivery_mode: 'relais' }), 'chronopost');
+assert.strictEqual(relayNetwork({ carrier_code: 'chronopost', delivery_mode: '2shop' }), 'chronopost', '2Shop = réseau Chronopost');
+assert.strictEqual(relayNetwork({ carrier_code: 'chronopost', delivery_mode: 'domicile' }), null);
+assert.strictEqual(relayNetwork({ carrier_code: 'colissimo', delivery_mode: 'relais' }), 'colissimo', 'Bpost Relais');
+assert.strictEqual(relayNetwork({ carrier_code: 'colissimo', delivery_mode: 'domicile' }), null);
+assert.strictEqual(relayNetwork({ carrier_code: 'laposte', delivery_mode: null }), null);
+assert.strictEqual(relayNetwork(undefined), null, 'méthode non mappée');
 
 // ── Remboursement à rattacher ───────────────────────────────────────────────
 const refunds = [

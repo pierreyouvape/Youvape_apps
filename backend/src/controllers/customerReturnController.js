@@ -33,7 +33,7 @@ module.exports = {
   productStock: handle(async (req, res) => res.json(await customerReturnModel.productStock(Number(req.params.productId)))),
   replacementPreview: handle(async (req, res) => res.json(await customerReturnModel.replacementPreview(id(req)))),
   createReplacement: handle(async (req, res) => {
-    res.json(await customerReturnModel.createReplacement(id(req), req.body?.items, req.user));
+    res.json(await customerReturnModel.createReplacement(id(req), req.body?.items, req.user, req.body?.method || null));
   }),
   setPartial: handle(async (req, res) => {
     res.json(await customerReturnModel.setPartial(id(req), Number(req.params.lineId), req.body || {}, req.user));

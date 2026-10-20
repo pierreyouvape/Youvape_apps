@@ -439,25 +439,102 @@ function ReceivedLines({ ret, canWrite, onDone, setMessage }) {
   );
 }
 
+/**
+ * Recherche libre d'un produit à renvoyer à la place (Pierre, 20/10/2026).
+ * Seuls les produits publiés avec un SKU se commandent : les autres sont grisés.
+ */
+function ProductPicker({ onPick, onCancel }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults(null); return undefined; }
+    const timer = setTimeout(() => {
+      axios.get(`${RETURNS_API}/products/search`, { params: { q } })
+        .then(({ data }) => { setResults(data.products); setError(''); })
+        .catch(e => setError(errorText(e)));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  return (
+    <div style={{ marginTop: 6, maxWidth: 380 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          autoFocus value={q} onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } }}
+          placeholder="Nom, SKU ou code-barres"
+          style={{ ...field, flex: 1, fontSize: 13, padding: '5px 8px' }}
+        />
+        <button type="button" onClick={onCancel} style={{ ...btn('ghost'), padding: '4px 10px', fontSize: 12.5 }}>✕</button>
+      </div>
+      {error && <div style={{ color: C.red, fontSize: 12.5, marginTop: 4 }}>{error}</div>}
+      {results && (
+        <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 8, marginTop: 4, maxHeight: 220, overflowY: 'auto', background: C.white }}>
+          {results.length === 0 && <div style={{ padding: 10, color: C.greyT, fontSize: 13 }}>Aucun produit.</div>}
+          {results.map(p => {
+            const ok = p.post_status === 'publish' && p.sku;
+            return (
+              <button
+                key={p.id} type="button" disabled={!ok} onClick={() => onPick(p)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 8px', textAlign: 'left',
+                  border: 'none', borderBottom: `1px solid ${C.greyB}`, background: C.white, fontFamily: 'inherit',
+                  cursor: ok ? 'pointer' : 'not-allowed', opacity: ok ? 1 : 0.5,
+                }}
+              >
+                {p.image_url
+                  ? <img src={p.image_url} alt="" style={{ width: 26, height: 26, objectFit: 'contain', borderRadius: 4 }} />
+                  : <span style={{ width: 26 }} />}
+                <span style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: C.dark }}>{p.name}</span>
+                  <span style={{ display: 'block', fontSize: 11.5, color: C.greyT }}>
+                    {p.sku || 'sans SKU'}{p.post_status !== 'publish' && ' · non publié'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const linkBtn = { border: 'none', background: 'none', padding: 0, color: C.greyT, fontSize: 12, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' };
+
 function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   const [data, setData] = useState(null);
   const [qty, setQty] = useState({});
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  // lineId → { productId, name, sku, available } : autre déclinaison choisie à la place.
+  // lineId → { productId, name, sku, available } : autre produit choisi à la place.
   const [swap, setSwap] = useState({});
   const [openAlt, setOpenAlt] = useState({});
+  // lineId → true : recherche libre d'un autre produit ouverte.
+  const [openPick, setOpenPick] = useState({});
+  // Méthode d'expédition, modifiable (Pierre, 20/10/2026) : celle prévue par la règle par défaut.
+  const [method, setMethod] = useState('');
 
-  // Ce qui part réellement pour une ligne : la déclinaison choisie, sinon l'article retourné.
+  // Ce qui part réellement pour une ligne : le produit choisi, sinon l'article retourné.
   const effective = (i) => swap[i.lineId] || i;
 
-  const chooseAlt = async (i, productId) => {
+  const chooseAlt = (i, productId) => {
     if (!productId) {
       setSwap(s => { const n = { ...s }; delete n[i.lineId]; return n; });
       return;
     }
-    const alt = i.alternatives.find(a => a.id === productId);
-    setSwap(s => ({ ...s, [i.lineId]: { productId, name: alt.name, sku: alt.sku, available: null, loading: true } }));
+    swapTo(i, i.alternatives.find(a => a.id === productId));
+  };
+
+  const swapTo = async (i, product) => {
+    const productId = product.id;
+    if (productId === i.productId) {
+      setSwap(s => { const n = { ...s }; delete n[i.lineId]; return n; });
+      return;
+    }
+    setSwap(s => ({ ...s, [i.lineId]: { productId, name: product.name, sku: product.sku, available: null, loading: true } }));
     try {
       const { data: st } = await axios.get(`${RETURNS_API}/stock/${productId}`);
       setSwap(s => (s[i.lineId]?.productId === productId ? { ...s, [i.lineId]: { ...s[i.lineId], available: st.available, loading: false } } : s));
@@ -468,9 +545,22 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
 
   useEffect(() => {
     axios.get(`${RETURNS_API}/${ret.id}/replacement`)
-      .then(({ data: d }) => { setData(d); setQty(Object.fromEntries(d.items.map(i => [i.lineId, i.qty]))); })
+      .then(({ data: d }) => {
+        setData(d);
+        setQty(Object.fromEntries(d.items.map(i => [i.lineId, i.qty])));
+        setMethod(d.plan?.method || '');
+      })
       .catch(e => setError(errorText(e)));
   }, [ret.id]);
+
+  // Même règle que le serveur (keepRelay) : la méthode prévue garde le point,
+  // une méthode choisie à la main seulement sur le même réseau.
+  const relay = (() => {
+    if (!data) return {};
+    const network = data.methods.find(m => m.method === method)?.network || null;
+    const kept = method === data.plan?.method || (!!network && network === data.relayPoint?.network);
+    return { kept, missing: !!network && !kept };
+  })();
 
   const short = (data?.items || []).filter(i => (qty[i.lineId] || 0) > 0
     && (effective(i).available == null || effective(i).available < qty[i.lineId]));
@@ -483,6 +573,7 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
     try {
       const { data: r } = await axios.post(`${RETURNS_API}/${ret.id}/replacement`, {
         items: chosen.map(i => ({ lineId: i.lineId, qty: qty[i.lineId], productId: swap[i.lineId]?.productId || null })),
+        method: method && method !== data.plan?.method ? method : null,
       });
       setMessage({
         kind: r.warnings?.length ? 'error' : 'ok',
@@ -519,7 +610,8 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                     const e = effective(i);
                     const ko = q > 0 && (e.available == null || e.available < q);
                     const outOfStock = i.available == null || i.available < i.qty;
-                    const showAlt = i.alternatives.length > 0 && (outOfStock || openAlt[i.lineId] || swap[i.lineId]);
+                    const pickedFree = swap[i.lineId] && !i.alternatives.some(a => a.id === swap[i.lineId].productId);
+                    const showAlt = i.alternatives.length > 0 && !pickedFree && (outOfStock || openAlt[i.lineId] || swap[i.lineId]);
                     return (
                       <tr key={i.lineId}>
                         <td style={td}>
@@ -538,11 +630,28 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                                 </option>
                               ))}
                             </select>
-                          ) : i.alternatives.length > 0 && (
-                            <button type="button" onClick={() => setOpenAlt(o => ({ ...o, [i.lineId]: true }))}
-                              style={{ display: 'block', marginTop: 4, border: 'none', background: 'none', padding: 0, color: C.greyT, fontSize: 12, textDecoration: 'underline', cursor: 'pointer' }}>
-                              autre déclinaison
-                            </button>
+                          ) : null}
+                          {openPick[i.lineId] ? (
+                            <ProductPicker
+                              onCancel={() => setOpenPick(o => ({ ...o, [i.lineId]: false }))}
+                              onPick={p => { setOpenPick(o => ({ ...o, [i.lineId]: false })); swapTo(i, p); }}
+                            />
+                          ) : (
+                            <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+                              {i.alternatives.length > 0 && !showAlt && (
+                                <button type="button" onClick={() => setOpenAlt(o => ({ ...o, [i.lineId]: true }))} style={linkBtn}>
+                                  autre déclinaison
+                                </button>
+                              )}
+                              <button type="button" onClick={() => setOpenPick(o => ({ ...o, [i.lineId]: true }))} style={linkBtn}>
+                                changer de produit
+                              </button>
+                              {pickedFree && (
+                                <button type="button" onClick={() => chooseAlt(i, null)} style={linkBtn}>
+                                  garder l’article d’origine
+                                </button>
+                              )}
+                            </div>
                           )}
                           {swap[i.lineId] && <div style={{ fontSize: 13, fontWeight: 700, color: RETURNS_COLOR, marginTop: 4 }}>→ {swap[i.lineId].name}</div>}
                           {data.lost && ko && !e.loading && (
@@ -565,9 +674,22 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
                 </tbody>
               </table>
               <div style={{ fontSize: 13.5 }}>
-                Expédition : <strong>{data.plan?.method || '—'}</strong>
-                {data.plan && data.plan.method !== data.shippingMethod && <span style={{ color: C.greyT }}> (au lieu de {data.shippingMethod})</span>}
-                {data.relayPoint?.id && <div style={{ fontSize: 12.5, color: C.greyT }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  Expédition :
+                  <select value={method} onChange={e => setMethod(e.target.value)} style={{ ...field, fontWeight: 700 }}>
+                    {method && !data.methods.some(m => m.method === method) && <option value={method}>{method}</option>}
+                    {data.methods.map(m => <option key={m.method} value={m.method}>{m.method}</option>)}
+                  </select>
+                  {method && method !== data.shippingMethod && <span style={{ color: C.greyT }}>(commande d’origine : {data.shippingMethod})</span>}
+                </label>
+                {relay.kept && data.relayPoint?.id && (
+                  <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 4 }}>Point relais repris : {data.relayPoint.name || data.relayPoint.id}</div>
+                )}
+                {relay.missing && (
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.amber, marginTop: 4 }}>
+                    Point relais d’origine non repris (autre réseau) : à saisir dans le détail de la commande de renvoi une fois créée.
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT }}>
                 Commande à 0 €, statut « En cours », note interne « {data.lost ? 'SAV colis perdu commande' : 'SAV commande'} N°{ret.wp_order_id} ». WooCommerce enverra son email habituel au client.
