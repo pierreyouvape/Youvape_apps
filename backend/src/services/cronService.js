@@ -708,6 +708,53 @@ const setupCompetitorMonitorCron = () => {
 };
 
 
+// ==================== SUIVI SEO (Google Search Console) ====================
+// Chaque nuit, recopie les 6 derniers jours (Google consolide ses chiffres
+// sous 2 à 3 jours) ; le lundi, envoie le point hebdomadaire par groupe de
+// requêtes. Sans clé de compte de service, rien ne tourne (et rien n'alerte).
+
+const gscService = require("./gscService");
+
+let seoSyncJob = null;
+let seoReportJob = null;
+
+const runSeoSync = async () => {
+  if (!gscService.isConfigured()) return;
+  try {
+    const r = await gscService.syncRecent();
+    console.log(`Suivi SEO: ${r.daysDone} jour(s) synchronise(s), ${r.rowsSaved} ligne(s) (${r.dateFrom} -> ${r.dateTo})`);
+  } catch (error) {
+    console.error("Erreur cron suivi SEO:", error.message);
+    sendAlert(
+      "Cron suivi SEO: echec",
+      `La synchronisation Google Search Console a echoue.\n\nErreur: ${error.message}`
+    );
+  }
+};
+
+const runSeoWeeklyReport = async () => {
+  if (!gscService.isConfigured()) return;
+  try {
+    const r = await gscService.sendWeeklyReport();
+    console.log("Rapport SEO hebdomadaire:", JSON.stringify(r));
+  } catch (error) {
+    console.error("Erreur rapport SEO hebdomadaire:", error.message);
+  }
+};
+
+const setupSeoCrons = () => {
+  if (seoSyncJob) { seoSyncJob.stop(); seoSyncJob = null; }
+  if (seoReportJob) { seoReportJob.stop(); seoReportJob = null; }
+  gscService.ensureTables()
+    .catch((error) => console.error("Erreur init tables suivi SEO:", error.message));
+  // Tous les jours a 6h20 (Europe/Paris)
+  seoSyncJob = cron.schedule("20 6 * * *", runSeoSync, { timezone: "Europe/Paris" });
+  // Le lundi a 9h, apres la synchro de la nuit
+  seoReportJob = cron.schedule("0 9 * * 1", runSeoWeeklyReport, { timezone: "Europe/Paris" });
+  console.log(`Cron suivi SEO configure: synchro 6h20, rapport lundi 9h (${gscService.isConfigured() ? "cle presente" : "cle absente, inactif"})`);
+};
+
+
 // ==================== SOUS-MARQUES (pwb-brand) ====================
 // yousync v1.4.0 renvoie sub_brand vide quand un produit porte le terme
 // pwb-brand parent ET son enfant. Le correctif plugin (v1.4.1) est efface a
@@ -1060,6 +1107,8 @@ module.exports = {
   setupStockValuationSnapshotCron,
   setupDraftStockReportCron,
   setupCompetitorMonitorCron,
+  setupSeoCrons,
+  runSeoSync,
   setupBrandMapCron,
   setupNextoreCrons,
   setupProductSuppliersLinkCron,

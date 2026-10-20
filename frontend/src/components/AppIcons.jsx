@@ -241,6 +241,16 @@ export const Veille = (props) => (
   </svg>
 );
 
+// Suivi SEO : loupe sur un graphique de positions qui monte
+export const Seo = (props) => (
+  <Base {...props}>
+    <path d="M3 19 L8 13 L11 15.5 L15.5 9.5" />
+    <path d="M13 9.5 h2.5 v2.5" />
+    <circle cx="17.5" cy="16.5" r="3" />
+    <path d="M19.7 18.7 L22 21" />
+  </Base>
+);
+
 // Inscrit sans commande : silhouette + point d'interrogation (aucun achat)
 export const Inscrits = (props) => (
   <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -483,6 +493,7 @@ export const APPS = [
   { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
+  { key: 'seo', path: '/seo', label: 'Suivi SEO', Icon: Seo, color: '#7C3AED' },
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
   { key: 'boutique-mtp',  path: '/boutique/montpellier', label: 'Boutique Montpellier', Icon: Boutique, color: '#0D9488' },

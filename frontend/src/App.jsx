@@ -52,6 +52,7 @@ import LettreSuivieApp from './pages/LettreSuivieApp';
 import MondialRelayApp from './pages/MondialRelayApp';
 import TransporteursApp from './pages/TransporteursApp';
 import VeilleApp from './pages/VeilleApp';
+import SeoApp from './pages/SeoApp';
 import InscritsApp from './pages/InscritsApp';
 import PromosApp from './pages/PromosApp';
 import SupplierInvoicesApp from './pages/SupplierInvoicesApp';
@@ -102,6 +103,7 @@ const PAGE_TITLES = {
   '/mondial-relay': 'Mondial Relay',
   '/transporteurs': 'Transporteurs',
   '/veille': 'Veille concurrentielle',
+  '/seo': 'Suivi SEO',
   '/inscrits': 'Inscrits sans commande',
   '/promos': 'Actions Promos',
   '/stories': 'Stories & Vidéos',
@@ -564,6 +566,14 @@ function App() {
             element={
               <PrivateRoute>
                 <VeilleApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/seo"
+            element={
+              <PrivateRoute>
+                <SeoApp />
               </PrivateRoute>
             }
           />

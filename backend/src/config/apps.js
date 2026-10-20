@@ -31,6 +31,7 @@ const APP_KEYS = [
   'mondial-relay',
   'transporteurs',
   'veille',
+  'seo',
   'inscrits',
   'promos',
   'boutique-mtp',
