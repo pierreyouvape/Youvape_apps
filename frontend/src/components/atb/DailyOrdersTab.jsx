@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import CountryPicker from './CountryPicker';
 import { getCountryFlag, getCountryName } from '../../utils/countries';
@@ -17,6 +17,18 @@ const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
   grisTF: '#2a2e38', blanc: '#FFFFFF',
 };
+
+/* Dégradé de la semaine : lundi = rouge plein, chaque jour se dilue un peu plus
+ * vers le blanc jusqu'au dimanche. Mélange au blanc plutôt qu'une opacité : les
+ * barres M-1 / N-1 passent derrière, une opacité les laisserait transparaître. */
+const WEEK_DILUTION_MAX = 0.7; // part de blanc le dimanche
+const WEEK_SHADES = Array.from({ length: 7 }, (_, i) => {
+  const t = (i / 6) * WEEK_DILUTION_MAX;
+  const [r, g, b] = [1, 3, 5].map((k) => parseInt(C.atb.slice(k, k + 2), 16));
+  const mix = (v) => Math.round(v + (255 - v) * t).toString(16).padStart(2, '0');
+  return `#${mix(r)}${mix(g)}${mix(b)}`;
+});
+const WEEK_LABELS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 const fmtInt = (n) => new Intl.NumberFormat('fr-FR').format(parseInt(n, 10) || 0);
 
@@ -42,6 +54,9 @@ function parseYmd(ymd) {
 
 /** '2026-09-07' → '07/09' */
 const shortDay = (ymd) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
+
+/** 'YYYY-MM-DD' → teinte de son jour de semaine (0 = lundi … 6 = dimanche). */
+const weekShade = (ymd) => WEEK_SHADES[(parseYmd(ymd).getDay() + 6) % 7];
 
 /** '2026-09-07' → 'lundi 7 septembre 2026' */
 function prettyDay(ymd) {
@@ -432,7 +447,15 @@ export default function DailyOrdersTab() {
               </p>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 2, alignItems: 'center', marginRight: 6 }} title="Teinte du bâton selon le jour de la semaine">
+              {WEEK_LABELS.map((l, i) => (
+                <span key={l} style={{
+                  fontSize: 10.5, fontWeight: 700, color: i < 4 ? C.blanc : C.grisTF,
+                  background: WEEK_SHADES[i], borderRadius: 3, padding: '3px 5px',
+                }}>{l}</span>
+              ))}
+            </div>
             {legendChip(C.m1, 'M-1', showM1, () => setShowM1((v) => !v))}
             {legendChip(C.n1, 'N-1', showN1, () => setShowN1((v) => !v))}
           </div>
@@ -467,7 +490,9 @@ export default function DailyOrdersTab() {
                 <Bar dataKey="n1Orders" name="N-1" fill={C.n1} fillOpacity={0.34}
                      stroke={C.n1} strokeOpacity={0.55} strokeWidth={1} radius={[3, 3, 0, 0]} />
               )}
-              <Bar dataKey="orders" name="Période" fill={C.atb} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="orders" name="Période" fill={C.atb} radius={[3, 3, 0, 0]}>
+                {series.map((p) => <Cell key={p.date} fill={weekShade(p.date)} />)}
+              </Bar>
               {showM1 && (
                 <Bar dataKey="m1Orders" name="M-1" fill={C.m1} fillOpacity={0.34}
                      stroke={C.m1} strokeOpacity={0.55} strokeWidth={1} radius={[3, 3, 0, 0]} />
