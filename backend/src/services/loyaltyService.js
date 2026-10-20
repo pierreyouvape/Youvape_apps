@@ -1,8 +1,6 @@
 /**
- * Points fidélité WPLoyalty, pour les Retours (avoir client, 100 pts = 1 €).
- * ⚠️ Les récompenses d'avis (rewardService) appellent ENCORE l'API WPLoyalty
- * en direct : elles basculeront ici (type `avis`) une fois le plugin testé et
- * déployé en prod — décision de Pierre, 15/10/2026.
+ * Points fidélité WPLoyalty, pour les Retours (avoir client, 100 pts = 1 €)
+ * et les récompenses d'avis (rewardService, depuis le 20/10/2026).
  *
  * Passe par le plugin `youvape-loyalty` (dossier du même nom à la racine du
  * dépôt), qui enregistre le crédit sous NOTRE type d'action (« Avoir retour

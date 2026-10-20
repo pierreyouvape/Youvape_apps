@@ -68,7 +68,7 @@ const rewardsController = {
       if (result.success) {
         res.json({
           success: true,
-          message: 'Connexion API réussie',
+          message: result.message,
           status: result.status,
           data: result.data
         });
