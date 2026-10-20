@@ -22,6 +22,20 @@ SQL
 ### Avant tout UPDATE / DELETE / INSERT / DROP
 Montrer la requête exacte à l'utilisateur et attendre sa confirmation explicite.
 
+### Livrable pour un tiers (agence, fournisseur…) : AUCUNE info interne
+Tout ce qui sort de chez nous — zip de plugin pour l'agence, fichier envoyé à un prestataire —
+ne contient **que ce qui est nécessaire pour l'installer ou le faire tourner**. Jamais :
+- noms de serveurs, IP, alias ou commandes SSH, chemins exacts, outil de déploiement ;
+- où sont stockées les clés / secrets (table, fichier, variable), même sans les valeurs ;
+- comment fonctionne l'authentification, ni d'exemple d'appel avec ses paramètres d'accès.
+
+Les notes internes (`AVANT-DE-MODIFIER.md`, README de chantier…) restent **dans ce dépôt
+seulement** : exclues de tout zip (`-x '*.md'`). **Avant d'envoyer une archive, lister son
+contenu (`unzip -l`) et relire chaque fichier.**
+Incident du 16/10/2026 : le zip `youvape-loyalty` est parti à l'agence avec sa note interne
+(SSH vers la prod en clair, chemin + Deployer, emplacement des clés WooCommerce, auth Woo).
+C'est l'agence qui l'a relevé.
+
 ### Statuts WooCommerce valides pour le CA
 
 Le shop utilise des **statuts personnalisés** en plus des statuts natifs WC.
