@@ -70,6 +70,59 @@ async function createOrder({ warehouse, supplierId, reference, source, lines, us
   }
 }
 
+/**
+ * Coût HT d'une pièce proposé pour une commande : dernier coût payé chez ce
+ * fournisseur, sinon prix de la fiche fournisseur Nextore, sinon coût de la fiche.
+ * → Map(product_id → coût) ; un produit inconnu de Nextore n'y figure pas.
+ */
+async function defaultCosts(supplierId, productIds) {
+  const { rows } = await pool.query(
+    `SELECT p.product_id,
+            COALESCE(
+              (SELECT pi.unit_cost FROM nextore_purchase_items pi
+               WHERE pi.product_id = p.product_id AND pi.supplier_id = $2
+                 AND pi.quantity_received > 0
+               ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1),
+              NULLIF(p.supplier_refs -> $2 ->> 'price', '')::numeric,
+              p.cost, 0)::float AS unit_cost
+     FROM nextore_products p
+     WHERE p.product_id = ANY($1::text[])`,
+    [productIds.map(String), String(supplierId)]
+  );
+  return new Map(rows.map((r) => [r.product_id, r.unit_cost]));
+}
+
+/**
+ * Commande saisie à la main. lines = [{ product_id, qty_ordered, unit_cost? }] en
+ * pièces ; coût vide = coût proposé (defaultCosts). Référence vide = APP-….
+ */
+async function createManualOrder({ warehouse, supplierId, reference, lines, userEmail }) {
+  const { rows: sup } = await pool.query('SELECT id FROM nextore_suppliers WHERE id = $1', [String(supplierId || '')]);
+  if (!sup.length) throw httpError(400, 'Fournisseur requis');
+  if (!Array.isArray(lines) || !lines.length) throw httpError(400, 'Ajoutez au moins un produit');
+  const ids = lines.map((l) => String(l.product_id || ''));
+  if (new Set(ids).size !== ids.length) throw httpError(400, 'Un même produit figure deux fois : gardez une seule ligne');
+  for (const l of lines) {
+    const qty = Number(l.qty_ordered);
+    if (!Number.isInteger(qty) || qty <= 0) throw httpError(400, 'Quantité invalide : un nombre entier de pièces (au moins 1) est attendu');
+    const cost = l.unit_cost === null || l.unit_cost === undefined || l.unit_cost === '' ? null : Number(l.unit_cost);
+    if (cost !== null && (!Number.isFinite(cost) || cost < 0)) throw httpError(400, 'Coût invalide');
+  }
+  const costs = await defaultCosts(supplierId, ids);
+  const unknown = ids.filter((id) => !costs.has(id));
+  if (unknown.length) throw httpError(400, `Produits Nextore inconnus : ${unknown.join(', ')}`);
+
+  return createOrder({
+    warehouse, supplierId, source: 'manuelle', userEmail,
+    reference: String(reference || '').trim() || makeReference(warehouse, supplierId),
+    lines: lines.map((l) => ({
+      product_id: l.product_id,
+      quantity: l.qty_ordered,
+      unit_cost: l.unit_cost === null || l.unit_cost === undefined || l.unit_cost === '' ? costs.get(String(l.product_id)) : Number(l.unit_cost),
+    })),
+  });
+}
+
 /** Une commande de CETTE boutique, sinon 404 (le droit est vérifié par boutique). */
 async function getOrderRow(orderId, warehouseId, db = pool, lock = false) {
   const { rows } = await db.query(
@@ -798,6 +851,8 @@ module.exports = {
   MOTIFS,
   makeReference,
   createOrder,
+  defaultCosts,
+  createManualOrder,
   addItems,
   listOrders,
   getOrder,

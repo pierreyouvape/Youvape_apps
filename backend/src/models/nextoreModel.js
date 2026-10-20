@@ -406,20 +406,7 @@ async function createPurchase(warehouse, supplierId, lines, userEmail) {
   const { rows: sup } = await pool.query('SELECT id FROM nextore_suppliers WHERE id = $1', [String(supplierId)]);
   if (!sup.length) throw Object.assign(new Error(`Fournisseur Nextore inconnu : ${supplierId}`), { status: 400 });
 
-  const { rows } = await pool.query(
-    `SELECT p.product_id,
-            COALESCE(
-              (SELECT pi.unit_cost FROM nextore_purchase_items pi
-               WHERE pi.product_id = p.product_id AND pi.supplier_id = $2
-                 AND pi.quantity_received > 0
-               ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1),
-              NULLIF(p.supplier_refs -> $2 ->> 'price', '')::numeric,
-              p.cost, 0)::float AS unit_cost
-     FROM nextore_products p
-     WHERE p.product_id = ANY($1::text[])`,
-    [ids, String(supplierId)]
-  );
-  const costById = new Map(rows.map((r) => [r.product_id, r.unit_cost]));
+  const costById = await boutiqueOrderModel.defaultCosts(supplierId, ids);
   const unknown = ids.filter((id) => !costById.has(id));
   if (unknown.length) throw Object.assign(new Error(`Produits Nextore inconnus : ${unknown.join(', ')}`), { status: 400 });
 

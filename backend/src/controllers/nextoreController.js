@@ -196,6 +196,19 @@ const deleteReceptionOrder = receptionHandler('delete', async (wh, req) => {
   console.log(`Boutique commande ${req.params.id} (${wh.code}) supprimée par ${req.user?.email}`);
   return { ok: true };
 });
+const postReceptionOrder = receptionHandler('create', async (wh, req) => {
+  const b = req.body || {};
+  const result = await boutiqueOrderModel.createManualOrder({
+    warehouse: wh, supplierId: b.supplier_id, reference: b.reference, lines: b.lines, userEmail: req.user?.email,
+  });
+  console.log(`Boutique commande manuelle ${result.reference} (#${result.orderId}) créée par ${req.user?.email} (${result.lines} lignes)`);
+  return result;
+});
+const getReceptionCosts = receptionHandler('costs', async (wh, req) => {
+  const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!req.query.supplier_id || !ids.length) return { costs: {} };
+  return { costs: Object.fromEntries(await boutiqueOrderModel.defaultCosts(req.query.supplier_id, ids)) };
+});
 const putReceptionOrder = receptionHandler('update', (wh, req) =>
   boutiqueOrderModel.updateOrder(req.params.id, wh.id, { reference: req.body?.reference, lines: req.body?.lines }));
 const postReceptionSession = receptionHandler('session', (wh, req) =>
@@ -395,6 +408,8 @@ module.exports = {
   getReceptionOrder,
   deleteReceptionOrder,
   putReceptionOrder,
+  postReceptionOrder,
+  getReceptionCosts,
   postReceptionSession,
   putReceptionCount,
   postReceptionLine,

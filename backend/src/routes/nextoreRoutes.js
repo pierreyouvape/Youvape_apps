@@ -53,6 +53,8 @@ router.post('/:shop/import/purchase', boutiquePerm('write'), nextoreController.p
 
 // Réception des commandes boutique → achat REÇU dans Nextore à la validation
 router.get('/:shop/reception/orders', boutiquePerm('read'), nextoreController.getReceptionOrders);
+router.post('/:shop/reception/orders', boutiquePerm('write'), nextoreController.postReceptionOrder);
+router.get('/:shop/reception/costs', boutiquePerm('read'), nextoreController.getReceptionCosts);
 router.get('/:shop/reception/orders/:id', boutiquePerm('read'), nextoreController.getReceptionOrder);
 router.put('/:shop/reception/orders/:id', boutiquePerm('write'), nextoreController.putReceptionOrder);
 router.delete('/:shop/reception/orders/:id', boutiquePerm('write'), nextoreController.deleteReceptionOrder);

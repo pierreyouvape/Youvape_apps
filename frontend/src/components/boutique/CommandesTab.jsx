@@ -46,7 +46,7 @@ function Modal({ title, children, footer, onClose, width = 560 }) {
 }
 
 /* ─── ÉCRAN 1 — LISTE ─────────────────────────────────────── */
-function OrdersList({ shop, auth, onOpen, onEdit }) {
+function OrdersList({ shop, auth, onOpen, onEdit, onCreate }) {
   const [orders, setOrders] = useState([]);
   const [showClosed, setShowClosed] = useState(false);
   const [error, setError] = useState('');
@@ -77,10 +77,11 @@ function OrdersList({ shop, auth, onOpen, onEdit }) {
         <label style={{ marginLeft: 'auto', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> Afficher les commandes closes
         </label>
+        <button className="btn btn-primary" onClick={onCreate}>+ Nouvelle commande</button>
       </div>
       {error && <div style={{ color: '#dc2626' }}>{error}</div>}
       {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#6b7280' }}>Chargement…</div> : shown.length === 0 ? (
-        <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucune commande en cours. Elles se créent depuis Besoins ou Import commande.</div>
+        <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucune commande en cours. Elles se créent ici (+ Nouvelle commande), depuis Besoins ou Import commande.</div>
       ) : (
         <table className="purchases-table">
           <thead>
@@ -93,7 +94,7 @@ function OrdersList({ shop, auth, onOpen, onEdit }) {
           <tbody>
             {shown.map((o, i) => (
               <tr key={o.id} onClick={() => onOpen(o.id)} style={{ cursor: 'pointer', background: i % 2 ? '#f8fafc' : '#fff' }}>
-                <td><strong>{o.reference}</strong><div style={{ fontSize: 11, color: '#6b7280' }}>{o.source === 'import' ? 'import' : 'besoins'}{o.created_by_name ? ` · ${o.created_by_name}` : ''}</div></td>
+                <td><strong>{o.reference}</strong><div style={{ fontSize: 11, color: '#6b7280' }}>{o.source}{o.created_by_name ? ` · ${o.created_by_name}` : ''}</div></td>
                 <td>{o.supplier_name || '-'}</td>
                 <td>{fmtDate(o.created_at)}</td>
                 <td>
@@ -633,6 +634,123 @@ function EditOrderScreen({ shop, auth, orderId, onBack }) {
   );
 }
 
+/* ─── ÉCRAN 4 — NOUVELLE COMMANDE (saisie manuelle) ──────── */
+const fmtEur = (v) => `${v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(NBSP, ' ')} €`;
+
+function CreateOrderScreen({ shop, auth, onBack }) {
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierId, setSupplierId] = useState('');
+  const [reference, setReference] = useState('');
+  // { product_id, name, code, qty_ordered, unit_cost, edited } — edited : prix saisi, gardé au changement de fournisseur
+  const [lines, setLines] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const base = `${API_URL}/nextore/${shop.slug}`;
+
+  useEffect(() => {
+    axios.get(`${base}/suppliers`, auth)
+      .then((res) => setSuppliers(res.data.suppliers || []))
+      .catch((e) => setError(e.response?.data?.error || e.message));
+  }, [base]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prix proposé (dernier coût payé chez ce fournisseur…) pour les lignes non retouchées
+  const fillCosts = async (supId, ls) => {
+    const ids = ls.filter((l) => !l.edited).map((l) => l.product_id);
+    if (!supId || !ids.length) return;
+    try {
+      const res = await axios.get(`${base}/reception/costs?supplier_id=${encodeURIComponent(supId)}&ids=${encodeURIComponent(ids.join(','))}`, auth);
+      const costs = res.data.costs || {};
+      setLines((cur) => cur.map((l) => (l.edited || costs[l.product_id] === undefined ? l : { ...l, unit_cost: costs[l.product_id] })));
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+  };
+
+  const changeSupplier = (id) => { setSupplierId(id); fillCosts(id, lines); };
+  const setLine = (i, patch) => setLines((ls) => ls.map((l, j) => (j !== i ? l : { ...l, ...patch })));
+  const addProduct = (p) => {
+    setAdding(false);
+    if (lines.some((l) => l.product_id === p.product_id)) { setError(`${p.name} est déjà sur la commande`); return; }
+    setError('');
+    const line = { product_id: p.product_id, name: p.name, code: p.sku, qty_ordered: 1, unit_cost: null, edited: false };
+    setLines((ls) => [...ls, line]);
+    fillCosts(supplierId, [line]);
+  };
+
+  const create = async () => {
+    setBusy(true); setError('');
+    try {
+      await axios.post(`${base}/reception/orders`, {
+        supplier_id: supplierId,
+        reference,
+        lines: lines.map((l) => ({ product_id: l.product_id, qty_ordered: parseInt(l.qty_ordered, 10) || 0, unit_cost: l.unit_cost })),
+      }, auth);
+      onBack();
+    } catch (e) { setError(e.response?.data?.error || e.message); } finally { setBusy(false); }
+  };
+
+  const total = lines.reduce((a, l) => a + (parseInt(l.qty_ordered, 10) || 0) * (parseFloat(l.unit_cost) || 0), 0);
+
+  return (
+    <div className="purchases-card">
+      <div className="filters-bar" style={{ alignItems: 'flex-end' }}>
+        <button className="btn btn-secondary btn-sm" onClick={onBack}>‹ Commandes</button>
+        <div className="filter-group">
+          <label>Fournisseur</label>
+          <select value={supplierId} onChange={(e) => changeSupplier(e.target.value)} style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, minWidth: 220 }}>
+            <option value="">Choisir…</option>
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.company}</option>)}
+          </select>
+        </div>
+        <div className="filter-group">
+          <label>Référence</label>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Vide : générée (APP-…)"
+            style={{ padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, width: 260 }} />
+        </div>
+        <button className="btn btn-secondary" style={{ marginLeft: 'auto' }} onClick={() => setAdding(true)}>+ Ajouter un produit</button>
+      </div>
+      {error && <div style={{ margin: '10px 0', color: '#dc2626', fontWeight: 600 }}>{error}</div>}
+      {lines.length === 0 ? (
+        <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucun produit. Ajoutez-en avec « + Ajouter un produit ».</div>
+      ) : (
+        <table className="purchases-table" style={{ marginTop: 12 }}>
+          <thead>
+            <tr>
+              <th>Produit</th><th className="text-right">Pièces commandées</th><th className="text-right">Prix pièce HT</th><th className="text-right">Total HT</th><th />
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={l.product_id} style={{ background: i % 2 ? '#f8fafc' : '#fff' }}>
+                <td><div style={{ fontWeight: 500 }}>{l.name}</div><small style={{ color: '#666' }}>{l.code || ''}</small></td>
+                <td className="text-right">
+                  <input type="number" className="qty-input" min="1" value={l.qty_ordered} onChange={(e) => setLine(i, { qty_ordered: e.target.value })} />
+                </td>
+                <td className="text-right">
+                  <input type="number" className="qty-input" min="0" step="0.0001" style={{ width: 90 }} value={l.unit_cost ?? ''}
+                    placeholder="auto" title="Proposé : dernier coût payé chez ce fournisseur, sinon prix de la fiche"
+                    onChange={(e) => setLine(i, e.target.value === '' ? { unit_cost: null, edited: false } : { unit_cost: parseFloat(e.target.value), edited: true })} />
+                </td>
+                <td className="text-right">{l.unit_cost != null ? fmtEur((parseInt(l.qty_ordered, 10) || 0) * l.unit_cost) : '-'}</td>
+                <td className="text-right">
+                  <button className="btn btn-secondary btn-sm" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Retirer</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <strong>{fmtEur(total)} HT</strong>
+        <button className="btn btn-secondary" onClick={onBack} disabled={busy}>Annuler</button>
+        <button className="btn btn-primary" onClick={create}
+          disabled={busy || !supplierId || !lines.length || lines.some((l) => !((parseInt(l.qty_ordered, 10) || 0) > 0))}
+          title={!supplierId ? 'Choisissez un fournisseur' : ''}>{busy ? 'Création…' : 'Créer la commande'}</button>
+      </div>
+      {adding && <AddArticleModal shop={shop} auth={auth} onClose={() => setAdding(false)} onPick={addProduct} />}
+    </div>
+  );
+}
+
 /** Suite du message de scan : ce que le carton confirmé est devenu au site. */
 function siteNote(site) {
   if (!site) return '';
@@ -701,9 +819,11 @@ function AddArticleModal({ shop, auth, onClose, onPick }) {
 /* ─── COMPOSANT ─────────────────────────────────────────── */
 export default function CommandesTab({ shop, token }) {
   const auth = { headers: { Authorization: `Bearer ${token}` } };
-  const [view, setView] = useState({ mode: 'list' }); // list | order | edit
+  const [view, setView] = useState({ mode: 'list' }); // list | order | edit | create
   const back = () => setView({ mode: 'list' });
   if (view.mode === 'order') return <OrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
   if (view.mode === 'edit') return <EditOrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
-  return <OrdersList shop={shop} auth={auth} onOpen={(id) => setView({ mode: 'order', id })} onEdit={(id) => setView({ mode: 'edit', id })} />;
+  if (view.mode === 'create') return <CreateOrderScreen shop={shop} auth={auth} onBack={back} />;
+  return <OrdersList shop={shop} auth={auth} onOpen={(id) => setView({ mode: 'order', id })} onEdit={(id) => setView({ mode: 'edit', id })}
+    onCreate={() => setView({ mode: 'create' })} />;
 }
