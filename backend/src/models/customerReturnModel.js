@@ -31,7 +31,7 @@ const { WAREHOUSE_BY_ID } = require('../config/nextore');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const { createTicket } = require('./pickingPackingModel');
 const {
-  REASONS, LOST_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  REASONS, LOST_REASON, CARRIER_RETURN_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
   suggestPoints, replacementShipping, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
@@ -198,11 +198,52 @@ const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, no
     client.release();
   }
 
-  await noteTicket(ticketId, user, [
+  const lines = [
     `<strong>Retour n°${returnId} créé</strong> — ${escapeHtml(REASONS[reason])}${returnRequired === false ? ' (sans retour du produit)' : ''}`,
     ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
-  ]);
+  ];
+  // Colis ramené par erreur par le transporteur : créé depuis la commande, sans
+  // ticket. Comme un colis non réclamé, il en trouve un — ou en ouvre un — pour
+  // que ses notes (création, renvoi) y soient écrites (Pierre, 20/10/2026).
+  if (!ticketId && reason === CARRIER_RETURN_REASON) {
+    const { warnings } = await attachOrderTicket(returnId, order, lines, user);
+    return { ...(await get(returnId)), warnings };
+  }
+  await noteTicket(ticketId, user, lines);
   return get(returnId);
+};
+
+/**
+ * Rattache un retour créé sans ticket au ticket de sa commande — le plus
+ * récent, non terminé d'abord, repassé « Ouvert » quel que soit son statut —
+ * et y écrit `note` en note interne. Sans ticket, en crée un « Nouveau »
+ * (note privée, aucun mail au client).
+ */
+const attachOrderTicket = async (returnId, order, note, user) => {
+  const { rows: [existing] } = await pool.query(
+    `SELECT id FROM sav_tickets
+      WHERE order_id = $1 AND merged_into_id IS NULL AND NOT is_spam
+      ORDER BY (sav_status <> 'terminé') DESC, created_at DESC
+      LIMIT 1`,
+    [String(order.wp_order_id)]
+  );
+  const warnings = [];
+  let ticketId = existing?.id || null;
+  try {
+    if (ticketId) {
+      await noteTicket(ticketId, user, note);
+      await savModel.updateStatus(ticketId, 'ouvert');
+    } else {
+      // Sujet lu par le client dans l'objet de nos réponses (Pierre, 19/10/2026).
+      ticketId = (await createTicket(order, `Votre commande YouVape N°${order.wp_order_id}`,
+        note.map(l => `<p>${l}</p>`).join(''), user.name || user.email)).id;
+    }
+    await pool.query('UPDATE customer_returns SET ticket_id = $2 WHERE id = $1', [returnId, ticketId]);
+  } catch (error) {
+    console.error(`[Retours] Ticket du retour n°${returnId} (commande ${order.wp_order_id}) :`, error.message);
+    warnings.push(`Retour créé, mais le ticket n’a pas pu être ${ticketId ? 'mis à jour' : 'créé'} (${error.message}).`);
+  }
+  return { ticketCreated: !existing, warnings };
 };
 
 // ── Colis perdu (16/10/2026) ────────────────────────────────────────────────
@@ -297,35 +338,13 @@ const declareUnclaimed = async (wpOrderId, user) => {
     wpOrderId, ticketId: null, reason: 'non_recupere', returnRequired: true, outcome: 'points', selection,
   }, user);
 
-  const { rows: [existing] } = await pool.query(
-    `SELECT id FROM sav_tickets
-      WHERE order_id = $1 AND merged_into_id IS NULL AND NOT is_spam
-      ORDER BY (sav_status <> 'terminé') DESC, created_at DESC
-      LIMIT 1`,
-    [String(wpOrderId)]
-  );
   const note = [
     '<strong>Colis revenu chez nous, non réclamé par le client.</strong>',
     `Retour n°${ret.id} créé, réception à valider.`,
     ...ret.lines.filter(l => !l.bundle_line_id).map(l => `${l.qty} × ${escapeHtml(l.name)}`),
   ];
-  const warnings = [];
-  let ticketId = existing?.id || null;
-  try {
-    if (ticketId) {
-      await noteTicket(ticketId, user, note);
-      await savModel.updateStatus(ticketId, 'ouvert');
-    } else {
-      // Sujet lu par le client dans l'objet de nos réponses (Pierre, 19/10/2026).
-      ticketId = (await createTicket(order, `Votre commande YouVape N°${wpOrderId}`,
-        note.map(l => `<p>${l}</p>`).join(''), user.name || user.email)).id;
-    }
-    await pool.query('UPDATE customer_returns SET ticket_id = $2 WHERE id = $1', [ret.id, ticketId]);
-  } catch (error) {
-    console.error(`[Retours] Ticket du colis non réclamé (commande ${wpOrderId}) :`, error.message);
-    warnings.push(`Retour créé, mais le ticket n’a pas pu être ${ticketId ? 'mis à jour' : 'créé'} (${error.message}).`);
-  }
-  return { ...(await get(ret.id)), ticketCreated: !existing, warnings };
+  const { ticketCreated, warnings } = await attachOrderTicket(ret.id, order, note, user);
+  return { ...(await get(ret.id)), ticketCreated, warnings };
 };
 
 // ── Modification (avant validation) ─────────────────────────────────────────

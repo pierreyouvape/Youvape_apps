@@ -109,7 +109,11 @@ export default function OrderReturnsBox({ wpOrderId, ticketId, concernedProducts
           ticketId={ticketId}
           concernedProducts={concernedProducts}
           onClose={() => setOpen(false)}
-          onCreated={() => { setOpen(false); load(); }}
+          onCreated={(data) => {
+            setOpen(false);
+            if (data?.warnings?.length) window.alert(data.warnings.join('\n'));
+            load();
+          }}
         />
       )}
       {lostOpen && (
