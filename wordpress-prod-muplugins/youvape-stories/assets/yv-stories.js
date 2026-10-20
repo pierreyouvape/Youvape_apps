@@ -126,14 +126,22 @@
     });
     var prev = el('button', { class: 'yvs-cards__nav yvs-cards__nav--prev', type: 'button', 'aria-label': 'Précédent' });
     var next = el('button', { class: 'yvs-cards__nav yvs-cards__nav--next', type: 'button', 'aria-label': 'Suivant' });
+    return el('div', { class: 'yvs-cards' }, [prev, track, next]);
+  }
+
+  /** Flèches du carrousel (HTML rendu par ce script OU par le serveur). */
+  function wireCards(container) {
+    var track = container.querySelector('.yvs-cards__track');
+    if (!track) return;
     var step = function (dir) {
       var card = track.querySelector('.yvs-card');
       var w = card ? card.getBoundingClientRect().width + 12 : 200;
       track.scrollBy({ left: dir * w * 2, behavior: 'smooth' });
     };
-    prev.addEventListener('click', function () { step(-1); });
-    next.addEventListener('click', function () { step(1); });
-    return el('div', { class: 'yvs-cards' }, [prev, track, next]);
+    var prev = container.querySelector('.yvs-cards__nav--prev');
+    var next = container.querySelector('.yvs-cards__nav--next');
+    if (prev) prev.addEventListener('click', function () { step(-1); });
+    if (next) next.addEventListener('click', function () { step(1); });
   }
 
   /** Monte un widget dans `container` à partir de son JSON déplié. */
@@ -149,6 +157,7 @@
   function bind(container, widget, options) {
     if (container.__yvsBound) return;
     container.__yvsBound = true;
+    wireCards(container);
     container.addEventListener('click', function (e) {
       var item = e.target.closest('[data-yvs-index]');
       if (!item || !container.contains(item)) return;
@@ -477,4 +486,28 @@
   }
 
   window.YVStories = { configure: configure, mount: mount, bind: bind, open: open, close: closePlayer, openFromHash: openFromHash, expand: expand };
+
+  /*
+   * Sur le site, le mu-plugin WordPress rend les widgets dans la page
+   * (<div data-yvs-widget> + leur JSON dans <script class="yvs-data">) et
+   * pose window.YVS_CONFIG ({ collectUrl, siteUrl }) : on branche tout ici.
+   */
+  function autoInit() {
+    var cfg = window.YVS_CONFIG;
+    if (!cfg) return;
+    configure(cfg);
+    var widgets = [];
+    Array.prototype.forEach.call(document.querySelectorAll('[data-yvs-widget]'), function (node) {
+      var data = node.querySelector('script.yvs-data');
+      if (!data) return;
+      try {
+        var w = JSON.parse(data.textContent);
+        bind(node, w, { siteUrl: cfg.siteUrl });
+        widgets.push(w);
+      } catch (e) { /* widget illisible : on n'empêche pas les autres */ }
+    });
+    openFromHash(widgets, { siteUrl: cfg.siteUrl });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', autoInit);
+  else autoInit();
 }());

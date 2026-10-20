@@ -12,8 +12,11 @@ envoyées, compressées et publiées depuis l'app **/stories** de Youvape_apps
 | `assets/yv-stories.css` | Styles, couleurs réglables par variables CSS (`--yvs-accent`, `--yvs-ring`…) |
 | `preview/index.html` | Page d'aperçu en ligne : https://videos.youvape.fr/stories/preview/index.html |
 
-Le mu-plugin PHP (rendu serveur des widgets, page `/videos/<slug>`, sitemap vidéo)
-reste à écrire, en partant du thème enfant `you-vape-theme-child`.
+**Intégration au site (20/10/2026)** : mu-plugin `youvape-stories.php` dans le dépôt du
+site (GitLab `git.tilvalhall.fr:TVL/youvape-v2`, branche `feature-youvape-stories`),
+qui embarque une COPIE de `assets/` : toute modification du lecteur ici doit y être
+reportée (le site déploie sa propre copie). Restent à faire : pages `/videos/<slug>`,
+sitemap vidéo, attribution des commandes.
 
 ## Données publiées (contrat)
 
