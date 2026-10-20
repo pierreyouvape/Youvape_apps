@@ -24,8 +24,22 @@ function attributeValues(productAttributes) {
 
   return Object.entries(attrs)
     .filter(([key]) => key.startsWith('attribute_'))
-    .map(([, value]) => String(value).replace(/-/g, ' ').trim())
+    .map(([, value]) => decodeSlug(String(value))
+      .replace(/-/g, ' ')
+      .replace(/ω/g, 'Ω')                          // le slug a mis Ω en minuscule
+      .replace(/(\d) (\d+) (Ω|ohm)/gi, '$1.$2 $3') // « 0 30 Ω » → « 0.30 Ω »
+      .trim())
     .filter(Boolean);
+}
+
+// Un slug WooCommerce encode ses caractères non-ASCII pour les URL
+// (« Ω » → « %cf%89 », mis en minuscule) : on le décode avant affichage.
+function decodeSlug(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function buildVariationLabel(postTitle, parentTitle, productAttributes) {
