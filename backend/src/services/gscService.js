@@ -13,10 +13,17 @@
  *   - GSC_SITE_URL (facultatif) : la propriété, ex. « sc-domain:youvape.fr ».
  *     Absente, on prend la propriété youvape.fr visible par le compte.
  *
- * Deux tables de données :
- *   - gsc_search_daily  : jour × requête × page × pays. Google y retire les
- *     requêtes « anonymisées » (trop rares) : les totaux y sont donc un peu
- *     sous-estimés, comme dans l'export de l'interface.
+ * Trois tables de données :
+ *   - gsc_query_daily   : jour × requête × pays. C'est elle qui donne les
+ *     positions et impressions PAR REQUÊTE, comme l'interface.
+ *   - gsc_search_daily  : jour × requête × page × pays, pour savoir QUELLE
+ *     page se classe. ⚠️ Ne jamais y lire la position d'une requête :
+ *     Google y compte une impression par page affichée (deux pages sur la même
+ *     requête = deux impressions, la seconde moins bien placée), d'où des
+ *     impressions gonflées et une position plus mauvaise que dans l'interface
+ *     (constaté le 20/10/2026 : 1 597 impressions en position 11,3 contre
+ *     1 325 en 8,6 pour les requêtes « jnr » du 13/10 ; les clics, eux, sont égaux).
+ *   Dans les deux, Google retire les requêtes « anonymisées » (trop rares).
  *   - gsc_search_totals : jour × pays × appareil, SANS dimension requête,
  *     donc les vrais totaux du site.
  *
@@ -190,6 +197,16 @@ const ensureTables = async () => {
       PRIMARY KEY (date, query, page, country)
     );
     CREATE INDEX IF NOT EXISTS gsc_search_daily_query_idx ON gsc_search_daily (query, date);
+    CREATE TABLE IF NOT EXISTS gsc_query_daily (
+      date        date         NOT NULL,
+      query       text         NOT NULL,
+      country     varchar(3)   NOT NULL,
+      clicks      integer      NOT NULL,
+      impressions integer      NOT NULL,
+      position    numeric(8,2) NOT NULL,
+      PRIMARY KEY (date, query, country)
+    );
+    CREATE INDEX IF NOT EXISTS gsc_query_daily_query_idx ON gsc_query_daily (query, date);
     CREATE TABLE IF NOT EXISTS gsc_search_totals (
       date        date         NOT NULL,
       country     varchar(3)   NOT NULL,
@@ -238,12 +255,30 @@ const addDays = (dateStr, n) => {
   return ymd(new Date(y, m - 1, d + n));
 };
 
-const saveDay = async (date, detailRows, totalRows) => {
+const saveDay = async (date, detailRows, queryRows, totalRows) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await client.query('DELETE FROM gsc_search_daily WHERE date = $1', [date]);
     await client.query('DELETE FROM gsc_search_totals WHERE date = $1', [date]);
+    await client.query('DELETE FROM gsc_query_daily WHERE date = $1', [date]);
+    for (let i = 0; i < queryRows.length; i += INSERT_CHUNK) {
+      const chunk = queryRows.slice(i, i + INSERT_CHUNK);
+      await client.query(
+        `INSERT INTO gsc_query_daily (date, query, country, clicks, impressions, position)
+         SELECT $1::date, q, c, cl, im, po
+         FROM unnest($2::text[], $3::text[], $4::int[], $5::int[], $6::numeric[]) AS t(q, c, cl, im, po)
+         ON CONFLICT DO NOTHING`,
+        [
+          date,
+          chunk.map((r) => r.keys[0]),
+          chunk.map((r) => r.keys[1]),
+          chunk.map((r) => Math.round(r.clicks)),
+          chunk.map((r) => Math.round(r.impressions)),
+          chunk.map((r) => Number(r.position.toFixed(2))),
+        ]
+      );
+    }
     for (let i = 0; i < detailRows.length; i += INSERT_CHUNK) {
       const chunk = detailRows.slice(i, i + INSERT_CHUNK);
       await client.query(
@@ -305,11 +340,12 @@ const syncRange = async (dateFrom, dateTo) => {
   try {
     for (let date = dateFrom; date <= dateTo; date = addDays(date, 1)) {
       const detail = await fetchDay(date, ['query', 'page', 'country']);
+      const byQuery = await fetchDay(date, ['query', 'country']);
       const totals = await fetchDay(date, ['country', 'device']);
       // Jour pas encore consolidé par Google (dataState final) : on n'écrase
       // pas ce qu'on a déjà, il sera repris au passage suivant.
-      if (detail.length || totals.length) {
-        await saveDay(date, detail, totals);
+      if (detail.length || byQuery.length || totals.length) {
+        await saveDay(date, detail, byQuery, totals);
         rowsSaved += detail.length;
       }
       daysDone += 1;
@@ -333,7 +369,7 @@ const syncRange = async (dateFrom, dateTo) => {
 // Passage quotidien : Google consolide ses chiffres sous 2 à 3 jours, on
 // reprend donc les 6 derniers jours. Base vide : on part sur 90 jours.
 const syncRecent = async () => {
-  const { rows } = await pool.query('SELECT MAX(date) AS max FROM gsc_search_daily');
+  const { rows } = await pool.query('SELECT MAX(date) AS max FROM gsc_query_daily');
   const today = ymd(new Date());
   const from = rows[0].max ? addDays(today, -6) : addDays(today, -90);
   return syncRange(from, addDays(today, -1));
@@ -359,7 +395,7 @@ const countryClause = (country, alias = 'd', idx = 3) => {
 const getStatus = async () => {
   const configured = isConfigured();
   const [range, runs] = await Promise.all([
-    pool.query('SELECT MIN(date) AS min, MAX(date) AS max, COUNT(*)::int AS rows FROM gsc_search_daily'),
+    pool.query('SELECT MIN(date) AS min, MAX(date) AS max, COUNT(*)::int AS rows FROM gsc_query_daily'),
     pool.query('SELECT * FROM gsc_sync_runs ORDER BY id DESC LIMIT 5'),
   ]);
   let site = process.env.GSC_SITE_URL || resolvedSiteUrl || null;
@@ -392,7 +428,7 @@ const getStatus = async () => {
  */
 const getGroupsSeries = async ({ weeks = 12, country = 'all' } = {}) => {
   const nWeeks = Math.min(Math.max(parseInt(weeks, 10) || 12, 2), 70);
-  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_search_daily');
+  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_query_daily');
   const maxDate = maxRes.rows[0].max;
   if (!maxDate) return { dataTo: null, groups: [] };
   const toStr = ymd(new Date(maxDate));
@@ -400,14 +436,14 @@ const getGroupsSeries = async ({ weeks = 12, country = 'all' } = {}) => {
   const cc = countryClause(country, 'd', 3);
   const { rows } = await pool.query(
     `WITH g AS (SELECT slug, pattern FROM gsc_query_groups WHERE active),
-     q AS (SELECT DISTINCT query FROM gsc_search_daily WHERE date BETWEEN $1 AND $2),
+     q AS (SELECT DISTINCT query FROM gsc_query_daily WHERE date BETWEEN $1 AND $2),
      m AS (SELECT g.slug, q.query FROM q JOIN g ON q.query ~* g.pattern)
      SELECT m.slug,
             (($2::date - d.date) / 7) AS k,
             SUM(d.clicks)::int AS clicks,
             SUM(d.impressions)::int AS impressions,
             ROUND(SUM(d.position * d.impressions) / NULLIF(SUM(d.impressions), 0), 2) AS position
-     FROM m JOIN gsc_search_daily d ON d.query = m.query
+     FROM m JOIN gsc_query_daily d ON d.query = m.query
      WHERE d.date BETWEEN $1 AND $2${cc.sql}
      GROUP BY m.slug, k`,
     [fromStr, toStr, ...cc.params]
@@ -440,7 +476,7 @@ const getGroupDetail = async (slug, { days = 28, country = 'all', limit = 200 } 
   const group = groupRes.rows[0];
   if (!group) return null;
   const nDays = Math.min(Math.max(parseInt(days, 10) || 28, 7), 480);
-  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_search_daily');
+  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_query_daily');
   if (!maxRes.rows[0].max) return { group, queries: [], pages: [] };
   const to = ymd(new Date(maxRes.rows[0].max));
   const from = addDays(to, -nDays + 1);
@@ -449,7 +485,9 @@ const getGroupDetail = async (slug, { days = 28, country = 'all', limit = 200 } 
   const lim = Math.min(parseInt(limit, 10) || 200, 1000);
   const params = [prevFrom, from, to, group.pattern, ...cc.params];
 
-  const agg = (dim) => pool.query(
+  // Requêtes : table par requête (chiffres de l'interface). Pages : table par
+  // page, où une impression compte pour chaque page affichée.
+  const agg = (dim, table) => pool.query(
     `SELECT d.${dim} AS key,
             SUM(d.clicks) FILTER (WHERE d.date >= $2)::int AS clicks,
             SUM(d.impressions) FILTER (WHERE d.date >= $2)::int AS impressions,
@@ -459,7 +497,7 @@ const getGroupDetail = async (slug, { days = 28, country = 'all', limit = 200 } 
             SUM(d.impressions) FILTER (WHERE d.date < $2)::int AS prev_impressions,
             ROUND(SUM(d.position * d.impressions) FILTER (WHERE d.date < $2)
                   / NULLIF(SUM(d.impressions) FILTER (WHERE d.date < $2), 0), 2) AS prev_position
-     FROM gsc_search_daily d
+     FROM ${table} d
      WHERE d.date BETWEEN $1 AND $3 AND d.query ~* $4${cc.sql}
      GROUP BY d.${dim}
      HAVING SUM(d.impressions) FILTER (WHERE d.date >= $2) > 0
@@ -467,7 +505,7 @@ const getGroupDetail = async (slug, { days = 28, country = 'all', limit = 200 } 
      LIMIT ${lim}`,
     params
   );
-  const [queries, pages] = await Promise.all([agg('query'), agg('page')]);
+  const [queries, pages] = await Promise.all([agg('query', 'gsc_query_daily'), agg('page', 'gsc_search_daily')]);
   return { group, from, to, prevFrom, days: nDays, country, queries: queries.rows, pages: pages.rows };
 };
 
@@ -475,7 +513,7 @@ const getGroupDetail = async (slug, { days = 28, country = 'all', limit = 200 } 
 // les 28 jours d'avant.
 const getNewQueries = async ({ days = 7, pattern = 'jnr', country = 'all' } = {}) => {
   const nDays = Math.min(Math.max(parseInt(days, 10) || 7, 1), 60);
-  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_search_daily');
+  const maxRes = await pool.query('SELECT MAX(date) AS max FROM gsc_query_daily');
   if (!maxRes.rows[0].max) return { queries: [] };
   const to = ymd(new Date(maxRes.rows[0].max));
   const from = addDays(to, -nDays + 1);
@@ -486,11 +524,13 @@ const getNewQueries = async ({ days = 7, pattern = 'jnr', country = 'all' } = {}
             SUM(d.clicks)::int AS clicks,
             SUM(d.impressions)::int AS impressions,
             ROUND(SUM(d.position * d.impressions) / NULLIF(SUM(d.impressions), 0), 2) AS position,
-            (ARRAY_AGG(d.page ORDER BY d.impressions DESC))[1] AS top_page
-     FROM gsc_search_daily d
+            (SELECT s.page FROM gsc_search_daily s
+             WHERE s.query = d.query AND s.date BETWEEN $1 AND $2
+             GROUP BY s.page ORDER BY SUM(s.impressions) DESC LIMIT 1) AS top_page
+     FROM gsc_query_daily d
      WHERE d.date BETWEEN $1 AND $2 AND d.query ~* $4${cc.sql}
        AND NOT EXISTS (
-         SELECT 1 FROM gsc_search_daily o
+         SELECT 1 FROM gsc_query_daily o
          WHERE o.query = d.query AND o.date >= $3 AND o.date < $1
        )
      GROUP BY d.query
