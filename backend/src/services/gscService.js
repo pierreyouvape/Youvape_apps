@@ -73,6 +73,12 @@ const DEFAULT_GROUPS = [
     pattern: '^puffs? sans nicotine$', sort: 100 },
 ];
 
+// Seuil du garde-fou « puff sans nicotine » (plan SEO JNR, partie 8) :
+// référence 4,2 du 12 au 17/10/2026, plus 2 places. Le premier seuil (4e
+// place) était calé sur le pic de fin septembre et se déclenchait sans lien
+// avec nos modifications.
+const GARDE_FOU_MAX_POSITION = 6;
+
 const COUNTRIES = { all: null, fra: 'fra', bel: 'bel' };
 // Périmètres stockés dans gsc_query_daily.country (voir l'en-tête).
 const QUERY_SCOPES = [['all', null], ['fra', 'fra'], ['bel', 'bel']];
@@ -576,9 +582,10 @@ const buildWeeklyReport = async () => {
     const delta = w0.position !== null && w1.position !== null ? Number((w1.position - w0.position).toFixed(2)) : null;
     lines.push({ name: g.name, slug: g.slug, w0, w1, delta });
     // Critères de retour arrière du plan : -2 places deux semaines de suite,
-    // et « puff sans nicotine » sous la 4e place deux semaines de suite.
-    if (g.slug === 'garde-fou-puff-sans-nicotine' && w0.position > 4 && w1.position > 4) {
-      alerts.push(`« puff sans nicotine » est sous la 4e place depuis 2 semaines (${fmtPos(w1.position)} puis ${fmtPos(w0.position)}).`);
+    // et « puff sans nicotine » au-delà de GARDE_FOU_MAX_POSITION deux
+    // semaines de suite.
+    if (g.slug === 'garde-fou-puff-sans-nicotine' && w0.position > GARDE_FOU_MAX_POSITION && w1.position > GARDE_FOU_MAX_POSITION) {
+      alerts.push(`« puff sans nicotine » est au-delà de la ${GARDE_FOU_MAX_POSITION}e place depuis 2 semaines (${fmtPos(w1.position)} puis ${fmtPos(w0.position)}).`);
     }
     if (w2.position !== null && w1.position !== null && w0.position !== null
         && w1.position - w2.position > 2 && w0.position - w1.position > 0) {
