@@ -1250,6 +1250,28 @@ const PackingApp = () => {
                 ))}
               </div>
             )}
+            {pickingInfo?.duplicates?.length > 0 && (
+              <div style={{
+                backgroundColor: '#FDF3E2', borderLeft: '10px solid #E28F00', borderRadius: '12px',
+                padding: '14px 20px', marginTop: '15px', color: '#7c4a03', fontSize: '16px'
+              }}>
+                <strong>Doublon probable</strong> — vérifiez avant d'expédier :
+                {pickingInfo.duplicates.map(d => (
+                  <div key={d.otherOrder} style={{ marginTop: '4px' }}>
+                    Mêmes articles que la commande <strong>{d.otherOrder}</strong>
+                    {d.role === 'second' ? `, passée ${d.minutes} min avant` : `, passée ${d.minutes} min après`}.
+                    {d.ticketId && (
+                      <>
+                        {' '}Ticket SAV{' '}
+                        <a href={`/tickets/${d.ticketId}`} target="_blank" rel="noreferrer" style={{ color: '#B45309', fontWeight: 700 }}>
+                          #{d.ticketId}
+                        </a>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {pickingInfo?.missing?.length > 0 && (() => {
               const done = pickingInfo.incidents || [];
               const sent = done.find(i => i.action === 'incomplete');

@@ -1095,6 +1095,28 @@ const setupRefundLinesCron = () => {
 };
 
 
+// ==================== DOUBLONS DE COMMANDES CLIENTS ====================
+
+let orderDuplicatesCronJob = null;
+
+const setupOrderDuplicatesCron = () => {
+  if (orderDuplicatesCronJob) {
+    orderDuplicatesCronJob.stop();
+    orderDuplicatesCronJob = null;
+  }
+  // Toutes les 5 min, 7 j/7 : un client qui repaie sa commande sans le savoir
+  // ouvre un ticket SAV, et la seconde commande sort des règles de vague.
+  orderDuplicatesCronJob = cron.schedule('*/5 * * * *', async () => {
+    try {
+      await require('./orderDuplicateService').run();
+    } catch (error) {
+      console.error('Erreur cron doublons de commandes:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron doublons de commandes configure: detection toutes les 5 min');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -1122,6 +1144,7 @@ module.exports = {
   setupInventoryRefCron,
   setupReturnsRefundCron,
   setupRefundLinesCron,
+  setupOrderDuplicatesCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

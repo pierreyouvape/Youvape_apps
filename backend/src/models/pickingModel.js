@@ -13,6 +13,7 @@ const { BUCKETS, allocateStock, physicalFromBms, planWaves, waveNumber } = requi
 const { buildPrintLines, withPackRefunds } = require('../services/pickingPdf');
 const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 const { partialReplacementOrders } = require('../services/returnPartialService');
+const orderDuplicateModel = require('./orderDuplicateModel');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -177,6 +178,15 @@ const getOrdersView = async () => {
     console.error('[Picking] Retours partiels illisibles :', error.message);
   }
 
+  // Doublons probables (orderDuplicateService) : la seconde commande attend son
+  // ticket SAV hors des règles (décision Pierre du 21/10/2026).
+  let duplicates = new Map();
+  try {
+    duplicates = await orderDuplicateModel.activeFor(orders.map(o => o.order_number));
+  } catch (error) {
+    console.error('[Picking] Doublons illisibles :', error.message);
+  }
+
   const view = [];
   for (const o of orders) {
     if (o.bms_status !== 'processing' || o.in_app_wave) continue;
@@ -211,6 +221,7 @@ const getOrdersView = async () => {
       tickets: o.tickets,
       bmsWaveId: o.bms_wave_id,
       savPartial: savPartial.has(String(o.order_number)),
+      duplicates: duplicates.get(String(o.order_number)) || [],
       items: alloc.lines.reduce((s, l) => s + l.qty, 0),
       missing: alloc.lines.reduce((s, l) => s + (l.qty - l.allocated), 0),
       selectable: !o.block_reason && tags.length === 0 && !o.bms_wave_id
@@ -328,8 +339,11 @@ const setManualPrefix = async (prefix) => {
 
 // ── Vagues ─────────────────────────────────────────────────────────────────
 
-// Une commande de renvoi en retour partiel ne part qu'en vague manuelle.
-const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY && !o.savPartial);
+// Ne partent qu'en vague manuelle : une commande de renvoi en retour partiel,
+// la seconde commande d'un doublon probable dont le ticket n'est pas résolu.
+const heldByDuplicate = (o) => o.duplicates.some(d => d.held);
+const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY
+  && !o.savPartial && !heldByDuplicate(o));
 
 /**
  * Pour la fenêtre « Générer les vagues » : ce que chaque règle active
@@ -353,7 +367,9 @@ const previewRules = async () => {
       orders: waves.flat().length, waveSizes: waves.map(w => w.length),
       skipped: {
         bmsWave: left.filter(o => o.bmsWaveId).length,
-        toFix: left.filter(o => !o.bmsWaveId && o.tags.length > 0).length
+        toFix: left.filter(o => !o.bmsWaveId && o.tags.length > 0).length,
+        duplicate: view.filter(o => o.bucket === BUCKETS.READY && o.selectable && heldByDuplicate(o)
+          && wanted.has(norm(o.shippingMethod))).length
       }
     };
   });

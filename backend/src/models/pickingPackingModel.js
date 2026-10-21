@@ -3,7 +3,7 @@
  *
  * Au scan d'une commande, le packing apprend : sa vague, ses manquants (la
  * part du manque du picking qui lui revient — les commandes payées en dernier
- * portent le manque), ses tickets SAV.
+ * portent le manque), ses tickets SAV, ses doublons probables (orderDuplicateModel).
  *
  * Une commande à laquelle il manque des articles ne peut pas être étiquetée
  * normalement (le packing exige tous les scans). Deux sorties, décidées avec
@@ -19,6 +19,7 @@
 const pool = require('../config/database');
 const pickingModel = require('./pickingModel');
 const savModel = require('./savModel');
+const orderDuplicateModel = require('./orderDuplicateModel');
 const { allocateMissing } = require('../services/pickingPlanner');
 const { sendMail } = require('../services/alertService');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -70,7 +71,9 @@ const ticketsForOrder = async (orderNumber) => {
 
 /** Ce que le packing affiche au scan d'une commande. */
 const getPackingInfo = async (orderNumber) => {
-  const [wave, tickets] = await Promise.all([findWave(orderNumber), ticketsForOrder(orderNumber)]);
+  const [wave, tickets, duplicates] = await Promise.all([
+    findWave(orderNumber), ticketsForOrder(orderNumber), orderDuplicateModel.activeFor([orderNumber])
+  ]);
   const missing = wave ? await missingForOrder(wave.id, orderNumber) : [];
   const { rows: incidents } = wave
     ? await pool.query(
@@ -82,6 +85,7 @@ const getPackingInfo = async (orderNumber) => {
     wave: wave ? { id: wave.id, waveNumber: wave.wave_number, status: wave.status, setAside: !!wave.removed_at } : null,
     missing,
     tickets,
+    duplicates: duplicates.get(String(orderNumber)) || [],
     incidents: incidents.map(i => ({ action: i.action, at: i.created_at, ticketId: i.ticket_id }))
   };
 };

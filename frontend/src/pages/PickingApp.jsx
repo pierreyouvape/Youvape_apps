@@ -26,6 +26,9 @@ import {
  *     tag avec « Corriger » : la ligne reste dans son onglet, sans case à cocher ;
  *   - les partielles ne partent en vague qu'à la main ;
  *   - le tag « Ticket » est informatif, il ne bloque rien ;
+ *   - « Doublon ? » (21/10/2026) : même client, mêmes articles, moins d'une heure.
+ *     La seconde commande ne part qu'en vague manuelle tant que son ticket SAV
+ *     n'est pas résolu ; sur la première, la puce n'est qu'informative ;
  *   - « Générer les vagues » lance UNE règle à la fois, choisie dans une
  *     fenêtre, avec le récapitulatif vague par vague avant de créer.
  */
@@ -402,6 +405,28 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                           Retour partiel SAV — vague manuelle
                         </Chip>
                       )}
+                      {o.duplicates.map(d => {
+                        const chip = d.held ? (
+                          <Chip
+                            color={C.white} bg={C.accent}
+                            title={`Mêmes articles que la commande ${d.otherOrder}, passée ${d.minutes} min avant. `
+                              + `Les règles l'ignorent tant que le ticket${d.ticketId ? ` #${d.ticketId}` : ''} n'est pas résolu.`}
+                          >
+                            Doublon de {d.otherOrder} ? — vague manuelle
+                          </Chip>
+                        ) : (
+                          <Chip
+                            color={C.accent} bg={C.accentL}
+                            title={`La commande ${d.otherOrder}, passée ${d.minutes} min après, a les mêmes articles.`
+                              + `${d.ticketId ? ` Ticket #${d.ticketId}.` : ''}`}
+                          >
+                            Doublon ? (avec {d.otherOrder})
+                          </Chip>
+                        );
+                        return d.ticketId
+                          ? <Link key={d.otherOrder} to={`/tickets/${d.ticketId}`} style={{ textDecoration: 'none' }}>{chip}</Link>
+                          : <Fragment key={d.otherOrder}>{chip}</Fragment>;
+                      })}
                       {o.tags.map(t => (
                         <Chip key={t} color={C.amber} bg={C.amberL}>
                           {CORRECTION_TAGS[t]}
@@ -489,11 +514,12 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                           ? `${r.orders} cmd → ${r.waveSizes.length} vague(s)`
                           : 'Aucune commande libre'}
                       </span>
-                      {(r.skipped.bmsWave > 0 || r.skipped.toFix > 0) && (
+                      {(r.skipped.bmsWave > 0 || r.skipped.toFix > 0 || r.skipped.duplicate > 0) && (
                         <span style={{ display: 'block', fontSize: 12, color: C.greyT, marginTop: 2 }}>
                           {[
                             r.skipped.bmsWave > 0 && `${r.skipped.bmsWave} déjà dans une vague BMS`,
                             r.skipped.toFix > 0 && `${r.skipped.toFix} à corriger`,
+                            r.skipped.duplicate > 0 && `${r.skipped.duplicate} doublon(s) en attente du SAV`,
                           ].filter(Boolean).join(' · ')}
                         </span>
                       )}
