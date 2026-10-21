@@ -715,6 +715,12 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     }
     if (impr < 800 || pos <= 4) continue;
     const generic = !topPage || share < 0.4 || pageKind(topPage) === 'accueil';
+    // Une fiche produit dont le title porte déjà le modèle EST la page dédiée
+    // (Z Pulse : « Puff JNR Z Pluse 42k - 2 en 1 - Double Saveur ») : pas de création.
+    const topTitle = compact(audits.get(normUrl(topPage || ''))?.title || '');
+    const core = coreTokens(head.query);
+    const ficheDedicated = topPage && pageKind(topPage) === 'fiche produit'
+      && core.filter((t) => topTitle.includes(t)).length >= Math.min(2, core.length);
     const est = gainTo(impr, clicks, pos, 3);
 
     // Requête du title : celle dont tous les mots sont dans l'adresse de la page dédiée.
@@ -825,7 +831,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         urls: [slugMatch[0], topPage],
         queries: queriesOut,
       });
-    } else if (!slugMatch && generic) {
+    } else if (!slugMatch && generic && !ficheDedicated) {
       recs.push({
         rec_key: `creation:${g.slug}`,
         type: 'creation',
