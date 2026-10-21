@@ -97,6 +97,7 @@ const ensureTables = async () => {
       word_count   integer,
       error        text
     );
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS links jsonb;
     CREATE TABLE IF NOT EXISTS seo_recommendations (
       id           serial PRIMARY KEY,
       rec_key      text UNIQUE NOT NULL,
@@ -137,6 +138,27 @@ const pick = (html, re) => {
   return m ? m[1].replace(/\s+/g, ' ').replace(/&amp;/g, '&').replace(/&#0?39;|&#8217;/g, '’').replace(/&nbsp;/g, ' ').trim() : null;
 };
 
+const CHROME_RE = /<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<header[\s\S]*?<\/header>|<footer[\s\S]*?<\/footer>|<nav[\s\S]*?<\/nav>/gi;
+const normUrl = (u) => (u || '').split(/[?#]/)[0].replace(/\/$/, '');
+
+// Liens internes du CONTENU de la page (en-tête, menus et pied de page retirés) :
+// c'est là qu'un lien ajouté par l'équipe se trouvera.
+const extractLinks = (html) => {
+  const body = html.replace(CHROME_RE, ' ');
+  const out = new Map();
+  const re = /<a\b[^>]*?href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(body)) && out.size < 500) {
+    let href = m[1].trim();
+    if (href.startsWith('/')) href = SITE + href;
+    if (!href.startsWith(SITE)) continue;
+    href = normUrl(href);
+    const text = m[2].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!out.has(href) || (!out.get(href) && text)) out.set(href, text);
+  }
+  return [...out.entries()].map(([href, text]) => ({ href, text }));
+};
+
 const auditUrl = async (url) => {
   try {
     const res = await axios.get(url, {
@@ -148,9 +170,7 @@ const auditUrl = async (url) => {
       transformResponse: (d) => d,
     });
     const html = typeof res.data === 'string' ? res.data : '';
-    const body = html
-      .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<header[\s\S]*?<\/header>|<footer[\s\S]*?<\/footer>|<nav[\s\S]*?<\/nav>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ');
+    const body = html.replace(CHROME_RE, ' ').replace(/<[^>]+>/g, ' ');
     return {
       url,
       http_status: res.status,
@@ -161,6 +181,7 @@ const auditUrl = async (url) => {
       robots: pick(html, /<meta\s+name=["']robots["']\s+content=["']([^"']*)["']/i),
       canonical: pick(html, /<link\s+rel=["']canonical["']\s+href=["']([^"']*)["']/i),
       word_count: res.status === 200 ? body.split(/\s+/).filter(Boolean).length : null,
+      links: res.status === 200 ? extractLinks(html) : null,
       error: null,
     };
   } catch (error) {
@@ -170,12 +191,12 @@ const auditUrl = async (url) => {
 
 const saveAudit = async (a) => {
   await pool.query(
-    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, error)
-     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error)
+     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (url) DO UPDATE SET fetched_at = now(), http_status = $2, location = $3, title = $4, h1 = $5,
-       meta_description = $6, robots = $7, canonical = $8, word_count = $9, error = $10`,
+       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11`,
     [a.url, a.http_status, a.location || null, a.title || null, a.h1 || null, a.meta_description || null,
-      a.robots || null, a.canonical || null, a.word_count || null, a.error || null]
+      a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null]
   );
 };
 
@@ -236,7 +257,7 @@ const loadData = async ({ from, to, prevFrom }) => {
 
 const loadAudits = async () => {
   const r = await pool.query('SELECT * FROM seo_page_audit');
-  return new Map(r.rows.map((a) => [a.url, a]));
+  return new Map(r.rows.map((a) => [normUrl(a.url), a]));
 };
 
 /* ─── Détecteurs ───────────────────────────────────────── */
@@ -251,6 +272,77 @@ const pageKind = (u) => {
   if (p.startsWith('/blog/')) return 'article';
   if (p === '/') return 'accueil';
   return 'page';
+};
+
+// Mots génériques : ne comptent pas pour dire que deux requêtes parlent du même sujet.
+const GENERIC = new Set(['puff', 'puffs', 'cigarette', 'electronique', 'vape', 'vapoteuse', 'e', 'pod']);
+const coreTokens = (q) => tokens(q).filter((t) => !GENERIC.has(t));
+
+const placementFor = (u) => {
+  switch (pageKind(u)) {
+    case 'fiche produit': return 'dans la description du produit, une phrase qui renvoie vers la page';
+    case 'page marque': return 'dans le texte de présentation, à l’endroit où la gamme est citée';
+    case 'étiquette':
+    case 'catégorie': return 'dans le texte d’introduction, au-dessus de la grille de produits';
+    case 'article': return 'dans le paragraphe qui traite du sujet';
+    default: return 'dans le premier paragraphe du texte';
+  }
+};
+
+// Pages qui se classent sur des requêtes proches : les meilleures sources de liens.
+const relatedSources = ({ byQuery }, query, exclude) => {
+  const core = coreTokens(query);
+  const minShared = Math.min(2, core.length);
+  if (!minShared) return [];
+  const score = new Map();
+  for (const [q2, rows] of byQuery) {
+    const tk = tokens(q2);
+    if (core.filter((t) => tk.includes(t)).length < minShared) continue;
+    for (const r of rows) {
+      if (isParamUrl(r.page) || pathOf(r.page) === '/' || normUrl(r.page) === normUrl(exclude)) continue;
+      score.set(r.page, (score.get(r.page) || 0) + r.i);
+    }
+  }
+  return [...score.entries()].sort((a, b) => b[1] - a[1]).map(([u]) => u);
+};
+
+/**
+ * Plan de liens internes : pour chaque page source, l'ancre exacte et
+ * l'endroit où la placer, ou « déjà fait » si le lien existe (relevé du
+ * contenu de la page, menus exclus).
+ */
+const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => {
+  const t = normUrl(target);
+  const clean = anchors.filter((a) => a && !tokens(a).some((x) => SENSITIVE.has(x)));
+  if (!clean.length) return [];
+  const lines = [];
+  const seen = new Set();
+  let k = 0;
+  for (const src of sources) {
+    if (lines.length >= max) break;
+    const s = normUrl(src);
+    if (!s || s === t || seen.has(s) || isParamUrl(s)) continue;
+    seen.add(s);
+    let a = audits.get(src) || audits.get(s);
+    if (!a || !Array.isArray(a.links)) {
+      a = await auditUrl(s);
+      if (a.http_status) { await saveAudit(a); audits.set(s, a); }
+    }
+    if (!a || a.http_status !== 200 || !Array.isArray(a.links)) continue;
+    const st = data.pageStats.get(src) || data.pageStats.get(s);
+    const vu = st?.i ? ` (${fmtInt(st.i)} impressions en 28 j)` : '';
+    const existing = a.links.find((l) => l.href === t);
+    if (existing) {
+      const good = existing.text && clean.some((x) => compact(existing.text).includes(compact(x)));
+      lines.push(good
+        ? `- ${pathOf(s)}${vu} : lien déjà en place (ancre « ${existing.text} »). Rien à faire.`
+        : `- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
+    } else {
+      lines.push(`- Depuis ${pathOf(s)}${vu} : ajouter un lien vers ${pathOf(t)} avec l'ancre « ${cap(clean[k % clean.length])} », ${placementFor(s)}.`);
+      k += 1;
+    }
+  }
+  return lines;
 };
 
 // 1. Cannibalisation : deux de nos pages se partagent une même requête.
@@ -298,60 +390,96 @@ const detectCannibalisation = ({ q, byQuery }) => {
   return recs;
 };
 
-// 2. Texte : requêtes entre la 4e et la 20e place, mots absents du title/H1.
-const detectTexte = ({ q, byQuery }, audits, claimed = new Map()) => {
+// 2. Texte : la page qui porte une requête entre la 4e et la 20e place.
+// On juge le title sur la REQUÊTE PRINCIPALE et ses variantes directes (qui
+// en contiennent tous les mots) ; les requêtes d'une autre intention sont
+// listées à part, jamais transformées en mots à ajouter.
+const detectTexte = async (data, audits, claimed = new Map()) => {
+  const { q, byQuery } = data;
   const perPage = new Map();
   for (const [query, qs] of q) {
     if (qs.i < 150 || qs.p < 3.5 || qs.p > 20) continue;
     const rows = byQuery.get(query);
     if (!rows || !rows.length) continue;
     const page = rows[0].page;
-    // Requête d'un groupe qui a sa page dédiée : on ne pousse pas une autre page dessus.
-    if (claimed.has(query) && claimed.get(query) !== page) continue;
     if (isParamUrl(page) || pathOf(page) === '/') continue;
     if (!perPage.has(page)) perPage.set(page, []);
     perPage.get(page).push({ query, ...qs });
   }
   const recs = [];
-  for (const [page, list] of perPage) {
-    list.sort((a, b) => b.i - a.i);
-    const audit = audits.get(page);
+  for (const [page, all] of perPage) {
+    all.sort((a, b) => b.i - a.i);
+    const elsewhere = all.filter((x) => claimed.has(x.query) && normUrl(claimed.get(x.query)) !== normUrl(page));
+    const owned = all.filter((x) => !elsewhere.includes(x));
+    if (!owned.length) continue;
+    const head = owned[0];
+    const headTk = tokens(head.query);
+    const variants = owned.filter((x) => x !== head && headTk.every((t) => tokens(x.query).includes(t)));
+    const otherIntent = owned.filter((x) => x !== head && !variants.includes(x));
+    const audit = audits.get(normUrl(page));
+    const titleNow = audit?.title || '(title non relevé)';
     const where = compact(`${audit?.title || ''} ${audit?.h1 || ''}`);
-    const missing = new Map();
-    for (const x of list.slice(0, 8)) {
-      for (const t of tokens(x.query)) {
-        if (t.length < 2 || SENSITIVE.has(t) || where.includes(t)) continue;
-        missing.set(t, (missing.get(t) || 0) + x.i);
+    const headCovered = headTk.every((t) => where.includes(t));
+    const missing = [];
+    for (const v of variants) {
+      for (const t of tokens(v.query)) {
+        if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
+        missing.push({ t, from: v });
       }
     }
-    const missingWords = [...missing.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 6);
-    const est = list.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
-    const head = list[0];
-    const titleNow = audit?.title || '(title non relevé)';
-    const words = (audit?.word_count || 0);
-    const actions = [];
-    if (missingWords.length) {
-      actions.push(`Mots tapés par les clients absents du title et du H1 : ${missingWords.map((w) => `« ${w} »`).join(', ')}.`);
-      actions.push(`Title actuel : « ${titleNow} ». Y intégrer ${missingWords.slice(0, 3).map((w) => `« ${w} »`).join(', ')} sans dépasser 60 caractères.`);
+    const scope = [head, ...variants];
+    const est = scope.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
+    if (monthly(est) < 15) continue;
+
+    const blocks = [];
+    blocks.push(`Requête principale : « ${head.query} » (${fmtInt(head.i)} impressions en 28 j, position ${fmt1(head.p)}).`);
+    // 1. Title / H1
+    if (!headCovered) {
+      blocks.push(`1. Title et H1 : ils ne contiennent pas tous les mots de « ${head.query} ». Title actuel : « ${titleNow} ». Le commencer par « ${cap(head.query)} », 60 caractères maximum.`);
+    } else if (missing.length) {
+      blocks.push(`1. Title : il couvre déjà « ${head.query} » (« ${titleNow} »). Variante à ajouter si la place le permet : ${missing.slice(0, 3).map((m) => `« ${m.t} » (requête « ${m.from.query} », ${fmtInt(m.from.i)} impressions)`).join(', ')}.`);
     } else {
-      actions.push(`Le title contient déjà les mots des requêtes (« ${titleNow} »). Le levier est le contenu et les liens.`);
+      blocks.push(`1. Title : ne pas le modifier, il couvre déjà « ${head.query} » (« ${titleNow} »).`);
     }
-    if (words && words < 400) actions.push(`Texte court (environ ${words} mots hors menu) : ajouter un paragraphe factuel qui emploie les requêtes ci-dessous.`);
-    else actions.push('Employer les requêtes ci-dessous dans un paragraphe factuel et dans les intertitres (H2).');
-    actions.push(`Ajouter des liens internes vers ${pathOf(page)} avec ces mots comme texte de lien (page marque, pages proches).`);
-    const editorial = ['article'].includes(pageKind(page)) || pathOf(page).startsWith('/avis-tests/');
-    if (editorial) actions.push('Contenu éditorial : sujet sensible dans le litige DNF (un blog est présenté comme publicitaire). À arbitrer avec l\u2019avocat avant toute retouche.');
+    // 2. Texte
+    const h2 = variants.filter((v) => !tokens(v.query).some((t) => SENSITIVE.has(t))).slice(0, 3);
+    const words = audit?.word_count || 0;
+    blocks.push(`2. Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
+    // 3. Liens internes
+    const links = await linkPlan({
+      target: page,
+      anchors: [head.query, ...h2.map((v) => v.query)],
+      sources: relatedSources(data, head.query, page).slice(0, 10),
+      data, audits,
+    });
+    blocks.push(links.length ? `3. Liens internes :\n${links.join('\n')}` : '3. Liens internes : aucune page proche relevée qui pourrait en faire.');
+    // 4. Ce qu'il ne faut pas viser ici
+    if (elsewhere.length) {
+      const byTarget = new Map();
+      for (const x of elsewhere) {
+        const tgt = pathOf(claimed.get(x.query));
+        if (!byTarget.has(tgt)) byTarget.set(tgt, []);
+        byTarget.get(tgt).push(x.query);
+      }
+      blocks.push(`4. Requêtes à laisser à leur page dédiée (ne pas les ajouter ici) : ${[...byTarget.entries()].map(([tgt, qs]) => `${qs.slice(0, 4).map((x) => `« ${x} »`).join(', ')} → ${tgt}`).join(' ; ')}.`);
+    }
+    if (otherIntent.length) {
+      blocks.push(`${elsewhere.length ? '5' : '4'}. Autres requêtes qui atterrissent ici sans être le sujet de la page (ne pas les viser dans le title) : ${otherIntent.slice(0, 5).map((x) => `« ${x.query} »`).join(', ')}.`);
+    }
+    const editorial = pageKind(page) === 'article' || pathOf(page).startsWith('/avis-tests/');
+    if (editorial) blocks.push('Contenu éditorial : sujet sensible dans le litige DNF (un blog est présenté comme publicitaire). À arbitrer avec l’avocat avant toute retouche.');
+    blocks.push(LEGAL_NOTE);
     recs.push({
       editorial,
       rec_key: `texte:${page}`,
       type: 'texte',
       effort: 'faible',
       est_clicks: monthly(est),
-      title: `${cap(pageKind(page))} à retravailler : ${pathOf(page)}`,
-      reason: `${list.length} requête${list.length > 1 ? 's' : ''} entre la ${Math.floor(Math.min(...list.map((x) => x.p)))}e et la ${Math.ceil(Math.max(...list.map((x) => x.p)))}e place, dont « ${head.query} » (${fmtInt(head.i)} impressions, position ${fmt1(head.p)}). Gagner quelques places les fait passer en haut de la première page.`,
-      action: `${actions.join('\n')}\n${LEGAL_NOTE}`,
+      title: `${cap(pageKind(page))} à retravailler sur « ${head.query} » : ${pathOf(page)}`,
+      reason: `« ${head.query} » est en position ${fmt1(head.p)}${variants.length ? `, avec ${variants.length} variante${variants.length > 1 ? 's' : ''}` : ''}. Gagner deux places la fait passer dans le haut de la première page.`,
+      action: blocks.join('\n'),
       urls: [page],
-      queries: list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+      queries: scope.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
     });
   }
   return recs;
@@ -372,7 +500,7 @@ const detectSnippet = ({ q, byQuery }, audits) => {
   return [...perPage.entries()].map(([page, list]) => {
     list.sort((a, b) => b.i - a.i);
     const est = list.reduce((s, x) => s + Math.max(0, x.i * 0.8 * ctrAt(x.p) - x.c), 0);
-    const a = audits.get(page);
+    const a = audits.get(normUrl(page));
     const h = list[0];
     return {
       rec_key: `snippet:${page}`,
@@ -515,23 +643,42 @@ const loadSitePages = async () => {
   return out.map((x) => ({ ...x, url: (x.url || '').replace(/\/$/, '') }));
 };
 
+// Groupes « type de produit » : une requête qui les touche leur revient en
+// priorité (« liquide jnr sans nicotine » → e-liquides, pas les puffs).
+const PRODUCT_TYPE_GROUPS = ['eliquide-jnr'];
+
+// Nom de modèle tiré du title d'une fiche : « Puff JNR Gorilla X 43k sans Nicotine JNR - YouVape » → « Gorilla X 43k ».
+const modelLabel = (a) => {
+  const raw = (a?.h1 || a?.title || '').replace(/\s*[-–|]\s*YouVape.*$/i, '');
+  return raw
+    .replace(/\bpuffs?\b|\bjnr\b|\bsans nicotine\b|\bavec nicotine\b|\b\d+\s?mg\b|\bpar\b|&|fighter fuel|\bcartouches?\b/gi, ' ')
+    .replace(/[,:–-]/g, ' ').replace(/\s+/g, ' ').trim()
+    .split(' ').slice(0, 3).join(' ');
+};
+
 // 6. Création / renforcement d'une page pour un groupe de requêtes.
-const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, claimed) => {
-  const groups = (await pool.query('SELECT slug, name, pattern FROM gsc_query_groups WHERE active')).rows;
+const detectCreation = async (data, audits, sitePages, claimed) => {
+  const { q, byQuery, pageStats } = data;
+  const groups = (await pool.query('SELECT slug, name, pattern, sort FROM gsc_query_groups WHERE active ORDER BY sort, id')).rows;
+  const regex = new Map();
+  for (const g of groups) { try { regex.set(g.slug, new RegExp(g.pattern, 'i')); } catch { /* motif invalide */ } }
+  // Les groupes « type de produit » d'abord : leur page dédiée sert de renvoi aux autres.
+  const ordered = [...groups.filter((g) => PRODUCT_TYPE_GROUPS.includes(g.slug)), ...groups.filter((g) => !PRODUCT_TYPE_GROUPS.includes(g.slug))];
+  const dedicatedOf = new Map();
   const recs = [];
-  for (const g of groups) {
-    if (GROUPS_WITHOUT_PAGE.has(g.slug)) continue;
-    let re;
-    try { re = new RegExp(g.pattern, 'i'); } catch { continue; }
-    const list = [...q.entries()].filter(([query]) => re.test(query)).map(([query, s]) => ({ query, ...s }));
+  for (const g of ordered) {
+    if (GROUPS_WITHOUT_PAGE.has(g.slug) || !regex.has(g.slug)) continue;
+    const re = regex.get(g.slug);
+    const isProductType = PRODUCT_TYPE_GROUPS.includes(g.slug);
+    const all = [...q.entries()].filter(([query]) => re.test(query)).map(([query, s]) => ({ query, ...s }));
+    const routed = isProductType ? [] : all.filter((x) => PRODUCT_TYPE_GROUPS.some((pt) => regex.get(pt)?.test(x.query)));
+    const list = all.filter((x) => !routed.includes(x)).sort((a, b) => b.i - a.i);
     const impr = list.reduce((s, x) => s + x.i, 0);
     const clicks = list.reduce((s, x) => s + x.c, 0);
-    if (impr < 800) continue;
-    const pos = list.reduce((s, x) => s + x.p * x.i, 0) / impr;
-    if (pos <= 4) continue;
-    list.sort((a, b) => b.i - a.i);
+    if (!list.length) continue;
+    const pos = list.reduce((s, x) => s + x.p * x.i, 0) / (impr || 1);
     const head = list[0];
-    // Quelles pages récoltent ces requêtes ?
+    const headTokens = tokens(head.query);
     const pageImpr = new Map();
     for (const x of list) for (const r of byQuery.get(x.query) || []) {
       if (isParamUrl(r.page)) continue;
@@ -540,45 +687,87 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, clai
     const ranked = [...pageImpr.entries()].sort((a, b) => b[1] - a[1]);
     const topPage = ranked[0]?.[0];
     const share = topPage && pageStats.get(topPage)?.i ? ranked[0][1] / pageStats.get(topPage).i : 0;
-    const headTokens = tokens(head.query);
-    let slugMatch = ranked.find(([u]) => headTokens.every((t) => compact(pathOf(u)).includes(t)) && pageKind(u) !== 'fiche produit');
+    const okSlug = (slug) => headTokens.every((t) => compact(slug).includes(t)) && (isProductType || !/liquid/.test(slug));
+    let slugMatch = ranked.find(([u]) => okSlug(pathOf(u)) && pageKind(u) !== 'fiche produit');
     if (!slugMatch) {
-      // Page dédiée existante mais pas encore classée.
-      const site = sitePages
-        .filter((x) => headTokens.every((t) => compact(x.slug).includes(t)))
-        .sort((a, b) => a.slug.length - b.slug.length)[0];
+      const site = sitePages.filter((x) => okSlug(x.slug)).sort((a, b) => a.slug.length - b.slug.length)[0];
       if (site) slugMatch = [site.url, 0];
     }
-    // Une page dédiée en noindex ne peut pas « monter » : il faut d'abord
-    // décider de l'ouvrir.
     let dedicatedNoindex = false;
     if (slugMatch) {
       // Toujours relu : ces pages changent souvent de statut (ouvertures du 19 au 21/10).
       const a = await auditUrl(slugMatch[0]);
-      if (a.http_status) await saveAudit(a);
+      if (a.http_status) { await saveAudit(a); audits.set(normUrl(slugMatch[0]), a); }
       dedicatedNoindex = /noindex/i.test(a?.robots || '');
-      if (!dedicatedNoindex) for (const x of list) claimed.set(x.query, slugMatch[0]);
+      if (!dedicatedNoindex) {
+        dedicatedOf.set(g.slug, slugMatch[0]);
+        for (const x of list) claimed.set(x.query, slugMatch[0]);
+      }
     }
+    if (impr < 800 || pos <= 4) continue;
     const generic = !topPage || share < 0.4 || pageKind(topPage) === 'accueil';
     const est = gainTo(impr, clicks, pos, 3);
-    // Plan de contenu tiré des requêtes réelles.
-    const extra = new Map();
-    for (const x of list) for (const t of tokens(x.query)) if (!headTokens.includes(t) && t.length > 2 && !SENSITIVE.has(t)) extra.set(t, (extra.get(t) || 0) + x.i);
-    const subjects = [...extra.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
-    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query))).slice(0, 8).map((x) => x.query);
-    const products = ranked.filter(([u]) => pageKind(u) === 'fiche produit').slice(0, 8).map(([u]) => pathOf(u));
-    const proposal = [
-      `Title : « ${cap(head.query)} : ${subjects.slice(0, 3).map(cap).join(', ') || 'modèles et caractéristiques'} » (60 caractères max)`,
-      `H1 : « ${cap(head.query)} »`,
-      `Meta description : « ${cap(head.query)} : modèles disponibles, caractéristiques (capacité, autonomie, recharge) et compatibilités. »`,
-      'Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page.',
-      'Grille des produits, puis un tableau comparatif (capacité, bouffées annoncées, batterie, recharge, taux de nicotine).',
-      ...subjects.slice(0, 5).map((t) => `H2 : ${cap(head.query)} ${t}`),
-      questions.length ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}` : 'FAQ : 3 à 5 questions factuelles (fonctionnement, recharge, compatibilité, légalité).',
-      products.length ? `Fiches à mettre en avant (elles se classent déjà sur ces requêtes) : ${products.join(', ')}` : null,
-      `Requêtes à couvrir dans le texte : ${list.slice(0, 15).map((x) => x.query).join(', ')}`,
+
+    // Requête du title : celle dont tous les mots sont dans l'adresse de la page dédiée.
+    const target = slugMatch ? slugMatch[0] : null;
+    const slugTk = target ? tokens(pathOf(target).split('/').pop().replace(/-/g, ' ')) : [];
+    const titleHead = (target && list
+      .filter((x) => tokens(x.query).every((t) => slugTk.includes(t)))
+      .sort((a, b) => tokens(b.query).length - tokens(a.query).length || b.i - a.i)[0]) || head;
+
+    // Modèles (fiches qui se classent déjà) ou sous-pages (e-liquides).
+    const fiches = ranked.filter(([u]) => pageKind(u) === 'fiche produit').slice(0, 8).map(([u]) => u);
+    const labels = [];
+    if (isProductType && target) {
+      const base = pathOf(target).split('/').pop();
+      for (const sp of sitePages.filter((x) => x.slug.startsWith(`${base}-`))) {
+        labels.push({ label: sp.slug.slice(base.length + 1).replace(/-/g, ' ').replace(/(\d+)ml/, '$1 ml'), url: sp.url });
+      }
+    } else {
+      for (const u of fiches) {
+        let a = audits.get(u) || audits.get(normUrl(u));
+        if (!a) { a = await auditUrl(u); if (a.http_status) await saveAudit(a); }
+        const label = modelLabel(a);
+        if (label && !labels.some((l) => compact(l.label) === compact(label))) labels.push({ label, url: u });
+      }
+    }
+    const hasNico = fiches.some((u) => !/sans-nicotine|0mg/.test(u));
+    const hasZero = fiches.some((u) => /sans-nicotine|0mg/.test(u));
+    const facets = labels.length >= 2 ? labels.map((l) => l.label) : [
+      ...(labels.length ? [labels[0].label] : []),
+      ...(hasNico && hasZero ? ['avec ou sans nicotine'] : []),
+      ...(ranked.some(([u]) => /cartouche/.test(u)) ? ['cartouches'] : []),
+    ];
+    let title = cap(titleHead.query);
+    for (const f of facets) {
+      const next = `${title}${title.includes(':') ? ', ' : ' : '}${f}`;
+      if (next.length > 60) break;
+      title = next;
+    }
+    const routedTarget = routed.length ? (dedicatedOf.get(PRODUCT_TYPE_GROUPS.find((pt) => regex.get(pt)?.test(routed[0].query))) || null) : null;
+    // Pour le sans nicotine, la recharge renvoie vers l'étiquette e-liquides 0 mg si elle existe.
+    const liquidZero = /sans|0/.test(titleHead.query)
+      ? sitePages.filter((x) => /liquid/.test(x.slug) && headTokens.filter((t) => !GENERIC.has(t)).every((t) => compact(x.slug).includes(t))).sort((a, b) => a.slug.length - b.slug.length)[0]
+      : null;
+    const rechargeUrl = liquidZero?.url || routedTarget;
+    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query))).slice(0, 6).map((x) => x.query);
+    const plan = [
+      `Title : « ${title} »`,
+      `H1 : « ${cap(titleHead.query)} »`,
+      `Meta description : « ${cap(titleHead.query)}${labels.length ? ` : ${labels.slice(0, 4).map((l) => l.label).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
+      `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${labels.length ? ` (${labels.map((l) => l.label).join(', ')})` : ''}.`,
+      'Grille des produits, puis un tableau comparatif : capacité, bouffées annoncées, batterie, recharge, taux de nicotine.',
+      ...labels.slice(0, 5).map((l) => `H2 : ${l.label} : caractéristiques, recharge, compatibilités ; lien vers ${pathOf(l.url)}`),
+      ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}`] : []),
+      questions.length
+        ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
+        : 'FAQ : 3 à 5 questions factuelles (fonctionnement, recharge, compatibilité, légalité).',
+      `Requêtes à employer dans le texte : ${list.slice(0, 12).map((x) => x.query).join(', ')}`,
+      ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${routedTarget ? `de ${pathOf(routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
-    ].filter(Boolean).join('\n');
+    ];
+    const queriesOut = list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) }));
+
     if (slugMatch && dedicatedNoindex) {
       recs.push({
         rec_key: `noindex-dedie:${g.slug}`,
@@ -587,25 +776,37 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, clai
         est_clicks: monthly(est * 0.5),
         title: `Page dédiée « ${g.name} » en noindex : ${pathOf(slugMatch[0])}`,
         reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, porté surtout par ${pathOf(topPage)}. Une page dédiée existe mais Google n'a pas le droit de l'afficher.`,
-        action: `Décider : soit passer ${pathOf(slugMatch[0])} en index (réglage Yoast) et la renforcer selon le plan ci-dessous, soit la laisser fermée et retravailler ${pathOf(topPage)} (carte « texte »). Ne pas laisser deux pages viser ces requêtes.`,
-        proposal,
+        action: `Décider : soit passer ${pathOf(slugMatch[0])} en index (réglage Yoast) et la construire selon le plan ci-dessous, soit la laisser fermée et retravailler ${pathOf(topPage)} (carte « texte »). Ne pas laisser deux pages viser ces requêtes.`,
+        proposal: plan.join('\n'),
         urls: [slugMatch[0], topPage],
-        queries: list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+        queries: queriesOut,
       });
-    } else if (slugMatch && slugMatch[0] !== topPage) {
+      continue;
+    }
+    if (slugMatch && normUrl(slugMatch[0]) !== normUrl(topPage)) {
+      const links = await linkPlan({
+        target: slugMatch[0],
+        anchors: [titleHead.query, head.query, ...list.slice(1, 3).map((x) => x.query)],
+        sources: [topPage, ...fiches, ...relatedSources(data, titleHead.query, slugMatch[0])].filter(Boolean),
+        data, audits, max: 6,
+      });
       recs.push({
         rec_key: `renfort:${g.slug}`,
         type: 'creation',
         effort: 'moyen',
         est_clicks: monthly(est * 0.7),
         title: `Faire monter la page dédiée « ${g.name} » : ${pathOf(slugMatch[0])}`,
-        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)}, alors qu'une page dédiée existe déjà${slugMatch[1] ? '' : ' (encore sans impression : récente ou mal reliée)'}.`,
-        action: `Renforcer ${pathOf(slugMatch[0])} : texte selon le plan ci-dessous, et liens vers elle depuis ${pathOf(topPage)}, la page marque et les fiches concernées (texte du lien = « ${head.query} »).`,
-        proposal,
+        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)} (${pageKind(topPage)}), alors que la page dédiée existe${slugMatch[1] ? '' : ' et n’a encore aucune impression : elle manque de liens'}.`,
+        action: [
+          `1. Contenu de ${pathOf(slugMatch[0])} : suivre le plan ci-dessous (title, H1, texte, FAQ).`,
+          links.length ? `2. Liens internes vers ${pathOf(slugMatch[0])} :\n${links.join('\n')}` : '2. Liens internes : aucune page source relevée.',
+          `3. Ne pas modifier le title de ${pathOf(topPage)} pour ces requêtes : c'est la page dédiée qui doit les porter.`,
+        ].join('\n'),
+        proposal: plan.join('\n'),
         urls: [slugMatch[0], topPage],
-        queries: list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+        queries: queriesOut,
       });
-    } else if (generic) {
+    } else if (!slugMatch && generic) {
       recs.push({
         rec_key: `creation:${g.slug}`,
         type: 'creation',
@@ -613,10 +814,10 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, clai
         est_clicks: monthly(est * 0.7),
         title: `Créer une page dédiée « ${g.name} »`,
         reason: `${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, sans page dédiée : Google utilise ${topPage ? `${pathOf(topPage)} (${pageKind(topPage)}, ces requêtes n'y pèsent que ${Math.round(share * 100)} %)` : 'des pages diverses'}.`,
-        action: 'Créer la page (format étiquette, comme le reste de la grappe JNR) selon le plan ci-dessous, puis la relier depuis la page marque et les fiches concernées.',
-        proposal,
+        action: 'Créer la page (format étiquette, comme le reste de la grappe JNR) selon le plan ci-dessous, puis la relier depuis la page marque et les fiches listées dans le plan.',
+        proposal: plan.join('\n'),
         urls: topPage ? [topPage] : [],
-        queries: list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+        queries: queriesOut,
       });
     }
   }
@@ -688,7 +889,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
       ...detectCannibalisation(data).filter((r) => r.est_clicks >= 10),
-      ...detectTexte(data, audits, claimed).filter((r) => r.est_clicks >= 15),
+      ...(await detectTexte(data, audits, claimed)),
       ...detectSnippet(data, audits),
       ...detectFaq(data),
       ...detectIndexation(data, audits),
