@@ -1442,4 +1442,8 @@ const updateRecommendation = async (id, { status, note }, user) => {
 // Décisions d'indexation du dernier calcul (url → décision), pour contrôle.
 const getIndexDecisions = () => Object.fromEntries(indexDecisions);
 
-module.exports = { ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt, getIndexDecisions };
+module.exports = {
+  ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt, getIndexDecisions,
+  // Vocabulaire partagé avec la rédaction SEO (seoWriterService).
+  BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks,
+};

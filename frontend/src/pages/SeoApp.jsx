@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import AppShell from '../components/AppShell';
 import { Seo as SeoIcon } from '../components/AppIcons';
+import SeoWriterTab from './SeoWriterTab';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -447,7 +448,7 @@ export default function SeoApp() {
           </div>
 
           <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.grisCL}`, marginBottom: 16 }}>
-            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'reco', label: 'Recommandations' }].map((t) => (
+            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'reco', label: 'Recommandations' }, { key: 'redaction', label: 'Rédaction SEO' }].map((t) => (
               <button key={t.key} type="button" onClick={() => chooseTab(t.key)}
                 style={{
                   padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14,
@@ -498,6 +499,8 @@ export default function SeoApp() {
           )}
 
           {hasData && tab === 'reco' && <Recommendations />}
+
+          {hasData && tab === 'redaction' && <SeoWriterTab />}
 
           {hasData && tab === 'suivi' && (
             <>
