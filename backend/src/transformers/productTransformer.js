@@ -5,6 +5,7 @@
  */
 
 const { applySubBrandFallback } = require('../services/brandMapService');
+const { decodeWpText } = require('../utils/wpText');
 
 /**
  * Transform RAW product data from WordPress (SIMPLE or VARIABLE PARENT)
@@ -38,7 +39,7 @@ function transformProduct(rawData) {
     wp_parent_id: post.post_parent ? parseInt(post.post_parent) : null,
     post_author: post.post_author ? parseInt(post.post_author) : null,
     post_date: validateTimestamp(post.post_date),
-    post_title: post.post_title || null,
+    post_title: decodeWpText(post.post_title) || null,
     post_status: post.post_status || null,
     guid: post.guid || null,
     sku: getMeta('_sku'),
@@ -126,7 +127,7 @@ function transformVariation(rawVariation, parentWpId) {
     product_type: 'variation',
     wp_parent_id: parentWpId,
     post_date: validateTimestamp(post.post_date),
-    post_title: post.post_title || null,
+    post_title: decodeWpText(post.post_title) || null,
     post_excerpt: post.post_excerpt || null,
     post_status: post.post_status || null,
     post_modified: validateTimestamp(post.post_modified),

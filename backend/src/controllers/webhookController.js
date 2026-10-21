@@ -5,6 +5,7 @@
 
 const pool = require('../config/database');
 const refundLinesService = require('../services/refundLinesService');
+const { decodeWpText } = require('../utils/wpText');
 
 // Token d'authentification (à configurer dans .env)
 const YOUSYNC_TOKEN = process.env.YOUSYNC_TOKEN || '';
@@ -300,7 +301,7 @@ async function processOrderEvent(action, wp_id, data, results) {
         `, [
           wp_id,
           item.id || item.item_id || item.order_item_id || 0,
-          item.name || '',
+          decodeWpText(item.name) || '',
           item.type || 'line_item',
           item.product_id || null,
           item.variation_id || null,
@@ -446,7 +447,7 @@ async function processProductEvent(action, wp_id, data, results) {
     wp_id,
     data.parent_id || null,
     data.sku || null,
-    data.name || '',
+    decodeWpText(data.name) || '',
     data.short_description || data.description || null,
     data.price || 0,
     data.regular_price || null,

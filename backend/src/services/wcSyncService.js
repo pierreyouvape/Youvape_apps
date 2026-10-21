@@ -9,6 +9,7 @@ const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
 const refundLinesService = require('./refundLinesService');
 const { sendAlert } = require('./alertService');
+const { decodeWpText } = require('../utils/wpText');
 
 // Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
@@ -395,7 +396,7 @@ const wcSyncService = {
         -- juste au-dessus, pose bien updated_at = NOW() ; cet upsert complet, non.
         updated_at = NOW()
     `, [
-      data.wp_product_id, data.parent_id || null, data.type, data.name,
+      data.wp_product_id, data.parent_id || null, data.type, decodeWpText(data.name),
       data.sku, data.status, data.stock_status, data.stock_quantity,
       data.price, data.regular_price, data.image_url || null, data.weight || null,
       data.date_created, data.date_modified,
@@ -561,7 +562,7 @@ const wcSyncService = {
             advanced_discount, wdr_discounts, item_cost, item_total_cost, reduced_stock
           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
         `, [
-          wpId, item.item_id || 0, item.name, 'line_item',
+          wpId, item.item_id || 0, decodeWpText(item.name), 'line_item',
           item.product_id, item.variation_id || null, item.quantity,
           item.subtotal, item.total, item.tax,
           item.tax_class || null, item.line_subtotal_tax || 0,

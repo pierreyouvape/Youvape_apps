@@ -3,6 +3,8 @@
  * Transforms RAW WordPress order data into clean DB format
  */
 
+const { decodeWpText } = require('../utils/wpText');
+
 /**
  * Transform RAW order data from WordPress
  * @param {Object} rawData - RAW data from WordPress (post + meta + items)
@@ -134,7 +136,7 @@ function transformOrderItems(items, wpOrderId) {
     return {
       wp_order_id: wpOrderId,
       order_item_id: parseInt(item.order_item_id),
-      order_item_name: item.order_item_name,
+      order_item_name: decodeWpText(item.order_item_name),
       order_item_type: item.order_item_type,
       product_id: (() => {
         const val = parseInt(getMeta('_product_id'));
