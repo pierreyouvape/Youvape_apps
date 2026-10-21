@@ -880,7 +880,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         if (need.length && !need.every((t) => compact(`${pathOf(u)} ${title}`).includes(t))) continue;
         if (isCart) {
           // Une cartouche n'est pas un modèle : intertitre à part.
-          cartouches.push({ url: u, title: title.replace(/\s*[-–|]\s*YouVape.*$/i, '') });
+          // Nom seul : « Cartouche Gorilla X JNR - Vapotez le liquide de votre choix » → « Cartouche Gorilla X JNR ».
+          cartouches.push({ url: u, title: title.replace(/\s*[-–|]\s*YouVape.*$/i, '').split(/\s+[-–|:]\s+/)[0] });
           continue;
         }
         const label = modelLabel(a);
@@ -936,7 +937,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const covers = (txt) => txt && tokens(titleHead.query).every((t) => compact(txt).includes(t));
     // Segments promotionnels du title actuel (« Vapeur abondante en tirage aérien ») : retirés.
     const marketing = curTitle ? curTitle.split(/\s+[-–|:]\s+/).filter((seg) => MARKETING_RE.test(seg)) : [];
-    const cleanTitle = curTitle ? curTitle.split(/\s+[-–|:]\s+/).filter((seg) => !MARKETING_RE.test(seg)).join(' - ') : null;
+    // Sans formule à retirer, le title garde ses séparateurs d'origine.
+    const cleanTitle = !curTitle ? null
+      : (marketing.length ? curTitle.split(/\s+[-–|:]\s+/).filter((seg) => !MARKETING_RE.test(seg)).join(' - ') : curTitle);
     let proposedTitle = title;
     if (covers(cleanTitle)) {
       proposedTitle = cleanTitle;
@@ -948,6 +951,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       }
     }
     const h1Keep = covers(curH1);
+    const metaHead = h1Keep ? curH1.replace(/\s+-\s+/g, ' ') : nice(titleHead.query);
+    // Ce que le nom de la page dit déjà ne se répète pas (« JNR Falcon X 28K : 28k Falcon X »).
+    const metaFacets = facets.filter((f) => !coveredBy(metaHead, f));
     const plan = [
       curTitle
         ? (same(curTitle, proposedTitle) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »${marketing.length ? ` (retirer ${marketing.map((m) => `« ${m} »`).join(', ')} : formule promotionnelle, litige DNF)` : ''}`)
@@ -955,8 +961,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       curH1
         ? (h1Keep ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
-      `Meta description : « ${h1Keep ? curH1.replace(/\s+-\s+/g, ' ') : nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
-      `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${facets.length ? ` (${facets.join(', ')})` : ''}.`,
+      `Meta description : « ${metaHead}${metaFacets.length ? ` : ${metaFacets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
+      `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${metaFacets.length ? ` (${metaFacets.join(', ')})` : ''}.`,
       `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
       ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}`),
       ...cartouches.slice(0, 2).map((c) => `H2 : ${c.title} : compatibilité, contenance, résistance ; lien vers ${pathOf(c.url)}`),
