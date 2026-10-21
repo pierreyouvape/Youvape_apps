@@ -87,7 +87,8 @@ const REC_STATUSES = [
   { value: 'ignored', label: 'Ignoré' },
 ];
 const STATUS_FILTERS = [
-  { value: 'todo,doing', label: 'À faire et en cours' },
+  { value: 'todo', label: 'À faire' },
+  { value: 'doing', label: 'En cours' },
   { value: 'done', label: 'Faites' },
   { value: 'ignored', label: 'Ignorées' },
   { value: 'todo,doing,done,ignored', label: 'Toutes' },
@@ -211,7 +212,7 @@ function RecCard({ rec, rank, onStatus }) {
 
 function Recommendations() {
   const [data, setData] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('todo,doing');
+  const [statusFilter, setStatusFilter] = useState('todo');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
