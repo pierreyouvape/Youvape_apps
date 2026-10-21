@@ -587,6 +587,7 @@ function VerifyPanel({ page, onReload, onPublish, setMsg }) {
   const onDone = useCallback((p) => {
     onReload();
     if (p.error) setMsg(`Vérification en échec : ${p.error}`);
+    else if (!p.finished) setMsg('La vérification a été interrompue (redémarrage du serveur) : relancez-la.');
   }, [onReload, setMsg]);
   const [progress, setProgress, busy] = useJobProgress(page.id, 'verify', page.verify_progress, onDone);
 
@@ -823,6 +824,7 @@ function PageDetail({ id, onBack, onChanged }) {
     await load();
     onChanged();
     if (p.error) setMsg(`Analyse en échec : ${p.error}`);
+    else if (!p.finished) setMsg('L’analyse a été interrompue (redémarrage du serveur) : relancez-la.');
   }, [load, onChanged]);
   const [progress, setProgress, analyzing] = useJobProgress(id, 'analyze', page?.progress, onAnalyzed);
 
@@ -941,6 +943,18 @@ function PageDetail({ id, onBack, onChanged }) {
       {msg && <div style={{ fontSize: 13, color: C.grisF, marginBottom: 10 }}>{msg}</div>}
 
       {analyzing && <AnalysisProgress progress={progress || page.progress} />}
+      {!analyzing && !page.analyzed_at && (
+        <Card style={{ marginBottom: 14, borderColor: C.orange }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, color: C.grisTF }}>
+              Cette page n&apos;a pas encore été analysée (analyse jamais lancée ou interrompue) : aucune donnée ni brief tant qu&apos;elle ne l&apos;est pas.
+            </span>
+            <button type="button" onClick={() => startAnalyze().catch((e) => setMsg(errMsg(e)))} style={{ ...btnPrimary, marginLeft: 'auto' }}>
+              Lancer l&apos;analyse
+            </button>
+          </div>
+        </Card>
+      )}
       {!analyzing && progress?.error && <AnalysisProgress progress={progress} />}
 
       {sub === 'donnees' && <DataPanel page={{ ...page, progress: { running: analyzing } }} onSaved={saved} onAnalyze={startAnalyze} setMsg={setMsg} />}
