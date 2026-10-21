@@ -183,6 +183,7 @@ function RecCard({ rec, rank, onStatus }) {
                 <th style={{ ...th, textAlign: 'right' }}>Impr. 28 j</th>
                 <th style={{ ...th, textAlign: 'right' }}>Clics</th>
                 <th style={{ ...th, textAlign: 'right' }}>Pos.</th>
+                {queries.some((q) => q.role) && <th style={th}>Rôle dans la recommandation</th>}
               </tr></thead>
               <tbody>
                 {queries.map((q) => (
@@ -191,6 +192,7 @@ function RecCard({ rec, rank, onStatus }) {
                     <td style={tdNum}>{fmtInt(q.i)}</td>
                     <td style={tdNum}>{fmtInt(q.c)}</td>
                     <td style={tdNum}>{fmtPos(q.p)}</td>
+                    {queries.some((x) => x.role) && <td style={{ ...td, fontSize: 12, color: C.grisF }}><Linkified text={q.role || ''} /></td>}
                   </tr>
                 ))}
               </tbody>

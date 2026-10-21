@@ -285,6 +285,11 @@ const canon = (q) => norm(q)
   .replace(/\b0 ?%/g, 'sans nicotine');
 const canonTokens = (q) => tokens(canon(q));
 const hasSensitive = (q) => tokens(q).some((t) => SENSITIVE.has(t));
+// Santé : argument jugé publicitaire (DNF), jamais proposé en FAQ.
+const HEALTH_RE = /danger|cancer|sant[eé]|risque|nocif|toxique|mortel|poumon|maladie/;
+// Ligne du tableau d'une carte : toute requête citée dans la carte y figure, avec son rôle.
+const qRow = (x, role) => ({ query: x.query, i: x.i, c: x.c, p: Number(Number(x.p).toFixed(1)), role });
+
 
 const placementFor = (u) => {
   switch (pageKind(u)) {
@@ -357,11 +362,12 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
 };
 
 // 1. Cannibalisation : deux de nos pages se partagent une même requête.
-const detectCannibalisation = ({ q, byQuery }) => {
+const detectCannibalisation = ({ q, byQuery }, audits) => {
   const pairs = new Map();
   for (const [query, rows] of byQuery) {
     const qs = q.get(query);
-    if (!qs || qs.i < 150) continue;
+    // Déjà dans le top 3 : le partage ne coûte rien, on n'y touche pas.
+    if (!qs || qs.i < 150 || qs.p <= 3) continue;
     const total = rows.reduce((s, r) => s + r.i, 0);
     const strong = rows.filter((r) => r.i >= 30 && r.i / total >= 0.15 && !isParamUrl(r.page));
     if (strong.length < 2) continue;
@@ -374,28 +380,31 @@ const detectCannibalisation = ({ q, byQuery }) => {
   const recs = [];
   for (const [key, v] of pairs) {
     const totals = new Map(v.pages.map((pg) => [pg, { c: 0, i: 0 }]));
-    for (const qq of v.queries) for (const s of qq.split) { const t = totals.get(s.page); if (t) { t.c += s.c; t.i += s.i; } }
+    for (const qq of v.queries) for (const sp of qq.split) { const t = totals.get(sp.page); if (t) { t.c += sp.c; t.i += sp.i; } }
     const [main, second] = [...totals.entries()].sort((x, y) => y[1].c - x[1].c || y[1].i - x[1].i).map(([pg]) => pg);
-    const est = v.queries.reduce((s, qq) => s + 0.5 * gainTo(qq.i, qq.c, qq.p, Math.max(1, qq.p - 1.5)), 0);
+    const est = v.queries.reduce((sum, qq) => sum + 0.5 * gainTo(qq.i, qq.c, qq.p, Math.max(1, qq.p - 1.5)), 0);
     const top = v.queries.sort((x, y) => y.i - x.i);
-    const secondKind = pageKind(second);
-    const weakSecond = ['étiquette', 'catégorie', 'page'].includes(secondKind);
+    const head = top[0];
+    const secAudit = audits.get(normUrl(second));
+    const secTitle = secAudit?.title || null;
+    const targetsIt = secTitle && tokens(head.query).every((t) => compact(secTitle).includes(t));
+    const steps = [
+      `Page de référence : ${pathOf(main)} (${pageKind(main)}, celle qui reçoit le plus de clics sur ${top.length > 1 ? 'ces requêtes' : 'cette requête'}).`,
+      targetsIt
+        ? `${pathOf(second)} (${pageKind(second)}) vise aussi « ${head.query} » dans son title (« ${secTitle} ») : retirer ces mots de son title et de son H1${['étiquette', 'catégorie', 'page'].includes(pageKind(second)) ? ', ou la passer en noindex, follow si elle n’a pas d’autre rôle' : ''}.`
+        : `${pathOf(second)} (${pageKind(second)}) ne vise pas « ${head.query} » dans son title${secTitle ? ` (« ${secTitle} »)` : ''} : ne rien retirer.`,
+      `Sur ${pathOf(second)} : ajouter un lien vers ${pathOf(main)} avec l'ancre « ${cap(head.query)} », ${placementFor(second)}. C'est ce lien qui indique à Google quelle page fait référence.`,
+    ];
     recs.push({
       rec_key: `cannibalisation:${key}`,
       type: 'cannibalisation',
-      effort: 'moyen',
+      effort: 'faible',
       est_clicks: monthly(est),
-      title: `Deux pages se partagent ${top.length} requête${top.length > 1 ? 's' : ''} (« ${top[0].query} »)`,
-      reason: `Sur ${top.length > 1 ? 'ces requêtes' : 'cette requête'}, Google hésite entre ${pathOf(main)} (${pageKind(main)}) et ${pathOf(second)} (${secondKind}). Aucune des deux ne s'installe : « ${top[0].query} » est en position ${fmt1(top[0].p)} pour ${fmtInt(top[0].i)} impressions en 28 jours.`,
-      action: [
-        `Page de référence proposée : ${pathOf(main)} (celle qui reçoit le plus de clics).`,
-        weakSecond
-          ? `Sur ${pathOf(second)} : retirer ces mots du title et du H1, et ajouter un lien vers ${pathOf(main)}. Si la page n'a pas d'autre rôle, la passer en noindex (garder « follow »).`
-          : `Sur ${pathOf(second)} : différencier le title et le H1 (une intention différente, par exemple avec / sans nicotine, ou modèle / cartouche) et ajouter un lien vers ${pathOf(main)} avec ces mots.`,
-        'Si les deux pages répondent à deux intentions différentes, les différencier plutôt que d’en retirer une.',
-      ].join('\n\n'),
+      title: `Deux pages se partagent « ${head.query} »${top.length > 1 ? ` (+ ${top.length - 1} requête${top.length > 2 ? 's' : ''})` : ''}`,
+      reason: `Google montre tantôt ${pathOf(main)}, tantôt ${pathOf(second)}. « ${head.query} » reste en position ${fmt1(head.p)} (${fmtInt(head.i)} impressions en 28 jours).`,
+      action: steps.map((t, n) => `${n + 1}. ${t}`).join('\n\n'),
       urls: [main, second],
-      queries: top.slice(0, 10).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+      queries: top.slice(0, 10).map((x) => qRow(x, 'Partagée entre les deux pages')),
     });
   }
   return recs;
@@ -426,13 +435,12 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     const head = owned[0];
     const headTk = canonTokens(head.query);
     const variants = owned.filter((x) => x !== head && headTk.every((t) => canonTokens(x.query).includes(t)));
-    const otherIntent = owned.filter((x) => x !== head && !variants.includes(x));
     const audit = audits.get(normUrl(page));
     const titleNow = audit?.title || '(title non relevé)';
     const where = compact(`${audit?.title || ''} ${audit?.h1 || ''}`);
     const headCovered = tokens(head.query).every((t) => where.includes(t));
     const missing = [];
-    for (const v of variants) {
+    for (const v of variants.slice(0, 8)) {
       for (const t of canonTokens(v.query)) {
         if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
         missing.push({ t, from: v });
@@ -469,15 +477,12 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     // 4. Ce qu'il ne faut pas viser ici
     if (elsewhere.length) {
       const byTarget = new Map();
-      for (const x of elsewhere) {
+      for (const x of elsewhere.slice(0, 6)) {
         const tgt = pathOf(claimed.get(x.query));
         if (!byTarget.has(tgt)) byTarget.set(tgt, []);
         byTarget.get(tgt).push(x.query);
       }
-      blocks.push(`Requêtes à laisser à leur page dédiée (ne pas les ajouter ici) : ${[...byTarget.entries()].map(([tgt, qs]) => `${qs.slice(0, 4).map((x) => `« ${x} »`).join(', ')} → ${tgt}`).join(' ; ')}.`);
-    }
-    if (otherIntent.length) {
-      blocks.push(`Autres requêtes qui atterrissent ici sans être le sujet de la page (ne pas les viser dans le title) : ${otherIntent.slice(0, 5).map((x) => `« ${x.query} »`).join(', ')}.`);
+      blocks.push(`Ne pas viser ici ${[...byTarget.entries()].map(([tgt, qs]) => `${qs.slice(0, 6).map((x) => `« ${x} »`).join(', ')} : elles relèvent de ${tgt}`).join(' ; ')} (voir le tableau).`);
     }
     const editorial = pageKind(page) === 'article' || pathOf(page).startsWith('/avis-tests/');
     const notes = [];
@@ -494,7 +499,11 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       reason: `« ${head.query} » est en position ${fmt1(head.p)}${variants.length ? `, avec ${variants.length} variante${variants.length > 1 ? 's' : ''}` : ''}. Gagner deux places la fait passer dans le haut de la première page.`,
       action: numbered.join('\n\n'),
       urls: [page],
-      queries: scope.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+      queries: [
+        qRow(head, 'Requête principale'),
+        ...variants.slice(0, 8).map((x) => qRow(x, hasSensitive(x.query) ? 'Variante (mot sensible : ne pas employer)' : 'Variante')),
+        ...elsewhere.slice(0, 6).map((x) => qRow(x, `À laisser à ${pathOf(claimed.get(x.query))}`)),
+      ],
     });
   }
   return recs;
@@ -504,7 +513,7 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
 const detectSnippet = ({ q, byQuery }, audits) => {
   const perPage = new Map();
   for (const [query, qs] of q) {
-    if (qs.i < 200 || qs.p > 6) continue;
+    if (qs.i < 200 || qs.p > 6 || hasSensitive(query)) continue;
     const ctr = qs.c / qs.i;
     if (ctr >= 0.5 * ctrAt(qs.p)) continue;
     const page = byQuery.get(query)?.[0]?.page;
@@ -530,7 +539,7 @@ const detectSnippet = ({ q, byQuery }, audits) => {
         LEGAL_NOTE,
       ].join('\n\n'),
       urls: [page],
-      queries: list.slice(0, 8).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+      queries: list.slice(0, 8).map((x) => qRow(x, `Peu cliquée : ${(x.ctr * 100).toFixed(1).replace('.', ',')} % de clics`)),
     };
   });
 };
@@ -539,7 +548,7 @@ const detectSnippet = ({ q, byQuery }, audits) => {
 const detectFaq = ({ q, byQuery }) => {
   const perPage = new Map();
   for (const [query, qs] of q) {
-    if (qs.i < 20 || !QUESTION_RE.test(norm(query))) continue;
+    if (qs.i < 20 || !QUESTION_RE.test(norm(query)) || HEALTH_RE.test(norm(query))) continue;
     const page = byQuery.get(query)?.[0]?.page;
     if (!page || isParamUrl(page)) continue;
     if (!perPage.has(page)) perPage.set(page, []);
@@ -547,20 +556,30 @@ const detectFaq = ({ q, byQuery }) => {
   }
   return [...perPage.entries()]
     .filter(([, list]) => list.reduce((s, x) => s + x.i, 0) >= 100)
-    .map(([page, list]) => {
-      list.sort((a, b) => b.i - a.i);
-      const est = list.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
+    .map(([page, all]) => {
+      all.sort((a, b) => b.i - a.i);
+      // Une même question tapée de dix façons = une seule entrée de FAQ.
+      const keyOf = (txt) => tokens(txt.replace(/\b(mg|milligrammes?|grammes?|il y a|y a[- ]t[- ]il|1|une?)\b/g, ' '))
+        .filter((t) => !['combien', 'quel', 'quelle', 'est', 'ce', 'que', 'qu'].includes(t)).sort().join(' ');
+      const groups = new Map();
+      for (const x of all) {
+        const k = keyOf(norm(x.query));
+        if (!groups.has(k)) groups.set(k, { ...x, variants: [] });
+        else groups.get(k).variants.push(x);
+      }
+      const list = [...groups.values()];
+      const est = all.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
       return {
         rec_key: `faq:${page}`,
         type: 'faq',
         effort: 'faible',
         est_clicks: monthly(est),
         title: `Questions de clients à traiter en FAQ : ${pathOf(page)}`,
-        reason: `${list.length} question${list.length > 1 ? 's' : ''} tapée${list.length > 1 ? 's' : ''} dans Google mènent à cette page sans y trouver de réponse dédiée (${fmtInt(list.reduce((s, x) => s + x.i, 0))} impressions en 28 jours).`,
+        reason: `${list.length} question${list.length > 1 ? 's' : ''} distincte${list.length > 1 ? 's' : ''} (${all.length} formulations) mène${list.length > 1 ? 'nt' : ''} à cette page sans réponse dédiée : ${fmtInt(all.reduce((s, x) => s + x.i, 0))} impressions en 28 jours.`,
         action: `Ajouter une FAQ avec une réponse courte et factuelle à chacune de ces questions (données structurées FAQPage).\n${LEGAL_NOTE}`,
-        proposal: list.slice(0, 10).map((x) => `- ${cap(x.query)} ?`).join('\n'),
+        proposal: list.slice(0, 8).map((x) => `- ${cap(x.query)} ?${x.variants.length ? ` (aussi tapée de ${x.variants.length} autre${x.variants.length > 1 ? 's' : ''} façon${x.variants.length > 1 ? 's' : ''})` : ''}`).join('\n'),
         urls: [page],
-        queries: list.slice(0, 10).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+        queries: list.slice(0, 8).flatMap((x) => [qRow(x, 'Question à traiter'), ...x.variants.slice(0, 2).map((v) => qRow(v, `Même question que « ${x.query} »`))]),
       };
     });
 };
@@ -750,20 +769,29 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       }
     } else {
       for (const u of fiches) {
+        if (/cartouche/.test(u)) continue; // une cartouche n'est pas un modèle
         let a = audits.get(u) || audits.get(normUrl(u));
         if (!a) { a = await auditUrl(u); if (a.http_status) await saveAudit(a); }
         const label = modelLabel(a);
-        if (label && !labels.some((l) => compact(l.label) === compact(label))) labels.push({ label, url: u });
+        if (!label || labels.some((l) => compact(l.label) === compact(label))) continue;
+        labels.push({ label, url: u, title: a?.title || '' });
       }
     }
     const hasNico = fiches.some((u) => !/sans-nicotine|0mg/.test(u));
     const hasZero = fiches.some((u) => /sans-nicotine|0mg/.test(u));
-    const facets = labels.length >= 2 ? labels.map((l) => l.label) : [
-      ...(labels.length ? [labels[0].label] : []),
+    // Un modèle qui ne fait que répéter la requête n'apporte rien au title.
+    const headCompact = compact(titleHead.query);
+    const informative = labels.filter((l) => !headCompact.includes(compact(l.label)));
+    const facets = informative.length >= 2 ? informative.map((l) => l.label) : [
+      ...informative.map((l) => l.label),
       ...(hasNico && hasZero ? ['avec ou sans nicotine'] : []),
       ...(ranked.some(([u]) => /cartouche/.test(u)) ? ['cartouches'] : []),
     ];
-    let title = cap(titleHead.query);
+    // Casse des noms propres reprise des titles des fiches (« Meteorite 100K », « Gorilla X »).
+    const casing = new Map();
+    for (const l of labels) for (const w of `${l.title} ${l.label}`.split(/\s+/)) if (/[A-Z]/.test(w)) casing.set(norm(w), w);
+    const nice = (txt) => cap(txt.split(' ').map((w) => casing.get(norm(w)) || w).join(' '));
+    let title = nice(titleHead.query);
     for (const f of facets) {
       const next = `${title}${title.includes(':') ? ', ' : ' : '}${f}`;
       if (next.length > 60) break;
@@ -775,7 +803,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       ? sitePages.filter((x) => /liquid/.test(x.slug) && headTokens.filter((t) => !GENERIC.has(t)).every((t) => compact(x.slug).includes(t))).sort((a, b) => a.slug.length - b.slug.length)[0]
       : null;
     const rechargeUrl = liquidZero?.url || routedTarget;
-    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query))).slice(0, 6).map((x) => x.query);
+    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query)) && !HEALTH_RE.test(norm(x.query)) && !hasSensitive(x.query)).slice(0, 6).map((x) => x.query);
+    const employ = list.filter((x) => !hasSensitive(x.query)).slice(0, 12);
     // Page existante : on montre l'actuel à côté du proposé (on MODIFIE, on ne crée pas).
     const curTitle = dedAudit?.title ? dedAudit.title.replace(/\s*[-–|]\s*YouVape\s*$/i, '') : null;
     const curH1 = dedAudit?.h1 || null;
@@ -785,9 +814,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         ? (same(curTitle, title) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${title} »`)
         : `Title : « ${title} »`,
       curH1
-        ? (same(curH1, cap(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${cap(titleHead.query)} »`)
-        : `H1 : « ${cap(titleHead.query)} »`,
-      `Meta description : « ${cap(titleHead.query)}${labels.length ? ` : ${labels.slice(0, 4).map((l) => l.label).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
+        ? (same(curH1, nice(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
+        : `H1 : « ${nice(titleHead.query)} »`,
+      `Meta description : « ${nice(titleHead.query)}${labels.length ? ` : ${labels.slice(0, 4).map((l) => l.label).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${labels.length ? ` (${labels.map((l) => l.label).join(', ')})` : ''}.`,
       'Grille des produits, puis un tableau comparatif : capacité, bouffées annoncées, batterie, recharge, taux de nicotine.',
       ...labels.slice(0, 5).map((l) => `H2 : ${l.label} : caractéristiques, recharge, compatibilités ; lien vers ${pathOf(l.url)}`),
@@ -795,11 +824,17 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       questions.length
         ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
         : 'FAQ : 3 à 5 questions factuelles (fonctionnement, recharge, compatibilité, légalité).',
-      `Requêtes à employer dans le texte : ${list.filter((x) => !hasSensitive(x.query)).slice(0, 12).map((x) => x.query).join(', ')}`,
+      `Requêtes à employer dans le texte : ${employ.map((x) => x.query).join(', ')}`,
       ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${(liquidZero?.url || routedTarget) ? `de ${pathOf(liquidZero?.url || routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
     ];
-    const queriesOut = list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) }));
+    const routedPath = pathOf(liquidZero?.url || routedTarget || '') || 'les e-liquides';
+    const queriesOut = [
+      ...employ.map((x) => qRow(x, x === titleHead ? 'Requête du title' : 'À employer dans le texte')),
+      ...list.filter((x) => questions.includes(x.query) && !employ.includes(x)).map((x) => qRow(x, 'Question pour la FAQ')),
+      ...list.filter((x) => hasSensitive(x.query)).slice(0, 4).map((x) => qRow(x, 'Mot sensible : ne pas employer')),
+      ...routed.slice(0, 6).map((x) => qRow(x, `Renvoyée vers ${routedPath}`)),
+    ];
 
     if (slugMatch && dedicatedNoindex) {
       recs.push({
@@ -939,7 +974,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     const claimed = new Map();
     const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
-      ...detectCannibalisation(data).filter((r) => r.est_clicks >= 10),
+      ...detectCannibalisation(data, audits).filter((r) => r.est_clicks >= 10),
       ...(await detectTexte(data, audits, claimed)),
       ...detectSnippet(data, audits),
       ...detectFaq(data),
