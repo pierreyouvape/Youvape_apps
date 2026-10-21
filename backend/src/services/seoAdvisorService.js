@@ -277,6 +277,13 @@ const pageKind = (u) => {
 // Mots génériques : ne comptent pas pour dire que deux requêtes parlent du même sujet.
 const GENERIC = new Set(['puff', 'puffs', 'cigarette', 'electronique', 'vape', 'vapoteuse', 'e', 'pod']);
 const coreTokens = (q) => tokens(q).filter((t) => !GENERIC.has(t));
+// « 0 nicotine », « 0mg », « zero nicotine » = « sans nicotine » pour juger qu'une requête est une variante.
+const canon = (q) => norm(q)
+  .replace(/\b(0 ?mg|0|zero|z[eé]ro)( de)? nicotine\b/g, 'sans nicotine')
+  .replace(/\b0 ?mg\b/g, 'sans nicotine')
+  .replace(/\b0 ?%/g, 'sans nicotine');
+const canonTokens = (q) => tokens(canon(q));
+const hasSensitive = (q) => tokens(q).some((t) => SENSITIVE.has(t));
 
 const placementFor = (u) => {
   switch (pageKind(u)) {
@@ -413,16 +420,16 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     const owned = all.filter((x) => !elsewhere.includes(x));
     if (!owned.length) continue;
     const head = owned[0];
-    const headTk = tokens(head.query);
-    const variants = owned.filter((x) => x !== head && headTk.every((t) => tokens(x.query).includes(t)));
+    const headTk = canonTokens(head.query);
+    const variants = owned.filter((x) => x !== head && headTk.every((t) => canonTokens(x.query).includes(t)));
     const otherIntent = owned.filter((x) => x !== head && !variants.includes(x));
     const audit = audits.get(normUrl(page));
     const titleNow = audit?.title || '(title non relevé)';
     const where = compact(`${audit?.title || ''} ${audit?.h1 || ''}`);
-    const headCovered = headTk.every((t) => where.includes(t));
+    const headCovered = tokens(head.query).every((t) => where.includes(t));
     const missing = [];
     for (const v of variants) {
-      for (const t of tokens(v.query)) {
+      for (const t of canonTokens(v.query)) {
         if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
         missing.push({ t, from: v });
       }
@@ -716,7 +723,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       .sort((a, b) => tokens(b.query).length - tokens(a.query).length || b.i - a.i)[0]) || head;
 
     // Modèles (fiches qui se classent déjà) ou sous-pages (e-liquides).
-    const fiches = ranked.filter(([u]) => pageKind(u) === 'fiche produit').slice(0, 8).map(([u]) => u);
+    const fiches = ranked
+      .filter(([u]) => pageKind(u) === 'fiche produit' && (isProductType || !/\/eliquides\//.test(u)))
+      .slice(0, 8).map(([u]) => u);
     const labels = [];
     if (isProductType && target) {
       const base = pathOf(target).split('/').pop();
@@ -762,8 +771,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       questions.length
         ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
         : 'FAQ : 3 à 5 questions factuelles (fonctionnement, recharge, compatibilité, légalité).',
-      `Requêtes à employer dans le texte : ${list.slice(0, 12).map((x) => x.query).join(', ')}`,
-      ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${routedTarget ? `de ${pathOf(routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
+      `Requêtes à employer dans le texte : ${list.filter((x) => !hasSensitive(x.query)).slice(0, 12).map((x) => x.query).join(', ')}`,
+      ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${(liquidZero?.url || routedTarget) ? `de ${pathOf(liquidZero?.url || routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
     ];
     const queriesOut = list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) }));
