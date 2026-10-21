@@ -742,6 +742,23 @@ const loadSitePages = async () => {
   return out.map((x) => ({ ...x, url: (x.url || '').replace(/\/$/, '') }));
 };
 
+// Vocabulaire du plan de page selon ce que vend la page : on ne parle pas de
+// bouffées ni de batterie pour des e-liquides.
+const PROFILES = {
+  puff: {
+    comparatif: 'capacité, bouffées annoncées, batterie, recharge, taux de nicotine',
+    meta: 'Capacité, autonomie, recharge et compatibilités de chaque modèle.',
+    h2: 'caractéristiques, recharge, compatibilités',
+    faq: 'fonctionnement, recharge, compatibilité, légalité',
+  },
+  liquide: {
+    comparatif: 'format (10 ml, 50 ml), taux de nicotine, type de nicotine (sels ou classique), ratio PG/VG',
+    meta: 'Formats, taux de nicotine, ratio PG/VG et compatibilités.',
+    h2: 'formats, taux de nicotine, ratio PG/VG, compatibilités',
+    faq: 'compatibilité avec les puffs rechargeables et les pods, sels de nicotine, formats, conservation',
+  },
+};
+
 // Groupes « type de produit » : une requête qui les touche leur revient en
 // priorité (« liquide jnr sans nicotine » → e-liquides, pas les puffs).
 const PRODUCT_TYPE_GROUPS = ['eliquide-jnr'];
@@ -829,8 +846,16 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const labels = [];
     if (isProductType && target) {
       const base = pathOf(target).split('/').pop();
+      // Intitulé = le vrai title de la sous-page (« E-Liquides JNR 10ml Sel de Nicotine »),
+      // sans les mots déjà dans la requête : « 10ml Sel de Nicotine ».
       for (const sp of sitePages.filter((x) => x.slug.startsWith(`${base}-`))) {
-        labels.push({ label: sp.slug.slice(base.length + 1).replace(/-/g, ' ').replace(/(\d+)ml/, '$1 ml'), url: sp.url });
+        let a = audits.get(normUrl(sp.url));
+        if (!a) { a = await auditUrl(sp.url); if (a.http_status) { await saveAudit(a); audits.set(normUrl(sp.url), a); } }
+        const full = (a?.h1 || a?.title || '').replace(/\s*[-–|]\s*YouVape.*$/i, '').replace(/\s*[-–]\s*Page \d+$/i, '').trim();
+        const headTk = tokens(head.query).map((w) => w.replace(/s$/, ''));
+        const label = full.split(/\s+/).filter((w) => !['e', 'eliquide', 'liquide', 'jnr'].includes(norm(w).replace(/[^a-z0-9]/g, '').replace(/s$/, '')) && !headTk.includes(norm(w).replace(/s$/, ''))).join(' ').trim()
+          || sp.slug.slice(base.length + 1).replace(/-/g, ' ');
+        labels.push({ label, url: sp.url, title: full });
       }
     } else {
       for (const u of fiches) {
@@ -874,6 +899,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const curTitle = dedAudit?.title ? dedAudit.title.replace(/\s*[-–|]\s*YouVape\s*$/i, '') : null;
     const curH1 = dedAudit?.h1 || null;
     const same = (x, y) => x && compact(x) === compact(y);
+    const profile = isProductType || /liquid/.test(pathOf(target || '')) ? PROFILES.liquide : PROFILES.puff;
     const plan = [
       curTitle
         ? (same(curTitle, title) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${title} »`)
@@ -881,14 +907,14 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       curH1
         ? (same(curH1, nice(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
-      `Meta description : « ${nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
+      `Meta description : « ${nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${facets.length ? ` (${facets.join(', ')})` : ''}.`,
-      'Grille des produits, puis un tableau comparatif : capacité, bouffées annoncées, batterie, recharge, taux de nicotine.',
-      ...labels.slice(0, 5).map((l) => `H2 : ${l.label} : caractéristiques, recharge, compatibilités ; lien vers ${pathOf(l.url)}`),
+      `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
+      ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}`),
       ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}`] : []),
       questions.length
         ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
-        : 'FAQ : 3 à 5 questions factuelles (fonctionnement, recharge, compatibilité, légalité).',
+        : `FAQ : 3 à 5 questions factuelles (${profile.faq}).`,
       `Requêtes à employer dans le texte : ${employ.map((x) => x.query).join(', ')}`,
       ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${(liquidZero?.url || routedTarget) ? `de ${pathOf(liquidZero?.url || routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
