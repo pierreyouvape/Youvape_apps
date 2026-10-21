@@ -875,16 +875,22 @@ const pickupMetaFor = (wcOrder, methodId) => (wcOrder.meta_data || [])
 const keepRelay = (plan, planned, network, originNetwork) =>
   plan.method === planned.method || (!!network && network === originNetwork);
 
-/** Ligne d'expédition WooCommerce d'une méthode, reprise d'une commande récente qui la porte. */
+/**
+ * Ligne d'expédition WooCommerce d'une méthode, reprise d'une commande récente qui la porte.
+ * Une commande saisie à la main dans l'admin n'a que le libellé (`method_id` vide) :
+ * WooCommerce refuse d'en créer une copie (1253066, 21/10/2026), on passe à la suivante.
+ */
 const shippingLineFor = async (denomination) => {
-  const { rows: [o] } = await pool.query(
-    `SELECT wp_order_id FROM orders WHERE shipping_method = $1 ORDER BY post_date DESC LIMIT 1`,
+  const { rows } = await pool.query(
+    `SELECT wp_order_id FROM orders WHERE shipping_method = $1 ORDER BY post_date DESC LIMIT 5`,
     [denomination]
   );
-  if (!o) throw httpError(400, `Aucune commande récente en « ${denomination} » pour en reprendre la méthode.`);
-  const line = (await fetchWcOrder(o.wp_order_id)).shipping_lines?.[0];
-  if (!line) throw httpError(400, `La commande ${o.wp_order_id} n'a pas de ligne d'expédition.`);
-  return line;
+  if (!rows.length) throw httpError(400, `Aucune commande récente en « ${denomination} » pour en reprendre la méthode.`);
+  for (const o of rows) {
+    const line = (await fetchWcOrder(o.wp_order_id)).shipping_lines?.[0];
+    if (line?.method_id) return line;
+  }
+  throw httpError(400, `Aucune commande récente en « ${denomination} » ne porte la méthode WooCommerce à reprendre.`);
 };
 
 /**
@@ -964,10 +970,12 @@ const createReplacement = async (id, items, user, method = null) => {
   let origin;
   try {
     origin = await fetchWcOrder(r.wp_order_id);
-    const shippingLine = plan.method === r.shipping_method
-      ? origin.shipping_lines?.[0]
+    // La méthode affichée fait foi ; la ligne d'origine n'est reprise que si elle
+    // la porte vraiment (une commande créée dans l'admin n'a que le libellé).
+    const originLine = origin.shipping_lines?.[0];
+    const shippingLine = plan.method === r.shipping_method && originLine?.method_id
+      ? originLine
       : await shippingLineFor(plan.method);
-    if (!shippingLine) throw httpError(400, 'La commande d’origine n’a pas de ligne d’expédition.');
 
     created = await wcRequest('post', '/orders', {
       status: 'processing',
@@ -993,7 +1001,8 @@ const createReplacement = async (id, items, user, method = null) => {
     await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
     if (error.statusCode) throw error;
     const detail = error.response?.data?.message || error.message;
-    throw httpError(502, `WooCommerce a refusé la commande : ${detail}`);
+    // 422 et non 502 : Cloudflare remplace le corps d'un 502, le message n'arrivait jamais à l'écran.
+    throw httpError(422, `WooCommerce a refusé la commande : ${detail}`);
   }
 
   const newId = Number(created.id);
@@ -1081,7 +1090,7 @@ const reship = async (id, user) => {
     });
   } catch (error) {
     await pool.query('UPDATE customer_returns SET reship_label_id = NULL WHERE id = $1', [id]);
-    throw httpError(error.statusCode && error.statusCode < 500 ? error.statusCode : 502,
+    throw httpError(error.statusCode && error.statusCode < 500 ? error.statusCode : 422,
       error.userMessage || `${adapter.label} : ${error.message}`);
   }
 
@@ -1143,7 +1152,7 @@ const cancelOutcome = async (id, user) => {
         try {
           await adapter.cancelLabel({ label, account: await getAccount(adapter.code, label.account_code) });
         } catch (error) {
-          throw httpError(502, `${adapter.label} refuse d'annuler l'étiquette n°${label.tracking_number} : ${error.message}`);
+          throw httpError(422, `${adapter.label} refuse d'annuler l'étiquette n°${label.tracking_number} : ${error.message}`);
         }
         done.push(`étiquette ${adapter.label} n°${label.tracking_number} annulée chez le transporteur`);
       } else {
@@ -1241,7 +1250,7 @@ const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => 
   } catch (error) {
     await pool.query('UPDATE customer_returns SET loyalty_points = NULL, loyalty_credited_at = NULL WHERE id = $1', [id]);
     const detail = error.response?.data?.message || error.message;
-    throw httpError(502, `WPLoyalty a refusé le crédit : ${detail}`);
+    throw httpError(422, `WPLoyalty a refusé le crédit : ${detail}`);
   }
   const detail = `${b.points} points (${breakdownText(b)})`;
   await markTreated(id, user.id, 'points', detail.slice(0, 255));
