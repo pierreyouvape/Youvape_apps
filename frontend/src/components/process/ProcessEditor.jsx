@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
 import { C, PROCESS_COLOR } from './processConstants';
 
@@ -13,9 +14,10 @@ import { C, PROCESS_COLOR } from './processConstants';
  * (chemins de fichiers, requêtes SQL, mises en garde) ; là-bas on veut une API
  * impérative pour les macros et les emojis, mais pas de titres.
  *
- * Les images ne passent PAS par l'éditeur : une capture collée est remontée au
- * parent via onPasteImage et rejoint la bande photo de l'étape, pour que toutes
- * les photos vivent au même endroit, légendées et ordonnées.
+ * Les captures s'insèrent DANS le texte, à l'endroit du curseur : collées
+ * (Cmd+V), déposées, ou via le bouton « Capture ». Le fichier part sur le
+ * serveur (onUploadImage) et seule son URL entre dans le HTML — jamais de
+ * base64. La bande photo sous le texte reste disponible à côté.
  */
 
 const STYLE_ID = 'yv-process-editor-styles';
@@ -51,6 +53,13 @@ function ensureStyles() {
     .yv-process-editor .ProseMirror blockquote {
       border-left: 3px solid ${C.grisCL}; margin: 8px 0; padding: 2px 0 2px 12px; color: ${C.grisF};
     }
+    .yv-process-editor .ProseMirror img {
+      display: block; max-width: 100%; max-height: 420px; height: auto;
+      margin: 10px 0; border: 1px solid ${C.grisCL}; border-radius: 8px;
+    }
+    .yv-process-editor .ProseMirror img.ProseMirror-selectednode {
+      outline: 3px solid ${PROCESS_COLOR}; outline-offset: 2px;
+    }
     .yv-process-editor .ProseMirror p.is-editor-empty:first-child::before {
       content: attr(data-placeholder);
       float: left; color: ${C.grisM}; pointer-events: none; height: 0;
@@ -67,7 +76,8 @@ const btnStyle = (active) => ({
   borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1,
 });
 
-function Toolbar({ editor }) {
+function Toolbar({ editor, onPickImages, uploading }) {
+  const fileRef = useRef(null);
   if (!editor) return null;
   const b = (label, action, active, title) => (
     <button type="button" title={title} onClick={action} style={btnStyle(active)}>{label}</button>
@@ -102,17 +112,64 @@ function Toolbar({ editor }) {
       {b('❝', () => editor.chain().focus().toggleBlockquote().run(), editor.isActive('blockquote'), 'Citation')}
       <span style={{ width: 1, background: C.grisCL, margin: '0 3px' }} />
       {b('Lien', setLink, editor.isActive('link'), 'Insérer un lien')}
+      {onPickImages && (
+        <>
+          {b('📷 Capture', () => fileRef.current?.click(), false, 'Insérer une capture à l\'endroit du curseur (ou collez-la avec Cmd+V)')}
+          <input
+            ref={fileRef} type="file" accept="image/*" multiple hidden
+            onChange={(e) => { onPickImages(e.target.files); e.target.value = ''; }}
+          />
+        </>
+      )}
+      {uploading > 0 && (
+        <span style={{ fontSize: 12, color: C.grisM, alignSelf: 'center', marginLeft: 4 }}>
+          Envoi de la capture…
+        </span>
+      )}
     </div>
   );
 }
 
-export default function ProcessEditor({ value, onChange, placeholder, onPasteImage }) {
+const imageFiles = (list) =>
+  Array.from(list || []).filter((f) => f && f.type && f.type.startsWith('image/'));
+
+export default function ProcessEditor({ value, onChange, placeholder, onUploadImage }) {
   ensureStyles();
+  const [uploading, setUploading] = useState(0);
 
   // Refs : ces callbacks changent d'identité à chaque rendu du parent, or
   // recréer l'éditeur ferait perdre le curseur à chaque frappe.
-  const onPasteImageRef = useRef(onPasteImage);
-  onPasteImageRef.current = onPasteImage;
+  const onUploadImageRef = useRef(onUploadImage);
+  onUploadImageRef.current = onUploadImage;
+  const editorRef = useRef(null);
+
+  /**
+   * Envoie les fichiers puis insère chaque capture à `pos` (position du
+   * curseur au moment du collage, ou point de dépôt), dans l'ordre.
+   */
+  const insertImagesRef = useRef(null);
+  insertImagesRef.current = async (files, pos) => {
+    const upload = onUploadImageRef.current;
+    const ed = editorRef.current;
+    if (!upload || !ed || files.length === 0) return;
+    let at = pos;
+    for (const file of files) {
+      setUploading((n) => n + 1);
+      try {
+        const image = await upload(file);
+        if (!image?.url || ed.isDestroyed) continue;
+        // Le texte a pu bouger pendant l'envoi : on borne à la taille du document.
+        const target = Math.min(at ?? ed.state.selection.to, ed.state.doc.content.size);
+        const before = ed.state.doc.content.size;
+        ed.chain().focus()
+          .insertContentAt(target, { type: 'image', attrs: { src: image.url, alt: image.original_name || '' } })
+          .run();
+        at = target + (ed.state.doc.content.size - before);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
   const placeholderRef = useRef(placeholder || '');
   placeholderRef.current = placeholder || '';
 
@@ -125,24 +182,35 @@ export default function ProcessEditor({ value, onChange, placeholder, onPasteIma
         HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
       }),
       Placeholder.configure({ placeholder: () => placeholderRef.current }),
+      Image.configure({ inline: false, allowBase64: false }),
     ],
     editorProps: {
-      handlePaste: (_view, event) => {
+      handlePaste: (view, event) => {
         const items = event.clipboardData?.items;
-        if (!items || !onPasteImageRef.current) return false;
-        const files = Array.from(items)
-          .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
-          .map((it) => it.getAsFile())
-          .filter(Boolean);
+        if (!items || !onUploadImageRef.current) return false;
+        const files = imageFiles(Array.from(items)
+          .filter((it) => it.kind === 'file')
+          .map((it) => it.getAsFile()));
         if (files.length === 0) return false;
-        // La capture rejoint la bande photo de l'étape, pas le corps du texte.
-        files.forEach((f) => onPasteImageRef.current(f));
+        // La capture s'insère là où est le curseur.
+        insertImagesRef.current(files, view.state.selection.to);
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        // moved = déplacement d'un contenu déjà dans l'éditeur : comportement natif.
+        if (moved || !onUploadImageRef.current) return false;
+        const files = imageFiles(event.dataTransfer?.files);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        insertImagesRef.current(files, coords?.pos ?? view.state.selection.to);
         return true;
       },
     },
     content: value || '',
     onUpdate: ({ editor }) => onChange?.(editor.isEmpty ? '' : editor.getHTML()),
   });
+  editorRef.current = editor;
 
   // Synchronise un changement venu de l'extérieur (annulation, restauration)
   // sans casser la frappe en cours.
@@ -156,7 +224,13 @@ export default function ProcessEditor({ value, onChange, placeholder, onPasteIma
 
   return (
     <div style={{ border: `1px solid ${C.grisCL}`, borderRadius: 8, background: C.blanc }}>
-      <Toolbar editor={editor} />
+      <Toolbar
+        editor={editor}
+        uploading={uploading}
+        onPickImages={onUploadImage
+          ? (list) => insertImagesRef.current(imageFiles(list), editor?.state.selection.to)
+          : null}
+      />
       <div
         className="yv-process-editor"
         style={{ padding: '12px 14px', cursor: 'text' }}

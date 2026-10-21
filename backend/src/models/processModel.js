@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { stripBodySignatures } = require('../utils/processMedia');
 
 /** Statuts autorisés — toute autre valeur est ramenée à 'draft'. */
 const STATUSES = ['draft', 'published', 'archived'];
@@ -44,7 +45,8 @@ function normalizeBlock(b, index) {
   return {
     position: index + 1,
     title: (b?.title ?? '').toString().slice(0, 500) || null,
-    body: (b?.body ?? '').toString() || null,
+    // Les captures du texte sont stockées en chemin nu, comme la bande photo.
+    body: stripBodySignatures((b?.body ?? '').toString()) || null,
     callout: CALLOUTS.includes(b?.callout) ? b.callout : null,
     images: normalizeImages(b?.images),
   };

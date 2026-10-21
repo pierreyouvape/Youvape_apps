@@ -37,9 +37,12 @@ export const calloutInfo = (code) => CALLOUTS.find((c) => c.code === code) || nu
  */
 const ALLOWED_TAGS = [
   'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'span',
-  'h3', 'h4', 'code', 'pre', 'blockquote', 'hr',
+  'h3', 'h4', 'code', 'pre', 'blockquote', 'hr', 'img',
 ];
-const ALLOWED_ATTR = ['href', 'target', 'rel'];
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'];
+
+/** Seules nos propres captures sont affichées dans le texte, jamais une image externe. */
+const PROCESS_MEDIA_PREFIX = '/api/process/media/';
 
 export function sanitizeProcessHtml(html) {
   if (!html || typeof html !== 'string') return '';
@@ -51,12 +54,18 @@ export function sanitizeProcessHtml(html) {
     a.setAttribute('target', '_blank');
     a.setAttribute('rel', 'noopener noreferrer');
   });
+  tpl.content.querySelectorAll('img').forEach((img) => {
+    if (!(img.getAttribute('src') || '').startsWith(PROCESS_MEDIA_PREFIX)) img.remove();
+  });
   return tpl.innerHTML;
 }
 
-/** Un contenu Tiptap « vide » vaut '<p></p>' : on ne veut pas l'afficher. */
+/**
+ * Un contenu Tiptap « vide » vaut '<p></p>' : on ne veut pas l'afficher.
+ * Une capture seule, sans texte, est un contenu.
+ */
 export const hasContent = (html) =>
-  !!html && html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+  !!html && (/<img\b/i.test(html) || html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0);
 
 /**
  * Date PostgreSQL → « 01/09/2026 à 14:32 ».

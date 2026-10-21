@@ -83,17 +83,34 @@ const signImages = (images) =>
   (Array.isArray(images) ? images.map((img) => ({ ...img, url: signMediaUrl(img.url) })) : []);
 
 /**
- * Signe les images d'un tableau d'étapes, sous-étapes comprises.
- * Copie : l'entrée n'est pas mutée.
+ * Captures insérées DANS le texte d'un bloc : <img src="/api/process/media/…">.
+ * Même règle que la bande photo — chemin nu en base, signé à la lecture. Le
+ * HTML de l'éditeur encode le « & » de la signature en « &amp; », d'où une
+ * capture de la query entière jusqu'au guillemet.
+ */
+const BODY_MEDIA_SRC = /(<img\b[^>]*?\bsrc=")(\/api\/process\/media\/\d+\/[A-Za-z0-9._-]+)(\?[^"]*)?"/g;
+
+/** Retire la signature des images du texte (avant écriture en base). */
+const stripBodySignatures = (html) =>
+  (typeof html === 'string' ? html.replace(BODY_MEDIA_SRC, '$1$2"') : html);
+
+/** Signe les images du texte (à la lecture). */
+const signBodyImages = (html) =>
+  (typeof html === 'string'
+    ? html.replace(BODY_MEDIA_SRC, (_m, start, bare) => `${start}${signMediaUrl(bare).replace(/&/g, '&amp;')}"`)
+    : html);
+
+const signBlock = (block) => ({ ...block, body: signBodyImages(block.body), images: signImages(block.images) });
+
+/**
+ * Signe les images d'un tableau d'étapes, sous-étapes comprises — bande photo
+ * et captures insérées dans le texte. Copie : l'entrée n'est pas mutée.
  */
 function signStepImages(steps) {
   if (!Array.isArray(steps)) return [];
   return steps.map((step) => ({
-    ...step,
-    images: signImages(step.images),
-    substeps: Array.isArray(step.substeps)
-      ? step.substeps.map((sub) => ({ ...sub, images: signImages(sub.images) }))
-      : [],
+    ...signBlock(step),
+    substeps: Array.isArray(step.substeps) ? step.substeps.map(signBlock) : [],
   }));
 }
 
@@ -144,5 +161,5 @@ function removeProcessDir(processId) {
 module.exports = {
   UPLOAD_ROOT, MAX_IMAGE_SIZE, MEDIA_URL_TTL,
   saveImage, resolveImagePath, removeProcessDir,
-  signMediaUrl, signStepImages, verifyMediaSignature,
+  signMediaUrl, signStepImages, stripBodySignatures, verifyMediaSignature,
 };

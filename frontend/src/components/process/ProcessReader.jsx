@@ -28,6 +28,11 @@ function ensureStyles() {
       padding: 12px 14px; overflow-x: auto; margin: 10px 0; font-size: 13px; line-height: 1.5;
     }
     .yv-process-body pre code { background: none; border: none; color: inherit; padding: 0; }
+    .yv-process-body img {
+      display: block; max-width: 100%; max-height: 460px; height: auto;
+      margin: 12px 0; border: 1px solid ${C.grisCL}; border-radius: 8px;
+      background: ${C.grisTL}; cursor: zoom-in;
+    }
     .yv-process-body blockquote {
       border-left: 3px solid ${C.grisCL}; margin: 10px 0; padding: 2px 0 2px 14px; color: ${C.grisF};
     }
@@ -100,6 +105,10 @@ function BlockContent({ block, onOpenImage }) {
       {hasContent(block.body) && (
         <div
           className="yv-process-body"
+          // Capture insérée dans le texte : même visionneuse que la bande photo.
+          onClick={(e) => {
+            if (e.target.tagName === 'IMG') onOpenImage({ url: e.target.src, caption: e.target.alt || null });
+          }}
           dangerouslySetInnerHTML={{ __html: sanitizeProcessHtml(block.body) }}
         />
       )}

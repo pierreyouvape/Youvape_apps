@@ -14,6 +14,12 @@ import { C } from './processConstants';
  *   visibility  'restricted' | 'all'
  *   access      [{ user_id, can_write }]
  *   onChange    ({ visibility, access }) => void
+ *
+ * « Tout le monde » coche tout le monde, en lecture ou en écriture : la liste
+ * montre alors chacun à son niveau réel. Retirer une seule personne fait
+ * forcément repasser en « Utilisateurs choisis », avec tous les autres gardés.
+ *   Tout le monde en lecture  → visibility 'all', aucune entrée (écriture : admins seuls)
+ *   Tout le monde en écriture → visibility 'all', tout le monde en écriture
  */
 
 const LEVELS = [
@@ -22,7 +28,9 @@ const LEVELS = [
   { key: 'write', label: 'Écriture', hint: 'Peut consulter et modifier' },
 ];
 
-const levelOf = (entry) => (!entry ? 'none' : entry.can_write ? 'write' : 'read');
+/** Niveau réel : l'entrée nominative, sinon la lecture que donne « Tout le monde ». */
+const levelOf = (entry, visibility) =>
+  (entry ? (entry.can_write ? 'write' : 'read') : visibility === 'all' ? 'read' : 'none');
 
 export default function ProcessAccessPanel({ users, visibility, access, onChange }) {
   const [search, setSearch] = useState('');
@@ -40,17 +48,50 @@ export default function ProcessAccessPanel({ users, visibility, access, onChange
       (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
   }, [users, search]);
 
+  const isAll = visibility === 'all';
+
+  /** Tout le monde, chacun à son niveau réel — base d'un passage en « choisis ». */
+  const effectiveAccess = () => users.map((u) => {
+    const entry = byUser.get(u.id);
+    return { user_id: u.id, can_write: !!entry?.can_write };
+  });
+
   const setLevel = (userId, level) => {
+    if (isAll) {
+      if (level === 'none') {
+        // Retirer quelqu'un de « Tout le monde » = choisir tous les autres.
+        onChange({
+          visibility: 'restricted',
+          access: effectiveAccess().filter((a) => a.user_id !== userId),
+        });
+        return;
+      }
+      // La lecture vient déjà de « Tout le monde » : seule l'écriture s'inscrit.
+      const next = (access || []).filter((a) => a.user_id !== userId);
+      if (level === 'write') next.push({ user_id: userId, can_write: true });
+      onChange({ visibility, access: next });
+      return;
+    }
     const next = (access || []).filter((a) => a.user_id !== userId);
     if (level === 'read') next.push({ user_id: userId, can_write: false });
     if (level === 'write') next.push({ user_id: userId, can_write: true });
     onChange({ visibility, access: next });
   };
 
-  const setVisibility = (v) => onChange({ visibility: v, access: access || [] });
+  const allWrite = isAll && users.length > 0 && users.every((u) => byUser.get(u.id)?.can_write);
+  const mode = !isAll ? 'restricted' : allWrite ? 'all-write' : 'all-read';
 
-  const readerCount = (access || []).length;
-  const writerCount = (access || []).filter((a) => a.can_write).length;
+  const setMode = (m) => {
+    if (m === mode) return;
+    if (m === 'all-read') onChange({ visibility: 'all', access: [] });
+    if (m === 'all-write') onChange({ visibility: 'all', access: users.map((u) => ({ user_id: u.id, can_write: true })) });
+    // On garde la sélection en cours : il ne reste qu'à décocher.
+    if (m === 'restricted') onChange({ visibility: 'restricted', access: effectiveAccess() });
+  };
+
+  const levels = users.map((u) => levelOf(byUser.get(u.id), visibility));
+  const readerCount = levels.filter((l) => l !== 'none').length;
+  const writerCount = levels.filter((l) => l === 'write').length;
 
   return (
     <div style={{ border: `1px solid ${C.grisCL}`, borderRadius: 12, background: C.blanc, overflow: 'hidden' }}>
@@ -62,13 +103,14 @@ export default function ProcessAccessPanel({ users, visibility, access, onChange
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {[
-            { code: 'restricted', label: 'Utilisateurs choisis', hint: 'Seules les personnes ci-dessous' },
-            { code: 'all', label: 'Tout le monde', hint: 'Tous ceux qui ont l\'app, en lecture' },
+            { code: 'all-read', label: 'Tout le monde en lecture', hint: 'Tous ceux qui ont l\'app peuvent le lire' },
+            { code: 'all-write', label: 'Tout le monde en écriture', hint: 'Tous ceux qui ont l\'app peuvent le lire et le modifier' },
+            { code: 'restricted', label: 'Utilisateurs choisis', hint: 'Seules les personnes cochées ci-dessous' },
           ].map((opt) => {
-            const active = (visibility || 'restricted') === opt.code;
+            const active = mode === opt.code;
             return (
               <button
-                key={opt.code} type="button" onClick={() => setVisibility(opt.code)}
+                key={opt.code} type="button" onClick={() => setMode(opt.code)}
                 title={opt.hint}
                 style={{
                   padding: '7px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
@@ -84,10 +126,12 @@ export default function ProcessAccessPanel({ users, visibility, access, onChange
         </div>
 
         <p style={{ fontSize: 12, color: C.grisM, margin: '10px 0 0', lineHeight: 1.5 }}>
-          {visibility === 'all'
-            ? 'Tout détenteur de l\'app pourra le lire. La modification reste réservée aux personnes marquées « Écriture » ci-dessous.'
-            : 'Seules les personnes listées ci-dessous le verront.'}
-          {' '}Les administrateurs voient et modifient tout, sans figurer dans la liste.
+          {mode === 'all-write'
+            ? 'Tout détenteur de l\'app peut le lire et le modifier, y compris les futurs comptes.'
+            : mode === 'all-read'
+              ? 'Tout détenteur de l\'app peut le lire, y compris les futurs comptes. Passez quelqu\'un en « Écriture » pour qu\'il puisse le modifier.'
+              : 'Seules les personnes cochées ci-dessous le voient.'}
+          {' '}Retirer une personne (« — ») repasse en « Utilisateurs choisis ». Les administrateurs peuvent toujours l\'ouvrir et le modifier.
         </p>
       </div>
 
@@ -107,7 +151,7 @@ export default function ProcessAccessPanel({ users, visibility, access, onChange
           )}
 
           {filtered.map((u) => {
-            const level = levelOf(byUser.get(u.id));
+            const level = levelOf(byUser.get(u.id), visibility);
             return (
               <div key={u.id} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '7px 4px',
@@ -152,8 +196,8 @@ export default function ProcessAccessPanel({ users, visibility, access, onChange
 
         <p style={{ fontSize: 12, color: C.grisM, margin: '12px 0 0' }}>
           {readerCount === 0
-            ? (visibility === 'all' ? 'Personne en écriture pour l\'instant.' : 'Personne n\'a encore accès.')
-            : `${readerCount} personne${readerCount > 1 ? 's' : ''} dans la liste, dont ${writerCount} en écriture.`}
+            ? 'Personne n\'a encore accès.'
+            : `${readerCount} personne${readerCount > 1 ? 's' : ''} sur ${users.length} ${readerCount > 1 ? 'ont' : 'a'} accès, dont ${writerCount} en écriture.`}
         </p>
       </div>
     </div>

@@ -105,7 +105,7 @@ function StepImageEditor({ images, onChange, onUpload, uploading }) {
       >
         {uploading
           ? 'Envoi de l\'image…'
-          : 'Ajouter une photo — cliquez, déposez, ou collez une capture (Cmd+V) dans le texte'}
+          : 'Photos en bas du bloc — cliquez ou déposez. Pour une capture au milieu du texte : bouton « 📷 Capture » ou Cmd+V dans le texte'}
         <input
           ref={fileRef} type="file" accept="image/*" multiple hidden
           onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
@@ -121,14 +121,14 @@ function StepImageEditor({ images, onChange, onUpload, uploading }) {
  * qu'une sous-étape offre exactement les mêmes possibilités qu'une étape —
  * sans quoi on finirait par en manquer une des deux côtés.
  */
-function BlockEditor({ block, onPatch, onUpload, uploading, placeholder }) {
+function BlockEditor({ block, onPatch, onUpload, onUploadInline, uploading, placeholder }) {
   return (
     <>
       <ProcessEditor
         value={block.body || ''}
         onChange={(html) => onPatch({ body: html })}
         placeholder={placeholder}
-        onPasteImage={onUpload}
+        onUploadImage={onUploadInline}
       />
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, alignItems: 'center' }}>
@@ -173,7 +173,7 @@ function BlockEditor({ block, onPatch, onUpload, uploading, placeholder }) {
 }
 
 /* ─── Une sous-étape ────────────────────────────────────────────────────── */
-function SubStepCard({ sub, stepNumber, index, total, onPatch, onMove, onRemove, onUpload, uploading }) {
+function SubStepCard({ sub, stepNumber, index, total, onPatch, onMove, onRemove, onUpload, onUploadInline, uploading }) {
   return (
     <div style={{
       marginTop: 12, paddingLeft: 14,
@@ -199,6 +199,7 @@ function SubStepCard({ sub, stepNumber, index, total, onPatch, onMove, onRemove,
         block={sub}
         onPatch={onPatch}
         onUpload={onUpload}
+        onUploadInline={onUploadInline}
         uploading={uploading}
         placeholder="Ce point précis, avec la ou les captures qui l'illustrent."
       />
@@ -208,7 +209,7 @@ function SubStepCard({ sub, stepNumber, index, total, onPatch, onMove, onRemove,
 
 /* ─── Une étape ─────────────────────────────────────────────────────────── */
 function StepCard({
-  step, index, total, onPatch, onMove, onRemove, onUpload, uploading,
+  step, index, total, onPatch, onMove, onRemove, onUpload, onUploadInline, uploading,
   onSubPatch, onSubMove, onSubRemove, onSubAdd, uploadingSub,
 }) {
   const subs = step.substeps || [];
@@ -240,6 +241,7 @@ function StepCard({
         block={step}
         onPatch={onPatch}
         onUpload={onUpload}
+        onUploadInline={onUploadInline}
         uploading={uploading}
         placeholder="Ce qu'il faut faire. Découpez en sous-étapes si plusieurs captures sont nécessaires."
       />
@@ -257,6 +259,7 @@ function StepCard({
               onMove={(delta) => onSubMove(j, delta)}
               onRemove={() => onSubRemove(j)}
               onUpload={(file) => onUpload(file, j)}
+              onUploadInline={onUploadInline}
               uploading={uploadingSub === j}
             />
           ))}
@@ -282,7 +285,9 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
   const [title, setTitle] = useState(process.title || '');
   const [summary, setSummary] = useState(process.summary || '');
   const [categoryId, setCategoryId] = useState(process.category_id ? String(process.category_id) : '');
-  const [status, setStatus] = useState(process.status || 'draft');
+  // À l'enregistrement, un process est publié par défaut ; « Brouillon » reste
+  // au choix. Un process archivé le reste tant qu'on ne change pas le statut.
+  const [status, setStatus] = useState(process.status === 'archived' ? 'archived' : 'published');
   const [changeNote, setChangeNote] = useState('');
 
   // _uid : identité stable côté client, pour que React ne recycle pas
@@ -349,15 +354,29 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
   // Upload immédiat : le fichier part sur le serveur dès qu'il est choisi, et
   // c'est l'URL renvoyée qu'on stocke dans le bloc. L'enregistrement du process
   // ne transporte donc jamais de binaire.
+  const postImage = useCallback(async (file) => {
+    const fd = new FormData();
+    fd.append('image', file);
+    const res = await axios.post(`${API_URL}/process/${process.id}/images`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data.data;
+  }, [process.id]);
+
+  // Capture insérée dans le texte : l'éditeur place lui-même l'image renvoyée.
+  const uploadInlineImage = useCallback(async (file) => {
+    try {
+      return await postImage(file);
+    } catch (err) {
+      alert(err.response?.data?.error || "L'envoi de l'image a échoué");
+      return null;
+    }
+  }, [postImage]);
+
   const uploadImage = useCallback(async (stepIndex, subIndex, file) => {
     setUploadTarget({ step: stepIndex, sub: subIndex });
     try {
-      const fd = new FormData();
-      fd.append('image', file);
-      const res = await axios.post(`${API_URL}/process/${process.id}/images`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const image = res.data.data;
+      const image = await postImage(file);
 
       setSteps((prev) => prev.map((s, k) => {
         if (k !== stepIndex) return s;
@@ -373,7 +392,7 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
     } finally {
       setUploadTarget(null);
     }
-  }, [process.id]);
+  }, [postImage]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -439,6 +458,7 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
           onMove={(delta) => moveStep(i, delta)}
           onRemove={() => removeStep(i)}
           onUpload={(file, subIndex = null) => uploadImage(i, subIndex, file)}
+          onUploadInline={uploadInlineImage}
           uploading={uploadTarget?.step === i && uploadTarget?.sub === null}
           onSubPatch={(j, patch) => patchSub(i, j, patch)}
           onSubMove={(j, delta) => moveSub(i, j, delta)}
@@ -490,7 +510,9 @@ export default function ProcessEditorPanel({ process, categories, onSave, onCanc
             cursor: saving || !title.trim() ? 'default' : 'pointer',
             opacity: saving || !title.trim() ? 0.5 : 1,
           }}>
-          {saving ? 'Enregistrement…' : `Enregistrer (v${(process.version_no || 0) + 1})`}
+          {saving ? 'Enregistrement…' : `${
+            status === 'draft' ? 'Enregistrer en brouillon' : status === 'archived' ? 'Enregistrer (archivé)' : 'Enregistrer et publier'
+          } (v${(process.version_no || 0) + 1})`}
         </button>
       </div>
     </form>
