@@ -93,6 +93,39 @@ const STATUS_FILTERS = [
   { value: 'todo,doing,done,ignored', label: 'Toutes' },
 ];
 
+/* Texte d'une carte : paragraphes séparés, adresses du site en liens bleus. */
+const SITE = 'https://www.youvape.fr';
+const LINK_RE = /(https?:\/\/[^\s«»"',;)]+)|(?<=^|[\s(«])(\/[a-z][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*\/?)/gim;
+
+function Linkified({ text }) {
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(LINK_RE)) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const href = m[1] || `${SITE}${m[2]}`;
+    parts.push(
+      <a key={`${m.index}-${href}`} href={href} target="_blank" rel="noreferrer" style={{ color: C.bleu, textDecoration: 'none', wordBreak: 'break-all' }}>
+        {m[0]}
+      </a>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
+function RichText({ text, boxed }) {
+  return (
+    <div style={boxed ? { background: C.grisTL, borderRadius: 8, padding: '12px 14px', marginTop: 6 } : { marginTop: 6 }}>
+      {text.split(/\n{2,}/).map((para, i) => (
+        <p key={i} style={{ margin: '0 0 12px', whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
+          <Linkified text={para} />
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function RecCard({ rec, rank, onStatus }) {
   const [open, setOpen] = useState(false);
   const t = REC_TYPES[rec.type] || { label: rec.type, color: C.grisM };
@@ -104,8 +137,9 @@ function RecCard({ rec, rank, onStatus }) {
         <span style={{ fontWeight: 700, color: C.grisM, fontSize: 13, minWidth: 24 }}>#{rank}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: t.color, borderRadius: 6, padding: '2px 8px' }}>{t.label}</span>
         <span style={{ fontWeight: 600, color: C.saphirF, fontSize: 14, flex: 1, minWidth: 260 }}>{rec.title}</span>
-        <span style={{ fontSize: 12, color: C.grisF, whiteSpace: 'nowrap' }}>
-          ≈ +{fmtInt(rec.est_clicks)} clics/mois · effort {rec.effort}
+        <span style={{ fontSize: 12, color: C.grisF, whiteSpace: 'nowrap', textAlign: 'right' }}>
+          <b style={{ color: C.vert }}>≈ +{fmtInt(rec.est_clicks)} clics/mois</b>
+          {rec.delay ? ` · effet en ${rec.delay}` : ''} · effort {rec.effort}
         </span>
         <select value={rec.status} onClick={(e) => e.stopPropagation()} onChange={(e) => onStatus(rec, e.target.value)}
           style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.grisCL}`, fontSize: 12 }}>
@@ -114,17 +148,22 @@ function RecCard({ rec, rank, onStatus }) {
       </div>
       {open && (
         <div style={{ marginTop: 10, fontSize: 13, color: C.grisTF, lineHeight: 1.55 }}>
-          {rec.reason && <p style={{ margin: '0 0 8px' }}><b>Pourquoi :</b> {rec.reason}</p>}
+          {rec.reason && (
+            <div style={{ margin: '0 0 14px' }}>
+              <b>Pourquoi</b>
+              <RichText text={rec.reason} />
+            </div>
+          )}
           {rec.action && (
-            <div style={{ margin: '0 0 8px' }}>
-              <b>Action proposée :</b>
-              <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{rec.action}</div>
+            <div style={{ margin: '0 0 14px' }}>
+              <b>Action proposée</b>
+              <RichText text={rec.action} />
             </div>
           )}
           {rec.proposal && (
-            <div style={{ margin: '0 0 8px' }}>
-              <b>Proposition de contenu :</b>
-              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.grisTL, borderRadius: 8, padding: '10px 12px', margin: '4px 0 0' }}>{rec.proposal}</pre>
+            <div style={{ margin: '0 0 14px' }}>
+              <b>Proposition de contenu</b>
+              <RichText text={rec.proposal} boxed />
             </div>
           )}
           {rec.urls?.length > 0 && (

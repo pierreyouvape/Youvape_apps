@@ -128,6 +128,7 @@ const ensureTables = async () => {
       status      varchar(20) NOT NULL DEFAULT 'running',
       error       text
     );
+    ALTER TABLE seo_recommendations ADD COLUMN IF NOT EXISTS delay text;
   `);
 };
 
@@ -321,10 +322,11 @@ const relatedSources = ({ byQuery }, query, exclude) => {
 const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => {
   const t = normUrl(target);
   const clean = anchors.filter((a) => a && !tokens(a).some((x) => SENSITIVE.has(x)));
-  if (!clean.length) return [];
+  if (!clean.length) return { lines: [], checked: 0 };
   const lines = [];
   const seen = new Set();
   let k = 0;
+  let checked = 0;
   for (const src of sources) {
     if (lines.length >= max) break;
     const s = normUrl(src);
@@ -336,20 +338,20 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
       if (a.http_status) { await saveAudit(a); audits.set(s, a); }
     }
     if (!a || a.http_status !== 200 || !Array.isArray(a.links)) continue;
+    checked += 1;
     const st = data.pageStats.get(src) || data.pageStats.get(s);
     const vu = st?.i ? ` (${fmtInt(st.i)} impressions en 28 j)` : '';
     const existing = a.links.find((l) => l.href === t);
     if (existing) {
+      // Lien déjà bon : on n'en parle pas (une ligne « rien à faire » encombre la carte).
       const good = existing.text && clean.some((x) => compact(existing.text).includes(compact(x)));
-      lines.push(good
-        ? `- ${pathOf(s)}${vu} : lien déjà en place (ancre « ${existing.text} »). Rien à faire.`
-        : `- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
+      if (!good) lines.push(`- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
     } else {
       lines.push(`- Depuis ${pathOf(s)}${vu} : ajouter un lien vers ${pathOf(t)} avec l'ancre « ${cap(clean[k % clean.length])} », ${placementFor(s)}.`);
       k += 1;
     }
   }
-  return lines;
+  return { lines, checked };
 };
 
 // 1. Cannibalisation : deux de nos pages se partagent une même requête.
@@ -389,7 +391,7 @@ const detectCannibalisation = ({ q, byQuery }) => {
           ? `Sur ${pathOf(second)} : retirer ces mots du title et du H1, et ajouter un lien vers ${pathOf(main)}. Si la page n'a pas d'autre rôle, la passer en noindex (garder « follow »).`
           : `Sur ${pathOf(second)} : différencier le title et le H1 (une intention différente, par exemple avec / sans nicotine, ou modèle / cartouche) et ajouter un lien vers ${pathOf(main)} avec ces mots.`,
         'Si les deux pages répondent à deux intentions différentes, les différencier plutôt que d’en retirer une.',
-      ].join('\n'),
+      ].join('\n\n'),
       urls: [main, second],
       queries: top.slice(0, 10).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
     });
@@ -438,20 +440,21 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     const est = scope.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
     if (monthly(est) < 15) continue;
 
+    const intro = [];
     const blocks = [];
-    blocks.push(`Requête principale : « ${head.query} » (${fmtInt(head.i)} impressions en 28 j, position ${fmt1(head.p)}).`);
+    intro.push(`Requête principale : « ${head.query} » (${fmtInt(head.i)} impressions en 28 j, position ${fmt1(head.p)}).`);
     // 1. Title / H1
     if (!headCovered) {
-      blocks.push(`1. Title et H1 : ils ne contiennent pas tous les mots de « ${head.query} ». Title actuel : « ${titleNow} ». Le commencer par « ${cap(head.query)} », 60 caractères maximum.`);
+      blocks.push(`Title et H1 : ils ne contiennent pas tous les mots de « ${head.query} ». Title actuel : « ${titleNow} ». Le commencer par « ${cap(head.query)} », 60 caractères maximum.`);
     } else if (missing.length) {
-      blocks.push(`1. Title : il couvre déjà « ${head.query} » (« ${titleNow} »). Variante à ajouter si la place le permet : ${missing.slice(0, 3).map((m) => `« ${m.t} » (requête « ${m.from.query} », ${fmtInt(m.from.i)} impressions)`).join(', ')}.`);
+      blocks.push(`Title : il couvre déjà « ${head.query} » (« ${titleNow} »). Variante à ajouter si la place le permet : ${missing.slice(0, 3).map((m) => `« ${m.t} » (requête « ${m.from.query} », ${fmtInt(m.from.i)} impressions)`).join(', ')}.`);
     } else {
-      blocks.push(`1. Title : ne pas le modifier, il couvre déjà « ${head.query} » (« ${titleNow} »).`);
+      blocks.push(`Title : ne pas le modifier, il couvre déjà « ${head.query} » (« ${titleNow} »).`);
     }
     // 2. Texte
     const h2 = variants.filter((v) => !tokens(v.query).some((t) => SENSITIVE.has(t))).slice(0, 3);
     const words = audit?.word_count || 0;
-    blocks.push(`2. Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
+    blocks.push(`Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
     // 3. Liens internes
     const links = await linkPlan({
       target: page,
@@ -459,7 +462,8 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       sources: relatedSources(data, head.query, page).slice(0, 10),
       data, audits,
     });
-    blocks.push(links.length ? `3. Liens internes :\n${links.join('\n')}` : '3. Liens internes : aucune page proche relevée qui pourrait en faire.');
+    if (links.lines.length) blocks.push(`Liens internes :\n${links.lines.join('\n')}`);
+    else if (!links.checked) blocks.push('Liens internes : aucune page proche relevée qui pourrait en faire.');
     // 4. Ce qu'il ne faut pas viser ici
     if (elsewhere.length) {
       const byTarget = new Map();
@@ -468,14 +472,16 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
         if (!byTarget.has(tgt)) byTarget.set(tgt, []);
         byTarget.get(tgt).push(x.query);
       }
-      blocks.push(`4. Requêtes à laisser à leur page dédiée (ne pas les ajouter ici) : ${[...byTarget.entries()].map(([tgt, qs]) => `${qs.slice(0, 4).map((x) => `« ${x} »`).join(', ')} → ${tgt}`).join(' ; ')}.`);
+      blocks.push(`Requêtes à laisser à leur page dédiée (ne pas les ajouter ici) : ${[...byTarget.entries()].map(([tgt, qs]) => `${qs.slice(0, 4).map((x) => `« ${x} »`).join(', ')} → ${tgt}`).join(' ; ')}.`);
     }
     if (otherIntent.length) {
-      blocks.push(`${elsewhere.length ? '5' : '4'}. Autres requêtes qui atterrissent ici sans être le sujet de la page (ne pas les viser dans le title) : ${otherIntent.slice(0, 5).map((x) => `« ${x.query} »`).join(', ')}.`);
+      blocks.push(`Autres requêtes qui atterrissent ici sans être le sujet de la page (ne pas les viser dans le title) : ${otherIntent.slice(0, 5).map((x) => `« ${x.query} »`).join(', ')}.`);
     }
     const editorial = pageKind(page) === 'article' || pathOf(page).startsWith('/avis-tests/');
-    if (editorial) blocks.push('Contenu éditorial : sujet sensible dans le litige DNF (un blog est présenté comme publicitaire). À arbitrer avec l’avocat avant toute retouche.');
-    blocks.push(LEGAL_NOTE);
+    const notes = [];
+    if (editorial) notes.push('Contenu éditorial : sujet sensible dans le litige DNF (un blog est présenté comme publicitaire). À arbitrer avec l’avocat avant toute retouche.');
+    notes.push(LEGAL_NOTE);
+    const numbered = [...intro, ...blocks.map((b, n) => `${n + 1}. ${b}`), ...notes];
     recs.push({
       editorial,
       rec_key: `texte:${page}`,
@@ -484,7 +490,7 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       est_clicks: monthly(est),
       title: `${cap(pageKind(page))} à retravailler sur « ${head.query} » : ${pathOf(page)}`,
       reason: `« ${head.query} » est en position ${fmt1(head.p)}${variants.length ? `, avec ${variants.length} variante${variants.length > 1 ? 's' : ''}` : ''}. Gagner deux places la fait passer dans le haut de la première page.`,
-      action: blocks.join('\n'),
+      action: numbered.join('\n\n'),
       urls: [page],
       queries: scope.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
     });
@@ -520,7 +526,7 @@ const detectSnippet = ({ q, byQuery }, audits) => {
         'Regarder la page de résultats Google (mobile, navigation privée) : un concurrent, un bloc de réponse IA ou des encarts au-dessus de nous ?',
         `Réécrire le title (« ${a?.title || '—'} ») et la meta description (« ${a?.meta_description || 'absente'} ») pour qu'ils reprennent exactement la requête et disent ce que la page contient (modèles, formats).`,
         LEGAL_NOTE,
-      ].join('\n'),
+      ].join('\n\n'),
       urls: [page],
       queries: list.slice(0, 8).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
     };
@@ -802,7 +808,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         title: `Page dédiée « ${g.name} » en noindex : ${pathOf(slugMatch[0])}`,
         reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, porté surtout par ${pathOf(topPage)}. Une page dédiée existe mais Google n'a pas le droit de l'afficher.`,
         action: `Décider : soit passer ${pathOf(slugMatch[0])} en index (réglage Yoast) et la construire selon le plan ci-dessous, soit la laisser fermée et retravailler ${pathOf(topPage)} (carte « texte »). Ne pas laisser deux pages viser ces requêtes.`,
-        proposal: plan.join('\n'),
+        proposal: plan.join('\n\n'),
         urls: [slugMatch[0], topPage],
         queries: queriesOut,
       });
@@ -824,10 +830,12 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)} (${pageKind(topPage)}), alors que la page dédiée existe${slugMatch[1] ? '' : ' et n’a encore aucune impression : elle manque de liens'}.`,
         action: [
           `1. Modifier ${pathOf(slugMatch[0])}, qui existe déjà (ne pas créer d'autre page : ce serait de la cannibalisation). Title, H1 et texte selon le plan ci-dessous${dedAudit?.word_count ? ` ; la page fait aujourd'hui environ ${dedAudit.word_count} mots hors menus` : ''}.`,
-          links.length ? `2. Liens internes vers ${pathOf(slugMatch[0])} :\n${links.join('\n')}` : '2. Liens internes : aucune page source relevée.',
+          links.lines.length
+            ? `2. Liens internes vers ${pathOf(slugMatch[0])} :\n${links.lines.join('\n')}`
+            : (links.checked ? '2. Liens internes : les pages proches font déjà le lien avec la bonne ancre.' : '2. Liens internes : aucune page source relevée.'),
           `3. Ne pas modifier le title de ${pathOf(topPage)} pour ces requêtes : c'est la page dédiée qui doit les porter.`,
-        ].join('\n'),
-        proposal: plan.join('\n'),
+        ].join('\n\n'),
+        proposal: plan.join('\n\n'),
         urls: [slugMatch[0], topPage],
         queries: queriesOut,
       });
@@ -840,7 +848,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         title: `Créer une page dédiée « ${g.name} »`,
         reason: `${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, sans page dédiée : Google utilise ${topPage ? `${pathOf(topPage)} (${pageKind(topPage)}, ces requêtes n'y pèsent que ${Math.round(share * 100)} %)` : 'des pages diverses'}.`,
         action: 'Créer la page (format étiquette, comme le reste de la grappe JNR) selon le plan ci-dessous, puis la relier depuis la page marque et les fiches listées dans le plan.',
-        proposal: plan.join('\n'),
+        proposal: plan.join('\n\n'),
         urls: topPage ? [topPage] : [],
         queries: queriesOut,
       });
@@ -878,6 +886,22 @@ const detectBaisse = ({ pageStats, byQuery }) => {
 };
 
 /* ─── Calcul ───────────────────────────────────────────── */
+
+// Délai avant d'en voir l'effet dans Google : le temps qu'il repasse sur la
+// page (vite pour une page très vue) puis qu'il réévalue son classement.
+const DELAYS = {
+  snippet: [1, 3, 'semaines'], redirection: [1, 3, 'semaines'], texte: [3, 6, 'semaines'],
+  faq: [3, 6, 'semaines'], indexation: [2, 6, 'semaines'], cannibalisation: [4, 8, 'semaines'],
+  modification: [4, 8, 'semaines'], creation: [2, 4, 'mois'],
+};
+const delayFor = (r, pageStats) => {
+  if (r.type === 'baisse') return 'à analyser d\u2019abord';
+  const d = DELAYS[r.type];
+  if (!d) return null;
+  const busy = (r.urls || []).some((u) => (pageStats.get(u)?.i || 0) > 5000);
+  const lo = busy && d[2] === 'semaines' ? Math.max(1, d[0] - 1) : d[0];
+  return `${lo} à ${d[1]} ${d[2]}`;
+};
 
 const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, modification: 1, texte: 1, snippet: 1, faq: 0.9, baisse: 0.8, indexation: 0.8 };
 
@@ -922,6 +946,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       ...detectBaisse(data),
     ].map((r) => ({
       ...r,
+      delay: delayFor(r, data.pageStats),
       score: Number(((r.est_clicks || 0) * (TYPE_WEIGHT[r.type] || 1) * (r.editorial ? 0.3 : 1)).toFixed(1)),
     }));
 
@@ -931,12 +956,12 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       await client.query('UPDATE seo_recommendations SET active = false');
       for (const r of recs) {
         await client.query(
-          `INSERT INTO seo_recommendations (rec_key, type, score, est_clicks, effort, title, reason, action, proposal, urls, queries, active, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, now())
+          `INSERT INTO seo_recommendations (rec_key, type, score, est_clicks, effort, title, reason, action, proposal, urls, queries, delay, active, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, now())
            ON CONFLICT (rec_key) DO UPDATE SET type = $2, score = $3, est_clicks = $4, effort = $5, title = $6, reason = $7,
-             action = $8, proposal = $9, urls = $10, queries = $11, active = true, updated_at = now()`,
+             action = $8, proposal = $9, urls = $10, queries = $11, delay = $12, active = true, updated_at = now()`,
           [r.rec_key, r.type, r.score, Number((r.est_clicks || 0).toFixed(1)), r.effort, r.title, r.reason || null,
-            r.action || null, r.proposal || null, r.urls || [], JSON.stringify(r.queries || [])]
+            r.action || null, r.proposal || null, r.urls || [], JSON.stringify(r.queries || []), r.delay || null]
         );
       }
       await client.query('COMMIT');
