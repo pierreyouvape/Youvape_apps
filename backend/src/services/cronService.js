@@ -714,6 +714,7 @@ const setupCompetitorMonitorCron = () => {
 // requêtes. Sans clé de compte de service, rien ne tourne (et rien n'alerte).
 
 const gscService = require("./gscService");
+const seoAdvisorService = require("./seoAdvisorService");
 
 let seoSyncJob = null;
 let seoReportJob = null;
@@ -723,6 +724,9 @@ const runSeoSync = async () => {
   try {
     const r = await gscService.syncRecent();
     console.log(`Suivi SEO: ${r.daysDone} jour(s) synchronise(s), ${r.rowsSaved} ligne(s) (${r.dateFrom} -> ${r.dateTo})`);
+    // Les recommandations se recalculent sur les donnees du jour.
+    const a = await seoAdvisorService.computeRecommendations();
+    console.log(`Suivi SEO: ${a.recs} recommandation(s), ${a.audited} page(s) relevee(s)`);
   } catch (error) {
     console.error("Erreur cron suivi SEO:", error.message);
     sendAlert(
@@ -746,6 +750,7 @@ const setupSeoCrons = () => {
   if (seoSyncJob) { seoSyncJob.stop(); seoSyncJob = null; }
   if (seoReportJob) { seoReportJob.stop(); seoReportJob = null; }
   gscService.ensureTables()
+    .then(() => seoAdvisorService.ensureTables())
     .catch((error) => console.error("Erreur init tables suivi SEO:", error.message));
   // Tous les jours a 6h20 (Europe/Paris)
   seoSyncJob = cron.schedule("20 6 * * *", runSeoSync, { timezone: "Europe/Paris" });

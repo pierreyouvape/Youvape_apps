@@ -68,6 +68,185 @@ const th = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: C.gris
 const td = { padding: '8px 10px', fontSize: 13, color: C.grisTF, borderBottom: `1px solid ${C.grisTL}` };
 const tdNum = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 
+/* ─── RECOMMANDATIONS ───────────────────────────────────── */
+const REC_TYPES = {
+  redirection: { label: 'Redirection', color: '#DE2020' },
+  cannibalisation: { label: 'Cannibalisation', color: '#B45309' },
+  creation: { label: 'Création de page', color: '#7C3AED' },
+  texte: { label: 'Texte / title', color: '#0071EB' },
+  snippet: { label: 'Résultat peu cliqué', color: '#0EA5A5' },
+  faq: { label: 'FAQ', color: '#059669' },
+  indexation: { label: 'Indexation / crawl', color: '#475569' },
+  baisse: { label: 'En baisse', color: '#BE123C' },
+};
+const REC_STATUSES = [
+  { value: 'todo', label: 'À faire' },
+  { value: 'doing', label: 'En cours' },
+  { value: 'done', label: 'Fait' },
+  { value: 'ignored', label: 'Ignoré' },
+];
+const STATUS_FILTERS = [
+  { value: 'todo,doing', label: 'À faire et en cours' },
+  { value: 'done', label: 'Faites' },
+  { value: 'ignored', label: 'Ignorées' },
+  { value: 'todo,doing,done,ignored', label: 'Toutes' },
+];
+
+function RecCard({ rec, rank, onStatus }) {
+  const [open, setOpen] = useState(rank <= 3);
+  const t = REC_TYPES[rec.type] || { label: rec.type, color: C.grisM };
+  const queries = Array.isArray(rec.queries) ? rec.queries : [];
+  return (
+    <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, borderLeft: `4px solid ${t.color}`, padding: '12px 14px', marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+        <span style={{ fontWeight: 700, color: C.grisM, fontSize: 13, minWidth: 24 }}>#{rank}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: t.color, borderRadius: 6, padding: '2px 8px' }}>{t.label}</span>
+        <span style={{ fontWeight: 600, color: C.saphirF, fontSize: 14, flex: 1, minWidth: 260 }}>{rec.title}</span>
+        <span style={{ fontSize: 12, color: C.grisF, whiteSpace: 'nowrap' }}>
+          ≈ +{fmtInt(rec.est_clicks)} clics/mois · effort {rec.effort}
+        </span>
+        <select value={rec.status} onClick={(e) => e.stopPropagation()} onChange={(e) => onStatus(rec, e.target.value)}
+          style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.grisCL}`, fontSize: 12 }}>
+          {REC_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+      </div>
+      {open && (
+        <div style={{ marginTop: 10, fontSize: 13, color: C.grisTF, lineHeight: 1.55 }}>
+          {rec.reason && <p style={{ margin: '0 0 8px' }}><b>Pourquoi :</b> {rec.reason}</p>}
+          {rec.action && (
+            <div style={{ margin: '0 0 8px' }}>
+              <b>Action proposée :</b>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{rec.action}</div>
+            </div>
+          )}
+          {rec.proposal && (
+            <div style={{ margin: '0 0 8px' }}>
+              <b>Proposition de contenu :</b>
+              <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', background: C.grisTL, borderRadius: 8, padding: '10px 12px', margin: '4px 0 0' }}>{rec.proposal}</pre>
+            </div>
+          )}
+          {rec.urls?.length > 0 && (
+            <div style={{ margin: '0 0 8px' }}>
+              <b>Pages :</b>{' '}
+              {rec.urls.map((u) => (
+                <a key={u} href={u} target="_blank" rel="noreferrer" style={{ color: C.bleu, marginRight: 12, textDecoration: 'none' }}>
+                  {u.replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/'}
+                </a>
+              ))}
+            </div>
+          )}
+          {queries.length > 0 && (
+            <table style={{ borderCollapse: 'collapse', marginTop: 4 }}>
+              <thead><tr>
+                <th style={th}>Requête</th>
+                <th style={{ ...th, textAlign: 'right' }}>Impr. 28 j</th>
+                <th style={{ ...th, textAlign: 'right' }}>Clics</th>
+                <th style={{ ...th, textAlign: 'right' }}>Pos.</th>
+              </tr></thead>
+              <tbody>
+                {queries.map((q) => (
+                  <tr key={q.query}>
+                    <td style={td}>{q.query}</td>
+                    <td style={tdNum}>{fmtInt(q.i)}</td>
+                    <td style={tdNum}>{fmtInt(q.c)}</td>
+                    <td style={tdNum}>{fmtPos(q.p)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {rec.status_by && (
+            <div style={{ fontSize: 11, color: C.grisM, marginTop: 6 }}>
+              Statut posé par {rec.status_by} le {new Date(rec.status_at).toLocaleString('fr-FR')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Recommendations() {
+  const [data, setData] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('todo,doing');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { data: d } = await axios.get(`${API_URL}/seo/recommendations`, { params: { status: statusFilter } });
+      setData(d);
+      return d;
+    } catch (e) {
+      setMsg(e.response?.data?.error || e.message);
+      return null;
+    }
+  }, [statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Pendant un recalcul, on recharge toutes les 10 secondes.
+  useEffect(() => {
+    if (!data?.running) return undefined;
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [data?.running, load]);
+
+  const refresh = async () => {
+    setMsg(null);
+    try {
+      await axios.post(`${API_URL}/seo/recommendations/refresh`);
+      setMsg('Recalcul lancé : relevé des pages puis analyse (1 à 3 minutes).');
+      setTimeout(load, 2000);
+    } catch (e) {
+      setMsg(e.response?.data?.error || e.message);
+    }
+  };
+
+  const setStatus = async (rec, status) => {
+    try {
+      await axios.patch(`${API_URL}/seo/recommendations/${rec.id}`, { status });
+      load();
+    } catch (e) {
+      setMsg(e.response?.data?.error || e.message);
+    }
+  };
+
+  const recs = (data?.recommendations || []).filter((r) => typeFilter === 'all' || r.type === typeFilter);
+  const types = [...new Set((data?.recommendations || []).map((r) => r.type))];
+  const run = data?.lastRun;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 17, color: C.saphirF }}>Recommandations</h2>
+        <span style={{ fontSize: 12, color: C.grisM }}>
+          classées par gain de clics estimé (France, 28 derniers jours)
+          {run?.finished_at ? ` · calculées le ${new Date(run.finished_at).toLocaleString('fr-FR')}` : ''}
+          {data?.running ? ' · recalcul en cours…' : ''}
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} />
+          <Select value={typeFilter} onChange={setTypeFilter}
+            options={[{ value: 'all', label: 'Tous les types' }, ...types.map((x) => ({ value: x, label: REC_TYPES[x]?.label || x }))]} />
+          <button type="button" disabled={data?.running} onClick={refresh}
+            style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.saphir}`, background: C.blanc, color: C.saphir, cursor: 'pointer', fontSize: 13 }}>
+            Recalculer
+          </button>
+        </div>
+      </div>
+      {msg && <div style={{ fontSize: 13, color: C.grisF, marginBottom: 8 }}>{msg}</div>}
+      {run?.status === 'error' && <div style={{ fontSize: 13, color: C.rouge, marginBottom: 8 }}>Dernier calcul en échec : {run.error}</div>}
+      <div style={{ fontSize: 12, color: C.grisM, marginBottom: 10 }}>
+        Le gain estimé suppose la remontée visée (quelques places) et un taux de clic moyen : c&apos;est un ordre de grandeur pour prioriser, pas une promesse.
+        Tout texte proposé reste factuel et passe par l&apos;avocat avant mise en ligne.
+      </div>
+      {data && recs.length === 0 && <div style={{ fontSize: 13, color: C.grisM }}>Aucune recommandation pour ces filtres.</div>}
+      {recs.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} onStatus={setStatus} />)}
+    </Card>
+  );
+}
+
 /* ─── NON CONFIGURÉ ─────────────────────────────────────── */
 function SetupPanel({ status }) {
   return (
@@ -236,6 +415,8 @@ export default function SeoApp() {
               {syncMsg && <div style={{ width: '100%', fontSize: 13, color: C.grisF }}>{syncMsg}</div>}
             </Card>
           )}
+
+          {hasData && <Recommendations />}
 
           {hasData && (
             <>

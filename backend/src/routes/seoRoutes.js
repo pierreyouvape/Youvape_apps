@@ -5,6 +5,7 @@
 const express = require('express');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 const gsc = require('../services/gscService');
+const advisor = require('../services/seoAdvisorService');
 
 const router = express.Router();
 router.use(checkPermission('seo', 'read'));
@@ -43,6 +44,21 @@ router.get('/new-queries', handle((req) => gsc.getNewQueries({
 router.post('/sync', checkPermission('seo', 'write'), handle((req) => {
   if (!gsc.isConfigured()) throw new Error('Search Console non configurée');
   return gsc.startBackfill(req.body?.days);
+}));
+
+// Recommandations classées par gain estimé (statuts todo,doing par défaut).
+router.get('/recommendations', handle((req) => advisor.listRecommendations({ status: req.query.status })));
+
+// Recalcul en tâche de fond : relevé de ~150 pages + détecteurs (1 à 2 min).
+router.post('/recommendations/refresh', checkPermission('seo', 'write'), handle(() => {
+  advisor.computeRecommendations().catch((error) => console.error('[SEO] Recommandations :', error.message));
+  return { started: true };
+}));
+
+router.patch('/recommendations/:id', checkPermission('seo', 'write'), handle(async (req) => {
+  const rec = await advisor.updateRecommendation(Number(req.params.id), req.body || {}, req.user?.email);
+  if (!rec) throw new Error('Recommandation introuvable');
+  return rec;
 }));
 
 router.post('/weekly-report', checkPermission('seo', 'write'), handle(() => gsc.sendWeeklyReport()));
