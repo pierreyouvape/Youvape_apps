@@ -148,7 +148,8 @@ const parsePage = (url, status, html) => {
   const path = pathOf(url);
   const h1Pos = html.search(/<h1[\s>]/i);
   const afterH1 = h1Pos >= 0 ? html.slice(h1Pos, h1Pos + 4000) : '';
-  const banner = afterH1.match(/<img[^>]*src="([^"]+)"[^>]*alt="([^"]*)"/i);
+  // Bannière = image de la médiathèque (pas une icône du thème, ex. close.svg).
+  const banner = afterH1.match(/<img[^>]*src="([^"]*\/wp-content\/uploads\/[^"]+)"[^>]*alt="([^"]*)"/i);
   // L'intro (description du terme) s'arrête aux filtres du thème.
   const subtitle = innerDiv(html, '<div class="subtitle">');
   const intro = subtitle ? subtitle.split(/<div\b/i)[0].trim() : null;
