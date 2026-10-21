@@ -32,7 +32,9 @@ const AUDIT_DELAY_MS = 400;
 const LEGAL_NOTE = 'Rédaction neutre et factuelle (caractéristiques, compatibilités, mode d’emploi) : pas de superlatif, de prix, de promotion ni de description de goût. Faire valider par l’avocat avant mise en ligne.';
 
 // Groupes du plan qui ne doivent pas produire de recommandation de création.
-const GROUPS_WITHOUT_PAGE = new Set(['jnr', 'garde-fou-puff-sans-nicotine']);
+// « marque-jnr » : la page marque et l'étiquette puff-jnr sont déjà décidées
+// (19/10/2026), les cartes « texte » suffisent.
+const GROUPS_WITHOUT_PAGE = new Set(['jnr', 'garde-fou-puff-sans-nicotine', 'marque-jnr']);
 
 // Mots à ne jamais reprendre dans un title, un intertitre ou un mot manquant :
 // arguments de prix, de goût, d'avis (griefs DNF) ou mots sans contenu.
@@ -545,7 +547,16 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, clai
         .sort((a, b) => a.slug.length - b.slug.length)[0];
       if (site) slugMatch = [site.url, 0];
     }
-    if (slugMatch) for (const x of list) claimed.set(x.query, slugMatch[0]);
+    // Une page dédiée en noindex ne peut pas « monter » : il faut d'abord
+    // décider de l'ouvrir.
+    let dedicatedNoindex = false;
+    if (slugMatch) {
+      // Toujours relu : ces pages changent souvent de statut (ouvertures du 19 au 21/10).
+      const a = await auditUrl(slugMatch[0]);
+      if (a.http_status) await saveAudit(a);
+      dedicatedNoindex = /noindex/i.test(a?.robots || '');
+      if (!dedicatedNoindex) for (const x of list) claimed.set(x.query, slugMatch[0]);
+    }
     const generic = !topPage || share < 0.4 || pageKind(topPage) === 'accueil';
     const est = gainTo(impr, clicks, pos, 3);
     // Plan de contenu tiré des requêtes réelles.
@@ -566,7 +577,20 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, clai
       `Requêtes à couvrir dans le texte : ${list.slice(0, 15).map((x) => x.query).join(', ')}`,
       LEGAL_NOTE,
     ].filter(Boolean).join('\n');
-    if (slugMatch && slugMatch[0] !== topPage) {
+    if (slugMatch && dedicatedNoindex) {
+      recs.push({
+        rec_key: `noindex-dedie:${g.slug}`,
+        type: 'indexation',
+        effort: 'faible',
+        est_clicks: monthly(est * 0.5),
+        title: `Page dédiée « ${g.name} » en noindex : ${pathOf(slugMatch[0])}`,
+        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, porté surtout par ${pathOf(topPage)}. Une page dédiée existe mais Google n'a pas le droit de l'afficher.`,
+        action: `Décider : soit passer ${pathOf(slugMatch[0])} en index (réglage Yoast) et la renforcer selon le plan ci-dessous, soit la laisser fermée et retravailler ${pathOf(topPage)} (carte « texte »). Ne pas laisser deux pages viser ces requêtes.`,
+        proposal,
+        urls: [slugMatch[0], topPage],
+        queries: list.slice(0, 12).map((x) => ({ query: x.query, i: x.i, c: x.c, p: Number(x.p.toFixed(1)) })),
+      });
+    } else if (slugMatch && slugMatch[0] !== topPage) {
       recs.push({
         rec_key: `renfort:${g.slug}`,
         type: 'creation',
