@@ -132,6 +132,7 @@ const ProcessApp = () => {
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [status, setStatus] = useState('');       // '' = tout sauf archivés
+  const [showAll, setShowAll] = useState(false);  // admin : process réservés à d'autres inclus
   const [showCategories, setShowCategories] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
@@ -151,7 +152,10 @@ const ProcessApp = () => {
     setLoading(true); setError(null);
     try {
       const res = await axios.get(`${API_URL}/process`, {
-        params: { q: q || undefined, category_id: categoryId || undefined, status: status || undefined },
+        params: {
+          q: q || undefined, category_id: categoryId || undefined, status: status || undefined,
+          scope: isAdmin && showAll ? 'all' : undefined,
+        },
       });
       setProcesses(res.data.data || []);
     } catch (err) {
@@ -159,7 +163,7 @@ const ProcessApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [q, categoryId, status]);
+  }, [q, categoryId, status, isAdmin, showAll]);
 
   useEffect(() => { fetchCategories(); }, [fetchCategories]);
 
@@ -360,6 +364,12 @@ const ProcessApp = () => {
               {STATUSES.map((s) => <option key={s.code} value={s.code}>{s.label}</option>)}
               <option value="all">Tous, archivés compris</option>
             </select>
+            {isAdmin && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
+                <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+                Tous les process (admin)
+              </label>
+            )}
           </div>
 
           {error && (

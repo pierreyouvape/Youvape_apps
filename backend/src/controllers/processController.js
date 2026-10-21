@@ -106,6 +106,7 @@ module.exports = {
         q: req.query.q,
         category_id: parseId(req.query.category_id),
         status: req.query.status,
+        scope: req.query.scope,
       }, actorOf(req));
       res.json({ success: true, data });
     } catch (error) {

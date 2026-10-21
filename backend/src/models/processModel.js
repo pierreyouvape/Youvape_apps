@@ -206,18 +206,24 @@ class ProcessModel {
    *   q           recherche plein texte (titre, résumé, contenu des étapes)
    *   category_id filtre catégorie
    *   status      filtre statut ('all' = tous)
+   *   scope       'all' = tous les process (admins seulement, ignoré sinon)
    * @param {{id:number, isAdmin:boolean}} actor
    *
    * Le filtre de visibilité vit dans le WHERE, pas dans un filtrage des
    * résultats : un process invisible ne doit jamais quitter la base.
+   *
+   * Un admin a le droit de tout voir, mais sa liste par défaut est la même
+   * que celle de n'importe qui (+ les process qu'il a créés) : sinon il voit
+   * les process réservés à d'autres et ne peut pas savoir lesquels sont pour
+   * lui. `scope=all` lui rend la vue complète.
    */
-  async list({ q, category_id, status } = {}, actor = {}) {
+  async list({ q, category_id, status, scope } = {}, actor = {}) {
     const where = [];
     const values = [];
     let i = 1;
 
-    if (!actor.isAdmin) {
-      where.push(`(p.visibility = 'all' OR EXISTS (
+    if (!actor.isAdmin || scope !== 'all') {
+      where.push(`(p.visibility = 'all' OR p.created_by = $${i} OR EXISTS (
         SELECT 1 FROM process_access a WHERE a.process_id = p.id AND a.user_id = $${i}
       ))`);
       values.push(actor.id || null);
