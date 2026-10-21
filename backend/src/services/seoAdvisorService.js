@@ -345,7 +345,8 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
   for (const src of sources) {
     if (lines.length >= max) break;
     const s = normUrl(src);
-    if (!s || s === t || seen.has(s) || isParamUrl(s)) continue;
+    // Pas de lien depuis une page CBD ou « jetable » : autre sujet, sensible.
+    if (!s || s === t || seen.has(s) || isParamUrl(s) || /cbd|thc|jetable/.test(pathOf(s))) continue;
     seen.add(s);
     let a = audits.get(src) || audits.get(s);
     if (!a || !Array.isArray(a.links)) {
