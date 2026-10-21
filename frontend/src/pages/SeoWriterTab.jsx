@@ -85,7 +85,7 @@ function CopyButton({ text, label = 'Copier' }) {
 const IDLE_WARNING_S = 45;
 
 /* Avancement d'une analyse : étape, fiche en cours, temps écoulé, alerte si rien ne bouge. */
-function AnalysisProgress({ progress }) {
+function AnalysisProgress({ progress, name = 'Analyse' }) {
   if (!progress) return null;
   const { step = 0, steps = 4, label, done, total, current, elapsed = 0, idle = 0, error } = progress;
   const inStep = total ? (done || 0) / total : 0;
@@ -101,7 +101,7 @@ function AnalysisProgress({ progress }) {
           }} />
         )}
         <b style={{ fontSize: 14, color: error ? C.rouge : C.saphirF }}>
-          {error ? `Analyse en échec : ${error}` : `Étape ${Math.max(step, 1)} sur ${steps} — ${label || 'démarrage'}`}
+          {error ? `${name} en échec : ${error}` : `${name} — étape ${Math.max(step, 1)} sur ${steps} : ${label || 'démarrage'}`}
         </b>
         {total ? <span style={{ fontSize: 13, color: C.grisF }}>{done} / {total}{current ? ` · ${current}` : ''}</span> : null}
         <span style={{ marginLeft: 'auto', fontSize: 12, color: C.grisM }}>{elapsed} s</span>
@@ -113,12 +113,32 @@ function AnalysisProgress({ progress }) {
       )}
       {stuck && !error && (
         <div style={{ fontSize: 12, color: C.rouge, marginTop: 8 }}>
-          Aucune avancée depuis {idle} s : la page ou une fiche produit ne répond peut-être pas. Patientez encore un peu, ou relancez l&apos;analyse.
+          Aucune avancée depuis {idle} s : une page du site ne répond peut-être pas. Patientez encore un peu, ou relancez.
         </div>
       )}
       <style>{'@keyframes seo-spin { to { transform: rotate(360deg); } }'}</style>
     </Card>
   );
+}
+
+/* Interroge l'avancement d'une tâche de fond chaque seconde tant qu'elle tourne. */
+function useJobProgress(id, kind, initial, onDone) {
+  const [progress, setProgress] = useState(null);
+  const running = !!(progress?.running || (progress === null && initial?.running));
+  useEffect(() => {
+    if (!running) return undefined;
+    let cancelled = false;
+    const t = setInterval(async () => {
+      try {
+        const { data } = await axios.get(`${API_URL}/seo/writer/${id}/progress`, { params: { kind } });
+        if (cancelled) return;
+        setProgress(data);
+        if (!data.running) onDone(data);
+      } catch { /* le prochain tour réessaie */ }
+    }, 1000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [running, id, kind, onDone]);
+  return [progress, setProgress, running];
 }
 
 function PageLink({ url }) {
@@ -562,20 +582,21 @@ function DraftPanel({ page, onSaved, setMsg }) {
 
 /* ─── 3. Vérification ───────────────────────────────────── */
 
-function VerifyPanel({ page, onSaved, setMsg }) {
-  const [busy, setBusy] = useState(false);
+function VerifyPanel({ page, onReload, onPublish, setMsg }) {
   const check = page.live_check;
+  const onDone = useCallback((p) => {
+    onReload();
+    if (p.error) setMsg(`Vérification en échec : ${p.error}`);
+  }, [onReload, setMsg]);
+  const [progress, setProgress, busy] = useJobProgress(page.id, 'verify', page.verify_progress, onDone);
 
   const run = async () => {
-    setBusy(true);
+    setMsg(null);
     try {
-      await axios.post(`${API_URL}/seo/writer/${page.id}/verify`);
-      const { data } = await axios.get(`${API_URL}/seo/writer/${page.id}`);
-      onSaved(data);
+      const { data } = await axios.post(`${API_URL}/seo/writer/${page.id}/verify`);
+      setProgress(data);
     } catch (e) {
       setMsg(errMsg(e));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -586,6 +607,16 @@ function VerifyPanel({ page, onSaved, setMsg }) {
         <button type="button" disabled={busy} onClick={run} style={btnPrimary}>{busy ? 'Vérification…' : 'Vérifier maintenant'}</button>
         {page.checked_at && <span style={{ fontSize: 12, color: C.grisM }}>dernière le {new Date(page.checked_at).toLocaleString('fr-FR')}</span>}
       </div>
+      {(busy || progress?.error) && <AnalysisProgress progress={progress || page.verify_progress} name="Vérification" />}
+      {!busy && check?.checks?.length > 0 && page.status !== 'publie' && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', background: C.grisTL, borderRadius: 8, padding: '10px 12px', marginBottom: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: C.grisTF }}>
+            {check.checks.every((c) => c.ok) ? 'Tous les contrôles sont bons.' : 'Des contrôles sont encore en rouge.'}
+            {' '}Une fois le texte en ligne, passez la page en « Publié » : la date du jour devient le repère du suivi des positions.
+          </span>
+          <button type="button" onClick={onPublish} style={{ ...btnPrimary, background: C.vert, marginLeft: 'auto' }}>Passer en Publié</button>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: C.grisM, marginBottom: 10 }}>
         Relit la page publiée (sans cache) : indexation, canonical, title et méta comparés à la proposition, mots interdits, liens relatifs,
         lien de menu masqué, et liens attendus depuis les autres pages. Ensuite : demander l&apos;indexation dans la Search Console
@@ -788,25 +819,28 @@ function PageDetail({ id, onBack, onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   // Pendant une analyse, on suit l'avancement chaque seconde, puis on recharge la fiche.
-  const [progress, setProgress] = useState(null);
-  const analyzing = !!(progress?.running || (progress === null && page?.progress?.running));
-  useEffect(() => {
-    if (!analyzing) return undefined;
-    let cancelled = false;
-    const t = setInterval(async () => {
-      try {
-        const { data } = await axios.get(`${API_URL}/seo/writer/${id}/progress`);
-        if (cancelled) return;
-        setProgress(data);
-        if (!data.running) {
-          await load();
-          onChanged();
-          if (data.error) setMsg(`Analyse en échec : ${data.error}`);
-        }
-      } catch { /* le prochain tour réessaie */ }
-    }, 1000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, [analyzing, id, load, onChanged]);
+  const onAnalyzed = useCallback(async (p) => {
+    await load();
+    onChanged();
+    if (p.error) setMsg(`Analyse en échec : ${p.error}`);
+  }, [load, onChanged]);
+  const [progress, setProgress, analyzing] = useJobProgress(id, 'analyze', page?.progress, onAnalyzed);
+
+  // Note rapide dans le journal, depuis n'importe quel onglet.
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteAt, setNoteAt] = useState(() => new Date().toISOString().slice(0, 10));
+  const [noteText, setNoteText] = useState('');
+  const addNote = async () => {
+    try {
+      const { data } = await axios.post(`${API_URL}/seo/writer/${id}/events`, { at: noteAt, note: noteText });
+      setNoteText('');
+      setNoteOpen(false);
+      saved(data);
+      setMsg('Modification notée dans le journal : elle apparaît sur les courbes de l’onglet Suivi.');
+    } catch (e) {
+      setMsg(errMsg(e));
+    }
+  };
 
   const startAnalyze = async () => {
     const { data } = await axios.post(`${API_URL}/seo/writer/${id}/analyze`);
@@ -854,7 +888,9 @@ function PageDetail({ id, onBack, onChanged }) {
             <PageLink url={page.url} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <select value={page.status} onChange={(e) => patch({ status: e.target.value })} style={input}>
+            <span style={{ fontSize: 11, color: C.grisM, fontWeight: 600 }}>Statut</span>
+            <select value={page.status} onChange={(e) => patch({ status: e.target.value })}
+              style={{ ...input, fontWeight: 700, color: '#fff', background: statusOf(page.status).color, border: 'none' }}>
               {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
             {page.status_by && (
@@ -867,7 +903,25 @@ function PageDetail({ id, onBack, onChanged }) {
             Publiée le
             <input type="date" value={page.published_at || ''} onChange={(e) => patch({ published_at: e.target.value || null })} style={input} />
           </label>
+          <button type="button" onClick={() => setNoteOpen(!noteOpen)} style={btnPrimary}>Noter une modification</button>
           <button type="button" onClick={remove} style={{ ...btn, borderColor: C.grisCL, color: C.grisM }}>Retirer</button>
+        </div>
+        {noteOpen && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="date" value={noteAt} onChange={(e) => setNoteAt(e.target.value)} style={input} />
+            <input autoFocus value={noteText} onChange={(e) => setNoteText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && noteText.trim() && addNote()}
+              placeholder="ex. Lien vers e-liquides-jnr-avec-nicotine retiré" style={{ ...input, flex: 1, minWidth: 260 }} />
+            <button type="button" disabled={!noteText.trim()} onClick={addNote} style={btnPrimary}>Ajouter au journal</button>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: C.grisM, marginTop: 8 }}>
+          Journal : {page.events?.length ? `${page.events.length} note(s), la dernière le ${longDate(page.events[0].at)} — « ${page.events[0].note.slice(0, 80)} »` : 'aucune note'}
+          {page.events?.length > 0 && (
+            <button type="button" onClick={() => setSub('suivi')} style={{ border: 'none', background: 'none', color: C.bleu, cursor: 'pointer', fontSize: 12 }}>
+              voir le journal et les courbes
+            </button>
+          )}
         </div>
       </Card>
 
@@ -891,7 +945,7 @@ function PageDetail({ id, onBack, onChanged }) {
 
       {sub === 'donnees' && <DataPanel page={{ ...page, progress: { running: analyzing } }} onSaved={saved} onAnalyze={startAnalyze} setMsg={setMsg} />}
       {sub === 'redaction' && <DraftPanel page={page} onSaved={saved} setMsg={setMsg} />}
-      {sub === 'verification' && <VerifyPanel page={page} onSaved={saved} setMsg={setMsg} />}
+      {sub === 'verification' && <VerifyPanel page={page} onReload={load} onPublish={() => patch({ status: 'publie' })} setMsg={setMsg} />}
       {sub === 'suivi' && <TrackPanel page={page} onSaved={saved} setMsg={setMsg} />}
     </>
   );

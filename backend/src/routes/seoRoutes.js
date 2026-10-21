@@ -78,7 +78,7 @@ router.delete('/writer/:id', canWrite, handle((req) => writer.deletePage(pageId(
 // Relevé de la page + fiches produits + requêtes Search Console (10 à 30 s),
 // en tâche de fond : l'écran suit l'avancement par /progress.
 router.post('/writer/:id/analyze', canWrite, handle((req) => writer.startAnalyze(pageId(req))));
-router.get('/writer/:id/progress', handle((req) => writer.getProgress(pageId(req))));
+router.get('/writer/:id/progress', handle((req) => writer.getProgress(pageId(req), req.query.kind === 'verify' ? 'verify' : 'analyze')));
 router.post('/writer/:id/ads', canWrite, adsUpload.single('file'), handle(async (req) => {
   if (!req.file) throw new Error('Fichier manquant');
   const r = await writer.saveAds(pageId(req), req.file.buffer, req.file.originalname);
@@ -89,7 +89,8 @@ router.get('/writer/:id/brief', handle((req) => writer.getBrief(pageId(req))));
 // Génération en tâche de fond (1 à 3 min) : le front interroge la fiche.
 router.post('/writer/:id/generate', canWrite, handle((req) => writer.startGeneration(pageId(req))));
 router.post('/writer/:id/draft-import', canWrite, handle((req) => writer.importDraft(pageId(req), req.body?.text, req.user?.email)));
-router.post('/writer/:id/verify', canWrite, handle((req) => writer.verifyLive(pageId(req))));
+// Vérification en tâche de fond (page, pages liées, liens entrants) : suivie par /progress?kind=verify.
+router.post('/writer/:id/verify', canWrite, handle((req) => writer.startVerify(pageId(req))));
 router.get('/writer/:id/positions', handle((req) => writer.getPositions(pageId(req), { weeks: req.query.weeks })));
 router.post('/writer/:id/events', canWrite, handle((req) => writer.addEvent(pageId(req), req.body || {}, req.user?.email)));
 router.delete('/writer/:id/events/:eventId', canWrite, handle((req) => writer.deleteEvent(pageId(req), Number(req.params.eventId))));

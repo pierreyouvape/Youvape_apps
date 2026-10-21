@@ -310,13 +310,14 @@ const loadTopicQueries = async (url, groups, range) => {
 // ligne pour les pages qu'il ne couvre pas (étiquettes en noindex surtout).
 const robotsCache = new Map();
 const ROBOTS_TTL_MS = 30 * 60 * 1000;
-const loadIndexability = async (urls, { live = true } = {}) => {
+const loadIndexability = async (urls, { live = true, onEach } = {}) => {
   if (!urls.length) return new Map();
   const r = await pool.query('SELECT url, robots, http_status FROM seo_page_audit WHERE url = ANY($1)', [urls]);
   const out = new Map(r.rows.map((x) => [x.url, x]));
   if (!live) return out;
   const missing = urls.filter((u) => !out.has(u)).slice(0, 25);
-  for (const u of missing) {
+  for (const [i, u] of missing.entries()) {
+    if (onEach) onEach(i, missing.length, u);
     const c = robotsCache.get(u);
     if (c && Date.now() - c.at < ROBOTS_TTL_MS) { out.set(u, c.v); continue; }
     try {
@@ -360,12 +361,17 @@ const sampleProducts = (products, max) => {
 // L'écran l'interroge pour afficher l'étape et repérer un blocage.
 const progress = new Map();
 const ANALYSIS_STEPS = 4;
-const setProgress = (id, step, label, extra = {}) => {
-  const prev = progress.get(id) || { startedAt: Date.now() };
-  progress.set(id, { ...prev, running: true, step, steps: ANALYSIS_STEPS, label, done: null, total: null, ...extra, updatedAt: Date.now() });
+const VERIFY_STEPS = 4;
+const pkey = (id, kind = 'analyze') => `${kind}:${id}`;
+const setProgress = (id, step, label, extra = {}, kind = 'analyze') => {
+  const k = pkey(id, kind);
+  const prev = progress.get(k) || { startedAt: Date.now() };
+  progress.set(k, {
+    ...prev, running: true, step, steps: kind === 'verify' ? VERIFY_STEPS : ANALYSIS_STEPS, label, done: null, total: null, current: null, ...extra, updatedAt: Date.now(),
+  });
 };
-const getProgress = (id) => {
-  const p = progress.get(id);
+const getProgress = (id, kind = 'analyze') => {
+  const p = progress.get(pkey(id, kind));
   if (!p) return { running: false };
   return { ...p, elapsed: Math.round((Date.now() - p.startedAt) / 1000), idle: Math.round((Date.now() - p.updatedAt) / 1000) };
 };
@@ -408,7 +414,9 @@ const analyze = async (id) => {
     byPage.set(q.top_page, e);
   }
   const competitors = [...byPage.values()].sort((a, b) => b.impressions - a.impressions).slice(0, 10);
-  const idx = await loadIndexability(competitors.map((c) => c.url));
+  const idx = await loadIndexability(competitors.map((c) => c.url), {
+    onEach: (i, n, u) => setProgress(id, 4, 'Indexation des pages concurrentes', { done: i, total: n, current: pathOf(u) }),
+  });
   for (const c of competitors) {
     const a = idx.get(c.url);
     c.robots = a?.robots || null;
@@ -417,7 +425,9 @@ const analyze = async (id) => {
   // Liens du texte actuel, avec leur indexabilité : une étiquette en noindex
   // ne doit pas recevoir de lien (le brief la signale).
   const currentLinks = hrefsOf(`${page.intro_html || ''}${page.seo_html || ''}`);
-  const linkIdx = await loadIndexability(currentLinks);
+  const linkIdx = await loadIndexability(currentLinks, {
+    onEach: (i, n, u) => setProgress(id, 4, 'Indexation des pages liées par le texte actuel', { done: i, total: n, current: pathOf(u) }),
+  });
   const links = currentLinks.map((u) => ({ url: u, robots: linkIdx.get(u)?.robots || null }));
 
   const targets = row.target_queries?.length
@@ -738,6 +748,7 @@ const sameText = (a, b) => norm(a).replace(/\s+/g, ' ').trim() === norm(b).repla
 const verifyLive = async (id) => {
   await ensureTables();
   const row = await getRow(id);
+  setProgress(id, 1, 'Lecture de la page publiée', {}, 'verify');
   const { status, html } = await fetchHtml(row.url);
   const page = parsePage(row.url, status, html);
   const draft = row.draft || {};
@@ -757,13 +768,17 @@ const verifyLive = async (id) => {
   const hrefs = [...(page.seo_html || '').matchAll(HREF_RE)].map((m) => m[1]);
   const absolute = hrefs.filter((h) => /youvape\.fr/.test(h));
   add(!absolute.length, 'Liens relatifs', absolute.length ? `${absolute.length} lien(s) absolu(s)` : `${hrefs.length} lien(s)`);
-  const liveIdx = await loadIndexability(hrefsOf(page.seo_html || ''));
+  setProgress(id, 2, 'Indexation des pages liées', {}, 'verify');
+  const liveIdx = await loadIndexability(hrefsOf(page.seo_html || ''), {
+    onEach: (i, n, u) => setProgress(id, 2, 'Indexation des pages liées', { done: i, total: n, current: pathOf(u) }, 'verify'),
+  });
   const toNoindex = [...liveIdx.values()].filter((x) => /noindex/.test(x.robots || '')).map((x) => pathOf(x.url));
   add(!toNoindex.length, 'Aucun lien vers une page en noindex', toNoindex.length ? toNoindex.join(', ') : null);
   add(!page.menu_masked, 'Lien du menu vers la page non masqué', page.menu_masked ? 'span data-obflink-url : Google ne le suit pas' : null);
   // Liens attendus depuis d'autres pages.
-  for (const l of draft.liens_a_ajouter || []) {
-    if (!l.depuis) continue;
+  const sources = (draft.liens_a_ajouter || []).filter((l) => l.depuis);
+  for (const [i, l] of sources.entries()) {
+    setProgress(id, 3, 'Liens attendus depuis les autres pages', { done: i, total: sources.length, current: l.depuis }, 'verify');
     try {
       const srcUrl = normalizeUrl(l.depuis);
       const src = await fetchHtml(srcUrl);
@@ -773,6 +788,7 @@ const verifyLive = async (id) => {
       add(false, `Lien depuis ${l.depuis}`, error.message);
     }
   }
+  setProgress(id, 4, 'Enregistrement', {}, 'verify');
   const result = { checks, page: { title: page.title, robots: page.robots, h2: page.h2 } };
   await pool.query('UPDATE seo_pages SET live_check = $2, checked_at = now(), updated_at = now() WHERE id = $1', [id, JSON.stringify(result)]);
   return result;
@@ -904,7 +920,7 @@ const listPages = async () => {
     pages.push({
       ...p,
       status_by_name: nameOf(names, p.status_by),
-      analyzing: !!progress.get(p.id)?.running,
+      analyzing: !!progress.get(pkey(p.id))?.running,
       main_query: main,
       position_before: before,
       position_now: main ? now.get(main)?.position ?? null : null,
@@ -936,6 +952,7 @@ const getPage = async (id) => {
     lint,
     events: events.rows.map((e) => ({ ...e, created_by_name: nameOf(names, e.created_by) })),
     progress: getProgress(id),
+    verify_progress: getProgress(id, 'verify'),
     aiConfigured: aiConfigured(),
     model: MODEL,
   };
@@ -945,15 +962,27 @@ const getPage = async (id) => {
 const startAnalyze = async (id) => {
   await ensureTables();
   await getRow(id);
-  if (progress.get(id)?.running) return getProgress(id);
-  progress.set(id, { startedAt: Date.now(), updatedAt: Date.now(), running: true, step: 0, steps: ANALYSIS_STEPS, label: 'Démarrage' });
-  analyze(id)
-    .then(() => progress.set(id, { ...progress.get(id), running: false, finished: true, updatedAt: Date.now() }))
+  return runJob(id, 'analyze', ANALYSIS_STEPS, () => analyze(id));
+};
+
+// Tâche de fond suivie par l'écran (une seule à la fois par page et par type).
+const runJob = (id, kind, steps, fn) => {
+  const k = pkey(id, kind);
+  if (progress.get(k)?.running) return getProgress(id, kind);
+  progress.set(k, { startedAt: Date.now(), updatedAt: Date.now(), running: true, step: 0, steps, label: 'Démarrage' });
+  fn()
+    .then(() => progress.set(k, { ...progress.get(k), running: false, finished: true, updatedAt: Date.now() }))
     .catch((error) => {
-      console.error('[SEO rédaction] analyse', id, error.message);
-      progress.set(id, { ...progress.get(id), running: false, error: error.message, updatedAt: Date.now() });
+      console.error(`[SEO rédaction] ${kind}`, id, error.message);
+      progress.set(k, { ...progress.get(k), running: false, error: error.message, updatedAt: Date.now() });
     });
-  return getProgress(id);
+  return getProgress(id, kind);
+};
+
+const startVerify = async (id) => {
+  await ensureTables();
+  await getRow(id);
+  return runJob(id, 'verify', VERIFY_STEPS, () => verifyLive(id));
 };
 
 const createPage = async (url, user) => {
@@ -1054,7 +1083,7 @@ const clearAds = async (id) => {
 };
 
 module.exports = {
-  ensureTables, listPages, getPage, createPage, updatePage, analyze, startAnalyze, getProgress, saveAds, clearAds, getBrief,
+  ensureTables, listPages, getPage, createPage, updatePage, analyze, startAnalyze, startVerify, getProgress, saveAds, clearAds, getBrief,
   startGeneration, importDraft, verifyLive, getPositions, addEvent, deleteEvent, deletePage, aiConfigured,
   // Tests
   parseAdsCsv, parseTerms, matchTerms, normalizeUrl, parsePage, dataRange, loadPageQueries, loadTopicQueries,
