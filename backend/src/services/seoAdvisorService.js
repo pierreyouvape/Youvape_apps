@@ -382,8 +382,8 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
   for (const src of sources) {
     if (lines.length >= max) break;
     const s = normUrl(src);
-    // Pas de lien depuis une page CBD ou « jetable » : autre sujet, sensible.
-    if (!s || s === t || seen.has(s) || isParamUrl(s) || /cbd|thc|jetable/.test(pathOf(s))) continue;
+    // Pas de lien depuis une page CBD, « jetable », prix ou superlatif : autre sujet ou sensible (DNF).
+    if (!s || s === t || seen.has(s) || isParamUrl(s) || /cbd|thc|jetable|pas-cher|prix|promo|meilleu/.test(pathOf(s))) continue;
     seen.add(s);
     let a = audits.get(src) || audits.get(s);
     if (!a || !Array.isArray(a.links)) {
@@ -1027,7 +1027,15 @@ const detectBaisse = async (data, audits) => {
       const titleOk = a?.title && tokens(head.query).every((t) => compact(a.title).includes(t));
       if (!titleOk && a?.title) steps.push(`Title : « ${a.title} » ne contient pas « ${head.query} », la requête qui a perdu le plus de clics. L'y ajouter.`);
       const words = a?.word_count || 0;
-      steps.push(`Contenu : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus). Ajouter` : 'ajouter'} une fiche technique complète (autonomie, capacité, puissance, résistances ou cartouches compatibles) et une FAQ factuelle${top.some((r) => !/\d/.test(r.query)) && top.some((r) => /\d/.test(r.query)) ? ', avec un paragraphe qui situe ce modèle par rapport aux autres versions de la gamme (des requêtes sans numéro de version arrivent ici)' : ''}.`);
+      const versions = top.some((r) => !/\d/.test(r.query)) && top.some((r) => /\d/.test(r.query));
+      // Le contenu n'est un levier que si la page est courte (ou si des requêtes
+      // sur la gamme sans numéro de version arrivent ici).
+      if (posDelta < 8 && words && words < 600) {
+        steps.push(`Contenu : la page est courte (environ ${words} mots hors menus). Ajouter une fiche technique complète (autonomie, capacité, puissance, résistances ou cartouches compatibles) et une FAQ factuelle.`);
+      }
+      if (versions) {
+        steps.push('Ajouter un paragraphe qui situe ce modèle par rapport aux autres versions de la gamme : des requêtes sans numéro de version arrivent sur cette page.');
+      }
       const links = await linkPlan({
         target: url,
         anchors: top.filter((r) => !hasSensitive(r.query)).slice(0, 3).map((r) => r.query),
