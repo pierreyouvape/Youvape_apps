@@ -170,6 +170,8 @@ function Recommendations() {
   const [data, setData] = useState(null);
   const [statusFilter, setStatusFilter] = useState('todo,doing');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const load = useCallback(async () => {
@@ -212,7 +214,14 @@ function Recommendations() {
     }
   };
 
-  const recs = (data?.recommendations || []).filter((r) => typeFilter === 'all' || r.type === typeFilter);
+  const needle = search.trim().toLowerCase();
+  const recs = (data?.recommendations || [])
+    .filter((r) => typeFilter === 'all' || r.type === typeFilter)
+    .filter((r) => !needle
+      || r.title.toLowerCase().includes(needle)
+      || (r.urls || []).some((u) => u.toLowerCase().includes(needle))
+      || (Array.isArray(r.queries) ? r.queries : []).some((q) => q.query.includes(needle)));
+  const shown = showAll ? recs : recs.slice(0, 30);
   const types = [...new Set((data?.recommendations || []).map((r) => r.type))];
   const run = data?.lastRun;
 
@@ -226,6 +235,8 @@ function Recommendations() {
           {data?.running ? ' · recalcul en cours…' : ''}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filtrer (ex. jnr)"
+            style={{ padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.grisCL}`, fontSize: 13, width: 150 }} />
           <Select value={statusFilter} onChange={setStatusFilter} options={STATUS_FILTERS} />
           <Select value={typeFilter} onChange={setTypeFilter}
             options={[{ value: 'all', label: 'Tous les types' }, ...types.map((x) => ({ value: x, label: REC_TYPES[x]?.label || x }))]} />
@@ -242,7 +253,13 @@ function Recommendations() {
         Tout texte proposé reste factuel et passe par l&apos;avocat avant mise en ligne.
       </div>
       {data && recs.length === 0 && <div style={{ fontSize: 13, color: C.grisM }}>Aucune recommandation pour ces filtres.</div>}
-      {recs.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} onStatus={setStatus} />)}
+      {shown.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} onStatus={setStatus} />)}
+      {recs.length > shown.length && (
+        <button type="button" onClick={() => setShowAll(true)}
+          style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, cursor: 'pointer', fontSize: 13, color: C.saphir }}>
+          Afficher les {recs.length - shown.length} autres recommandations
+        </button>
+      )}
     </Card>
   );
 }

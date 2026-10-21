@@ -34,6 +34,12 @@ const LEGAL_NOTE = 'Rédaction neutre et factuelle (caractéristiques, compatibi
 // Groupes du plan qui ne doivent pas produire de recommandation de création.
 const GROUPS_WITHOUT_PAGE = new Set(['jnr', 'garde-fou-puff-sans-nicotine']);
 
+// Mots à ne jamais reprendre dans un title, un intertitre ou un mot manquant :
+// arguments de prix, de goût, d'avis (griefs DNF) ou mots sans contenu.
+const SENSITIVE = new Set(['prix', 'pas', 'cher', 'promo', 'promotion', 'solde', 'soldes', 'meilleur', 'meilleure', 'meilleurs',
+  'gout', 'gouts', 'saveur', 'saveurs', 'avis', 'trouver', 'acheter', 'achat', 'vente', 'magasin', 'cbd', 'thc', 'ou', 'quoi',
+  'comment', 'combien', 'pourquoi', 'quel', 'quelle', 'quels', 'est', 'peut', 'faut', 'interdit', 'interdite', 'legal', 'legale', 'danger']);
+const ACRONYMS = ['jnr', 'mtl', 'dl', 'pg', 'vg'];
 const STOPWORDS = new Set(['de', 'du', 'la', 'le', 'les', 'des', 'en', 'et', 'a', 'au', 'aux', 'un', 'une', 'pour', 'sur', 'avec', 'd', 'l']);
 const QUESTION_RE = /^(comment|combien|pourquoi|quel|quelle|quels|quelles|est[- ]ce|peut[- ]on|ou |où |c'?est quoi|que |qu'|faut[- ]il|y a[- ]t)|(\?| ou pas$| legal| légal| interdit| danger)/;
 
@@ -43,7 +49,12 @@ const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return y
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const compact = (s) => norm(s).replace(/[^a-z0-9]/g, '');
 const tokens = (q) => norm(q).split(/[^a-z0-9%]+/).filter((t) => t && !STOPWORDS.has(t));
-const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const cap = (s) => {
+  if (!s) return s;
+  let out = s.charAt(0).toUpperCase() + s.slice(1);
+  for (const a of ACRONYMS) out = out.replace(new RegExp(`\\b${a}\\b`, 'gi'), a.toUpperCase());
+  return out;
+};
 const pathOf = (url) => (url || '').replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/';
 const fmt1 = (n) => (n === null || n === undefined ? '—' : Number(n).toFixed(1).replace('.', ','));
 const fmtInt = (n) => new Intl.NumberFormat('fr-FR').format(Math.round(n || 0));
@@ -284,13 +295,15 @@ const detectCannibalisation = ({ q, byQuery }) => {
 };
 
 // 2. Texte : requêtes entre la 4e et la 20e place, mots absents du title/H1.
-const detectTexte = ({ q, byQuery }, audits) => {
+const detectTexte = ({ q, byQuery }, audits, claimed = new Map()) => {
   const perPage = new Map();
   for (const [query, qs] of q) {
     if (qs.i < 150 || qs.p < 3.5 || qs.p > 20) continue;
     const rows = byQuery.get(query);
     if (!rows || !rows.length) continue;
     const page = rows[0].page;
+    // Requête d'un groupe qui a sa page dédiée : on ne pousse pas une autre page dessus.
+    if (claimed.has(query) && claimed.get(query) !== page) continue;
     if (isParamUrl(page) || pathOf(page) === '/') continue;
     if (!perPage.has(page)) perPage.set(page, []);
     perPage.get(page).push({ query, ...qs });
@@ -303,27 +316,29 @@ const detectTexte = ({ q, byQuery }, audits) => {
     const missing = new Map();
     for (const x of list.slice(0, 8)) {
       for (const t of tokens(x.query)) {
-        if (t.length < 2 || where.includes(t)) continue;
+        if (t.length < 2 || SENSITIVE.has(t) || where.includes(t)) continue;
         missing.set(t, (missing.get(t) || 0) + x.i);
       }
     }
     const missingWords = [...missing.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 6);
-    const est = list.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 3)), 0);
+    const est = list.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
     const head = list[0];
     const titleNow = audit?.title || '(title non relevé)';
     const words = (audit?.word_count || 0);
     const actions = [];
     if (missingWords.length) {
       actions.push(`Mots tapés par les clients absents du title et du H1 : ${missingWords.map((w) => `« ${w} »`).join(', ')}.`);
-      actions.push(`Title actuel : « ${titleNow} ».`);
-      actions.push(`Piste de title : « ${cap(head.query)} – ${titleNow.replace(/\s*[-–|]\s*YouVape\s*$/i, '').slice(0, 45)} » (60 caractères max, à reformuler).`);
+      actions.push(`Title actuel : « ${titleNow} ». Y intégrer ${missingWords.slice(0, 3).map((w) => `« ${w} »`).join(', ')} sans dépasser 60 caractères.`);
     } else {
       actions.push(`Le title contient déjà les mots des requêtes (« ${titleNow} »). Le levier est le contenu et les liens.`);
     }
     if (words && words < 400) actions.push(`Texte court (environ ${words} mots hors menu) : ajouter un paragraphe factuel qui emploie les requêtes ci-dessous.`);
     else actions.push('Employer les requêtes ci-dessous dans un paragraphe factuel et dans les intertitres (H2).');
     actions.push(`Ajouter des liens internes vers ${pathOf(page)} avec ces mots comme texte de lien (page marque, pages proches).`);
+    const editorial = ['article'].includes(pageKind(page)) || pathOf(page).startsWith('/avis-tests/');
+    if (editorial) actions.push('Contenu éditorial : sujet sensible dans le litige DNF (un blog est présenté comme publicitaire). À arbitrer avec l\u2019avocat avant toute retouche.');
     recs.push({
+      editorial,
       rec_key: `texte:${page}`,
       type: 'texte',
       effort: 'faible',
@@ -384,7 +399,7 @@ const detectFaq = ({ q, byQuery }) => {
     perPage.get(page).push({ query, ...qs });
   }
   return [...perPage.entries()]
-    .filter(([, list]) => list.reduce((s, x) => s + x.i, 0) >= 60)
+    .filter(([, list]) => list.reduce((s, x) => s + x.i, 0) >= 100)
     .map(([page, list]) => {
       list.sort((a, b) => b.i - a.i);
       const est = list.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
@@ -472,8 +487,32 @@ const detectIndexation = ({ pageStats }, audits) => {
   return recs;
 };
 
+// Étiquettes et pages WordPress existantes (même sans impression : une page
+// ouverte la veille n'a encore aucune donnée Search Console).
+const loadSitePages = async () => {
+  const out = [];
+  const fetchAll = async (endpoint, toUrl) => {
+    for (let page = 1; page <= 20; page += 1) {
+      const res = await axios.get(`${SITE}/wp-json/wp/v2/${endpoint}`, {
+        params: { per_page: 100, page, _fields: 'slug,link' },
+        headers: { 'User-Agent': USER_AGENT }, timeout: 30000, validateStatus: () => true,
+      });
+      if (res.status !== 200 || !Array.isArray(res.data) || !res.data.length) break;
+      res.data.forEach((x) => out.push({ slug: x.slug, url: toUrl(x) }));
+      if (res.data.length < 100) break;
+    }
+  };
+  try {
+    await fetchAll('product_tag', (x) => x.link || `${SITE}/etiquette-produit/${x.slug}`);
+    await fetchAll('pages', (x) => x.link);
+  } catch (error) {
+    console.error('[SEO] Liste des pages WordPress :', error.message);
+  }
+  return out.map((x) => ({ ...x, url: (x.url || '').replace(/\/$/, '') }));
+};
+
 // 6. Création / renforcement d'une page pour un groupe de requêtes.
-const detectCreation = async ({ q, byQuery, pageStats }, audits) => {
+const detectCreation = async ({ q, byQuery, pageStats }, audits, sitePages, claimed) => {
   const groups = (await pool.query('SELECT slug, name, pattern FROM gsc_query_groups WHERE active')).rows;
   const recs = [];
   for (const g of groups) {
@@ -498,12 +537,20 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits) => {
     const topPage = ranked[0]?.[0];
     const share = topPage && pageStats.get(topPage)?.i ? ranked[0][1] / pageStats.get(topPage).i : 0;
     const headTokens = tokens(head.query);
-    const slugMatch = ranked.find(([u]) => headTokens.every((t) => compact(pathOf(u)).includes(t)) && pageKind(u) !== 'fiche produit');
+    let slugMatch = ranked.find(([u]) => headTokens.every((t) => compact(pathOf(u)).includes(t)) && pageKind(u) !== 'fiche produit');
+    if (!slugMatch) {
+      // Page dédiée existante mais pas encore classée.
+      const site = sitePages
+        .filter((x) => headTokens.every((t) => compact(x.slug).includes(t)))
+        .sort((a, b) => a.slug.length - b.slug.length)[0];
+      if (site) slugMatch = [site.url, 0];
+    }
+    if (slugMatch) for (const x of list) claimed.set(x.query, slugMatch[0]);
     const generic = !topPage || share < 0.4 || pageKind(topPage) === 'accueil';
     const est = gainTo(impr, clicks, pos, 3);
     // Plan de contenu tiré des requêtes réelles.
     const extra = new Map();
-    for (const x of list) for (const t of tokens(x.query)) if (!headTokens.includes(t) && t.length > 2) extra.set(t, (extra.get(t) || 0) + x.i);
+    for (const x of list) for (const t of tokens(x.query)) if (!headTokens.includes(t) && t.length > 2 && !SENSITIVE.has(t)) extra.set(t, (extra.get(t) || 0) + x.i);
     const subjects = [...extra.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t]) => t);
     const questions = list.filter((x) => QUESTION_RE.test(norm(x.query))).slice(0, 8).map((x) => x.query);
     const products = ranked.filter(([u]) => pageKind(u) === 'fiche produit').slice(0, 8).map(([u]) => pathOf(u));
@@ -526,7 +573,7 @@ const detectCreation = async ({ q, byQuery, pageStats }, audits) => {
         effort: 'moyen',
         est_clicks: monthly(est * 0.7),
         title: `Faire monter la page dédiée « ${g.name} » : ${pathOf(slugMatch[0])}`,
-        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)}, alors qu'une page dédiée existe déjà.`,
+        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)}, alors qu'une page dédiée existe déjà${slugMatch[1] ? '' : ' (encore sans impression : récente ou mal reliée)'}.`,
         action: `Renforcer ${pathOf(slugMatch[0])} : texte selon le plan ci-dessous, et liens vers elle depuis ${pathOf(topPage)}, la page marque et les fiches concernées (texte du lien = « ${head.query} »).`,
         proposal,
         urls: [slugMatch[0], topPage],
@@ -610,15 +657,21 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     }
     const audits = await loadAudits();
 
+    const sitePages = await loadSitePages();
+    const claimed = new Map();
+    const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
-      ...detectCannibalisation(data),
-      ...detectTexte(data, audits),
+      ...detectCannibalisation(data).filter((r) => r.est_clicks >= 10),
+      ...detectTexte(data, audits, claimed).filter((r) => r.est_clicks >= 15),
       ...detectSnippet(data, audits),
       ...detectFaq(data),
       ...detectIndexation(data, audits),
-      ...(await detectCreation(data, audits)),
+      ...creation,
       ...detectBaisse(data),
-    ].map((r) => ({ ...r, score: Number(((r.est_clicks || 0) * (TYPE_WEIGHT[r.type] || 1)).toFixed(1)) }));
+    ].map((r) => ({
+      ...r,
+      score: Number(((r.est_clicks || 0) * (TYPE_WEIGHT[r.type] || 1) * (r.editorial ? 0.3 : 1)).toFixed(1)),
+    }));
 
     const client = await pool.connect();
     try {
