@@ -306,12 +306,31 @@ const loadTopicQueries = async (url, groups, range) => {
   });
 };
 
-// Indexabilité connue des pages liées (relevé des recommandations).
-const loadIndexability = async (urls) => {
+// Indexabilité des pages liées : relevé des recommandations, et lecture en
+// ligne pour les pages qu'il ne couvre pas (étiquettes en noindex surtout).
+const robotsCache = new Map();
+const ROBOTS_TTL_MS = 30 * 60 * 1000;
+const loadIndexability = async (urls, { live = true } = {}) => {
   if (!urls.length) return new Map();
   const r = await pool.query('SELECT url, robots, http_status FROM seo_page_audit WHERE url = ANY($1)', [urls]);
-  return new Map(r.rows.map((x) => [x.url, x]));
+  const out = new Map(r.rows.map((x) => [x.url, x]));
+  if (!live) return out;
+  const missing = urls.filter((u) => !out.has(u)).slice(0, 25);
+  for (const u of missing) {
+    const c = robotsCache.get(u);
+    if (c && Date.now() - c.at < ROBOTS_TTL_MS) { out.set(u, c.v); continue; }
+    try {
+      const { status, html } = await fetchHtml(u);
+      const v = { url: u, http_status: status, robots: pick(html, /<meta\s+name=["']robots["']\s+content=["']([^"']*)["']/i) };
+      robotsCache.set(u, { at: Date.now(), v });
+      out.set(u, v);
+    } catch { /* inconnue : signalée comme non vérifiée */ }
+  }
+  return out;
 };
+const hrefsOf = (html) => [...new Set([...(html || '').matchAll(/href="([^"]+)"/gi)].map((m) => m[1])
+  .filter((h) => h.startsWith('/') || /youvape\.fr/.test(h))
+  .map((h) => (h.startsWith('/') ? SITE + h : h).split(/[?#]/)[0].replace(/\/$/, '')))];
 
 /* ─── Analyse ──────────────────────────────────────────── */
 
@@ -395,11 +414,17 @@ const analyze = async (id) => {
     c.robots = a?.robots || null;
   }
 
+  // Liens du texte actuel, avec leur indexabilité : une étiquette en noindex
+  // ne doit pas recevoir de lien (le brief la signale).
+  const currentLinks = hrefsOf(`${page.intro_html || ''}${page.seo_html || ''}`);
+  const linkIdx = await loadIndexability(currentLinks);
+  const links = currentLinks.map((u) => ({ url: u, robots: linkIdx.get(u)?.robots || null }));
+
   const targets = row.target_queries?.length
     ? row.target_queries
     : topic.filter((q) => !q.excluded).slice(0, DEFAULT_TARGETS).map((q) => q.query);
 
-  const data = { range, page_queries: pageQueries.slice(0, 60), topic, competitors, facts };
+  const data = { range, page_queries: pageQueries.slice(0, 60), topic, competitors, facts, links };
   const r = await pool.query(
     `UPDATE seo_pages SET page = $2, data = $3, topic_terms = $4, target_queries = $5, analyzed_at = now(), updated_at = now(),
        label = COALESCE(label, $6)
@@ -528,7 +553,7 @@ RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage 
 - Rédaction neutre et factuelle : caractéristiques, compatibilités, mode d'emploi, conservation.
 - JAMAIS : goût, saveur, arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
-- Pas de lien vers une page en noindex : lier la fiche produit à la place.`;
+- JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
 
 const RESPONSE_FORMAT = `Réponds UNIQUEMENT par un objet JSON valide (sans texte autour, sans bloc de code), de cette forme :
 {
@@ -577,6 +602,10 @@ ${mdTable(['Requête', 'Impr. 90 j', 'Clics', 'Pos.', 'Page affichée', 'Questio
     d.topic.slice(0, 120).map((q) => [q.query, q.impressions, q.clicks, q.position, q.this_page ? 'CETTE PAGE' : pathOf(q.top_page), q.question ? 'oui' : '', q.excluded || '']))}`);
   parts.push(`## Requêtes où la page apparaît déjà
 ${mdTable(['Requête', 'Impr. 90 j', 'Clics', 'Pos.'], d.page_queries.slice(0, 40).map((q) => [q.query, q.impressions, q.clicks, q.position]))}`);
+  if (d.links?.length) {
+    parts.push(`## Liens du texte actuel
+${mdTable(['Page liée', 'Robots'], d.links.map((l) => [pathOf(l.url), /noindex/.test(l.robots || '') ? 'NOINDEX : ne pas lier' : (l.robots || 'inconnu')]))}`);
+  }
   parts.push(`## Pages du site qui captent ces requêtes (sources possibles de liens)
 ${mdTable(['Page', 'Impr.', 'Robots', 'Requêtes'], d.competitors.map((c) => [pathOf(c.url), c.impressions, c.robots || 'inconnu', c.queries.join(', ')]))}`);
   parts.push(ads.length
@@ -621,7 +650,7 @@ const lintDraft = async (draft, page) => {
   const internal = [...new Set(hrefs.filter((h) => h.startsWith('/')).map((h) => SITE + h.split(/[?#]/)[0].replace(/\/$/, '')))];
   const idx = await loadIndexability(internal);
   const noindex = internal.filter((u) => /noindex/.test(idx.get(u)?.robots || ''));
-  if (noindex.length) add('error', `Lien(s) vers une page en noindex : ${noindex.map(pathOf).join(', ')}.`);
+  if (noindex.length) add('error', `Lien(s) vers une page en noindex : ${noindex.map(pathOf).join(', ')}. Une étiquette en noindex reste sans lien (masquée par le thème) : retirer le lien, ou lier la fiche produit qui la remplace.`);
   const unknown = internal.filter((u) => !idx.has(u));
   if (unknown.length) add('info', `Indexabilité non vérifiée (pages hors relevé) : ${unknown.map(pathOf).slice(0, 8).join(', ')}.`);
   if (html.includes('faq-question') && !html.includes('faq-container')) add('error', 'FAQ sans <div class="faq-container">.');
@@ -728,6 +757,9 @@ const verifyLive = async (id) => {
   const hrefs = [...(page.seo_html || '').matchAll(HREF_RE)].map((m) => m[1]);
   const absolute = hrefs.filter((h) => /youvape\.fr/.test(h));
   add(!absolute.length, 'Liens relatifs', absolute.length ? `${absolute.length} lien(s) absolu(s)` : `${hrefs.length} lien(s)`);
+  const liveIdx = await loadIndexability(hrefsOf(page.seo_html || ''));
+  const toNoindex = [...liveIdx.values()].filter((x) => /noindex/.test(x.robots || '')).map((x) => pathOf(x.url));
+  add(!toNoindex.length, 'Aucun lien vers une page en noindex', toNoindex.length ? toNoindex.join(', ') : null);
   add(!page.menu_masked, 'Lien du menu vers la page non masqué', page.menu_masked ? 'span data-obflink-url : Google ne le suit pas' : null);
   // Liens attendus depuis d'autres pages.
   for (const l of draft.liens_a_ajouter || []) {
