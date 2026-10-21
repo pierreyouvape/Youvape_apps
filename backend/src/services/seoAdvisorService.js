@@ -744,6 +744,11 @@ const loadSitePages = async () => {
 
 // Vocabulaire du plan de page selon ce que vend la page : on ne parle pas de
 // bouffées ni de batterie pour des e-liquides.
+// Formules promotionnelles ou mélioratives à retirer d'un title (DNF).
+const MARKETING_RE = /abondant|intense|id[eé]al|parfait|unique|exceptionnel|incroyable|r[eé]volution|ultime|g[eé]nial|meilleu|premium|luxe|nuages?|plaisir|durable|lumineuse|puissant/i;
+// Les mots de B sont-ils tous dans A (ordre et capacité indifférents) ?
+const coveredBy = (a, b) => { const ta = new Set(tokens(a)); return tokens(b).every((t) => ta.has(t)); };
+
 const PROFILES = {
   puff: {
     comparatif: 'capacité, bouffées annoncées, batterie, recharge, taux de nicotine',
@@ -869,8 +874,11 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         let a = audits.get(u) || audits.get(normUrl(u));
         if (!a) { a = await auditUrl(u); if (a.http_status) await saveAudit(a); }
         const title = a?.title || '';
-        if (slugCore.length && !slugCore.every((t) => compact(`${pathOf(u)} ${title}`).includes(t))) continue;
-        if (/cartouche/.test(u)) {
+        const isCart = /cartouche/.test(u);
+        // Une cartouche sert souvent plusieurs capacités : on ne lui demande que le nom du modèle.
+        const need = isCart ? slugCore.filter((t) => !/\d/.test(t)) : slugCore;
+        if (need.length && !need.every((t) => compact(`${pathOf(u)} ${title}`).includes(t))) continue;
+        if (isCart) {
           // Une cartouche n'est pas un modèle : intertitre à part.
           cartouches.push({ url: u, title: title.replace(/\s*[-–|]\s*YouVape.*$/i, '') });
           continue;
@@ -893,7 +901,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     // Un modèle qui ne fait que répéter la requête n'apporte rien au title.
     const headCompact = compact(titleHead.query);
     const bases = [...new Set(labels.map((l) => l.base || l.label))];
-    const informative = bases.filter((b) => !headCompact.includes(compact(b)));
+    const informative = bases.filter((b) => !headCompact.includes(compact(b)) && !coveredBy(titleHead.query, b));
     const facets = informative.length >= 2 ? informative : [
       ...informative,
       ...(hasNico && hasZero ? ['avec ou sans nicotine'] : []),
@@ -926,11 +934,14 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     // que compléter le title avec ce qui manque (« E-liquides JNR » couvre
     // « liquide jnr » et garde la forme « e-liquide », très recherchée).
     const covers = (txt) => txt && tokens(titleHead.query).every((t) => compact(txt).includes(t));
+    // Segments promotionnels du title actuel (« Vapeur abondante en tirage aérien ») : retirés.
+    const marketing = curTitle ? curTitle.split(/\s+[-–|:]\s+/).filter((seg) => MARKETING_RE.test(seg)) : [];
+    const cleanTitle = curTitle ? curTitle.split(/\s+[-–|:]\s+/).filter((seg) => !MARKETING_RE.test(seg)).join(' - ') : null;
     let proposedTitle = title;
-    if (covers(curTitle)) {
-      proposedTitle = curTitle;
+    if (covers(cleanTitle)) {
+      proposedTitle = cleanTitle;
       for (const f of facets) {
-        if (compact(proposedTitle).includes(compact(f))) continue;
+        if (compact(proposedTitle).includes(compact(f)) || coveredBy(proposedTitle, f)) continue;
         const next = `${proposedTitle}${proposedTitle.includes(':') ? ', ' : ' : '}${f}`;
         if (next.length > 60) break;
         proposedTitle = next;
@@ -939,12 +950,12 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const h1Keep = covers(curH1);
     const plan = [
       curTitle
-        ? (same(curTitle, proposedTitle) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »`)
+        ? (same(curTitle, proposedTitle) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »${marketing.length ? ` (retirer ${marketing.map((m) => `« ${m} »`).join(', ')} : formule promotionnelle, litige DNF)` : ''}`)
         : `Title : « ${proposedTitle} »`,
       curH1
         ? (h1Keep ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
-      `Meta description : « ${nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
+      `Meta description : « ${h1Keep ? curH1.replace(/\s+-\s+/g, ' ') : nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${facets.length ? ` (${facets.join(', ')})` : ''}.`,
       `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
       ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}`),
