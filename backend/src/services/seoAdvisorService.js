@@ -363,7 +363,12 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
       // bonne : on ne signale que les ancres sans aucun mot du sujet (« en savoir
       // plus »). Un lien image (sans texte) compte aussi.
       const sing = (txt) => canonTokens(txt).filter((w) => !GENERIC.has(w)).map((w) => w.replace(/s$/, ''));
-      const subject = new Set(clean.flatMap((x) => sing(x)));
+      const tAudit = audits.get(t);
+      const subject = new Set([
+        ...clean.flatMap((x) => sing(x)),
+        ...sing(pathOf(t).split('/').pop().replace(/-/g, ' ')),
+        ...sing(tAudit?.title || ''),
+      ]);
       const good = !existing.text || sing(existing.text).some((w) => subject.has(w));
       if (!good) lines.push(`- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
     } else {
@@ -380,7 +385,7 @@ const detectCannibalisation = ({ q, byQuery }, audits) => {
   for (const [query, rows] of byQuery) {
     const qs = q.get(query);
     // Déjà dans le top 3 : le partage ne coûte rien, on n'y touche pas.
-    if (!qs || qs.i < 150 || qs.p <= 3) continue;
+    if (!qs || qs.i < 150 || qs.p <= 3 || hasSensitive(query)) continue;
     const total = rows.reduce((s, r) => s + r.i, 0);
     const strong = rows.filter((r) => r.i >= 30 && r.i / total >= 0.15 && !isParamUrl(r.page));
     if (strong.length < 2) continue;
@@ -446,6 +451,8 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     const owned = all.filter((x) => !elsewhere.includes(x));
     if (!owned.length) continue;
     const head = owned[0];
+    // Requête principale sur le goût, le prix… : on ne pousse pas la page dessus (DNF).
+    if (hasSensitive(head.query)) continue;
     const headTk = canonTokens(head.query);
     const variants = owned.filter((x) => x !== head && headTk.every((t) => canonTokens(x.query).includes(t)));
     const audit = audits.get(normUrl(page));
@@ -552,6 +559,10 @@ const detectSnippet = ({ q, byQuery }, audits) => {
       action: [
         'Regarder la page de résultats Google (mobile, navigation privée) : un concurrent, un bloc de réponse IA ou des encarts au-dessus de nous ?',
         `Réécrire le title (« ${a?.title || '—'} ») et la meta description (« ${a?.meta_description || 'absente'} ») pour qu'ils reprennent exactement la requête et disent ce que la page contient (modèles, formats).`,
+        ...(() => {
+          const found = [...new Set(tokens(`${a?.title || ''} ${a?.meta_description || ''}`).filter((t) => BANNED.has(t)))];
+          return found.length ? [`Le title ou la meta actuels contiennent ${found.map((t) => `« ${t} »`).join(', ')} : à retirer (litige DNF).`] : [];
+        })(),
         LEGAL_NOTE,
       ].join('\n\n'),
       urls: [page],
@@ -832,8 +843,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       curH1
         ? (same(curH1, nice(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
-      `Meta description : « ${nice(titleHead.query)}${labels.length ? ` : ${labels.slice(0, 4).map((l) => l.label).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
-      `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${labels.length ? ` (${labels.map((l) => l.label).join(', ')})` : ''}.`,
+      `Meta description : « ${nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
+      `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${facets.length ? ` (${facets.join(', ')})` : ''}.`,
       'Grille des produits, puis un tableau comparatif : capacité, bouffées annoncées, batterie, recharge, taux de nicotine.',
       ...labels.slice(0, 5).map((l) => `H2 : ${l.label} : caractéristiques, recharge, compatibilités ; lien vers ${pathOf(l.url)}`),
       ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}`] : []),
