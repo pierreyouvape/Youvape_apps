@@ -38,11 +38,18 @@ const GROUPS_WITHOUT_PAGE = new Set(['jnr', 'garde-fou-puff-sans-nicotine', 'mar
 
 // Mots à ne jamais reprendre dans un title, un intertitre ou un mot manquant :
 // arguments de prix, de goût, d'avis (griefs DNF) ou mots sans contenu.
-const SENSITIVE = new Set(['prix', 'pas', 'cher', 'promo', 'promotion', 'solde', 'soldes', 'meilleur', 'meilleure', 'meilleurs',
-  'gout', 'gouts', 'saveur', 'saveurs', 'avis', 'trouver', 'acheter', 'achat', 'vente', 'magasin', 'cbd', 'thc', 'ou', 'quoi',
-  'comment', 'combien', 'pourquoi', 'quel', 'quelle', 'quels', 'est', 'peut', 'faut', 'interdit', 'interdite', 'legal', 'legale', 'danger',
-  // Puffs jetables interdites en France (loi du 24/02/2025) ; « gratuit » et « offert » sont des arguments commerciaux.
+// Mots INTERDITS dans ce qu'on propose (griefs DNF : prix, goût, avis,
+// superlatif, santé ; puffs jetables interdites en France depuis la loi du
+// 24/02/2025 ; « gratuit », « offert » = arguments commerciaux). Une requête qui
+// en contient un n'est jamais proposée à l'emploi.
+const BANNED = new Set(['prix', 'cher', 'promo', 'promotion', 'solde', 'soldes', 'meilleur', 'meilleure', 'meilleurs', 'meilleures',
+  'gout', 'gouts', 'saveur', 'saveurs', 'avis', 'cbd', 'thc', 'danger', 'dangereux', 'dangereuse',
   'jetable', 'jetables', 'gratuit', 'gratuite', 'gratuits', 'offert', 'offerte', 'livraison', 'reduction', 'code']);
+// Mots SANS CONTENU : jamais proposés comme mot à ajouter dans un title ou un
+// intertitre, mais une requête qui les contient reste utilisable.
+const NOISE = new Set(['pas', 'trouver', 'acheter', 'achat', 'vente', 'magasin', 'ou', 'quoi', 'comment', 'combien', 'pourquoi',
+  'quel', 'quelle', 'quels', 'est', 'peut', 'faut', 'interdit', 'interdite', 'legal', 'legale']);
+const SENSITIVE = new Set([...BANNED, ...NOISE]);
 const ACRONYMS = ['jnr', 'mtl', 'dl', 'pg', 'vg'];
 const STOPWORDS = new Set(['de', 'du', 'la', 'le', 'les', 'des', 'en', 'et', 'a', 'au', 'aux', 'un', 'une', 'pour', 'sur', 'avec', 'd', 'l']);
 const QUESTION_RE = /^(comment|combien|pourquoi|quel|quelle|quels|quelles|est[- ]ce|peut[- ]on|ou |où |c'?est quoi|que |qu'|faut[- ]il|y a[- ]t)|(\?| ou pas$| legal| légal| interdit| danger)/;
@@ -284,9 +291,12 @@ const canon = (q) => norm(q)
   .replace(/\b0 ?mg\b/g, 'sans nicotine')
   .replace(/\b0 ?%/g, 'sans nicotine');
 const canonTokens = (q) => tokens(canon(q));
-const hasSensitive = (q) => tokens(q).some((t) => SENSITIVE.has(t));
+const hasSensitive = (q) => tokens(q).some((t) => BANNED.has(t));
 // Santé : argument jugé publicitaire (DNF), jamais proposé en FAQ.
 const HEALTH_RE = /danger|cancer|sant[eé]|risque|nocif|toxique|mortel|poumon|maladie/;
+// Question de FAQ à ne pas reprendre : superlatif, prix, goût, avis, jetable (DNF).
+// Pas SENSITIVE : il contient « comment », « combien »… qui font les questions.
+const FAQ_BANNED_RE = /meilleu|\bprix\b|\bcher\b|promo|gratuit|\bgouts?\b|saveur|\bavis\b|jetable|offert/;
 // Ligne du tableau d'une carte : toute requête citée dans la carte y figure, avec son rôle.
 const qRow = (x, role) => ({ query: x.query, i: x.i, c: x.c, p: Number(Number(x.p).toFixed(1)), role });
 
@@ -349,9 +359,12 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
     const existing = a.links.find((l) => l.href === t);
     if (existing) {
       // Lien déjà bon : on n'en parle pas (une ligne « rien à faire » encombre la carte).
-      // Le pluriel ou une majuscule ne justifient pas de changer une ancre.
-      const sing = (txt) => canonTokens(txt).map((w) => w.replace(/s$/, ''));
-      const good = existing.text && clean.some((x) => { const have = sing(existing.text); return sing(x).every((w) => have.includes(w)); });
+      // Une ancre qui nomme déjà le sujet (« Voopoo », « vapoter sans nicotine ») est
+      // bonne : on ne signale que les ancres sans aucun mot du sujet (« en savoir
+      // plus »). Un lien image (sans texte) compte aussi.
+      const sing = (txt) => canonTokens(txt).filter((w) => !GENERIC.has(w)).map((w) => w.replace(/s$/, ''));
+      const subject = new Set(clean.flatMap((x) => sing(x)));
+      const good = !existing.text || sing(existing.text).some((w) => subject.has(w));
       if (!good) lines.push(`- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
     } else {
       lines.push(`- Depuis ${pathOf(s)}${vu} : ajouter un lien vers ${pathOf(t)} avec l'ancre « ${cap(clean[k % clean.length])} », ${placementFor(s)}.`);
@@ -442,7 +455,7 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     const missing = [];
     for (const v of variants.slice(0, 8)) {
       for (const t of canonTokens(v.query)) {
-        if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
+        if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || GENERIC.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
         missing.push({ t, from: v });
       }
     }
@@ -462,7 +475,10 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       blocks.push(`Title : ne pas le modifier, il couvre déjà « ${head.query} » (« ${titleNow} »).`);
     }
     // 2. Texte
-    const h2 = variants.filter((v) => !tokens(v.query).some((t) => SENSITIVE.has(t))).slice(0, 3);
+    // Intertitre utile = une variante qui apporte un vrai mot en plus (pas une
+    // simple permutation : « vprime 2 oxva » n'ajoute rien à « oxva vprime 2 »).
+    const h2 = variants.filter((v) => !hasSensitive(v.query)
+      && canonTokens(v.query).some((t) => !headTk.includes(t) && !GENERIC.has(t) && t.length > 2)).slice(0, 3);
     const words = audit?.word_count || 0;
     blocks.push(`Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
     // 3. Liens internes
@@ -548,7 +564,7 @@ const detectSnippet = ({ q, byQuery }, audits) => {
 const detectFaq = ({ q, byQuery }) => {
   const perPage = new Map();
   for (const [query, qs] of q) {
-    if (qs.i < 20 || !QUESTION_RE.test(norm(query)) || HEALTH_RE.test(norm(query))) continue;
+    if (qs.i < 20 || !QUESTION_RE.test(norm(query)) || HEALTH_RE.test(norm(query)) || FAQ_BANNED_RE.test(norm(query))) continue;
     const page = byQuery.get(query)?.[0]?.page;
     if (!page || isParamUrl(page)) continue;
     if (!perPage.has(page)) perPage.set(page, []);
@@ -803,7 +819,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       ? sitePages.filter((x) => /liquid/.test(x.slug) && headTokens.filter((t) => !GENERIC.has(t)).every((t) => compact(x.slug).includes(t))).sort((a, b) => a.slug.length - b.slug.length)[0]
       : null;
     const rechargeUrl = liquidZero?.url || routedTarget;
-    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query)) && !HEALTH_RE.test(norm(x.query)) && !hasSensitive(x.query)).slice(0, 6).map((x) => x.query);
+    const questions = list.filter((x) => QUESTION_RE.test(norm(x.query)) && !HEALTH_RE.test(norm(x.query)) && !FAQ_BANNED_RE.test(norm(x.query))).slice(0, 6).map((x) => x.query);
     const employ = list.filter((x) => !hasSensitive(x.query)).slice(0, 12);
     // Page existante : on montre l'actuel à côté du proposé (on MODIFIE, on ne crée pas).
     const curTitle = dedAudit?.title ? dedAudit.title.replace(/\s*[-–|]\s*YouVape\s*$/i, '') : null;
