@@ -362,8 +362,17 @@ const relatedSources = ({ byQuery }, query, exclude) => {
  * l'endroit où la placer, ou « déjà fait » si le lien existe (relevé du
  * contenu de la page, menus exclus).
  */
+// Marque d'une fiche produit : dernier mot de son adresse (pod-vprime-2-oxva → oxva).
+const brandOf = (u) => (pageKind(u) === 'fiche produit' ? (pathOf(u).split('/').pop().split('-').pop() || null) : null);
+
 const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => {
   const t = normUrl(target);
+  // Vers une fiche produit, on ne propose que des pages de la même marque (et la
+  // page marque) : un lien vers une Aspire depuis une fiche Vaporesso n'a pas de sens.
+  const brand = brandOf(t);
+  if (brand) {
+    sources = [`${SITE}/marque/${brand}`, ...sources.filter((u) => pageKind(u) !== 'fiche produit' || brandOf(u) === brand)];
+  }
   const clean = anchors.filter((a) => a && !tokens(a).some((x) => SENSITIVE.has(x)));
   if (!clean.length) return { lines: [], checked: 0 };
   const lines = [];
@@ -1006,8 +1015,14 @@ const detectBaisse = async (data, audits) => {
     if (demand <= -0.25) {
       causes.push(`la demande baisse (${Math.round(demand * 100)} % d'impressions sur ces requêtes, toutes pages confondues)`);
     }
+    if (posDelta >= 8) {
+      causes.push(`chute brutale de ${fmt1(posDelta)} places en moyenne : ce n'est pas une question de contenu`);
+      steps.push(`Search Console > Inspection de l'URL sur ${pathOf(url)} : vérifier que la page est indexée et que Google ne retient pas une autre adresse comme page canonique.`);
+      const prevModel = [...(byQuery.get(top[0].query) || [])].find((x) => x.page !== url && pageKind(x.page) === 'fiche produit' && brandOf(x.page) === brandOf(url));
+      if (prevModel) steps.push(`Google affiche aussi ${pathOf(prevModel.page)} sur « ${top[0].query} » : s'il alterne entre les deux fiches, différencier leurs titles (numéro de version) et lier l'ancienne vers la nouvelle avec l'ancre « ${cap(top[0].query)} ».`);
+    }
     if (posDelta >= 1) {
-      causes.push(`la page perd ${fmt1(posDelta)} place${posDelta >= 2 ? 's' : ''} en moyenne sur ses requêtes principales`);
+      if (posDelta < 8) causes.push(`la page perd ${fmt1(posDelta)} place${posDelta >= 2 ? 's' : ''} en moyenne sur ses requêtes principales`);
       const head = top[0];
       const titleOk = a?.title && tokens(head.query).every((t) => compact(a.title).includes(t));
       if (!titleOk && a?.title) steps.push(`Title : « ${a.title} » ne contient pas « ${head.query} », la requête qui a perdu le plus de clics. L'y ajouter.`);
