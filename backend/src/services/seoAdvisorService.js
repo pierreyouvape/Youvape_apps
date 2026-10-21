@@ -344,7 +344,9 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
     const existing = a.links.find((l) => l.href === t);
     if (existing) {
       // Lien déjà bon : on n'en parle pas (une ligne « rien à faire » encombre la carte).
-      const good = existing.text && clean.some((x) => compact(existing.text).includes(compact(x)));
+      // Le pluriel ou une majuscule ne justifient pas de changer une ancre.
+      const sing = (txt) => canonTokens(txt).map((w) => w.replace(/s$/, ''));
+      const good = existing.text && clean.some((x) => { const have = sing(existing.text); return sing(x).every((w) => have.includes(w)); });
       if (!good) lines.push(`- ${pathOf(s)}${vu} : le lien existe mais son ancre est « ${existing.text || 'vide (image ?)'} ». La remplacer par « ${cap(clean[0])} ».`);
     } else {
       lines.push(`- Depuis ${pathOf(s)}${vu} : ajouter un lien vers ${pathOf(t)} avec l'ancre « ${cap(clean[k % clean.length])} », ${placementFor(s)}.`);
