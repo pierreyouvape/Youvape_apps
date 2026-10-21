@@ -93,12 +93,13 @@ const STATUS_FILTERS = [
 ];
 
 function RecCard({ rec, rank, onStatus }) {
-  const [open, setOpen] = useState(rank <= 3);
+  const [open, setOpen] = useState(false);
   const t = REC_TYPES[rec.type] || { label: rec.type, color: C.grisM };
   const queries = Array.isArray(rec.queries) ? rec.queries : [];
   return (
     <div style={{ background: C.blanc, borderRadius: 12, border: `1px solid ${C.grisCL}`, borderLeft: `4px solid ${t.color}`, padding: '12px 14px', marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+        <span style={{ color: C.grisM, fontSize: 12, width: 12 }}>{open ? '▾' : '▸'}</span>
         <span style={{ fontWeight: 700, color: C.grisM, fontSize: 13, minWidth: 24 }}>#{rank}</span>
         <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: t.color, borderRadius: 6, padding: '2px 8px' }}>{t.label}</span>
         <span style={{ fontWeight: 600, color: C.saphirF, fontSize: 14, flex: 1, minWidth: 260 }}>{rec.title}</span>
@@ -249,7 +250,7 @@ function Recommendations() {
       {msg && <div style={{ fontSize: 13, color: C.grisF, marginBottom: 8 }}>{msg}</div>}
       {run?.status === 'error' && <div style={{ fontSize: 13, color: C.rouge, marginBottom: 8 }}>Dernier calcul en échec : {run.error}</div>}
       <div style={{ fontSize: 12, color: C.grisM, marginBottom: 10 }}>
-        Le gain estimé suppose la remontée visée (quelques places) et un taux de clic moyen : c&apos;est un ordre de grandeur pour prioriser, pas une promesse.
+        Cliquez sur une ligne pour voir le pourquoi, l&apos;action et les requêtes concernées. Le gain estimé suppose la remontée visée (quelques places) et un taux de clic moyen : c&apos;est un ordre de grandeur pour prioriser, pas une promesse.
         Tout texte proposé reste factuel et passe par l&apos;avocat avant mise en ligne.
       </div>
       {data && recs.length === 0 && <div style={{ fontSize: 13, color: C.grisM }}>Aucune recommandation pour ces filtres.</div>}
@@ -299,6 +300,13 @@ export default function SeoApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem('seo-tab') || 'suivi'; } catch { return 'suivi'; }
+  });
+  const chooseTab = (t) => {
+    setTab(t);
+    try { localStorage.setItem('seo-tab', t); } catch { /* navigation privée */ }
+  };
 
   const loadStatus = useCallback(async () => {
     try {
@@ -395,6 +403,19 @@ export default function SeoApp() {
             </div>
           </div>
 
+          <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.grisCL}`, marginBottom: 16 }}>
+            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'reco', label: 'Recommandations' }].map((t) => (
+              <button key={t.key} type="button" onClick={() => chooseTab(t.key)}
+                style={{
+                  padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14,
+                  fontWeight: tab === t.key ? 700 : 500, color: tab === t.key ? C.saphirF : C.grisM,
+                  borderBottom: `3px solid ${tab === t.key ? '#7C3AED' : 'transparent'}`, marginBottom: -1,
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           {error && (
             <Card style={{ borderColor: C.rouge, marginBottom: 14 }}>
               <span style={{ color: C.rouge, fontSize: 14 }}>{error}</span>
@@ -403,7 +424,7 @@ export default function SeoApp() {
 
           {status && !status.configured && <SetupPanel status={status} />}
 
-          {status?.configured && (
+          {status?.configured && tab === 'suivi' && (
             <Card style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>
               <div style={{ fontSize: 13, color: C.grisF }}>
                 <div><b>Propriété :</b> {status.site || '—'}</div>
@@ -433,9 +454,9 @@ export default function SeoApp() {
             </Card>
           )}
 
-          {hasData && <Recommendations />}
+          {hasData && tab === 'reco' && <Recommendations />}
 
-          {hasData && (
+          {hasData && tab === 'suivi' && (
             <>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
                 <Select value={country} onChange={setCountry} options={COUNTRIES} />
