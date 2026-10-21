@@ -764,6 +764,104 @@ const PROFILES = {
   },
 };
 
+// Décision d'indexation des sous-étiquettes (e-liquides-jnr-50ml-sans-nicotine
+// sous e-liquides-jnr…) : faut-il l'ouvrir à Google ou la laisser fermée ?
+// Critères : nombre de produits listés, demande de recherche qui lui revient en
+// propre, page qui reçoit aujourd'hui cette demande.
+const INDEX_DEMAND_MIN = 100; // impressions sur 28 jours
+const singular = (w) => w.replace(/s$/, '');
+const productLinks = (a) => [...new Set((a?.links || []).map((l) => l.href).filter((h) => /\/produit\//.test(h)))];
+
+const indexDecisions = new Map(); // url → { decision, demand, products, top }
+
+const detectIndexDecisions = async (data, audits, sitePages) => {
+  indexDecisions.clear();
+  const tags = sitePages.filter((x) => /\/etiquette-produit\//.test(x.url));
+  const recs = [];
+  for (const child of tags) {
+    const parent = tags.filter((p) => child.slug.startsWith(`${p.slug}-`)).sort((a, b) => b.slug.length - a.slug.length)[0];
+    if (!parent) continue;
+    const parentCore = coreTokens(parent.slug.replace(/-/g, ' ')).map(singular).filter((t) => t.length > 1);
+    const suffix = child.slug.slice(parent.slug.length + 1).split('-');
+    const strong = suffix.filter((t) => !['sans', 'avec', 'nicotine', 'de', 'sel', 'sels'].includes(t));
+    const wantSans = suffix.includes('sans');
+    const wantAvec = suffix.includes('avec') || suffix.includes('sel') || suffix.includes('sels');
+    // Requêtes qui reviennent EN PROPRE à cette sous-page.
+    const matches = [];
+    for (const [query, qs] of data.q) {
+      const c = compact(canon(query));
+      const hasCore = parentCore.filter((t) => c.includes(t));
+      let ok;
+      if (strong.length) ok = hasCore.length >= 1 && strong.every((t) => c.includes(compact(t)));
+      else ok = hasCore.length === parentCore.length
+        && (wantSans ? c.includes('sansnicotine') : true)
+        && (wantAvec ? (c.includes('nicotine') || c.includes('sel')) && !c.includes('sansnicotine') : true);
+      if (ok) matches.push({ query, ...qs });
+    }
+    const demand = matches.reduce((x, m) => x + m.i, 0);
+    let a = audits.get(normUrl(child.url));
+    if (!a || !Array.isArray(a.links)) {
+      a = await auditUrl(child.url);
+      if (a.http_status) { await saveAudit(a); audits.set(normUrl(child.url), a); }
+    }
+    if (!a || a.http_status !== 200) continue;
+    const products = productLinks(a);
+    const noindex = /noindex/i.test(a.robots || '');
+    matches.sort((x, y) => y.i - x.i);
+    const owner = new Map();
+    for (const m of matches) for (const r of data.byQuery.get(m.query) || []) owner.set(r.page, (owner.get(r.page) || 0) + r.i);
+    const topOwner = [...owner.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+    let decision;
+    if (products.length <= 1) decision = 'noindex-fiche';
+    else if (demand >= INDEX_DEMAND_MIN) decision = 'index';
+    else decision = 'noindex-faible';
+    indexDecisions.set(normUrl(child.url), { decision, demand, products: products.length, product: products[0] || null, top: matches[0]?.query || null });
+
+    const qRows = matches.slice(0, 10).map((m) => qRow(m, 'Recherche qui revient à cette page'));
+    if (noindex && decision === 'index') {
+      const head = matches[0];
+      const links = await linkPlan({
+        target: child.url,
+        anchors: matches.filter((m) => !hasSensitive(m.query)).slice(0, 3).map((m) => m.query),
+        sources: [parent.url, ...(topOwner ? [topOwner] : []), ...products.slice(0, 4)],
+        data, audits, max: 5,
+      });
+      recs.push({
+        rec_key: `index-ouvrir:${child.url}`,
+        type: 'indexation',
+        effort: 'faible',
+        est_clicks: monthly(gainTo(demand, matches.reduce((x, m) => x + m.c, 0), null, 5)),
+        title: `Passer en index : ${pathOf(child.url)}`,
+        reason: `Page en noindex alors qu'elle liste ${products.length} produits et que ses recherches font ${fmtInt(demand)} impressions en 28 jours (« ${head.query} » en tête)${topOwner ? `, servies aujourd'hui par ${pathOf(topOwner)}` : ''}.`,
+        action: [
+          `1. Yoast > réglages de l'étiquette : passer ${pathOf(child.url)} en index, follow.`,
+          `2. Title et H1 : reprendre « ${cap(head.query)} » (title actuel : « ${a.title || '—'} »). Ajouter un court texte factuel au-dessus de la grille.`,
+          links.lines.length ? `3. Liens internes :\n${links.lines.join('\n')}` : '3. Liens internes : la page mère et les fiches font déjà le lien avec la bonne ancre.',
+          '4. Search Console > Inspection de l’URL > Demander l’indexation.',
+        ].join('\n\n'),
+        urls: [child.url, parent.url],
+        queries: qRows,
+      });
+    } else if (!noindex && decision === 'noindex-fiche') {
+      recs.push({
+        rec_key: `index-fermer:${child.url}`,
+        type: 'indexation',
+        effort: 'faible',
+        est_clicks: monthly(demand * 0.005),
+        title: `Passer en noindex : ${pathOf(child.url)} (doublon de sa fiche)`,
+        reason: `Elle ne liste ${products.length ? 'qu’un produit' : 'aucun produit'} : Google voit deux pages pour la même chose${products[0] ? ` (avec ${pathOf(products[0])})` : ''}.`,
+        action: [
+          `1. Yoast : passer ${pathOf(child.url)} en noindex, follow.`,
+          products[0] ? `2. Faire pointer les liens vers ${pathOf(products[0])} plutôt que vers l'étiquette.` : '2. Retirer les liens qui pointent vers elle.',
+        ].join('\n\n'),
+        urls: [child.url, ...(products[0] ? [products[0]] : [])],
+        queries: qRows,
+      });
+    }
+  }
+  return recs;
+};
+
 // Vers quelle adresse faire un lien ? Une page en noindex qui ne contient
 // qu'un produit (étiquette e-liquides JNR 10 ml sans nicotine) renvoie vers la
 // fiche de ce produit : Google ne classe pas l'étiquette, le lien ne lui sert à
@@ -776,9 +874,12 @@ const resolveLinkTarget = async (url, audits) => {
     if (a.http_status) { await saveAudit(a); audits.set(normUrl(url), a); }
   }
   if (!/noindex/i.test(a?.robots || '')) return { url, note: '' };
-  const products = [...new Set((a.links || []).map((l) => l.href).filter((h) => /\/produit\//.test(h)))];
-  if (products.length === 1) return { url: products[0], note: ' (fiche produit : la page qui la liste est en noindex)' };
-  return { url, note: ' (page non indexée : lien utile pour la navigation, pas pour Google)' };
+  const products = productLinks(a);
+  const d = indexDecisions.get(normUrl(url));
+  if (products.length === 1) return { url: products[0], note: ' (fiche produit : la page qui la liste est en noindex avec un seul produit)' };
+  if (d?.decision === 'index') return { url, note: ' (page à passer en index : voir la carte « Passer en index »)' };
+  if (d) return { url, note: ` (page à laisser en noindex : ${fmtInt(d.demand)} impressions en 28 jours sur ses recherches ; lien pour la navigation seulement)` };
+  return { url, note: ' (page en noindex : lien pour la navigation seulement)' };
 };
 
 // Groupes « type de produit » : une requête qui les touche leur revient en
@@ -1222,6 +1323,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     const audits = await loadAudits();
 
     const sitePages = await loadSitePages();
+    const indexRecs = await detectIndexDecisions(data, audits, sitePages);
     const claimed = new Map();
     const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
@@ -1231,6 +1333,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       ...detectFaq(data),
       ...detectIndexation(data, audits),
       ...creation,
+      ...indexRecs,
       ...(await detectBaisse(data, audits)),
     ].map((r) => ({
       ...r,
