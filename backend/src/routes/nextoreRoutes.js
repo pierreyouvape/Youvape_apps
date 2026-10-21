@@ -79,5 +79,6 @@ router.post('/:shop/comptage', boutiquePerm('write'), nextoreController.createCo
 router.get('/:shop/comptage/:id', boutiquePerm('read'), nextoreController.getComptage);
 router.post('/:shop/comptage/:id/count', boutiquePerm('write'), nextoreController.countComptage);
 router.post('/:shop/comptage/:id/validate', boutiquePerm('write'), nextoreController.validateComptage);
+router.post('/:shop/comptage/:id/abandon', boutiquePerm('write'), nextoreController.abandonComptage);
 
 module.exports = router;

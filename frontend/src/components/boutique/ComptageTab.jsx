@@ -15,6 +15,12 @@ const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
 const eur = (n) => `${n > 0 ? '+' : ''}${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 const ecartColor = (n) => (n > 0 ? C.green : n < 0 ? C.red : C.greyM);
 
+const STATUS = {
+  en_cours: { label: 'En cours', color: C.accent },
+  valide: { label: 'Validé', color: C.green },
+  cloture_partiel: { label: 'Clôturé (partiel)', color: C.greyM },
+};
+
 const REASON = {
   negatif: { label: 'Stock négatif', color: C.red },
   vendu_souvent: { label: 'Vendu souvent', color: C.primary },
@@ -220,6 +226,28 @@ export default function ComptageTab({ shop, token }) {
     finally { setValidating(false); setReviewMode(false); }
   };
 
+  // Abandon : rien de plus n'est poussé. Rien de poussé → session supprimée ;
+  // validation partielle déjà faite → ce qui est poussé reste, le reste est abandonné.
+  const abandon = async () => {
+    const its = session?.items || [];
+    const pushed = its.filter((i) => i.pushed).length;
+    const countedNotPushed = its.filter((i) => !i.pushed && i.counted_qty != null).length;
+    const notCounted = its.filter((i) => !i.pushed && i.counted_qty == null).length;
+    const lines = [];
+    if (pushed > 0) lines.push(`${pushed} réf(s) déjà poussée(s) restent dans Nextore.`);
+    if (countedNotPushed > 0) lines.push(`${countedNotPushed} réf(s) comptée(s) non poussée(s) seront abandonnées.`);
+    if (notCounted > 0) lines.push(`${notCounted} réf(s) non comptée(s) seront abandonnées.`);
+    lines.push('Rien ne sera envoyé dans Nextore.');
+    lines.push(pushed > 0 ? 'Le comptage sera clôturé (partiel).' : 'Le comptage sera supprimé.');
+    if (!window.confirm(`Abandonner ce comptage ?\n\n${lines.join('\n')}`)) return;
+    setValidating(true); setError(null);
+    try {
+      await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/abandon`, {}, auth(token));
+      setView('list'); setSession(null); await loadSessions();
+    } catch (e) { setError(e.response?.data?.error || e.message); }
+    finally { setValidating(false); }
+  };
+
   /* ─── Rendu ─── */
   if (view === 'list') {
     return (
@@ -234,8 +262,8 @@ export default function ComptageTab({ shop, token }) {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <strong>{c.name || ({ tournant: 'Inventaire tournant', spontane: 'Spontané', categorie: 'Par catégorie', liste: 'Liste manuelle' }[c.type])}</strong>
-              <span style={{ fontSize: 12, fontWeight: 700, color: c.status === 'valide' ? C.green : C.accent }}>
-                {c.status === 'valide' ? 'Validé' : 'En cours'}
+              <span style={{ fontSize: 12, fontWeight: 700, color: STATUS[c.status]?.color || C.accent }}>
+                {STATUS[c.status]?.label || 'En cours'}
               </span>
             </div>
             <div style={{ fontSize: 13, color: C.greyM, marginTop: 4 }}>
@@ -245,7 +273,7 @@ export default function ComptageTab({ shop, token }) {
                 return agent ? <> · 👤 {agent}</> : null;
               })()}
             </div>
-            {c.status === 'valide' && (
+            {c.status !== 'en_cours' && (
               <div style={{ fontSize: 13, marginTop: 4, color: C.greyT }}>
                 {c.ecart_count > 0 ? (
                   <>
@@ -358,7 +386,7 @@ export default function ComptageTab({ shop, token }) {
   const counted = items.filter((i) => i.counted_qty != null);
   const uncounted = items.filter((i) => i.counted_qty == null);
   const isCategorie = session?.type === 'categorie';
-  const validated = session?.status === 'valide';
+  const validated = session?.status !== 'en_cours'; // validé ou clôturé (partiel) : lecture seule
 
   return (
     <div>
@@ -447,6 +475,7 @@ export default function ComptageTab({ shop, token }) {
               {validating ? 'Poussée en cours…' : 'Valider et pousser'}
             </Btn>
           )}
+          <Btn onClick={abandon} disabled={validating} bg={C.greyM} style={{ width: 'auto', flex: '0 0 auto' }}>Abandonner</Btn>
         </div>
       )}
 

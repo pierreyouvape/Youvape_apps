@@ -326,6 +326,13 @@ async function loadOwned(req, res, wh) {
   return comptage;
 }
 
+/** Une session clôturée (validée ou abandonnée) n'accepte plus ni scan ni validation. */
+function refuseIfClosed(comptage, res) {
+  if (comptage.status === 'en_cours') return false;
+  res.status(409).json({ error: 'Ce comptage est clôturé' });
+  return true;
+}
+
 // GET /:shop/comptage/:id
 async function getComptage(req, res) {
   const wh = getShopOr400(req, res);
@@ -346,7 +353,7 @@ async function countComptage(req, res) {
   if (!wh) return;
   try {
     const comptage = await loadOwned(req, res, wh);
-    if (!comptage) return;
+    if (!comptage || refuseIfClosed(comptage, res)) return;
     const { barcode, product_id, qty, mode } = req.body || {};
     let productId = product_id;
     if (barcode && !productId) {
@@ -380,7 +387,7 @@ async function validateComptage(req, res) {
   if (!wh) return;
   try {
     const comptage = await loadOwned(req, res, wh);
-    if (!comptage) return;
+    if (!comptage || refuseIfClosed(comptage, res)) return;
     const { mode, zeroProductIds } = req.body || {};
     const out = await comptageModel.validateComptage(comptage.id, wh.id, {
       mode: mode === 'final' ? 'final' : 'partial',
@@ -391,6 +398,21 @@ async function validateComptage(req, res) {
   } catch (err) {
     console.error('Nextore validateComptage:', err);
     res.status(500).json({ error: err.message || 'Erreur validation' });
+  }
+}
+
+// POST /:shop/comptage/:id/abandon — ferme sans rien pousser de plus
+async function abandonComptage(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const comptage = await loadOwned(req, res, wh);
+    if (!comptage || refuseIfClosed(comptage, res)) return;
+    const out = await comptageModel.abandonComptage(comptage.id, { abandonedBy: req.user?.email || null });
+    res.json({ ok: true, ...out });
+  } catch (err) {
+    console.error('Nextore abandonComptage:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Erreur abandon' });
   }
 }
 
@@ -426,4 +448,5 @@ module.exports = {
   getComptage,
   countComptage,
   validateComptage,
+  abandonComptage,
 };

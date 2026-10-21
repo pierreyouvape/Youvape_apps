@@ -286,6 +286,53 @@ async function validateComptage(comptageId, warehouseId, { mode = 'partial', zer
   return { mode, results };
 }
 
+/**
+ * Abandonne une session sans RIEN pousser de plus dans Nextore.
+ * - rien de poussé (test, session ouverte pour rien) → session supprimée ;
+ * - une validation partielle a déjà poussé des réfs → elles restent (Nextore et
+ *   historique), le reste (compté non poussé, non compté) est abandonné et la
+ *   session passe en 'cloture_partiel'.
+ */
+async function abandonComptage(comptageId, { abandonedBy = null } = {}) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: cs } = await client.query(
+      'SELECT * FROM nextore_comptages WHERE id = $1 FOR UPDATE', [comptageId],
+    );
+    if (!cs.length) throw new Error('Comptage introuvable');
+    if (cs[0].status !== 'en_cours') {
+      const e = new Error('Ce comptage est déjà clôturé'); e.status = 409; throw e;
+    }
+    const { rows: [n] } = await client.query(
+      `SELECT COUNT(*) FILTER (WHERE pushed)::int AS pushed,
+              COUNT(*) FILTER (WHERE NOT pushed AND counted_qty IS NOT NULL)::int AS counted_not_pushed,
+              COUNT(*) FILTER (WHERE NOT pushed AND counted_qty IS NULL)::int AS uncounted
+       FROM nextore_comptage_items WHERE comptage_id = $1`,
+      [comptageId],
+    );
+    let outcome;
+    if (n.pushed === 0) {
+      await client.query('DELETE FROM nextore_comptages WHERE id = $1', [comptageId]);
+      outcome = 'deleted';
+    } else {
+      await client.query('DELETE FROM nextore_comptage_items WHERE comptage_id = $1 AND NOT pushed', [comptageId]);
+      await client.query(
+        `UPDATE nextore_comptages SET status = 'cloture_partiel', validated_at = NOW(), validated_by = $2 WHERE id = $1`,
+        [comptageId, abandonedBy],
+      );
+      outcome = 'closed';
+    }
+    await client.query('COMMIT');
+    return { outcome, ...n };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 /** Liste des sessions d'une boutique. */
 async function listComptages(warehouseId) {
   const { rows } = await pool.query(
@@ -320,5 +367,6 @@ module.exports = {
   resolveBarcode,
   recordCount,
   validateComptage,
+  abandonComptage,
   listComptages,
 };
