@@ -83,6 +83,8 @@ const ensureTables = async () => {
       created_by text,
       created_at timestamp NOT NULL DEFAULT now()
     );
+    ALTER TABLE seo_pages ADD COLUMN IF NOT EXISTS status_by text;
+    ALTER TABLE seo_pages ADD COLUMN IF NOT EXISTS status_at timestamp;
   `);
   tablesReady = true;
 };
@@ -334,9 +336,24 @@ const sampleProducts = (products, max) => {
   return picked.slice(0, max);
 };
 
+// Avancement des analyses en cours (en mémoire : une analyse dure 10 à 30 s).
+// L'écran l'interroge pour afficher l'étape et repérer un blocage.
+const progress = new Map();
+const ANALYSIS_STEPS = 4;
+const setProgress = (id, step, label, extra = {}) => {
+  const prev = progress.get(id) || { startedAt: Date.now() };
+  progress.set(id, { ...prev, running: true, step, steps: ANALYSIS_STEPS, label, done: null, total: null, ...extra, updatedAt: Date.now() });
+};
+const getProgress = (id) => {
+  const p = progress.get(id);
+  if (!p) return { running: false };
+  return { ...p, elapsed: Math.round((Date.now() - p.startedAt) / 1000), idle: Math.round((Date.now() - p.updatedAt) / 1000) };
+};
+
 const analyze = async (id) => {
   await ensureTables();
   const row = await getRow(id);
+  setProgress(id, 1, 'Lecture de la page en ligne');
   const range = await dataRange();
   if (!range) throw new Error('Aucune donnée Search Console');
   const { status, html } = await fetchHtml(row.url);
@@ -344,7 +361,9 @@ const analyze = async (id) => {
   const page = parsePage(row.url, status, html);
 
   const facts = [];
-  for (const p of sampleProducts(page.products, MAX_PRODUCTS)) {
+  const sample = sampleProducts(page.products, MAX_PRODUCTS);
+  for (const [i, p] of sample.entries()) {
+    setProgress(id, 2, 'Lecture des fiches produits', { done: i, total: sample.length, current: pathOf(p.url) });
     try {
       facts.push(await productFacts(p.url));
     } catch (error) {
@@ -353,9 +372,11 @@ const analyze = async (id) => {
     await sleep(300);
   }
 
+  setProgress(id, 3, 'Requêtes Search Console (90 jours)');
   const pageQueries = await loadPageQueries(row.url, range);
   const terms = row.topic_terms || defaultTerms(page.h1 || page.title || '', pageQueries);
   const topic = await loadTopicQueries(row.url, parseTerms(terms), range);
+  setProgress(id, 4, 'Pages concurrentes et enregistrement');
 
   // Pages qui captent les requêtes du sujet : candidates pour un lien vers la page.
   const byPage = new Map();
@@ -781,6 +802,31 @@ const getPositions = async (id, { weeks = 26 } = {}) => {
 
 /* ─── Liste et fiche ───────────────────────────────────── */
 
+// Nom affiché d'un compte de l'app (repli : l'adresse).
+const userNames = async (emails) => {
+  const list = [...new Set(emails.filter(Boolean))];
+  if (!list.length) return new Map();
+  const r = await pool.query('SELECT email, name FROM users WHERE email = ANY($1)', [list]);
+  return new Map(r.rows.map((x) => [x.email, x.name || x.email]));
+};
+const nameOf = (names, email) => (email ? names.get(email) || email : null);
+
+// Mots de départ à saisir dans le Planificateur de mots-clés (10 au plus) :
+// les requêtes du sujet les plus vues, une seule par formulation.
+const adsSeeds = (topic) => {
+  const seen = new Set();
+  const out = [];
+  for (const q of topic || []) {
+    if (q.excluded || q.question) continue;
+    const key = norm(q.query).replace(/\be[\s-]?liquides?\b|\beliquides?\b/g, 'liquide').split(/[^a-z0-9]+/).filter(Boolean).sort().join(' ');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(q.query);
+    if (out.length >= 10) break;
+  }
+  return out;
+};
+
 // Position d'une requête sur une fenêtre de jours (pondérée par les impressions).
 const windowStats = async (queries, from, to) => {
   if (!queries.length) return new Map();
@@ -796,7 +842,7 @@ const windowStats = async (queries, from, to) => {
 const listPages = async () => {
   await ensureTables();
   const [rows, range] = await Promise.all([
-    pool.query(`SELECT id, url, label, status, published_at::text AS published_at, target_queries, analyzed_at, gen_status,
+    pool.query(`SELECT id, url, label, status, status_by, status_at, published_at::text AS published_at, target_queries, analyzed_at, gen_status,
                        checked_at, updated_at, (draft IS NOT NULL) AS has_draft, jsonb_array_length(COALESCE(ads, '[]'::jsonb)) AS ads_count
                 FROM seo_pages ORDER BY updated_at DESC`),
     dataRange(),
@@ -813,6 +859,7 @@ const listPages = async () => {
     [urls, to]
   );
   const cl = new Map(clicks.rows.map((x) => [x.page, x]));
+  const names = await userNames(rows.rows.map((p) => p.status_by));
   const pages = [];
   for (const p of rows.rows) {
     const main = p.target_queries?.[0] || null;
@@ -823,6 +870,8 @@ const listPages = async () => {
     }
     pages.push({
       ...p,
+      status_by_name: nameOf(names, p.status_by),
+      analyzing: !!progress.get(p.id)?.running,
       main_query: main,
       position_before: before,
       position_now: main ? now.get(main)?.position ?? null : null,
@@ -842,33 +891,49 @@ const getPage = async (id) => {
     lintDraft(row.draft, row.page),
     pool.query('SELECT id, at::text AS at, note, created_by FROM seo_page_events WHERE page_id = $1 ORDER BY at DESC, id DESC', [id]),
   ]);
+  const names = await userNames([row.status_by, row.created_by, row.draft?.edited_by, ...events.rows.map((e) => e.created_by)]);
   return {
     ...row,
     published_at: row.published_at ? ymd(new Date(row.published_at)) : null,
+    status_by_name: nameOf(names, row.status_by),
+    created_by_name: nameOf(names, row.created_by),
+    draft_edited_by_name: nameOf(names, row.draft?.edited_by),
     ads_view: ads,
+    ads_seeds: adsSeeds(row.data?.topic),
     lint,
-    events: events.rows,
+    events: events.rows.map((e) => ({ ...e, created_by_name: nameOf(names, e.created_by) })),
+    progress: getProgress(id),
     aiConfigured: aiConfigured(),
     model: MODEL,
   };
+};
+
+// Analyse en tâche de fond : l'écran suit l'avancement (getProgress).
+const startAnalyze = async (id) => {
+  await ensureTables();
+  await getRow(id);
+  if (progress.get(id)?.running) return getProgress(id);
+  progress.set(id, { startedAt: Date.now(), updatedAt: Date.now(), running: true, step: 0, steps: ANALYSIS_STEPS, label: 'Démarrage' });
+  analyze(id)
+    .then(() => progress.set(id, { ...progress.get(id), running: false, finished: true, updatedAt: Date.now() }))
+    .catch((error) => {
+      console.error('[SEO rédaction] analyse', id, error.message);
+      progress.set(id, { ...progress.get(id), running: false, error: error.message, updatedAt: Date.now() });
+    });
+  return getProgress(id);
 };
 
 const createPage = async (url, user) => {
   await ensureTables();
   const u = normalizeUrl(url);
   const r = await pool.query(
-    `INSERT INTO seo_pages (url, created_by) VALUES ($1, $2)
+    `INSERT INTO seo_pages (url, created_by, status_by, status_at) VALUES ($1, $2, $2, now())
      ON CONFLICT (url) DO UPDATE SET updated_at = now() RETURNING id`,
     [u, user || null]
   );
   const id = r.rows[0].id;
-  try {
-    await analyze(id);
-  } catch (error) {
-    // La page reste créée : l'analyse se relance depuis la fiche.
-    console.error('[SEO rédaction] analyse', u, error.message);
-  }
-  return getPage(id);
+  await startAnalyze(id);
+  return { id };
 };
 
 const DRAFT_FIELDS = ['title', 'meta', 'h1', 'intro_html', 'body_html', 'analyse'];
@@ -883,6 +948,10 @@ const updatePage = async (id, body, user) => {
   if (body.status !== undefined) {
     if (!STATUSES.has(body.status)) throw new Error('Statut inconnu');
     set('status', body.status);
+    if (body.status !== row.status) {
+      set('status_by', user || null);
+      sets.push('status_at = now()');
+    }
   }
   if (body.published_at !== undefined) set('published_at', body.published_at || null);
   if (body.topic_terms !== undefined) set('topic_terms', String(body.topic_terms || '').trim() || null);
@@ -952,7 +1021,7 @@ const clearAds = async (id) => {
 };
 
 module.exports = {
-  ensureTables, listPages, getPage, createPage, updatePage, analyze, saveAds, clearAds, getBrief,
+  ensureTables, listPages, getPage, createPage, updatePage, analyze, startAnalyze, getProgress, saveAds, clearAds, getBrief,
   startGeneration, importDraft, verifyLive, getPositions, addEvent, deleteEvent, deletePage, aiConfigured,
   // Tests
   parseAdsCsv, parseTerms, matchTerms, normalizeUrl, parsePage, dataRange, loadPageQueries, loadTopicQueries,

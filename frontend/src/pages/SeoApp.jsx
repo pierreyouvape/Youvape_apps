@@ -143,6 +143,12 @@ function RecCard({ rec, rank, onStatus }) {
           <b style={{ color: C.vert }}>≈ +{fmtInt(rec.est_clicks)} clics/mois</b>
           {rec.delay ? ` · effet en ${rec.delay}` : ''} · effort {rec.effort}
         </span>
+        {rec.status_by && rec.status !== 'todo' && (
+          <span style={{ fontSize: 11, color: C.grisM, whiteSpace: 'nowrap' }}
+            title={`Statut posé le ${new Date(rec.status_at).toLocaleString('fr-FR')}`}>
+            par {rec.status_by_name || rec.status_by} · {new Date(rec.status_at).toLocaleDateString('fr-FR')}
+          </span>
+        )}
         <select value={rec.status} onClick={(e) => e.stopPropagation()} onChange={(e) => onStatus(rec, e.target.value)}
           style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.grisCL}`, fontSize: 12 }}>
           {REC_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -202,7 +208,7 @@ function RecCard({ rec, rank, onStatus }) {
           )}
           {rec.status_by && (
             <div style={{ fontSize: 11, color: C.grisM, marginTop: 6 }}>
-              Statut posé par {rec.status_by} le {new Date(rec.status_at).toLocaleString('fr-FR')}
+              Statut posé par {rec.status_by_name || rec.status_by} le {new Date(rec.status_at).toLocaleString('fr-FR')}
             </div>
           )}
         </div>

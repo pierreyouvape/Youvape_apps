@@ -82,6 +82,45 @@ function CopyButton({ text, label = 'Copier' }) {
   return <button type="button" onClick={copy} style={{ ...btn, padding: '4px 10px', fontSize: 12 }}>{done ? 'Copié ✓' : label}</button>;
 }
 
+const IDLE_WARNING_S = 45;
+
+/* Avancement d'une analyse : étape, fiche en cours, temps écoulé, alerte si rien ne bouge. */
+function AnalysisProgress({ progress }) {
+  if (!progress) return null;
+  const { step = 0, steps = 4, label, done, total, current, elapsed = 0, idle = 0, error } = progress;
+  const inStep = total ? (done || 0) / total : 0;
+  const pct = Math.min(100, Math.round(((Math.max(step, 1) - 1 + inStep) / steps) * 100));
+  const stuck = idle >= IDLE_WARNING_S;
+  return (
+    <Card style={{ marginBottom: 14, borderColor: error || stuck ? C.rouge : C.violet }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+        {!error && (
+          <span style={{
+            width: 16, height: 16, borderRadius: '50%', border: `3px solid ${C.grisCL}`, borderTopColor: C.violet,
+            display: 'inline-block', animation: 'seo-spin 0.9s linear infinite',
+          }} />
+        )}
+        <b style={{ fontSize: 14, color: error ? C.rouge : C.saphirF }}>
+          {error ? `Analyse en échec : ${error}` : `Étape ${Math.max(step, 1)} sur ${steps} — ${label || 'démarrage'}`}
+        </b>
+        {total ? <span style={{ fontSize: 13, color: C.grisF }}>{done} / {total}{current ? ` · ${current}` : ''}</span> : null}
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: C.grisM }}>{elapsed} s</span>
+      </div>
+      {!error && (
+        <div style={{ height: 8, background: C.grisTL, borderRadius: 4, overflow: 'hidden' }}>
+          <div style={{ width: `${pct}%`, height: '100%', background: C.violet, transition: 'width 0.6s ease' }} />
+        </div>
+      )}
+      {stuck && !error && (
+        <div style={{ fontSize: 12, color: C.rouge, marginTop: 8 }}>
+          Aucune avancée depuis {idle} s : la page ou une fiche produit ne répond peut-être pas. Patientez encore un peu, ou relancez l&apos;analyse.
+        </div>
+      )}
+      <style>{'@keyframes seo-spin { to { transform: rotate(360deg); } }'}</style>
+    </Card>
+  );
+}
+
 function PageLink({ url }) {
   return (
     <a href={url} target="_blank" rel="noreferrer" style={{ color: C.bleu, textDecoration: 'none', wordBreak: 'break-all' }}>{pathOf(url)}</a>
@@ -90,10 +129,10 @@ function PageLink({ url }) {
 
 /* ─── 1. Données ────────────────────────────────────────── */
 
-function DataPanel({ page, onSaved, setMsg }) {
+function DataPanel({ page, onSaved, onAnalyze, setMsg }) {
   const [terms, setTerms] = useState(page.topic_terms || '');
   const [onlyQuestions, setOnlyQuestions] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const busy = !!page.progress?.running;
   const p = page.page || {};
   const d = page.data || {};
   const targets = new Set(page.target_queries || []);
@@ -101,17 +140,12 @@ function DataPanel({ page, onSaved, setMsg }) {
   useEffect(() => { setTerms(page.topic_terms || ''); }, [page.topic_terms]);
 
   const reanalyze = async () => {
-    setBusy(true);
-    setMsg('Analyse en cours : page, fiches produits et Search Console (10 à 30 secondes)…');
+    setMsg(null);
     try {
       if (terms !== (page.topic_terms || '')) await axios.patch(`${API_URL}/seo/writer/${page.id}`, { topic_terms: terms });
-      const { data } = await axios.post(`${API_URL}/seo/writer/${page.id}/analyze`);
-      onSaved(data);
-      setMsg('Analyse à jour.');
+      await onAnalyze();
     } catch (e) {
       setMsg(errMsg(e));
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -267,6 +301,19 @@ function DataPanel({ page, onSaved, setMsg }) {
           mots de départ du sujet, France, français → Télécharger les idées de mots-clés (CSV). Aucune campagne n&apos;est nécessaire ;
           sans campagne active, Google arrondit les volumes par paliers. Plusieurs exports s&apos;additionnent.
         </div>
+        {page.ads_seeds?.length > 0 && (
+          <div style={{ margin: '0 16px 12px', padding: '10px 12px', background: C.grisTL, borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <b style={{ fontSize: 13, color: C.saphirF }}>Mots-clés à saisir dans le Planificateur pour cette page</b>
+              <span style={{ marginLeft: 'auto' }}><CopyButton text={page.ads_seeds.join(', ')} label="Copier les mots-clés" /></span>
+            </div>
+            <div style={{ fontSize: 13, color: C.grisTF }}>{page.ads_seeds.join(', ')}</div>
+            <div style={{ fontSize: 12, color: C.grisM, marginTop: 6 }}>
+              Les {page.ads_seeds.length} requêtes du sujet les plus vues (une par formulation, sans les requêtes écartées ni les questions) ;
+              le Planificateur accepte 10 mots de départ au plus.
+            </div>
+          </div>
+        )}
         {ads.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
@@ -399,7 +446,7 @@ function DraftPanel({ page, onSaved, setMsg }) {
           {draft.generated_at && (
             <span style={{ fontSize: 12, color: C.grisM, marginLeft: 'auto' }}>
               {draft.source === 'api' ? `Rédigée par ${draft.model}` : 'Réponse collée'} le {new Date(draft.generated_at).toLocaleString('fr-FR')}
-              {draft.edited_at ? ` · modifiée par ${draft.edited_by || '—'} le ${new Date(draft.edited_at).toLocaleString('fr-FR')}` : ''}
+              {draft.edited_at ? ` · modifiée par ${page.draft_edited_by_name || draft.edited_by || '—'} le ${new Date(draft.edited_at).toLocaleString('fr-FR')}` : ''}
             </span>
           )}
         </div>
@@ -706,7 +753,7 @@ function TrackPanel({ page, onSaved, setMsg }) {
           <div key={e.id} style={{ fontSize: 13, color: C.grisTF, padding: '5px 0', borderTop: `1px solid ${C.grisTL}`, display: 'flex', gap: 10 }}>
             <b style={{ minWidth: 86 }}>{longDate(e.at)}</b>
             <span style={{ flex: 1 }}>{e.note}</span>
-            <span style={{ fontSize: 11, color: C.grisM }}>{e.created_by}</span>
+            <span style={{ fontSize: 11, color: C.grisM }}>{e.created_by_name || e.created_by}</span>
             <button type="button" onClick={() => delEvent(e.id)} style={{ border: 'none', background: 'none', color: C.grisM, cursor: 'pointer' }}>✕</button>
           </div>
         ))}
@@ -740,6 +787,32 @@ function PageDetail({ id, onBack, onChanged }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Pendant une analyse, on suit l'avancement chaque seconde, puis on recharge la fiche.
+  const [progress, setProgress] = useState(null);
+  const analyzing = !!(progress?.running || (progress === null && page?.progress?.running));
+  useEffect(() => {
+    if (!analyzing) return undefined;
+    let cancelled = false;
+    const t = setInterval(async () => {
+      try {
+        const { data } = await axios.get(`${API_URL}/seo/writer/${id}/progress`);
+        if (cancelled) return;
+        setProgress(data);
+        if (!data.running) {
+          await load();
+          onChanged();
+          if (data.error) setMsg(`Analyse en échec : ${data.error}`);
+        }
+      } catch { /* le prochain tour réessaie */ }
+    }, 1000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [analyzing, id, load, onChanged]);
+
+  const startAnalyze = async () => {
+    const { data } = await axios.post(`${API_URL}/seo/writer/${id}/analyze`);
+    setProgress(data);
+  };
+
   // Pendant une rédaction, la fiche se recharge toute seule.
   useEffect(() => {
     if (page?.gen_status !== 'running') return undefined;
@@ -747,7 +820,7 @@ function PageDetail({ id, onBack, onChanged }) {
     return () => clearInterval(t);
   }, [page?.gen_status, load]);
 
-  const saved = (data) => { setPage(data); onChanged(); };
+  const saved = (data) => { setPage({ ...data, progress: page?.progress }); onChanged(); };
 
   const patch = async (body) => {
     try {
@@ -780,9 +853,16 @@ function PageDetail({ id, onBack, onChanged }) {
             <div style={{ fontWeight: 700, fontSize: 16, color: C.saphirF }}>{page.label || pathOf(page.url)}</div>
             <PageLink url={page.url} />
           </div>
-          <select value={page.status} onChange={(e) => patch({ status: e.target.value })} style={input}>
-            {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <select value={page.status} onChange={(e) => patch({ status: e.target.value })} style={input}>
+              {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            {page.status_by && (
+              <span style={{ fontSize: 11, color: C.grisM }}>
+                par {page.status_by_name || page.status_by}{page.status_at ? ` le ${new Date(page.status_at).toLocaleString('fr-FR')}` : ''}
+              </span>
+            )}
+          </div>
           <label style={{ fontSize: 13, color: C.grisF, display: 'flex', gap: 6, alignItems: 'center' }}>
             Publiée le
             <input type="date" value={page.published_at || ''} onChange={(e) => patch({ published_at: e.target.value || null })} style={input} />
@@ -806,7 +886,10 @@ function PageDetail({ id, onBack, onChanged }) {
 
       {msg && <div style={{ fontSize: 13, color: C.grisF, marginBottom: 10 }}>{msg}</div>}
 
-      {sub === 'donnees' && <DataPanel page={page} onSaved={saved} setMsg={setMsg} />}
+      {analyzing && <AnalysisProgress progress={progress || page.progress} />}
+      {!analyzing && progress?.error && <AnalysisProgress progress={progress} />}
+
+      {sub === 'donnees' && <DataPanel page={{ ...page, progress: { running: analyzing } }} onSaved={saved} onAnalyze={startAnalyze} setMsg={setMsg} />}
       {sub === 'redaction' && <DraftPanel page={page} onSaved={saved} setMsg={setMsg} />}
       {sub === 'verification' && <VerifyPanel page={page} onSaved={saved} setMsg={setMsg} />}
       {sub === 'suivi' && <TrackPanel page={page} onSaved={saved} setMsg={setMsg} />}
@@ -846,7 +929,7 @@ export default function SeoWriterTab() {
 
   const add = async () => {
     setBusy(true);
-    setMsg('Analyse de la page : relevé, fiches produits et Search Console (10 à 30 secondes)…');
+    setMsg(null);
     try {
       const { data } = await axios.post(`${API_URL}/seo/writer`, { url });
       setUrl('');
@@ -875,7 +958,7 @@ export default function SeoWriterTab() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && url.trim() && !busy && add()}
             placeholder="https://www.youvape.fr/etiquette-produit/… ou /marque/…" style={{ ...input, flex: 1, minWidth: 320 }} />
-          <button type="button" disabled={busy || !url.trim()} onClick={add} style={btnPrimary}>{busy ? 'Analyse…' : 'Ajouter la page'}</button>
+          <button type="button" disabled={busy || !url.trim()} onClick={add} style={btnPrimary}>{busy ? 'Ajout…' : 'Ajouter la page'}</button>
         </div>
         {msg && <div style={{ fontSize: 13, color: C.grisF, marginTop: 8 }}>{msg}</div>}
         {list && !list.aiConfigured && (
@@ -903,7 +986,16 @@ export default function SeoWriterTab() {
                 <div style={{ fontWeight: 600, color: C.saphirF }}>{p.label || pathOf(p.url)}</div>
                 <div style={{ fontSize: 12, color: C.grisM }}>{pathOf(p.url)}</div>
               </td>
-              <td style={td}><StatusBadge value={p.status} />{p.gen_status === 'running' && <span style={{ fontSize: 11, color: C.bleu, marginLeft: 6 }}>rédaction…</span>}</td>
+              <td style={td}>
+                <StatusBadge value={p.status} />
+                {p.analyzing && <span style={{ fontSize: 11, color: C.violet, marginLeft: 6 }}>analyse…</span>}
+                {p.gen_status === 'running' && <span style={{ fontSize: 11, color: C.bleu, marginLeft: 6 }}>rédaction…</span>}
+                {p.status_by && (
+                  <div style={{ fontSize: 11, color: C.grisM, marginTop: 3 }}>
+                    par {p.status_by_name || p.status_by}{p.status_at ? ` le ${new Date(p.status_at).toLocaleDateString('fr-FR')}` : ''}
+                  </div>
+                )}
+              </td>
               <td style={td}>{longDate(p.published_at)}</td>
               <td style={{ ...td, fontSize: 12 }}>{p.main_query || '—'}</td>
               <td style={tdNum}>{fmtPos(p.position_before)}</td>

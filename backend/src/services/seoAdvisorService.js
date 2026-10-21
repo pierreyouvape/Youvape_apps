@@ -1409,7 +1409,9 @@ const listRecommendations = async ({ status } = {}) => {
   const statuses = status ? String(status).split(',') : ['todo', 'doing'];
   const [recs, run] = await Promise.all([
     pool.query(
-      `SELECT * FROM seo_recommendations WHERE active AND status = ANY($1) ORDER BY score DESC, id`,
+      `SELECT r.*, u.name AS status_by_name
+       FROM seo_recommendations r LEFT JOIN users u ON u.email = r.status_by
+       WHERE r.active AND r.status = ANY($1) ORDER BY r.score DESC, r.id`,
       [statuses]
     ),
     pool.query('SELECT * FROM seo_advisor_runs ORDER BY id DESC LIMIT 1'),

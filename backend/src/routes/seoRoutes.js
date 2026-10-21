@@ -75,11 +75,10 @@ router.post('/writer', canWrite, handle((req) => writer.createPage(req.body?.url
 router.get('/writer/:id', handle((req) => writer.getPage(pageId(req))));
 router.patch('/writer/:id', canWrite, handle((req) => writer.updatePage(pageId(req), req.body || {}, req.user?.email)));
 router.delete('/writer/:id', canWrite, handle((req) => writer.deletePage(pageId(req))));
-// Relevé de la page + fiches produits + requêtes Search Console (10 à 30 s).
-router.post('/writer/:id/analyze', canWrite, handle(async (req) => {
-  await writer.analyze(pageId(req));
-  return writer.getPage(pageId(req));
-}));
+// Relevé de la page + fiches produits + requêtes Search Console (10 à 30 s),
+// en tâche de fond : l'écran suit l'avancement par /progress.
+router.post('/writer/:id/analyze', canWrite, handle((req) => writer.startAnalyze(pageId(req))));
+router.get('/writer/:id/progress', handle((req) => writer.getProgress(pageId(req))));
 router.post('/writer/:id/ads', canWrite, adsUpload.single('file'), handle(async (req) => {
   if (!req.file) throw new Error('Fichier manquant');
   const r = await writer.saveAds(pageId(req), req.file.buffer, req.file.originalname);
