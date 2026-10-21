@@ -844,6 +844,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       .filter(([u]) => pageKind(u) === 'fiche produit' && (isProductType || !/\/eliquides\//.test(u)))
       .slice(0, 8).map(([u]) => u);
     const labels = [];
+    const cartouches = [];
     if (isProductType && target) {
       const base = pathOf(target).split('/').pop();
       // Intitulé = le vrai title de la sous-page (« E-Liquides JNR 10ml Sel de Nicotine »),
@@ -858,24 +859,45 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         labels.push({ label, url: sp.url, title: full });
       }
     } else {
+      // Seuls les modèles de LA page dédiée : l'étiquette jnr-falcon-28k ne porte
+      // ni la Nexus 40K ni la Mini 20K, même si le groupe de requêtes les mélange.
+      const slugCore = target
+        ? coreTokens(pathOf(target).split('/').pop().replace(/-/g, ' ')).filter((t) => t !== 'jnr' && t.length > 1)
+        : [];
+      const nicOf = (u, title) => (/sans-nicotine|0mg/.test(u) || /sans nicotine|\b0 ?mg\b/i.test(title) ? 'sans nicotine' : 'avec nicotine');
       for (const u of fiches) {
-        if (/cartouche/.test(u)) continue; // une cartouche n'est pas un modèle
         let a = audits.get(u) || audits.get(normUrl(u));
         if (!a) { a = await auditUrl(u); if (a.http_status) await saveAudit(a); }
+        const title = a?.title || '';
+        if (slugCore.length && !slugCore.every((t) => compact(`${pathOf(u)} ${title}`).includes(t))) continue;
+        if (/cartouche/.test(u)) {
+          // Une cartouche n'est pas un modèle : intertitre à part.
+          cartouches.push({ url: u, title: title.replace(/\s*[-–|]\s*YouVape.*$/i, '') });
+          continue;
+        }
         const label = modelLabel(a);
-        if (!label || labels.some((l) => compact(l.label) === compact(label))) continue;
-        labels.push({ label, url: u, title: a?.title || '' });
+        if (!label) continue;
+        const nic = nicOf(u, title);
+        const twin = labels.find((l) => compact(l.base) === compact(label));
+        if (twin) {
+          // Même modèle avec et sans nicotine : deux fiches, deux intertitres.
+          if (!twin.label.endsWith(twin.nic)) twin.label = `${twin.base} ${twin.nic}`;
+          if (twin.nic !== nic) labels.push({ label: `${label} ${nic}`, base: label, nic, url: u, title });
+          continue;
+        }
+        labels.push({ label, base: label, nic, url: u, title });
       }
     }
     const hasNico = fiches.some((u) => !/sans-nicotine|0mg/.test(u));
     const hasZero = fiches.some((u) => /sans-nicotine|0mg/.test(u));
     // Un modèle qui ne fait que répéter la requête n'apporte rien au title.
     const headCompact = compact(titleHead.query);
-    const informative = labels.filter((l) => !headCompact.includes(compact(l.label)));
-    const facets = informative.length >= 2 ? informative.map((l) => l.label) : [
-      ...informative.map((l) => l.label),
+    const bases = [...new Set(labels.map((l) => l.base || l.label))];
+    const informative = bases.filter((b) => !headCompact.includes(compact(b)));
+    const facets = informative.length >= 2 ? informative : [
+      ...informative,
       ...(hasNico && hasZero ? ['avec ou sans nicotine'] : []),
-      ...(ranked.some(([u]) => /cartouche/.test(u)) ? ['cartouches'] : []),
+      ...(cartouches.length ? ['cartouches'] : []),
     ];
     // Casse des noms propres reprise des titles des fiches (« Meteorite 100K », « Gorilla X »).
     const casing = new Map();
@@ -900,17 +922,33 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const curH1 = dedAudit?.h1 || null;
     const same = (x, y) => x && compact(x) === compact(y);
     const profile = isProductType || /liquid/.test(pathOf(target || '')) ? PROFILES.liquide : PROFILES.puff;
+    // Un title ou un H1 actuel qui contient déjà la requête se garde : on ne fait
+    // que compléter le title avec ce qui manque (« E-liquides JNR » couvre
+    // « liquide jnr » et garde la forme « e-liquide », très recherchée).
+    const covers = (txt) => txt && tokens(titleHead.query).every((t) => compact(txt).includes(t));
+    let proposedTitle = title;
+    if (covers(curTitle)) {
+      proposedTitle = curTitle;
+      for (const f of facets) {
+        if (compact(proposedTitle).includes(compact(f))) continue;
+        const next = `${proposedTitle}${proposedTitle.includes(':') ? ', ' : ' : '}${f}`;
+        if (next.length > 60) break;
+        proposedTitle = next;
+      }
+    }
+    const h1Keep = covers(curH1);
     const plan = [
       curTitle
-        ? (same(curTitle, title) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${title} »`)
-        : `Title : « ${title} »`,
+        ? (same(curTitle, proposedTitle) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »`)
+        : `Title : « ${proposedTitle} »`,
       curH1
-        ? (same(curH1, nice(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
+        ? (h1Keep ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
       `Meta description : « ${nice(titleHead.query)}${facets.length ? ` : ${facets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${facets.length ? ` (${facets.join(', ')})` : ''}.`,
       `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
       ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}`),
+      ...cartouches.slice(0, 2).map((c) => `H2 : ${c.title} : compatibilité, contenance, résistance ; lien vers ${pathOf(c.url)}`),
       ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}`] : []),
       questions.length
         ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
