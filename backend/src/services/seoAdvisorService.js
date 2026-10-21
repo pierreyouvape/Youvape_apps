@@ -818,12 +818,22 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
     // concurrencerait. On n'ouvre que pour une vraie FAMILLE (≥ 3 fiches sur la
     // même recherche, ex. les 16 e-liquides JNR 50 ml) qu'aucune fiche ne porte.
     const headCore = matches[0] ? coreTokens(canon(matches[0].query)).filter((t) => t.length > 1) : [];
-    const covering = products.filter((u) => headCore.length && headCore.every((t) => compact(pathOf(u)).includes(t)));
+    const slugOf = (u) => canon(pathOf(u).split('/').pop().replace(/-/g, ' '));
+    const covering = products.filter((u) => headCore.length && headCore.every((t) => compact(slugOf(u)).includes(t)));
+    // Modèles distincts parmi ces fiches : ce qui reste de l'adresse une fois
+    // retirés les mots de la recherche, la marque (dernier mot) et les mots de
+    // conditionnement (kit, pack, recharges, 12mg…). Kit et packs Nexi One Dual
+    // = un modèle ; Gorilla X, Z Pluse, Meteorite sans nicotine = trois.
+    const SLUG_NOISE = /^(puff|puffs|kit|pack|pod|pen|duo|recharges?|cartouches?|\d+[a-z]*|x\d+|sans|nicotine|avec)$/;
+    const models = new Set(covering.map((u) => {
+      const words = slugOf(u).split(' ');
+      return words.slice(0, -1).filter((w) => !headCore.includes(w) && !SLUG_NOISE.test(w)).join(' ');
+    }));
     const ownerIsFiche = topOwner && pageKind(topOwner) === 'fiche produit';
     let decision;
     if (products.length <= 1) decision = 'noindex-fiche';
     else if (demand < INDEX_DEMAND_MIN) decision = 'noindex-faible';
-    else if (ownerIsFiche || covering.length <= 2) decision = 'noindex-fiche-porte';
+    else if (ownerIsFiche || models.size <= 1) decision = 'noindex-fiche-porte';
     else decision = 'index';
     indexDecisions.set(normUrl(child.url), { decision, demand, products: products.length, product: products[0] || null, top: matches[0]?.query || null });
 
