@@ -782,6 +782,9 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
     const parent = tags.filter((p) => child.slug.startsWith(`${p.slug}-`)).sort((a, b) => b.slug.length - a.slug.length)[0];
     if (!parent) continue;
     const parentCore = coreTokens(parent.slug.replace(/-/g, ' ')).map(singular).filter((t) => t.length > 1);
+    // La marque/le modèle de la page mère est obligatoire (« jnr ») : sans elle,
+    // « e liquide 50ml » (toutes marques) gonflerait la demande.
+    const mustHave = parentCore.filter((t) => !['liquide', 'eliquide', 'puff'].includes(t));
     const suffix = child.slug.slice(parent.slug.length + 1).split('-');
     const strong = suffix.filter((t) => !['sans', 'avec', 'nicotine', 'de', 'sel', 'sels'].includes(t));
     const wantSans = suffix.includes('sans');
@@ -792,7 +795,7 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
       const c = compact(canon(query));
       const hasCore = parentCore.filter((t) => c.includes(t));
       let ok;
-      if (strong.length) ok = hasCore.length >= 1 && strong.every((t) => c.includes(compact(t)));
+      if (strong.length) ok = mustHave.every((t) => c.includes(t)) && hasCore.length >= 1 && strong.every((t) => c.includes(compact(t)));
       else ok = hasCore.length === parentCore.length
         && (wantSans ? c.includes('sansnicotine') : true)
         && (wantAvec ? (c.includes('nicotine') || c.includes('sel')) && !c.includes('sansnicotine') : true);
@@ -811,10 +814,17 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
     const owner = new Map();
     for (const m of matches) for (const r of data.byQuery.get(m.query) || []) owner.set(r.page, (owner.get(r.page) || 0) + r.i);
     const topOwner = [...owner.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+    // Une fiche porte-t-elle déjà la recherche ? Si oui, ouvrir l'étiquette la
+    // concurrencerait. On n'ouvre que pour une vraie FAMILLE (≥ 3 fiches sur la
+    // même recherche, ex. les 16 e-liquides JNR 50 ml) qu'aucune fiche ne porte.
+    const headCore = matches[0] ? coreTokens(canon(matches[0].query)).filter((t) => t.length > 1) : [];
+    const covering = products.filter((u) => headCore.length && headCore.every((t) => compact(pathOf(u)).includes(t)));
+    const ownerIsFiche = topOwner && pageKind(topOwner) === 'fiche produit';
     let decision;
     if (products.length <= 1) decision = 'noindex-fiche';
-    else if (demand >= INDEX_DEMAND_MIN) decision = 'index';
-    else decision = 'noindex-faible';
+    else if (demand < INDEX_DEMAND_MIN) decision = 'noindex-faible';
+    else if (ownerIsFiche || covering.length <= 2) decision = 'noindex-fiche-porte';
+    else decision = 'index';
     indexDecisions.set(normUrl(child.url), { decision, demand, products: products.length, product: products[0] || null, top: matches[0]?.query || null });
 
     const qRows = matches.slice(0, 10).map((m) => qRow(m, 'Recherche qui revient à cette page'));
@@ -835,7 +845,9 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
         reason: `Page en noindex alors qu'elle liste ${products.length} produits et que ses recherches font ${fmtInt(demand)} impressions en 28 jours (« ${head.query} » en tête)${topOwner ? `, servies aujourd'hui par ${pathOf(topOwner)}` : ''}.`,
         action: [
           `1. Yoast > réglages de l'étiquette : passer ${pathOf(child.url)} en index, follow.`,
-          `2. Title et H1 : reprendre « ${cap(head.query)} » (title actuel : « ${a.title || '—'} »). Ajouter un court texte factuel au-dessus de la grille.`,
+          tokens(head.query).every((t) => compact(a.title || '').includes(t))
+            ? `2. Title : garder « ${(a.title || '').replace(/\s*[-–|]\s*YouVape.*$/i, '')} », il contient déjà « ${head.query} ». Ajouter un court texte factuel au-dessus de la grille.`
+            : `2. Title et H1 : reprendre « ${cap(head.query)} » (title actuel : « ${a.title || '—'} »). Ajouter un court texte factuel au-dessus de la grille.`,
           links.lines.length ? `3. Liens internes :\n${links.lines.join('\n')}` : '3. Liens internes : la page mère et les fiches font déjà le lien avec la bonne ancre.',
           '4. Search Console > Inspection de l’URL > Demander l’indexation.',
         ].join('\n\n'),
@@ -878,6 +890,7 @@ const resolveLinkTarget = async (url, audits) => {
   const d = indexDecisions.get(normUrl(url));
   if (products.length === 1) return { url: products[0], note: ' (fiche produit : la page qui la liste est en noindex avec un seul produit)' };
   if (d?.decision === 'index') return { url, note: ' (page à passer en index : voir la carte « Passer en index »)' };
+  if (d?.decision === 'noindex-fiche-porte') return { url, note: ' (page à laisser en noindex : une fiche porte déjà ses recherches ; lien pour la navigation seulement)' };
   if (d) return { url, note: ` (page à laisser en noindex : ${fmtInt(d.demand)} impressions en 28 jours sur ses recherches ; lien pour la navigation seulement)` };
   return { url, note: ' (page en noindex : lien pour la navigation seulement)' };
 };
@@ -1102,15 +1115,21 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       ...routed.slice(0, 6).map((x) => qRow(x, `Renvoyée vers ${routedPath}`)),
     ];
 
+    // Étiquette de modèle en noindex : si une ou deux fiches portent déjà la
+    // recherche (Meteorite avec / sans nicotine), on la laisse fermée — pas de
+    // carte, la carte « texte » de la fiche suffit. Sinon, on propose de l'ouvrir.
+    const coveringFiches = fiches.filter((u) => !/cartouche/.test(u)
+      && coreTokens(titleHead.query).every((t) => compact(`${pathOf(u)} ${(audits.get(normUrl(u)) || {}).title || ''}`).includes(t)));
+    if (slugMatch && dedicatedNoindex && coveringFiches.length <= 2) continue;
     if (slugMatch && dedicatedNoindex) {
       recs.push({
         rec_key: `noindex-dedie:${g.slug}`,
         type: 'indexation',
         effort: 'faible',
         est_clicks: monthly(est * 0.5),
-        title: `Page dédiée « ${g.name} » en noindex : ${pathOf(slugMatch[0])}`,
-        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, porté surtout par ${pathOf(topPage)}. Une page dédiée existe mais Google n'a pas le droit de l'afficher.`,
-        action: `Décider : soit passer ${pathOf(slugMatch[0])} en index (réglage Yoast) et la construire selon le plan ci-dessous, soit la laisser fermée et retravailler ${pathOf(topPage)} (carte « texte »). Ne pas laisser deux pages viser ces requêtes.`,
+        title: `Passer en index : ${pathOf(slugMatch[0])} (« ${g.name} »)`,
+        reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}, réparties sur ${coveringFiches.length} fiches. Une page qui les regroupe existe mais est en noindex.`,
+        action: `1. Yoast : passer ${pathOf(slugMatch[0])} en index, follow.\n\n2. La construire selon le plan ci-dessous et la relier depuis les fiches.\n\n3. Search Console > Inspection de l\u2019URL > Demander l\u2019indexation.`,
         proposal: plan.join('\n\n'),
         urls: [slugMatch[0], topPage],
         queries: queriesOut,
