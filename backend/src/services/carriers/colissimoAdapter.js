@@ -322,12 +322,54 @@ const assertRelayPoint = (relayPoint, orderNumber) => {
 };
 
 /**
+ * Poids unitaires des articles de la CN23, en centièmes de kilo (l'API en prend
+ * deux décimales, 0,01 kg au moins).
+ *
+ * Colissimo refuse (30507) une déclaration dont les articles pèsent plus que le
+ * colis. Or l'arrondi au centième ajoute jusqu'à 5 g par pièce, multipliés par
+ * la quantité : 22 packs de cartouches à 25 g partaient à 0,03 kg pièce, soit
+ * 0,66 kg pour un colis de 0,56 kg (commande 1270401, vers la Suisse).
+ * L'arrondi au plus proche est gardé tant qu'il tient dans le colis ; sinon on
+ * arrondit à l'inférieur. Seul le poids déclaré change, jamais la valeur.
+ *
+ * Calcul en grammes entiers : en flottant, 0,29 × 100 donne 28,999… et
+ * s'arrondirait à l'inférieur à 0,28.
+ *
+ * @param {{articles: object[], parcelKg: string, orderNumber: string|number}} input
+ * @returns {number[]} un poids par article, en centièmes de kilo
+ */
+const poidsArticles = ({ articles, parcelKg, orderNumber }) => {
+  const plafond = Math.round(Number(parcelKg) * 100);
+  const centiemes = (arrondi) => articles.map(a =>
+    Math.max(arrondi(Math.round((Number(a.unitWeightKg) || 0) * 1000) / 10), 1));
+  const total = (poids) => poids.reduce((t, w, i) => t + w * articles[i].quantity, 0);
+
+  const auPlusProche = centiemes(Math.round);
+  if (!(total(auPlusProche) > plafond)) return auPlusProche;
+
+  const parDefaut = centiemes(Math.floor);
+  if (!(total(parDefaut) > plafond)) return parDefaut;
+
+  // Même au plancher de 0,01 kg la pièce, les articles dépassent le colis : des
+  // produits n'ont pas (ou presque pas) de poids dans la fiche.
+  const legers = [...new Set(articles
+    .filter(a => !(Number(a.unitWeightKg) >= 0.01))
+    .map(a => a.sku || a.name))];
+  refus(
+    `Commande n°${orderNumber} : les articles de la déclaration douanière pèseraient `
+    + `${(total(parDefaut) / 100).toFixed(2)} kg (0,01 kg au moins par pièce), plus que le colis `
+    + `(${parcelKg} kg), et Colissimo le refuse.`
+    + (legers.length ? ` Poids absent ou inférieur à 10 g dans WooCommerce : ${legers.join(', ')}.` : '')
+  );
+};
+
+/**
  * Déclaration douanière au format Colissimo, et les champs qui l'accompagnent.
  *
  * @param {{articles: object[], shippingTotal: number}} customs - cf. services/orderCustomsService
  * @returns {{declaration: object, totalAmount: number, fields: object[]}}
  */
-const buildCustoms = ({ customs, settings, orderNumber, pays }) => {
+const buildCustoms = ({ customs, settings, orderNumber, pays, parcelKg }) => {
   const d = settings.customs || {};
   const manquants = ['hs_code', 'origin_country', 'category'].filter(k => !d[k]);
   if (manquants.length) {
@@ -353,12 +395,14 @@ const buildCustoms = ({ customs, settings, orderNumber, pays }) => {
     );
   }
 
-  const article = customs.articles.map((a) => {
+  const poids = poidsArticles({ articles: customs.articles, parcelKg, orderNumber });
+
+  const article = customs.articles.map((a, i) => {
     const description = restrictToCharset(a.name, CHARSET.description).substring(0, MAX_DESCRIPTION).trim();
     return {
       description: description || String(a.sku || 'Article').substring(0, MAX_DESCRIPTION),
       quantity: a.quantity,
-      weight: Math.max(a.unitWeightKg || 0, 0.01).toFixed(2),
+      weight: (poids[i] / 100).toFixed(2),
       value: String(a.unitValue),
       currency: d.currency || 'EUR',
       artref: String(a.sku || '').substring(0, 44),
@@ -520,7 +564,7 @@ const buildLabelPayload = ({ orderNumber, receiver = {}, account, weightGrams, o
   };
 
   if (cn23) {
-    const douane = buildCustoms({ customs, settings: s, orderNumber, pays });
+    const douane = buildCustoms({ customs, settings: s, orderNumber, pays, parcelKg: parcel.weight });
     letter.customsDeclarations = douane.declaration;
     service.totalAmount = douane.totalAmount;
     service.transportationAmount = douane.totalAmount;

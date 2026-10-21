@@ -978,6 +978,46 @@ test('CN23 : désignation sans accent ni symbole, 64 caractères au plus', () =>
   assert.ok(d.startsWith('Liquide Creme Brulee a la Vanille'), d);
 });
 
+// Commande 1270401 vers la Suisse : 22 packs à 25 g + 11 g de tare = 561 g.
+// Arrondis au plus proche, les articles pesaient 22 × 0,03 = 0,66 kg pour un
+// colis de 0,56 kg, et Colissimo refusait (30507).
+const CUSTOMS_1270401 = {
+  articles: customsArticles([
+    { name: 'Pack 2 Cartouches Mint Pod Kiwi - 10mg', qty: 10, line_total: '36.23', product_type: 'variation', sku: '913255-913256', weight_kg: '0.025' },
+    { name: 'Pack 2 Cartouches Blueberry Pod Kiwi - 10mg', qty: 4, line_total: '20.70', product_type: 'variation', sku: '913276-913277', weight_kg: '0.025' },
+    { name: 'Pack 2 Cartouches Mango Pod Kiwi - 10mg', qty: 8, line_total: '41.40', product_type: 'variation', sku: '913251-913252', weight_kg: '0.025' }
+  ]),
+  shippingTotal: 17.9
+};
+const poidsCN23 = (p) => p.letter.customsDeclarations.contents.article
+  .reduce((t, a) => t + Math.round(Number(a.weight) * 100) * a.quantity, 0);
+const payloadCH = (over = {}) => coliPayload({
+  orderNumber: '1270401', receiver: { country: 'CH', postcode: '1200', city: 'Genève', address: '1 rue du Rhône' },
+  customs: CUSTOMS_1270401, weightGrams: 561, ...over
+});
+
+test('CN23 : les articles ne pèsent jamais plus que le colis (1270401, refus 30507)', () => {
+  const p = payloadCH();
+  assert.ok(p.letter.customsDeclarations, 'la Suisse exige une CN23');
+  assert.strictEqual(p.letter.parcel.weight, '0.56');
+  assert.ok(poidsCN23(p) <= 56, `${poidsCN23(p)} centièmes de kg`);
+  for (const a of p.letter.customsDeclarations.contents.article) assert.strictEqual(a.weight, '0.02');
+});
+
+test('CN23 : l\'arrondi au plus proche est gardé quand il tient dans le colis', () => {
+  assert.ok(payloadCH({ weightGrams: 700 }).letter.customsDeclarations.contents.article
+    .every(a => a.weight === '0.03'));
+  // 0,29 kg : en flottant 0,29 × 100 = 28,999…, l'arrondi inférieur ne doit pas donner 0,28.
+  const lourd = { articles: [{ name: 'Accu', sku: 'X', quantity: 3, unitValue: 10, unitWeightKg: 0.29 }], shippingTotal: 7.9 };
+  assert.strictEqual(payloadCH({ customs: lourd, weightGrams: 870 }).letter.customsDeclarations.contents.article[0].weight, '0.29');
+});
+
+test('CN23 : articles sans poids qui dépassent le colis = refus clair nommant les produits', () => {
+  const sansPoids = { articles: [{ name: 'Résistance', sku: 'RES-0', quantity: 30, unitValue: 2, unitWeightKg: 0 }], shippingTotal: 7.9 };
+  const msg = refusDe(() => payloadCH({ customs: sansPoids, weightGrams: 200 }));
+  assert.ok(/RES-0/.test(msg) && /0\.30 kg/.test(msg), msg);
+});
+
 test('CN23 : aucun EORI envoyé tant qu\'il n\'est pas renseigné', () => {
   assert.ok(!payloadRE().fields.field.some(f => f.key === 'EORI'));
   const avec = { ...COLI_ACCOUNT, settings: { ...COLI_ACCOUNT.settings,
