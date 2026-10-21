@@ -40,7 +40,9 @@ const GROUPS_WITHOUT_PAGE = new Set(['jnr', 'garde-fou-puff-sans-nicotine', 'mar
 // arguments de prix, de goût, d'avis (griefs DNF) ou mots sans contenu.
 const SENSITIVE = new Set(['prix', 'pas', 'cher', 'promo', 'promotion', 'solde', 'soldes', 'meilleur', 'meilleure', 'meilleurs',
   'gout', 'gouts', 'saveur', 'saveurs', 'avis', 'trouver', 'acheter', 'achat', 'vente', 'magasin', 'cbd', 'thc', 'ou', 'quoi',
-  'comment', 'combien', 'pourquoi', 'quel', 'quelle', 'quels', 'est', 'peut', 'faut', 'interdit', 'interdite', 'legal', 'legale', 'danger']);
+  'comment', 'combien', 'pourquoi', 'quel', 'quelle', 'quels', 'est', 'peut', 'faut', 'interdit', 'interdite', 'legal', 'legale', 'danger',
+  // Puffs jetables interdites en France (loi du 24/02/2025) ; « gratuit » et « offert » sont des arguments commerciaux.
+  'jetable', 'jetables', 'gratuit', 'gratuite', 'gratuits', 'offert', 'offerte', 'livraison', 'reduction', 'code']);
 const ACRONYMS = ['jnr', 'mtl', 'dl', 'pg', 'vg'];
 const STOPWORDS = new Set(['de', 'du', 'la', 'le', 'les', 'des', 'en', 'et', 'a', 'au', 'aux', 'un', 'une', 'pour', 'sur', 'avec', 'd', 'l']);
 const QUESTION_RE = /^(comment|combien|pourquoi|quel|quelle|quels|quelles|est[- ]ce|peut[- ]on|ou |où |c'?est quoi|que |qu'|faut[- ]il|y a[- ]t)|(\?| ou pas$| legal| légal| interdit| danger)/;
