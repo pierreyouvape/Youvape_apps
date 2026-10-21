@@ -764,6 +764,23 @@ const PROFILES = {
   },
 };
 
+// Vers quelle adresse faire un lien ? Une page en noindex qui ne contient
+// qu'un produit (étiquette e-liquides JNR 10 ml sans nicotine) renvoie vers la
+// fiche de ce produit : Google ne classe pas l'étiquette, le lien ne lui sert à
+// rien. Avec plusieurs produits, on garde l'étiquette mais on le signale.
+const resolveLinkTarget = async (url, audits) => {
+  if (!url) return { url: null, note: '' };
+  let a = audits.get(normUrl(url));
+  if (!a || !Array.isArray(a.links)) {
+    a = await auditUrl(url);
+    if (a.http_status) { await saveAudit(a); audits.set(normUrl(url), a); }
+  }
+  if (!/noindex/i.test(a?.robots || '')) return { url, note: '' };
+  const products = [...new Set((a.links || []).map((l) => l.href).filter((h) => /\/produit\//.test(h)))];
+  if (products.length === 1) return { url: products[0], note: ' (fiche produit : la page qui la liste est en noindex)' };
+  return { url, note: ' (page non indexée : lien utile pour la navigation, pas pour Google)' };
+};
+
 // Groupes « type de produit » : une requête qui les touche leur revient en
 // priorité (« liquide jnr sans nicotine » → e-liquides, pas les puffs).
 const PRODUCT_TYPE_GROUPS = ['eliquide-jnr'];
@@ -861,7 +878,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         const headTk = tokens(head.query).map((w) => w.replace(/s$/, ''));
         const label = full.split(/\s+/).filter((w) => !['e', 'eliquide', 'liquide', 'jnr'].includes(norm(w).replace(/[^a-z0-9]/g, '').replace(/s$/, '')) && !headTk.includes(norm(w).replace(/s$/, ''))).join(' ').trim()
           || sp.slug.slice(base.length + 1).replace(/-/g, ' ');
-        labels.push({ label, url: sp.url, title: full });
+        const dest = await resolveLinkTarget(sp.url, audits);
+        labels.push({ label, url: dest.url, note: dest.note, title: full });
       }
     } else {
       // Seuls les modèles de LA page dédiée : l'étiquette jnr-falcon-28k ne porte
@@ -923,7 +941,8 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const liquidZero = /sans|0/.test(titleHead.query)
       ? sitePages.filter((x) => /liquid/.test(x.slug) && headTokens.filter((t) => !GENERIC.has(t)).every((t) => compact(x.slug).includes(t))).sort((a, b) => a.slug.length - b.slug.length)[0]
       : null;
-    const rechargeUrl = liquidZero?.url || routedTarget;
+    const recharge = await resolveLinkTarget(liquidZero?.url || routedTarget, audits);
+    const rechargeUrl = recharge.url;
     const questions = list.filter((x) => QUESTION_RE.test(norm(x.query)) && !HEALTH_RE.test(norm(x.query)) && !FAQ_BANNED_RE.test(norm(x.query))).slice(0, 6).map((x) => x.query);
     const employ = list.filter((x) => !hasSensitive(x.query)).slice(0, 12);
     // Page existante : on montre l'actuel à côté du proposé (on MODIFIE, on ne crée pas).
@@ -964,17 +983,17 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       `Meta description : « ${metaHead}${metaFacets.length ? ` : ${metaFacets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${metaFacets.length ? ` (${metaFacets.join(', ')})` : ''}.`,
       `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
-      ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}`),
+      ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}${l.note || ''}`),
       ...cartouches.slice(0, 2).map((c) => `H2 : ${c.title} : compatibilité, contenance, résistance ; lien vers ${pathOf(c.url)}`),
-      ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}`] : []),
+      ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}${recharge.note}`] : []),
       questions.length
         ? `FAQ (questions réellement tapées) :\n${questions.map((x) => `  - ${cap(x)} ?`).join('\n')}`
         : `FAQ : 3 à 5 questions factuelles (${profile.faq}).`,
       `Requêtes à employer dans le texte : ${employ.map((x) => x.query).join(', ')}`,
-      ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${(liquidZero?.url || routedTarget) ? `de ${pathOf(liquidZero?.url || routedTarget)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
+      ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${rechargeUrl ? `de ${pathOf(rechargeUrl)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
     ];
-    const routedPath = pathOf(liquidZero?.url || routedTarget || '') || 'les e-liquides';
+    const routedPath = rechargeUrl ? pathOf(rechargeUrl) : 'les e-liquides';
     const queriesOut = [
       ...employ.map((x) => qRow(x, x === titleHead ? 'Requête du title' : 'À employer dans le texte')),
       ...list.filter((x) => questions.includes(x.query) && !employ.includes(x)).map((x) => qRow(x, 'Question pour la FAQ')),
