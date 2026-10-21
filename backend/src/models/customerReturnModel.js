@@ -596,6 +596,8 @@ const get = async (id) => {
  * Remet en stock dans BMS ce qui ne l'est pas encore. La ligne est RÉSERVÉE
  * avant l'appel (restocked_qty), pour qu'un double clic ne la fasse pas
  * entrer deux fois ; un échec BMS la libère et peut se relancer.
+ * Rend les erreurs et le nombre de pièces RÉELLEMENT entrées : seul ce
+ * nombre-là peut figurer dans une note du ticket.
  */
 const restock = async (id, user) => {
   const { rows: lines } = await pool.query(
@@ -605,6 +607,7 @@ const restock = async (id, user) => {
     [id]
   );
   const errors = [];
+  let restocked = 0;
   for (const line of lines) {
     const { rows: [claimed] } = await pool.query(
       `UPDATE customer_return_lines SET restocked_qty = qty_restock, restocked_at = NOW()
@@ -626,6 +629,7 @@ const restock = async (id, user) => {
       });
       const movementId = await findMovementId(created, bmsProductId, comments, qty);
       await pool.query('UPDATE customer_return_lines SET bms_movement_id = $2 WHERE id = $1', [line.id, movementId]);
+      restocked += qty;
     } catch (error) {
       await pool.query(
         'UPDATE customer_return_lines SET restocked_qty = $2, restocked_at = NULL WHERE id = $1',
@@ -635,7 +639,7 @@ const restock = async (id, user) => {
       errors.push(`${line.name} : ${error.message}`);
     }
   }
-  return errors;
+  return { errors, restocked };
 };
 
 /**
@@ -706,22 +710,30 @@ const validate = async (id, destinations, user) => {
     client.release();
   }
 
-  const restockErrors = await restock(id, user);
+  const { errors: restockErrors, restocked } = await restock(id, user);
 
+  // Ce que BMS a refusé n'est pas « remis en stock » : la note le dira à la relance réussie.
   const sum = (k) => plan.reduce((n, p) => n + p[k], 0);
   const parts = [];
-  if (sum('restock')) parts.push(`${sum('restock')} remis en stock`);
+  if (restocked) parts.push(`${restocked} remis en stock`);
   if (sum('supplier')) parts.push(`${sum('supplier')} en SAV fournisseur`);
   if (sum('noRestock')) parts.push(`${sum('noRestock')} non remis en stock`);
   await noteTicket(r.ticket_id, user, [
-    `<strong>Retour n°${id} ${r.return_required ? 'reçu' : 'validé'}</strong> — ${parts.join(', ')}`,
+    `<strong>Retour n°${id} ${r.return_required ? 'reçu' : 'validé'}</strong>${parts.length ? ` — ${parts.join(', ')}` : ''}`,
     ...plan.filter(p => p.supplier).map(p => `SAV : ${p.supplier} × ${escapeHtml(p.line.name)} — ${escapeHtml(p.d.problem)}`),
   ]);
 
   return { ...(await get(id)), restockErrors };
 };
 
-const retryRestock = async (id, user) => ({ ...(await get(id)), restockErrors: await restock(id, user) });
+const retryRestock = async (id, user) => {
+  const { errors: restockErrors, restocked } = await restock(id, user);
+  if (restocked) {
+    const { rows: [r] } = await pool.query('SELECT ticket_id FROM customer_returns WHERE id = $1', [id]);
+    await noteTicket(r?.ticket_id, user, [`<strong>Retour n°${id}</strong> — ${restocked} remis en stock`]);
+  }
+  return { ...(await get(id)), restockErrors };
+};
 
 // ── Issue client, annulation ────────────────────────────────────────────────
 
