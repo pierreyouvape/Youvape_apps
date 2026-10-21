@@ -272,7 +272,7 @@ function DataPanel({ page, onSaved, onAnalyze, setMsg }) {
                   {q.this_page ? <b style={{ color: C.vert }}>cette page</b> : q.top_page ? <PageLink url={q.top_page} /> : '—'}
                 </td>
                 <td style={{ ...td, fontSize: 12, color: C.grisF }}>
-                  {[q.question ? 'question' : null, q.excluded ? `écartée (${q.excluded})` : null].filter(Boolean).join(' · ')}
+                  {[q.question ? 'question' : null, q.excluded ? `écartée (${q.excluded})` : null, q.caution].filter(Boolean).join(' · ')}
                 </td>
               </tr>
             ))}

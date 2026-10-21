@@ -266,10 +266,15 @@ const loadPageQueries = async (url, range) => {
   return r.rows.map((x) => ({ ...x, position: round1(x.position) }));
 };
 
+// « goût » : très recherché, permis de façon neutre (double goût, nombre de goûts)
+// sans jamais décrire un goût — signalé, pas écarté.
+const NEUTRAL_OK = new Set(['gout', 'gouts']);
+const cautionOf = (query) => (norm(query).split(/[^a-z0-9]+/).some((w) => NEUTRAL_OK.has(w)) ? 'goût : usage neutre seulement' : null);
+
 const sensitiveReason = (query) => {
   const q = norm(query);
   const words = q.split(/[^a-z0-9]+/);
-  const banned = words.find((w) => BANNED.has(w));
+  const banned = words.find((w) => BANNED.has(w) && !NEUTRAL_OK.has(w));
   if (banned) return `mot « ${banned} »`;
   if (HEALTH_RE.test(q)) return 'santé';
   return null;
@@ -309,6 +314,7 @@ const loadTopicQueries = async (url, groups, range) => {
       this_page: page === url,
       question: QUESTION_RE.test(norm(x.query)),
       excluded: sensitiveReason(x.query),
+      caution: cautionOf(x.query),
     };
   });
 };
@@ -568,7 +574,9 @@ ${THEME_FAQ}
 
 RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage : impératives)
 - Rédaction neutre et factuelle : caractéristiques, compatibilités, mode d'emploi, conservation.
-- JAMAIS : goût, saveur, arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
+- JAMAIS : saveur, arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
+- Le mot « goût » est très recherché (« gout jnr », « double gout ») : il est permis, mais SEULEMENT de façon neutre — « double goût » pour un modèle à deux réservoirs, nombre de goûts disponibles tiré des fiches, renvoi à la liste des goûts de la fiche. Ne jamais décrire un goût. Signale chaque emploi dans "points_a_verifier" pour l'avocat.
+- Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. N'écris jamais « interchangeable » pour une cartouche (les cartouches ne passent pas d'un modèle à l'autre).
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
 - JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
 
@@ -616,7 +624,7 @@ Texte actuel du bas de page (HTML) :
 ${p.seo_html ? p.seo_html.slice(0, 12000) : '(vide)'}`);
   parts.push(`## Requêtes du sujet (termes : ${row.topic_terms})
 ${mdTable(['Requête', 'Impr. 90 j', 'Clics', 'Pos.', 'Page affichée', 'Question', 'Écartée'],
-    d.topic.slice(0, 120).map((q) => [q.query, q.impressions, q.clicks, q.position, q.this_page ? 'CETTE PAGE' : pathOf(q.top_page), q.question ? 'oui' : '', q.excluded || '']))}`);
+    d.topic.slice(0, 120).map((q) => [q.query, q.impressions, q.clicks, q.position, q.this_page ? 'CETTE PAGE' : pathOf(q.top_page), q.question ? 'oui' : '', q.excluded || cautionOf(q.query) || '']))}`);
   parts.push(`## Requêtes où la page apparaît déjà
 ${mdTable(['Requête', 'Impr. 90 j', 'Clics', 'Pos.'], d.page_queries.slice(0, 40).map((q) => [q.query, q.impressions, q.clicks, q.position]))}`);
   if (d.links?.length) {
@@ -655,8 +663,10 @@ const lintDraft = async (draft, page) => {
   if (draft.title && draft.title.length > 70) add('warn', `Title de ${draft.title.length} caractères (70 maximum conseillés).`);
   if (draft.meta && draft.meta.length > 160) add('warn', `Méta de ${draft.meta.length} caractères (160 maximum conseillés).`);
   const words = new Set(plain.split(/[^a-z0-9]+/));
-  const banned = [...BANNED].filter((w) => words.has(w));
+  const banned = [...BANNED].filter((w) => words.has(w) && !NEUTRAL_OK.has(w));
   if (banned.length) add('error', `Mots interdits (DNF) : ${banned.join(', ')}.`);
+  if ([...NEUTRAL_OK].some((w) => words.has(w))) add('warn', 'Le mot « goût » est employé : vérifier qu’il reste neutre (double goût, nombre de goûts) et le faire valider par l’avocat.');
+  if (/\binterchangeables?\b/.test(plain)) add('warn', '« interchangeable » : les cartouches ne passent pas d’un modèle à l’autre, préférer « remplaçable » et seulement si la fiche le dit.');
   if (HEALTH_RE.test(plain)) add('error', 'Vocabulaire santé détecté.');
   const mk = plain.match(new RegExp(MARKETING_RE.source, 'gi'));
   if (mk) add('warn', `Vocabulaire marketing : ${[...new Set(mk)].join(', ')}.`);
@@ -770,7 +780,7 @@ const verifyLive = async (id) => {
   add(!!page.seo_html, 'Texte du bas de page présent', `${page.word_count} mots, ${page.h2.length} H2`);
   const seoPlain = norm(textOf(page.seo_html || ''));
   const words = new Set(seoPlain.split(/[^a-z0-9]+/));
-  const banned = [...BANNED].filter((w) => words.has(w));
+  const banned = [...BANNED].filter((w) => words.has(w) && !NEUTRAL_OK.has(w));
   add(!banned.length, 'Aucun mot interdit (DNF)', banned.length ? banned.join(', ') : null);
   const hrefs = [...(page.seo_html || '').matchAll(HREF_RE)].map((m) => m[1]);
   const absolute = hrefs.filter((h) => /youvape\.fr/.test(h));
