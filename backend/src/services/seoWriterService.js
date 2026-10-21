@@ -164,8 +164,15 @@ const parsePage = (url, status, html) => {
   }
   // Lien de menu masqué : le thème remplace <a href> par un <span data-obflink-url="base64">,
   // que Google ne suit pas.
-  const b64 = Buffer.from(path).toString('base64').replace(/=+$/, '');
-  const masked = html.includes(`data-obflink-url="${b64}`);
+  // Comparaison EXACTE sur le chemin décodé : le code de /puff-jnr est le début de
+  // celui de /puff-jnr-sans-nicotine (faux « masqué » sur puff-jnr et e-liquides-jnr).
+  // Masqué = au moins un lien masqué vers la page et aucun vrai lien <a href>.
+  const samePath = (u) => decode(u).replace(/^https?:\/\/(www\.)?youvape\.fr/, '').split(/[?#]/)[0].replace(/\/$/, '') === path;
+  const maskedLinks = [...html.matchAll(/data-obflink-url="([^"]+)"/g)]
+    .map((x) => { try { return Buffer.from(x[1], 'base64').toString('utf8'); } catch { return ''; } })
+    .filter(samePath).length;
+  const plainLinks = [...html.matchAll(/<a\b[^>]*href="([^"]+)"/gi)].filter((x) => samePath(x[1])).length;
+  const masked = maskedLinks > 0 && plainLinks === 0;
   return {
     url,
     path,
