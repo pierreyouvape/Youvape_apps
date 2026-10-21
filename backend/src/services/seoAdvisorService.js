@@ -1429,4 +1429,7 @@ const updateRecommendation = async (id, { status, note }, user) => {
   return r.rows[0] || null;
 };
 
-module.exports = { ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt };
+// Décisions d'indexation du dernier calcul (url → décision), pour contrôle.
+const getIndexDecisions = () => Object.fromEntries(indexDecisions);
+
+module.exports = { ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt, getIndexDecisions };
