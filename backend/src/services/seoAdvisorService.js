@@ -136,6 +136,7 @@ const ensureTables = async () => {
       error       text
     );
     ALTER TABLE seo_recommendations ADD COLUMN IF NOT EXISTS delay text;
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS availability text;
   `);
 };
 
@@ -190,6 +191,8 @@ const auditUrl = async (url) => {
       canonical: pick(html, /<link\s+rel=["']canonical["']\s+href=["']([^"']*)["']/i),
       word_count: res.status === 200 ? body.split(/\s+/).filter(Boolean).length : null,
       links: res.status === 200 ? extractLinks(html) : null,
+      // Disponibilité déclarée dans les données structurées (fiches produit).
+      availability: (html.match(/"availability"\s*:\s*"(?:https?:\/\/schema\.org\/)?([A-Za-z]+)"/) || [])[1] || null,
       error: null,
     };
   } catch (error) {
@@ -199,12 +202,13 @@ const auditUrl = async (url) => {
 
 const saveAudit = async (a) => {
   await pool.query(
-    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error)
-     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability)
+     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (url) DO UPDATE SET fetched_at = now(), http_status = $2, location = $3, title = $4, h1 = $5,
-       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11`,
+       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12`,
     [a.url, a.http_status, a.location || null, a.title || null, a.h1 || null, a.meta_description || null,
-      a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null]
+      a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null,
+      a.availability || null]
   );
 };
 
@@ -220,7 +224,7 @@ const loadPeriod = async () => {
 };
 
 const loadData = async ({ from, to, prevFrom }) => {
-  const [queries, qp, pages] = await Promise.all([
+  const [queries, qp, pages, prevQ, prevQp, firstSeen] = await Promise.all([
     pool.query(
       `SELECT query, SUM(clicks)::int AS c, SUM(impressions)::int AS i,
               SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS p
@@ -247,7 +251,31 @@ const loadData = async ({ from, to, prevFrom }) => {
        GROUP BY page`,
       [prevFrom, from, to, COUNTRY]
     ),
+    pool.query(
+      `SELECT query, SUM(clicks)::int AS c, SUM(impressions)::int AS i,
+              SUM(position * impressions) / NULLIF(SUM(impressions), 0) AS p
+       FROM gsc_query_daily WHERE country = $3 AND date >= $1 AND date < $2
+       GROUP BY query HAVING SUM(impressions) >= 20`,
+      [prevFrom, from, COUNTRY]
+    ),
+    pool.query(
+      `SELECT query, page, SUM(clicks)::int AS c, SUM(impressions)::int AS i
+       FROM gsc_search_daily WHERE country = $3 AND date >= $1 AND date < $2
+       GROUP BY query, page HAVING SUM(impressions) >= 5`,
+      [prevFrom, from, COUNTRY]
+    ),
+    pool.query(
+      `SELECT page, MIN(date) AS first FROM gsc_search_daily WHERE country = $1 AND impressions > 0 GROUP BY page`,
+      [COUNTRY]
+    ),
   ]);
+  const qPrev = new Map(prevQ.rows.map((r) => [r.query, { ...r, p: Number(r.p) }]));
+  const byQueryPrev = new Map();
+  for (const r of prevQp.rows) {
+    if (!byQueryPrev.has(r.query)) byQueryPrev.set(r.query, []);
+    byQueryPrev.get(r.query).push(r);
+  }
+  const pageFirstSeen = new Map(firstSeen.rows.map((r) => [r.page, ymd(new Date(r.first))]));
   const q = new Map(queries.rows.map((r) => [r.query, { ...r, p: Number(r.p) }]));
   const byQuery = new Map();
   for (const r of qp.rows) {
@@ -260,7 +288,7 @@ const loadData = async ({ from, to, prevFrom }) => {
     ...r, p: r.p === null ? null : Number(r.p), pp: r.pp === null ? null : Number(r.pp),
     c: r.c || 0, i: r.i || 0, pc: r.pc || 0, pi: r.pi || 0,
   }]));
-  return { q, byQuery, pageStats };
+  return { q, byQuery, pageStats, qPrev, byQueryPrev, pageFirstSeen, period: { from, to, prevFrom } };
 };
 
 const loadAudits = async () => {
@@ -922,29 +950,101 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
   return recs;
 };
 
-// 7. Baisses : pages qui perdent des clics et des places.
-const detectBaisse = ({ pageStats, byQuery }) => {
+// 7. Baisses : pages qui perdent des clics. On cherche POURQUOI, et chaque
+// cause donne ses actions : demande en baisse (le marché, pas la page), places
+// perdues (contenu, liens), clics repris par une autre de nos pages
+// (cannibalisation), rupture de stock, effet lancement qui retombe.
+const detectBaisse = async (data, audits) => {
+  const { pageStats, byQuery, q, qPrev, byQueryPrev, pageFirstSeen, period } = data;
   const recs = [];
-  for (const [url, s] of pageStats) {
-    if (isParamUrl(url) || s.pc < 30 || s.p === null || s.pp === null) continue;
-    const drop = (s.pc - s.c) / s.pc;
-    if (drop < 0.3 || s.p - s.pp < 1) continue;
-    const lost = [];
-    for (const [query, rows] of byQuery) {
-      const r = rows.find((x) => x.page === url);
-      if (r && r.i >= 30) lost.push({ query, i: r.i, c: r.c, p: Number(r.p.toFixed(1)) });
+  for (const [url, st] of pageStats) {
+    if (isParamUrl(url) || st.pc < 30 || st.p === null || st.pp === null) continue;
+    const drop = (st.pc - st.c) / st.pc;
+    if (drop < 0.3) continue;
+
+    // Requêtes qui ont amené des clics à la page sur la période d'avant.
+    const rows = [];
+    for (const [query, list] of byQueryPrev) {
+      const before = list.find((x) => x.page === url);
+      if (!before || before.c < 3) continue;
+      const now = (byQuery.get(query) || []).find((x) => x.page === url) || { c: 0, i: 0 };
+      const qa = q.get(query) || { c: 0, i: 0, p: null };
+      const qb = qPrev.get(query) || { c: 0, i: 0, p: null };
+      const others = (byQuery.get(query) || []).filter((x) => x.page !== url && !isParamUrl(x.page));
+      const othersBefore = list.filter((x) => x.page !== url);
+      const gain = others.map((o) => ({ page: o.page, c: o.c, cb: othersBefore.find((b) => b.page === o.page)?.c || 0 }))
+        .filter((o) => o.c - o.cb >= 3).sort((a, b) => (b.c - b.cb) - (a.c - a.cb))[0];
+      rows.push({ query, c: now.c, pc: before.c, i: qa.i, pi: qb.i, p: qa.p, pp: qb.p, lost: before.c - now.c, gain });
     }
-    lost.sort((a, b) => b.i - a.i);
+    rows.sort((a, b) => b.lost - a.lost);
+    const top = rows.slice(0, 8);
+    if (!top.length) continue;
+    const sum = (k) => top.reduce((x, r) => x + (r[k] || 0), 0);
+    const demand = sum('pi') ? (sum('i') - sum('pi')) / sum('pi') : 0;
+    const withPos = top.filter((r) => r.p !== null && r.pp !== null);
+    const posDelta = withPos.length ? withPos.reduce((x, r) => x + (r.p - r.pp) * (r.i || 1), 0) / withPos.reduce((x, r) => x + (r.i || 1), 0) : 0;
+    const shifted = top.filter((r) => r.gain);
+    const first = pageFirstSeen.get(url);
+    const launch = first && first >= addDays(period.prevFrom, -7);
+
+    // Relu à chaque calcul : le stock change d'un jour à l'autre.
+    const a = await auditUrl(url);
+    if (a.http_status) { await saveAudit(a); audits.set(normUrl(url), a); }
+    const outOfStock = /OutOfStock|SoldOut|Discontinued/i.test(a?.availability || '');
+
+    const causes = [];
+    const steps = [];
+    if (outOfStock) {
+      causes.push('la page est déclarée en rupture de stock (données structurées)');
+      steps.push('Rupture de stock : Google fait reculer les fiches indisponibles. Remettre en stock, ou indiquer une date de retour et proposer le modèle de remplacement en lien depuis la fiche.');
+    }
+    if (shifted.length) {
+      const g = shifted[0].gain;
+      causes.push(`une autre de nos pages reprend les clics (${pathOf(g.page)})`);
+      steps.push(`Cannibalisation : ${pathOf(g.page)} prend désormais « ${shifted[0].query} ». Choisir laquelle des deux doit porter cette requête, retirer les mots du title de l'autre, et lier l'autre vers elle avec l'ancre « ${cap(shifted[0].query)} ».`);
+    }
+    if (demand <= -0.25) {
+      causes.push(`la demande baisse (${Math.round(demand * 100)} % d'impressions sur ces requêtes, toutes pages confondues)`);
+    }
+    if (posDelta >= 1) {
+      causes.push(`la page perd ${fmt1(posDelta)} place${posDelta >= 2 ? 's' : ''} en moyenne sur ses requêtes principales`);
+      const head = top[0];
+      const titleOk = a?.title && tokens(head.query).every((t) => compact(a.title).includes(t));
+      if (!titleOk && a?.title) steps.push(`Title : « ${a.title} » ne contient pas « ${head.query} », la requête qui a perdu le plus de clics. L'y ajouter.`);
+      const words = a?.word_count || 0;
+      steps.push(`Contenu : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus). Ajouter` : 'ajouter'} une fiche technique complète (autonomie, capacité, puissance, résistances ou cartouches compatibles) et une FAQ factuelle${top.some((r) => !/\d/.test(r.query)) && top.some((r) => /\d/.test(r.query)) ? ', avec un paragraphe qui situe ce modèle par rapport aux autres versions de la gamme (des requêtes sans numéro de version arrivent ici)' : ''}.`);
+      const links = await linkPlan({
+        target: url,
+        anchors: top.filter((r) => !hasSensitive(r.query)).slice(0, 3).map((r) => r.query),
+        sources: relatedSources(data, head.query, url).slice(0, 8),
+        data, audits, max: 4,
+      });
+      if (links.lines.length) steps.push(`Liens internes :\n${links.lines.join('\n')}`);
+    }
+    if (launch) {
+      causes.push(`le produit est récent (premières impressions le ${first.split('-').reverse().join('/')}) : l'intérêt du lancement retombe`);
+    }
+    if (!steps.length) {
+      steps.push(demand <= -0.25
+        ? 'Aucune action SEO prioritaire : la page garde sa place, ce sont les recherches qui baissent. La surveiller sans y consacrer de temps.'
+        : 'Regarder la page de résultats Google sur ces requêtes (mobile, navigation privée) : un concurrent ou un bloc nouveau au-dessus de nous peut expliquer la baisse de clics.');
+    }
+    // Une baisse due seulement à la demande ne se récupère pas par le SEO.
+    const recoverable = st.pc - st.c;
+    const est = demand <= -0.25 && posDelta < 1 && !shifted.length && !outOfStock ? recoverable * 0.1 : recoverable * 0.6;
     recs.push({
       rec_key: `baisse:${url}`,
       type: 'baisse',
-      effort: 'moyen',
-      est_clicks: monthly(s.pc - s.c),
+      effort: posDelta >= 1 ? 'moyen' : 'faible',
+      est_clicks: monthly(est),
       title: `En baisse : ${pathOf(url)}`,
-      reason: `${fmtInt(s.c)} clics sur les 28 derniers jours contre ${fmtInt(s.pc)} les 28 jours d'avant (-${Math.round(drop * 100)} %), position ${fmt1(s.pp)} → ${fmt1(s.p)}.`,
-      action: 'Vérifier dans le journal des modifications ce qui a changé sur la page ou ses liens, regarder les résultats Google sur ses requêtes principales (nouveau concurrent ?) et comparer avec les semaines de promotion.',
+      reason: `${fmtInt(st.c)} clics sur les 28 derniers jours contre ${fmtInt(st.pc)} les 28 jours d'avant (-${Math.round(drop * 100)} %). Causes relevées : ${causes.length ? causes.join(' ; ') : 'aucune cause nette dans les données'}.`,
+      action: steps.map((t, n) => `${n + 1}. ${t}`).join('\n\n'),
       urls: [url],
-      queries: lost.slice(0, 8),
+      queries: top.map((r) => ({
+        query: r.query, i: r.i, c: r.c, p: r.p === null ? null : Number(r.p.toFixed(1)),
+        role: `Avant : ${fmtInt(r.pc)} clics, position ${fmt1(r.pp)}, ${fmtInt(r.pi)} impressions${r.gain ? ` ; reprise par ${pathOf(r.gain.page)}` : ''}`,
+      })),
     });
   }
   return recs;
@@ -1008,7 +1108,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       ...detectFaq(data),
       ...detectIndexation(data, audits),
       ...creation,
-      ...detectBaisse(data),
+      ...(await detectBaisse(data, audits)),
     ].map((r) => ({
       ...r,
       delay: delayFor(r, data.pageStats),
