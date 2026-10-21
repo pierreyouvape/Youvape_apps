@@ -701,9 +701,11 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       if (site) slugMatch = [site.url, 0];
     }
     let dedicatedNoindex = false;
+    let dedAudit = null;
     if (slugMatch) {
       // Toujours relu : ces pages changent souvent de statut (ouvertures du 19 au 21/10).
       const a = await auditUrl(slugMatch[0]);
+      dedAudit = a;
       if (a.http_status) { await saveAudit(a); audits.set(normUrl(slugMatch[0]), a); }
       dedicatedNoindex = /noindex/i.test(a?.robots || '');
       if (!dedicatedNoindex) {
@@ -760,9 +762,17 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       : null;
     const rechargeUrl = liquidZero?.url || routedTarget;
     const questions = list.filter((x) => QUESTION_RE.test(norm(x.query))).slice(0, 6).map((x) => x.query);
+    // Page existante : on montre l'actuel à côté du proposé (on MODIFIE, on ne crée pas).
+    const curTitle = dedAudit?.title ? dedAudit.title.replace(/\s*[-–|]\s*YouVape\s*$/i, '') : null;
+    const curH1 = dedAudit?.h1 || null;
+    const same = (x, y) => x && compact(x) === compact(y);
     const plan = [
-      `Title : « ${title} »`,
-      `H1 : « ${cap(titleHead.query)} »`,
+      curTitle
+        ? (same(curTitle, title) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${title} »`)
+        : `Title : « ${title} »`,
+      curH1
+        ? (same(curH1, cap(titleHead.query)) ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${cap(titleHead.query)} »`)
+        : `H1 : « ${cap(titleHead.query)} »`,
       `Meta description : « ${cap(titleHead.query)}${labels.length ? ` : ${labels.slice(0, 4).map((l) => l.label).join(', ')}` : ''}. Capacité, autonomie, recharge et compatibilités de chaque modèle. »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${labels.length ? ` (${labels.map((l) => l.label).join(', ')})` : ''}.`,
       'Grille des produits, puis un tableau comparatif : capacité, bouffées annoncées, batterie, recharge, taux de nicotine.',
@@ -801,13 +811,13 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       });
       recs.push({
         rec_key: `renfort:${g.slug}`,
-        type: 'creation',
+        type: 'modification',
         effort: 'moyen',
         est_clicks: monthly(est * 0.7),
-        title: `Faire monter la page dédiée « ${g.name} » : ${pathOf(slugMatch[0])}`,
+        title: `Modifier la page existante ${pathOf(slugMatch[0])} pour qu'elle porte « ${titleHead.query} »`,
         reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)} (${pageKind(topPage)}), alors que la page dédiée existe${slugMatch[1] ? '' : ' et n’a encore aucune impression : elle manque de liens'}.`,
         action: [
-          `1. Contenu de ${pathOf(slugMatch[0])} : suivre le plan ci-dessous (title, H1, texte, FAQ).`,
+          `1. Modifier ${pathOf(slugMatch[0])}, qui existe déjà (ne pas créer d'autre page : ce serait de la cannibalisation). Title, H1 et texte selon le plan ci-dessous${dedAudit?.word_count ? ` ; la page fait aujourd'hui environ ${dedAudit.word_count} mots hors menus` : ''}.`,
           links.length ? `2. Liens internes vers ${pathOf(slugMatch[0])} :\n${links.join('\n')}` : '2. Liens internes : aucune page source relevée.',
           `3. Ne pas modifier le title de ${pathOf(topPage)} pour ces requêtes : c'est la page dédiée qui doit les porter.`,
         ].join('\n'),
@@ -863,7 +873,7 @@ const detectBaisse = ({ pageStats, byQuery }) => {
 
 /* ─── Calcul ───────────────────────────────────────────── */
 
-const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, texte: 1, snippet: 1, faq: 0.9, baisse: 0.8, indexation: 0.8 };
+const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, modification: 1, texte: 1, snippet: 1, faq: 0.9, baisse: 0.8, indexation: 0.8 };
 
 let running = false;
 

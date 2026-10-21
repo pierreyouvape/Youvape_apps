@@ -73,6 +73,7 @@ const REC_TYPES = {
   redirection: { label: 'Redirection', color: '#DE2020' },
   cannibalisation: { label: 'Cannibalisation', color: '#B45309' },
   creation: { label: 'Création de page', color: '#7C3AED' },
+  modification: { label: 'Modifier une page', color: '#4F46E5' },
   texte: { label: 'Texte / title', color: '#0071EB' },
   snippet: { label: 'Résultat peu cliqué', color: '#0EA5A5' },
   faq: { label: 'FAQ', color: '#059669' },
