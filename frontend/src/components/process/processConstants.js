@@ -55,9 +55,24 @@ export function sanitizeProcessHtml(html) {
     a.setAttribute('rel', 'noopener noreferrer');
   });
   tpl.content.querySelectorAll('img').forEach((img) => {
-    if (!(img.getAttribute('src') || '').startsWith(PROCESS_MEDIA_PREFIX)) img.remove();
+    if (!mediaPathOf(img.getAttribute('src'))) img.remove();
   });
   return tpl.innerHTML;
+}
+
+/**
+ * Chemin nu d'une de nos captures (« /api/process/media/8/x.png »), adresse
+ * complète du même site comprise ; null pour toute autre image.
+ */
+export function mediaPathOf(src) {
+  if (!src) return null;
+  try {
+    const u = new URL(src, window.location.origin);
+    if (u.origin !== window.location.origin) return null;
+    return u.pathname.startsWith(PROCESS_MEDIA_PREFIX) ? u.pathname : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

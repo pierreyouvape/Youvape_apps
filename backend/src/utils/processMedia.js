@@ -87,12 +87,25 @@ const signImages = (images) =>
  * Même règle que la bande photo — chemin nu en base, signé à la lecture. Le
  * HTML de l'éditeur encode le « & » de la signature en « &amp; », d'où une
  * capture de la query entière jusqu'au guillemet.
+ *
+ * Une photo GLISSÉE depuis la bande photo arrive avec l'adresse complète
+ * (https://apps.youvape.fr/api/…) : l'origine est retirée, sans quoi l'image
+ * n'était ni re-signée ni affichée en lecture (process 8, 21/10/2026).
  */
-const BODY_MEDIA_SRC = /(<img\b[^>]*?\bsrc=")(\/api\/process\/media\/\d+\/[A-Za-z0-9._-]+)(\?[^"]*)?"/g;
+const BODY_MEDIA_SRC = /(<img\b[^>]*?\bsrc=")(?:https?:\/\/[^/"]+)?(\/api\/process\/media\/\d+\/[A-Za-z0-9._-]+)(\?[^"]*)?"/g;
 
-/** Retire la signature des images du texte (avant écriture en base). */
+/** Retire la signature (et l'origine) des images du texte, avant écriture en base. */
 const stripBodySignatures = (html) =>
   (typeof html === 'string' ? html.replace(BODY_MEDIA_SRC, '$1$2"') : html);
+
+/** Chemins nus des captures présentes dans le texte. */
+const bodyMediaPaths = (html) => {
+  const paths = new Set();
+  if (typeof html === 'string') {
+    for (const m of html.matchAll(BODY_MEDIA_SRC)) paths.add(m[2]);
+  }
+  return paths;
+};
 
 /** Signe les images du texte (à la lecture). */
 const signBodyImages = (html) =>
@@ -161,5 +174,5 @@ function removeProcessDir(processId) {
 module.exports = {
   UPLOAD_ROOT, MAX_IMAGE_SIZE, MEDIA_URL_TTL,
   saveImage, resolveImagePath, removeProcessDir,
-  signMediaUrl, signStepImages, stripBodySignatures, verifyMediaSignature,
+  signMediaUrl, signStepImages, stripBodySignatures, bodyMediaPaths, verifyMediaSignature,
 };

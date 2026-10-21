@@ -1,5 +1,5 @@
 const pool = require('../config/database');
-const { stripBodySignatures } = require('../utils/processMedia');
+const { stripBodySignatures, bodyMediaPaths } = require('../utils/processMedia');
 
 /** Statuts autorisés — toute autre valeur est ramenée à 'draft'. */
 const STATUSES = ['draft', 'published', 'archived'];
@@ -42,13 +42,17 @@ function normalizeImages(images) {
  * Forme commune à une étape et à une sous-étape — d'où la factorisation.
  */
 function normalizeBlock(b, index) {
+  // Les captures du texte sont stockées en chemin nu, comme la bande photo.
+  const body = stripBodySignatures((b?.body ?? '').toString()) || null;
+  // Une photo glissée de la bande vers le texte y est DÉPLACÉE, pas copiée :
+  // elle quitte la bande, sinon elle s'afficherait deux fois.
+  const inBody = bodyMediaPaths(body);
   return {
     position: index + 1,
     title: (b?.title ?? '').toString().slice(0, 500) || null,
-    // Les captures du texte sont stockées en chemin nu, comme la bande photo.
-    body: stripBodySignatures((b?.body ?? '').toString()) || null,
+    body,
     callout: CALLOUTS.includes(b?.callout) ? b.callout : null,
-    images: normalizeImages(b?.images),
+    images: normalizeImages(b?.images).filter((img) => !inBody.has(img.url)),
   };
 }
 

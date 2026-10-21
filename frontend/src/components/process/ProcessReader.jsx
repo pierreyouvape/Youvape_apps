@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  C, statusInfo, calloutInfo, sanitizeProcessHtml, hasContent,
+  C, statusInfo, calloutInfo, sanitizeProcessHtml, hasContent, mediaPathOf,
   prettyDateTime, initials,
 } from './processConstants';
 
@@ -100,6 +100,13 @@ function StepImages({ images, onOpen }) {
 /* ─── Corps commun à une étape et à une sous-étape ──────────────────────── */
 function BlockContent({ block, onOpenImage }) {
   const callout = calloutInfo(block.callout);
+  // Une photo déjà placée dans le texte ne se répète pas en bas (anciennes
+  // versions, enregistrées avant que le serveur ne la retire de la bande).
+  const inBody = new Set(
+    Array.from((block.body || '').matchAll(/<img\b[^>]*?\bsrc="([^"]*)"/g))
+      .map((m) => mediaPathOf(m[1].replace(/&amp;/g, '&'))).filter(Boolean)
+  );
+  const stripImages = (block.images || []).filter((img) => !inBody.has(mediaPathOf(img.url)));
   return (
     <>
       {hasContent(block.body) && (
@@ -124,7 +131,7 @@ function BlockContent({ block, onOpenImage }) {
         </div>
       )}
 
-      <StepImages images={block.images} onOpen={onOpenImage} />
+      <StepImages images={stripImages} onOpen={onOpenImage} />
     </>
   );
 }

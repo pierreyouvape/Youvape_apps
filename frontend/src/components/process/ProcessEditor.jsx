@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, Extension } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
@@ -114,7 +114,7 @@ function Toolbar({ editor, onPickImages, uploading }) {
       {b('Lien', setLink, editor.isActive('link'), 'Insérer un lien')}
       {onPickImages && (
         <>
-          {b('📷 Capture', () => fileRef.current?.click(), false, 'Insérer une capture à l\'endroit du curseur (ou collez-la avec Cmd+V)')}
+          {b('📷 Capture', () => fileRef.current?.click(), false, 'Insérer une capture à l\'endroit du curseur (ou collez-la avec Cmd+V). Pour sauter une ligne autour d\'une capture : cliquez dessus puis Entrée (après) ou Maj+Entrée (avant).')}
           <input
             ref={fileRef} type="file" accept="image/*" multiple hidden
             onChange={(e) => { onPickImages(e.target.files); e.target.value = ''; }}
@@ -129,6 +129,31 @@ function Toolbar({ editor, onPickImages, uploading }) {
     </div>
   );
 }
+
+/**
+ * Sauter une ligne autour d'une capture. Une image collée contre un bloc de
+ * code ou une liste ne laissait aucun endroit où poser le curseur : on clique
+ * sur l'image (elle s'entoure de violet) puis
+ *   Entrée       → nouvelle ligne APRÈS l'image
+ *   Maj+Entrée   → nouvelle ligne AVANT l'image
+ */
+const ImageLineBreak = Extension.create({
+  name: 'imageLineBreak',
+  addKeyboardShortcuts() {
+    const breakAround = (after) => ({ editor }) => {
+      const sel = editor.state.selection;
+      // Image sélectionnée = sélection de nœud (seule à porter .node).
+      if (sel.node?.type.name !== 'image') return false;
+      const pos = after ? sel.to : sel.from;
+      return editor.chain()
+        .insertContentAt(pos, { type: 'paragraph' })
+        .setTextSelection(pos + 1)
+        .scrollIntoView()
+        .run();
+    };
+    return { Enter: breakAround(true), 'Shift-Enter': breakAround(false) };
+  },
+});
 
 const imageFiles = (list) =>
   Array.from(list || []).filter((f) => f && f.type && f.type.startsWith('image/'));
@@ -161,8 +186,12 @@ export default function ProcessEditor({ value, onChange, placeholder, onUploadIm
         // Le texte a pu bouger pendant l'envoi : on borne à la taille du document.
         const target = Math.min(at ?? ed.state.selection.to, ed.state.doc.content.size);
         const before = ed.state.doc.content.size;
+        // Une ligne vide suit chaque capture : on peut écrire dessous tout de suite.
         ed.chain().focus()
-          .insertContentAt(target, { type: 'image', attrs: { src: image.url, alt: image.original_name || '' } })
+          .insertContentAt(target, [
+            { type: 'image', attrs: { src: image.url, alt: image.original_name || '' } },
+            { type: 'paragraph' },
+          ])
           .run();
         at = target + (ed.state.doc.content.size - before);
       } finally {
@@ -183,6 +212,7 @@ export default function ProcessEditor({ value, onChange, placeholder, onUploadIm
       }),
       Placeholder.configure({ placeholder: () => placeholderRef.current }),
       Image.configure({ inline: false, allowBase64: false }),
+      ImageLineBreak,
     ],
     editorProps: {
       handlePaste: (view, event) => {
