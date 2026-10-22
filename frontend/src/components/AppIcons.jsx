@@ -283,6 +283,16 @@ export const Stories = (props) => (
 
 
 // Process : une procédure = des étapes numérotées, cochées au fur et à mesure
+export const Board = (props) => (
+  <Base {...props}>
+    <rect x={3.5} y={4} width={17} height={16} rx={1.5} />
+    <path d="M7 8 H12 V12.5 L10.6 14 H7 Z" />
+    <path d="M14 8.5 H17.5 V12 H14 Z" />
+    <path d="M13 15.5 H17.5" />
+    <circle cx={9.5} cy={7} r={0.9} />
+  </Base>
+);
+
 export const Process = (props) => (
   <Base {...props}>
     <path d="M5 3.5 H15.5 L19 7 V20.5 H5 Z" />
@@ -502,6 +512,9 @@ export const APPS = [
   { key: 'atb', path: '/atb', label: 'ATB — Anthony Tool Box', Icon: Toolbox, color: '#BE123C' },
   { key: 'employes', path: '/employes', label: 'Gestion employé', Icon: Employees, color: '#4338CA' },
   { key: 'stories', path: '/stories', label: 'Stories & Vidéos', Icon: Stories, color: '#E11D48' },
+  // Post-its et tâches récurrentes PERSONNELS (chacun ne voit que les siens).
+  // Pastille de notification : context/TableauInboxContext.jsx.
+  { key: 'tableau', path: '/tableau', label: 'Tableau', Icon: Board, color: '#CA8A04' },
   // S'ouvre avec le droit `purchases`, comme le routeur backend l'exige :
   // contrôler une facture, c'est du travail d'achat, et les personnes
   // concernées ont déjà ce droit. Pas de clé propre, donc rien à ajouter dans

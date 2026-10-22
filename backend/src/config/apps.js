@@ -42,6 +42,7 @@ const APP_KEYS = [
   'atb',
   'employes',
   'stories',
+  'tableau',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */

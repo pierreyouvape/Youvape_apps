@@ -72,6 +72,9 @@ router.get('/:shop/stock/:productId/history', boutiquePerm('read'), nextoreContr
 router.get('/:shop/categories', boutiquePerm('read'), nextoreController.getCategories);
 // Recherche produit (pour construire une liste de comptage manuelle)
 router.get('/:shop/products/search', boutiquePerm('read'), nextoreController.searchProducts);
+// Onglet Produits : fiche, et désactivation (vaut pour les deux boutiques)
+router.post('/:shop/products/disabled', boutiquePerm('write'), nextoreController.postProductsDisabled);
+router.get('/:shop/products/:productId', boutiquePerm('read'), nextoreController.getProduct);
 
 // Comptage (inventaire) — écriture Nextore : count/validate en permission 'write'
 router.get('/:shop/comptages', boutiquePerm('read'), nextoreController.listComptages);

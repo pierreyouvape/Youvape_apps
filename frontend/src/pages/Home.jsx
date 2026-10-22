@@ -5,6 +5,7 @@ import { APPS, GripIcon, PileIcon } from '../components/AppIcons';
 import AppShell, { useDragSort } from '../components/AppShell';
 import { buildLauncherItems, expandItemOrder, canOpenApp } from '../utils/launcherLayout';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTableauInbox } from '../context/TableauInboxContext';
 
 const C = {
   orange: '#E28F00',
@@ -99,7 +100,7 @@ const MOBILE_SIZE = { icon: 32, label: 11.5, radius: 18, max: 96 };
  * reflet, ombre colorée) est identique, seul le contenu de l'icône change.
  */
 function LauncherTile({
-  label, color, size, mobile, badge,
+  label, color, size, mobile, badge, badgeAlert = false,
   isDragging, isDragOver, dragProps, onActivate, onAuxOpen, children,
 }) {
   const s = SIZE_MAP[size] || SIZE_MAP.comfortable;
@@ -149,7 +150,7 @@ function LauncherTile({
           <span style={{
             position: 'absolute', top: 6, right: 6,
             minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9,
-            background: 'rgba(0,0,0,0.32)', color: '#fff',
+            background: badgeAlert ? '#DC2626' : 'rgba(0,0,0,0.32)', color: '#fff',
             fontSize: 11, fontWeight: 800,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
@@ -181,6 +182,7 @@ const Home = () => {
   const [prefs, updatePrefs] = usePrefs(token);
   const isMobile = useIsMobile();
   const [openGroup, setOpenGroup] = useState(null);
+  const { count: tableauCount } = useTableauInbox();
 
   const accessibleKeys = useMemo(() => {
     if (!permissions) return [];
@@ -278,6 +280,9 @@ const Home = () => {
         color={app.color}
         size={prefs.tileSize}
         mobile={isMobile}
+        // Post-its reçus, réponses et rappels en attente (app Tableau)
+        badge={app.key === 'tableau' && tableauCount > 0 ? tableauCount : null}
+        badgeAlert
         isDragging={!inFolder && draggingKey === app.key}
         isDragOver={!inFolder && overKey === app.key && draggingKey !== app.key}
         dragProps={inFolder ? {} : dragPropsFor(app.key)}

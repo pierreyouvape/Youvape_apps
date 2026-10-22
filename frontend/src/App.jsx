@@ -62,10 +62,12 @@ import StoriesApp from './pages/StoriesApp';
 import ProcessApp from './pages/ProcessApp';
 import ProcessDetail from './pages/ProcessDetail';
 import ATBApp from './pages/ATBApp';
+import TableauApp from './pages/TableauApp';
 import EmployeesApp from './pages/EmployeesApp';
 import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
 import VersionWatcher from './components/VersionWatcher';
+import { TableauInboxProvider } from './context/TableauInboxContext';
 
 const PAGE_TITLES = {
   '/home': 'Accueil',
@@ -111,6 +113,7 @@ const PAGE_TITLES = {
   '/process': 'Process',
   '/boutique': 'Boutique',
   '/atb': 'ATB',
+  '/tableau': 'Tableau',
   '/employes': 'Gestion employé',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
@@ -139,6 +142,8 @@ function App() {
             code de départ tant qu'on ne le recharge pas, et passer d'un écran à
             l'autre ne recharge rien dans une SPA. */}
         <VersionWatcher />
+        {/* Post-its reçus et rappels de l'app Tableau : pastilles + toasts dans toutes les apps */}
+        <TableauInboxProvider>
         <Routes>
           <Route path="/" element={<Navigate to="/home" />} />
           <Route path="/login" element={<Login />} />
@@ -673,7 +678,24 @@ function App() {
               </PrivateRoute>
             }
           />
+          <Route
+            path="/tableau"
+            element={
+              <PrivateRoute>
+                <TableauApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/tableau/:tab"
+            element={
+              <PrivateRoute>
+                <TableauApp />
+              </PrivateRoute>
+            }
+          />
         </Routes>
+        </TableauInboxProvider>
       </BrowserRouter>
     </AuthProvider>
   );

@@ -17,6 +17,8 @@ const { WAREHOUSES } = require('../config/nextore');
 // NeedsTabV2), sans délai de réappro (inutile pour les boutiques).
 const { calculateTrendCoefficient } = require('../services/needsCalculator');
 const { splitNextoreBarcodes } = require('../utils/nextoreBarcodes');
+const { activeSql } = require('../utils/nextoreActive');
+const ACTIVE = activeSql('p');
 const boutiqueOrderModel = require('./boutiqueOrderModel');
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
@@ -240,6 +242,32 @@ async function syncAll() {
   return { ...cat, stock: stk.stock, changes: stk.changes, durationMs: cat.durationMs + stk.durationMs };
 }
 
+/**
+ * Réactive un produit désactivé dès qu'il revit : une vente (l'une ou l'autre
+ * boutique) ou un achat reçu dans Nextore, postérieurs à sa désactivation.
+ * Les dates Nextore sont en heure de Paris, sans fuseau.
+ */
+async function reactivateFromActivity(client) {
+  const { rows } = await client.query(
+    `UPDATE nextore_products p SET disabled_at = NULL, disabled_by = NULL
+     WHERE p.disabled_at IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM nextore_sales s
+                    WHERE s.warehouse_id = ANY($1::int[]) AND s.product_id = p.product_id
+                      AND s.sold_at > (p.disabled_at AT TIME ZONE 'Europe/Paris'))
+         OR EXISTS (SELECT 1 FROM nextore_purchase_items pi
+                    WHERE pi.product_id = p.product_id AND pi.status = 'received'
+                      AND pi.quantity_received > 0
+                      AND pi.purchased_at > (p.disabled_at AT TIME ZONE 'Europe/Paris')))
+     RETURNING p.product_id, p.name`,
+    [WAREHOUSES.map((w) => w.id)]
+  );
+  if (rows.length) {
+    console.log(`Nextore : ${rows.length} produit(s) réactivé(s) par une vente ou un achat : `
+      + rows.map((r) => `${r.product_id} ${r.name || ''}`.trim()).join(', '));
+  }
+  return rows.length;
+}
+
 // --- Historique de VENTES (base prévision d'achat) -------------------------
 const SALES_COLS = [
   'sale_id', 'sale_reference', 'warehouse_id', 'product_id', 'product_name',
@@ -271,9 +299,10 @@ async function syncSalesRange(startDate, endDate) {
       [startDate, endDate]
     );
     const inserted = await bulkInsert(client, 'nextore_sales', SALES_COLS, list.map(saleRow));
+    const reactivated = await reactivateFromActivity(client);
     await setConfig(client, 'nextore_last_sales_sync_at');
     await client.query('COMMIT');
-    return { range: [startDate, endDate], fetched: list.length, inserted };
+    return { range: [startDate, endDate], fetched: list.length, inserted, reactivated };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -347,9 +376,10 @@ async function syncPurchasesRange(startDate, endDate) {
       [startDate, endDate]
     );
     const inserted = await bulkInsert(client, 'nextore_purchase_items', PURCHASE_COLS, list.map(purchaseRow));
+    const reactivated = await reactivateFromActivity(client);
     await setConfig(client, 'nextore_last_purchases_sync_at');
     await client.query('COMMIT');
-    return { range: [startDate, endDate], fetched: list.length, inserted };
+    return { range: [startDate, endDate], fetched: list.length, inserted, reactivated };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
@@ -427,7 +457,19 @@ async function getStockDashboard(warehouseId, opts = {}) {
     params.push(`%${opts.search}%`);
     where.push(`(p.name ILIKE $${params.length} OR p.code ILIKE $${params.length} OR p.barcode ILIKE $${params.length})`);
   }
-  if (opts.onlyInStock) where.push('s.stock <> 0');
+  if (opts.categoryId) { params.push(String(opts.categoryId)); where.push(`p.category_id = $${params.length}`); }
+  if (opts.subcategoryId) { params.push(String(opts.subcategoryId)); where.push(`p.subcategory_id = $${params.length}`); }
+  if (opts.brand) { params.push(String(opts.brand)); where.push(`p.brand = $${params.length}`); }
+  if (opts.dormantDays) {
+    // Dormant = aucune vente sur la période dans AUCUNE boutique, stock à 0 dans
+    // les DEUX : la désactivation vaut pour les deux boutiques.
+    params.push(opts.dormantDays);
+    where.push(ACTIVE, 's.stock = 0', 'COALESCE(other.stock, 0) = 0',
+      `(ls.last_sale_at IS NULL OR ls.last_sale_at < (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => $${params.length}::int))`);
+  } else {
+    if (opts.onlyInStock) where.push('s.stock <> 0');
+    if (!opts.showDisabled) where.push(ACTIVE);
+  }
 
   const { rows } = await pool.query(
     `SELECT
@@ -435,8 +477,13 @@ async function getStockDashboard(warehouseId, opts = {}) {
         p.name,
         p.code,
         p.barcode,
+        p.brand,
         p.category_id,
         c.name AS category_name,
+        sc.name AS subcategory_name,
+        (p.disabled_at IS NOT NULL) AS disabled,
+        (COALESCE(p.status, '') = 'deleted') AS deleted,
+        ls.last_sale_at::text      AS last_sale_at,
         s.stock::float             AS stock,
         s.rack,
         prev.stock::float          AS prev_stock,
@@ -446,7 +493,15 @@ async function getStockDashboard(warehouseId, opts = {}) {
      FROM nextore_stock s
      JOIN nextore_products p ON p.product_id = s.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
+     LEFT JOIN nextore_subcategories sc ON sc.id = p.subcategory_id
      LEFT JOIN nextore_stock other ON other.product_id = s.product_id AND other.warehouse_id = $2
+     LEFT JOIN LATERAL (
+        -- dernière vente, toutes boutiques (une recherche d'index par boutique)
+        SELECT GREATEST(
+          (SELECT MAX(x.sold_at) FROM nextore_sales x WHERE x.warehouse_id = $1 AND x.product_id = s.product_id),
+          (SELECT MAX(x.sold_at) FROM nextore_sales x WHERE x.warehouse_id = $2 AND x.product_id = s.product_id)
+        ) AS last_sale_at
+     ) ls ON true
      LEFT JOIN LATERAL (
         -- dernier état connu AVANT le début de la journée Paris = stock d'hier soir
         SELECT h.stock FROM nextore_stock_history h
@@ -483,7 +538,7 @@ async function getStockSummary(warehouseId) {
         COALESCE(SUM(GREATEST(s.stock, 0)), 0)::float            AS total_units
      FROM nextore_stock s
      JOIN nextore_products p ON p.product_id = s.product_id
-     WHERE s.warehouse_id = $1`,
+     WHERE s.warehouse_id = $1 AND ${ACTIVE}`,
     [warehouseId]
   );
   return rows[0];
@@ -527,7 +582,7 @@ async function getNeeds(warehouseId, opts = {}) {
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
      WHERE st.warehouse_id = $1
-       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}
        ${supplierFilter}`,
     prodParams
   );
@@ -674,7 +729,7 @@ async function getNeedsData(warehouseId) {
      LEFT JOIN bought b ON b.product_id = p.product_id
      LEFT JOIN on_order oo ON oo.product_id = p.product_id
      WHERE st.warehouse_id = $1
-       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')`,
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}`,
     [warehouseId]
   );
 
@@ -774,7 +829,7 @@ async function getCategoriesForShop(warehouseId) {
      FROM nextore_categories c
      JOIN nextore_products p ON p.category_id = c.id
      JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
-     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}
      GROUP BY c.id, c.name
      ORDER BY c.name NULLS LAST`,
     [warehouseId]
@@ -789,7 +844,7 @@ async function getBrandsForShop(warehouseId) {
      FROM nextore_products p
      JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
      WHERE p.brand IS NOT NULL AND p.brand <> ''
-       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+       AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}
      GROUP BY p.brand ORDER BY p.brand`,
     [warehouseId],
   );
@@ -800,6 +855,8 @@ async function getBrandsForShop(warehouseId) {
 async function getProductSearch(warehouseId, opts = {}) {
   const params = [warehouseId];
   const where = ['st.warehouse_id = $1', "(p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')"];
+  // Commande et import peuvent viser un produit désactivé (sa réception le réactive)
+  if (!opts.includeDisabled) where.push(ACTIVE);
   if (opts.categoryId) { params.push(String(opts.categoryId)); where.push(`p.category_id = $${params.length}`); }
   if (opts.subcategoryId) { params.push(String(opts.subcategoryId)); where.push(`p.subcategory_id = $${params.length}`); }
   if (opts.brand) { params.push(String(opts.brand)); where.push(`p.brand = $${params.length}`); }
@@ -811,7 +868,7 @@ async function getProductSearch(warehouseId, opts = {}) {
   const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 200, 1), 500);
   const { rows } = await pool.query(
     `SELECT p.product_id, p.name, p.code AS sku, p.barcode, p.brand,
-            c.name AS category_name, st.stock::float AS stock
+            c.name AS category_name, st.stock::float AS stock, (NOT ${ACTIVE}) AS disabled
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
@@ -829,7 +886,7 @@ async function getSubcategoriesForShop(warehouseId) {
      FROM nextore_subcategories sc
      JOIN nextore_products p ON p.subcategory_id = sc.id
      JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
-     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}
      GROUP BY sc.id, sc.name, sc.category_id
      ORDER BY sc.name NULLS LAST`,
     [warehouseId],
@@ -844,7 +901,7 @@ async function getSuppliersForShop(warehouseId) {
      FROM nextore_suppliers sup
      JOIN nextore_products p ON sup.id = ANY(p.supplier_ids)
      JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $1
-     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+     WHERE (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}
      GROUP BY sup.id, sup.company
      ORDER BY sup.company NULLS LAST`,
     [warehouseId]
@@ -866,6 +923,103 @@ async function getProductStockHistory(warehouseId, productId, limit = 200) {
     [warehouseId, productId, limit]
   );
   return rows;
+}
+
+/**
+ * Fiche produit de l'onglet Produits : identité, codes-barres, stock des deux
+ * boutiques et du site, ventes et dernier achat. Consultée par les vendeurs :
+ * des quantités et des dates, aucun montant.
+ */
+async function getProductDetail(warehouseId, productId) {
+  const id = String(productId);
+  const { rows: prod } = await pool.query(
+    `SELECT p.product_id, p.name, p.code, p.brand, p.type, p.unit,
+            c.name AS category_name, sc.name AS subcategory_name,
+            p.disabled_at, p.disabled_by, (COALESCE(p.status, '') = 'deleted') AS deleted
+     FROM nextore_products p
+     LEFT JOIN nextore_categories c ON c.id = p.category_id
+     LEFT JOIN nextore_subcategories sc ON sc.id = p.subcategory_id
+     WHERE p.product_id = $1`,
+    [id]
+  );
+  if (!prod.length) return null;
+
+  const whIds = WAREHOUSES.map((w) => w.id);
+  const [barcodes, stocks, sales, wc, purchase, history] = await Promise.all([
+    pool.query('SELECT barcode FROM nextore_product_barcodes WHERE product_id = $1 ORDER BY barcode', [id]),
+    pool.query('SELECT warehouse_id, stock::float AS stock, rack FROM nextore_stock WHERE product_id = $1', [id]),
+    pool.query(
+      `SELECT warehouse_id,
+              COALESCE(SUM(quantity) FILTER (WHERE sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - INTERVAL '30 days'), 0)::float AS qty_30,
+              COALESCE(SUM(quantity) FILTER (WHERE sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - INTERVAL '90 days'), 0)::float AS qty_90,
+              COALESCE(SUM(quantity) FILTER (WHERE sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - INTERVAL '365 days'), 0)::float AS qty_365,
+              MAX(sold_at)::text AS last_sale_at
+       FROM nextore_sales
+       WHERE warehouse_id = ANY($1::int[]) AND product_id = $2
+       GROUP BY warehouse_id`,
+      [whIds, id]
+    ),
+    pool.query(
+      `SELECT SUM(w.stock)::float AS wc_stock FROM (
+         SELECT DISTINCT pr.id, pr.stock
+         FROM nextore_product_barcodes nb
+         JOIN product_barcodes pb ON pb.barcode = nb.barcode
+         JOIN products pr ON pr.id = pb.product_id
+         WHERE nb.product_id = $1
+       ) w`,
+      [id]
+    ),
+    pool.query(
+      `SELECT pi.purchased_at::text AS purchased_at, pi.warehouse_id, pi.quantity_received::float AS qty,
+              COALESCE(sup.company, pi.supplier_name) AS supplier_name
+       FROM nextore_purchase_items pi
+       LEFT JOIN nextore_suppliers sup ON sup.id = pi.supplier_id
+       WHERE pi.product_id = $1 AND pi.status = 'received' AND pi.quantity_received > 0
+       ORDER BY pi.purchased_at DESC, pi.id DESC LIMIT 1`,
+      [id]
+    ),
+    getProductStockHistory(warehouseId, id, 200),
+  ]);
+
+  const stockBy = new Map(stocks.rows.map((r) => [r.warehouse_id, r]));
+  const salesBy = new Map(sales.rows.map((r) => [r.warehouse_id, r]));
+  return {
+    ...prod[0],
+    barcodes: barcodes.rows.map((r) => r.barcode),
+    shops: WAREHOUSES.map((w) => ({
+      warehouse_id: w.id,
+      name: w.name,
+      stock: stockBy.get(w.id)?.stock ?? null,
+      rack: stockBy.get(w.id)?.rack ?? null,
+      qty_30: salesBy.get(w.id)?.qty_30 ?? 0,
+      qty_90: salesBy.get(w.id)?.qty_90 ?? 0,
+      qty_365: salesBy.get(w.id)?.qty_365 ?? 0,
+      last_sale_at: salesBy.get(w.id)?.last_sale_at ?? null,
+    })),
+    wc_stock: wc.rows[0]?.wc_stock ?? null,
+    last_purchase: purchase.rows[0]
+      ? { ...purchase.rows[0], shop: WAREHOUSES.find((w) => w.id === purchase.rows[0].warehouse_id)?.name || null }
+      : null,
+    history,
+  };
+}
+
+/**
+ * Désactive (ou réactive) des produits, pour les deux boutiques. Un produit
+ * supprimé dans Nextore reste inactif quoi qu'il arrive : il suit Nextore.
+ */
+async function setProductsDisabled(productIds, disabled, userEmail) {
+  const ids = [...new Set((productIds || []).map(String))];
+  if (!ids.length) return 0;
+  const { rowCount } = await pool.query(
+    disabled
+      ? `UPDATE nextore_products SET disabled_at = NOW(), disabled_by = $2
+         WHERE product_id = ANY($1::text[]) AND disabled_at IS NULL`
+      : `UPDATE nextore_products SET disabled_at = NULL, disabled_by = NULL
+         WHERE product_id = ANY($1::text[]) AND disabled_at IS NOT NULL`,
+    disabled ? [ids, userEmail || null] : [ids]
+  );
+  return rowCount;
 }
 
 async function getLastSyncAt() {
@@ -897,5 +1051,7 @@ module.exports = {
   getProductSearch,
   getBoutiqueStockByWcIds,
   getProductStockHistory,
+  getProductDetail,
+  setProductsDisabled,
   getLastSyncAt,
 };

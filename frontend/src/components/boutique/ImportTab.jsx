@@ -235,7 +235,7 @@ export default function ImportTab({ shop, token }) {
       setSearchLoading(true);
       try {
         const response = await axios.get(
-          `${base}/products/search?q=${encodeURIComponent(value)}&limit=20`,
+          `${base}/products/search?q=${encodeURIComponent(value)}&limit=20&all=1`,
           { headers }
         );
         setSearchResults((response.data.products || []).map(p => ({

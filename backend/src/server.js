@@ -53,6 +53,7 @@ const promoRoutes = require('./routes/promoRoutes');
 const nextoreRoutes = require('./routes/nextoreRoutes');
 const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
+const tableauRoutes = require('./routes/tableauRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const storyCollectRoutes = require('./routes/storyCollectRoutes');
@@ -132,6 +133,7 @@ app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (prépara
 app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + permission dans le routeur)
 app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
 app.use('/api/atb', authMiddleware, atbRoutes); // ATB — Anthony Tool Box (droit `atb` vérifié dans le routeur)
+app.use('/api/tableau', authMiddleware, tableauRoutes); // Tableau — post-its et tâches récurrentes personnels (droit `tableau` dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
 // Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,
 // sans session), écriture seule, contrôles dans le routeur.

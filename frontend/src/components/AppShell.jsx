@@ -6,6 +6,7 @@ import { buildLauncherItems, expandItemOrder, groupOfApp } from '../utils/launch
 import { LinkBox } from '../utils/navHelpers';
 import Drawer from './Drawer';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTableauInbox } from '../context/TableauInboxContext';
 
 // Apps ayant une page de paramètres dédiée
 const APP_SETTINGS_PATHS = {
@@ -109,6 +110,7 @@ export function useDragSort(order, onReorder) {
 /* ─── SIDEBAR ──────────────────────────────────────────────── */
 function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEnter, onPointerUp, onLogout, navigate, currentPath, appMenu, collapsed, onToggleCollapse, mobile = false }) {
   const { permissions, isSuperAdmin } = useContext(AuthContext);
+  const { count: tableauCount } = useTableauInbox();
   const initial = user?.email?.[0]?.toUpperCase() ?? '?';
 
   // Piles dépliées. La pile contenant la page courante s'ouvre d'elle-même
@@ -484,8 +486,15 @@ function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEn
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 1px 0 rgba(255,255,255,0.25) inset',
+                position: 'relative',
               }}>
                 <Icon size={16} color="#fff" />
+                {collapsed && key === 'tableau' && tableauCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -3, right: -3, width: 9, height: 9, borderRadius: '50%',
+                    background: '#DC2626', border: `2px solid ${C.saphirF}`,
+                  }} />
+                )}
               </span>
               {!collapsed && (
                 <span style={{
@@ -496,6 +505,16 @@ function Sidebar({ user, items, draggingKey, overKey, onPointerDown, onPointerEn
                   minWidth: 0,
                 }}>
                   {label}
+                </span>
+              )}
+              {/* Post-its reçus, réponses et rappels en attente (app Tableau) */}
+              {!collapsed && key === 'tableau' && tableauCount > 0 && (
+                <span style={{
+                  minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, flexShrink: 0,
+                  background: '#DC2626', color: '#fff', fontSize: 11, fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {tableauCount}
                 </span>
               )}
             </a>

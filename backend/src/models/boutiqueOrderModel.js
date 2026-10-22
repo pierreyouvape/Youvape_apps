@@ -696,6 +696,15 @@ async function finalizeSession(session, purchaseId, userEmail) {
         [c.order_item_id, c.units_counted, c.motif, CLOSING_MOTIFS]
       );
     }
+    // Un produit désactivé (onglet Produits) qu'on reçoit redevient actif
+    await client.query(
+      `UPDATE nextore_products SET disabled_at = NULL, disabled_by = NULL
+       WHERE disabled_at IS NOT NULL AND product_id IN (
+         SELECT i.product_id FROM boutique_reception_counts c
+         JOIN boutique_order_items i ON i.id = c.order_item_id
+         WHERE c.session_id = $1 AND c.units_counted > 0)`,
+      [session.id]
+    );
     await client.query(
       `UPDATE boutique_reception_sessions
        SET status = 'validated', validated_by = $2, validated_at = NOW(), nextore_purchase_id = $3, last_error = NULL

@@ -9,6 +9,7 @@
 const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
 const { normalizeBarcode } = require('../utils/nextoreBarcodes');
+const { activeSql } = require('../utils/nextoreActive');
 
 const COOLDOWN_DAYS = 14;         // une réf comptée n'est pas reproposée avant 14 j
 const OVERSTOCK_DAYS = 60;        // "anormalement élevé" : > 60 j de ventes
@@ -30,6 +31,9 @@ async function getRollingProposal(warehouseId, limit = 10) {
     wh,
   );
   const cooldown = new Set(cooldownRows.rows.map((r) => r.product_id));
+  // Produits désactivés ou supprimés dans Nextore : jamais proposés
+  const inactiveRows = await pool.query(`SELECT p.product_id FROM nextore_products p WHERE NOT ${activeSql('p')}`);
+  for (const r of inactiveRows.rows) cooldown.add(r.product_id);
 
   // 1. Stock négatif (le plus négatif d'abord)
   const negatifs = await q(
@@ -126,7 +130,7 @@ async function createComptage(warehouseId, { type, name, filterType, filterId, c
       `INSERT INTO nextore_comptage_items (comptage_id, product_id)
        SELECT $1, p.product_id FROM nextore_products p
        JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $2
-       WHERE p.${col} = $3 AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')
+       WHERE p.${col} = $3 AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${activeSql('p')}
        ON CONFLICT (comptage_id, product_id) DO NOTHING`,
       [comptage.id, warehouseId, filterId],
     );

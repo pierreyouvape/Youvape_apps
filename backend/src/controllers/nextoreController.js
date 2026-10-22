@@ -38,6 +38,11 @@ async function getStock(req, res) {
     const opts = {
       search: req.query.search ? String(req.query.search).trim() : null,
       onlyInStock: req.query.only_in_stock === '1' || req.query.only_in_stock === 'true',
+      showDisabled: req.query.show_disabled === '1',
+      categoryId: req.query.category || null,
+      subcategoryId: req.query.subcategory || null,
+      brand: req.query.brand || null,
+      dormantDays: Math.min(Math.max(parseInt(req.query.dormant_days, 10) || 0, 0), 3650) || null,
     };
     const [rows, summary, lastSyncAt] = await Promise.all([
       nextoreModel.getStockDashboard(wh.id, opts),
@@ -274,11 +279,43 @@ async function searchProducts(req, res) {
       subcategoryId: req.query.subcategory || null,
       brand: req.query.brand || null,
       limit: req.query.limit,
+      includeDisabled: req.query.all === '1',
     });
     res.json({ warehouse: wh, products });
   } catch (err) {
     console.error('Nextore searchProducts:', err);
     res.status(500).json({ error: err.message || 'Erreur recherche' });
+  }
+}
+
+// GET /:shop/products/:productId — fiche produit (onglet Produits)
+async function getProduct(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const product = await nextoreModel.getProductDetail(wh.id, req.params.productId);
+    if (!product) return res.status(404).json({ error: 'Produit inconnu' });
+    res.json({ warehouse: wh, product });
+  } catch (err) {
+    console.error('Nextore getProduct:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// POST /:shop/products/disabled — { product_ids, disabled } : (dé)sactive pour les deux boutiques
+async function postProductsDisabled(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  const ids = req.body?.product_ids;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Aucun produit sélectionné' });
+  try {
+    const disabled = req.body?.disabled !== false;
+    const updated = await nextoreModel.setProductsDisabled(ids, disabled, req.user?.email);
+    console.log(`Nextore : ${updated} produit(s) ${disabled ? 'désactivé(s)' : 'réactivé(s)'} par ${req.user?.email}`);
+    res.json({ ok: true, updated });
+  } catch (err) {
+    console.error('Nextore postProductsDisabled:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
   }
 }
 
@@ -440,6 +477,8 @@ module.exports = {
   postReceptionValidate,
   getSuppliers,
   getStockHistory,
+  getProduct,
+  postProductsDisabled,
   // Comptage (inventaire)
   getCategories,
   searchProducts,

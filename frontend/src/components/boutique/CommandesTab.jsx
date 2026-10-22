@@ -795,7 +795,7 @@ function AddArticleModal({ shop, auth, onClose, onPick }) {
     if (v.trim().length < 2) { setResults([]); return; }
     timer.current = setTimeout(async () => {
       try {
-        const res = await axios.get(`${API_URL}/nextore/${shop.slug}/products/search?q=${encodeURIComponent(v)}&limit=20`, auth);
+        const res = await axios.get(`${API_URL}/nextore/${shop.slug}/products/search?q=${encodeURIComponent(v)}&limit=20&all=1`, auth);
         setResults(res.data.products || []);
       } catch { setResults([]); }
     }, 300);

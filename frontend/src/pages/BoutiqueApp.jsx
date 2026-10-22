@@ -2,7 +2,7 @@ import { useContext, useMemo } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
-import StockTab from '../components/boutique/StockTab';
+import ProduitsTab from '../components/boutique/ProduitsTab';
 import BesoinsTab from '../components/boutique/BesoinsTab';
 import ImportTab from '../components/boutique/ImportTab';
 import CommandesTab from '../components/boutique/CommandesTab';
@@ -41,7 +41,7 @@ const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><c
 /* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable).
  * `group` → la section vit sous la tuile de ce groupe (GROUPS), pas sur l'accueil. */
 const SECTIONS = [
-  { key: 'stock',    label: 'Stock',    color: '#0D9488', Icon: IcStock, ready: true },
+  { key: 'stock',    label: 'Produits',    color: '#0D9488', Icon: IcStock, ready: true },
   { key: 'besoin',   label: 'Besoins',  color: '#E28F00', Icon: IcNeeds, ready: true, group: 'achat' },
   { key: 'import',   label: 'Import commande', color: '#16A34A', Icon: IcDoc, ready: true, group: 'achat' },
   { key: 'commandes', label: 'Commandes', color: '#0891B2', Icon: IcBox, ready: true, group: 'achat' },
@@ -218,11 +218,11 @@ export default function BoutiqueApp() {
           </>
         )}
 
-        {/* ── Section Stock ── */}
+        {/* ── Section Produits (liste, fiche, désactivation) ── */}
         {section === 'stock' && (
           <>
-            <ShopHeader shop={shop} subtitle="Suivi de stock — données caisse Nextore" onBack={goHome} />
-            <StockTab shop={shop} token={token} />
+            <ShopHeader shop={shop} subtitle="Produits et stock — données caisse Nextore" onBack={goHome} />
+            <ProduitsTab shop={shop} token={token} />
           </>
         )}
 
