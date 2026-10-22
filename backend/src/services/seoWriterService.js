@@ -878,13 +878,22 @@ const userNames = async (emails) => {
 const nameOf = (names, email) => (email ? names.get(email) || email : null);
 
 // Mots de départ à saisir dans le Planificateur de mots-clés (10 au plus) :
-// les requêtes du sujet les plus vues, une seule par formulation.
-const adsSeeds = (topic) => {
+// les requêtes cochées « Suivre » (choix de l'équipe) ; à défaut, les requêtes
+// du sujet les plus vues. Une seule par formulation.
+const GENERIC_STOP = new Set(['de', 'du', 'la', 'le', 'les', 'des', 'avec', 'pour', 'a', 'en', 'et', 'un', 'une']);
+const adsSeeds = (topic, targets = []) => {
   const seen = new Set();
   const out = [];
-  for (const q of topic || []) {
+  const byQuery = new Map((topic || []).map((q) => [q.query, q]));
+  const list = targets.length ? targets.map((t) => byQuery.get(t) || { query: t }) : topic || [];
+  for (const q of list) {
     if (q.excluded || q.question) continue;
-    const key = norm(q.query).replace(/\be[\s-]?liquides?\b|\beliquides?\b/g, 'liquide').split(/[^a-z0-9]+/).filter(Boolean).sort().join(' ');
+    // Même formulation : pluriel, « 4in1 / 4 in 1 / 4 en 1 », e-liquide / eliquide, mots vides.
+    const key = norm(q.query)
+      .replace(/\be[\s-]?liquides?\b|\beliquides?\b/g, 'liquide')
+      .replace(/\b(\d+)\s*(?:in|en)\s*1\b/g, '$1en1')
+      .split(/[^a-z0-9]+/).filter((w) => w && !GENERIC_STOP.has(w)).map((w) => w.replace(/s$/, ''))
+      .sort().join(' ');
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(q.query);
@@ -965,7 +974,8 @@ const getPage = async (id) => {
     created_by_name: nameOf(names, row.created_by),
     draft_edited_by_name: nameOf(names, row.draft?.edited_by),
     ads_view: ads,
-    ads_seeds: adsSeeds(row.data?.topic),
+    ads_seeds: adsSeeds(row.data?.topic, row.target_queries || []),
+    ads_seeds_from: row.target_queries?.length ? 'suivies' : 'sujet',
     lint,
     events: events.rows.map((e) => ({ ...e, created_by_name: nameOf(names, e.created_by) })),
     progress: getProgress(id),

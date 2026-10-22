@@ -329,8 +329,10 @@ function DataPanel({ page, onSaved, onAnalyze, setMsg }) {
             </div>
             <div style={{ fontSize: 13, color: C.grisTF }}>{page.ads_seeds.join(', ')}</div>
             <div style={{ fontSize: 12, color: C.grisM, marginTop: 6 }}>
-              Les {page.ads_seeds.length} requêtes du sujet les plus vues (une par formulation, sans les requêtes écartées ni les questions) ;
-              le Planificateur accepte 10 mots de départ au plus.
+              {page.ads_seeds_from === 'suivies'
+                ? 'Vos requêtes cochées « Suivre » (une par formulation, sans les requêtes écartées ni les questions) : la liste suit vos cases.'
+                : 'Aucune requête cochée : les requêtes du sujet les plus vues (une par formulation). Cochez « Suivre » sur celles que la page doit viser, la liste suivra.'}
+              {' '}Le Planificateur accepte 10 mots de départ au plus. Importez ensuite l&apos;export ici : il sera repris dans le brief de rédaction.
             </div>
           </div>
         )}
