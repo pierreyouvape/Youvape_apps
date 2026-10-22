@@ -268,8 +268,9 @@ const loadPageQueries = async (url, range) => {
 
 // « goût » : très recherché, permis de façon neutre (double goût, nombre de goûts)
 // sans jamais décrire un goût — signalé, pas écarté.
-const NEUTRAL_OK = new Set(['gout', 'gouts']);
-const cautionOf = (query) => (norm(query).split(/[^a-z0-9]+/).some((w) => NEUTRAL_OK.has(w)) ? 'goût : usage neutre seulement' : null);
+// « saveur » aussi (décision du 22/10/2026 : mot générique, pas mélioratif).
+const NEUTRAL_OK = new Set(['gout', 'gouts', 'saveur', 'saveurs']);
+const cautionOf = (query) => (norm(query).split(/[^a-z0-9]+/).some((w) => NEUTRAL_OK.has(w)) ? 'goût / saveur : usage neutre seulement' : null);
 
 const sensitiveReason = (query) => {
   const q = norm(query);
@@ -574,8 +575,8 @@ ${THEME_FAQ}
 
 RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage : impératives)
 - Rédaction neutre et factuelle : caractéristiques, compatibilités, mode d'emploi, conservation.
-- JAMAIS : saveur, arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
-- Le mot « goût » est très recherché (« gout jnr », « double gout ») : il est permis, mais SEULEMENT de façon neutre — « double goût » pour un modèle à deux réservoirs, nombre de goûts disponibles tiré des fiches, renvoi à la liste des goûts de la fiche. Ne jamais décrire un goût. Signale chaque emploi dans "points_a_verifier" pour l'avocat.
+- JAMAIS : arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
+- Les mots « goût » et « saveur » sont génériques et très recherchés (« gout jnr », « double gout », « puff 4 saveurs ») : ils sont permis, mais SEULEMENT de façon neutre — « double goût », « 4 saveurs » pour un modèle à plusieurs cartouches, nombre de goûts disponibles tiré des fiches, renvoi à la liste de la fiche. Ne jamais décrire un goût ni une saveur (fruit, fraîcheur, recette). Signale chaque emploi dans "points_a_verifier" pour l'avocat.
 - Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. N'écris jamais « interchangeable » pour une cartouche (les cartouches ne passent pas d'un modèle à l'autre).
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
 - JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
@@ -665,7 +666,7 @@ const lintDraft = async (draft, page) => {
   const words = new Set(plain.split(/[^a-z0-9]+/));
   const banned = [...BANNED].filter((w) => words.has(w) && !NEUTRAL_OK.has(w));
   if (banned.length) add('error', `Mots interdits (DNF) : ${banned.join(', ')}.`);
-  if ([...NEUTRAL_OK].some((w) => words.has(w))) add('warn', 'Le mot « goût » est employé : vérifier qu’il reste neutre (double goût, nombre de goûts) et le faire valider par l’avocat.');
+  if ([...NEUTRAL_OK].some((w) => words.has(w))) add('warn', '« goût » ou « saveur » employé : vérifier qu’il reste neutre (double goût, 4 saveurs, nombre de goûts) et le faire valider par l’avocat.');
   if (/\binterchangeables?\b/.test(plain)) add('warn', '« interchangeable » : les cartouches ne passent pas d’un modèle à l’autre, préférer « remplaçable » et seulement si la fiche le dit.');
   if (HEALTH_RE.test(plain)) add('error', 'Vocabulaire santé détecté.');
   const mk = plain.match(new RegExp(MARKETING_RE.source, 'gi'));
