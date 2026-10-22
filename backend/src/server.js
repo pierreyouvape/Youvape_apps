@@ -59,7 +59,7 @@ const storyRoutes = require('./routes/storyRoutes');
 const storyCollectRoutes = require('./routes/storyCollectRoutes');
 const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderDuplicatesCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderDuplicatesCron, setupTableauRemindersCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -133,6 +133,11 @@ app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (prépara
 app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + permission dans le routeur)
 app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
 app.use('/api/atb', authMiddleware, atbRoutes); // ATB — Anthony Tool Box (droit `atb` vérifié dans le routeur)
+// Flux temps réel Tableau AVANT le montage protégé : EventSource ne pose pas
+// d'en-tête Authorization, le flux s'ouvre avec un jeton de flux (?st=), que
+// authMiddleware refuse par construction.
+const tableauController = require('./controllers/tableauController');
+app.get('/api/tableau/stream', tableauController.streamAuth, tableauController.stream);
 app.use('/api/tableau', authMiddleware, tableauRoutes); // Tableau — post-its et tâches récurrentes personnels (droit `tableau` dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
 // Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,
@@ -189,6 +194,9 @@ app.listen(PORT, async () => {
   setupReturnsRefundCron();
   setupRefundLinesCron();
   setupOrderDuplicatesCron();
+
+  // Rappels des tâches récurrentes de l'app Tableau (écran + email) - chaque minute
+  setupTableauRemindersCron();
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();

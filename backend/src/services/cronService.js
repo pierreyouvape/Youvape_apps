@@ -1117,6 +1117,30 @@ const setupOrderDuplicatesCron = () => {
 };
 
 
+// ==================== TABLEAU : RAPPELS DES TÂCHES RÉCURRENTES ====================
+
+let tableauRemindersCronJob = null;
+
+const setupTableauRemindersCron = () => {
+  if (tableauRemindersCronJob) {
+    tableauRemindersCronJob.stop();
+    tableauRemindersCronJob = null;
+  }
+  // Chaque minute, 7 j/7 : un rappel se programme à la minute près.
+  // Prévient les navigateurs ouverts (rappel à l'écran) et envoie les rappels email.
+  tableauRemindersCronJob = cron.schedule('* * * * *', async () => {
+    try {
+      const tableauModel = require('../models/tableauModel');
+      await tableauModel.pushDueReminders();
+      await tableauModel.sendEmailReminders(require('./alertService').sendMail);
+    } catch (error) {
+      console.error('Erreur cron rappels Tableau:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron rappels Tableau configure: chaque minute');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -1145,6 +1169,7 @@ module.exports = {
   setupReturnsRefundCron,
   setupRefundLinesCron,
   setupOrderDuplicatesCron,
+  setupTableauRemindersCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

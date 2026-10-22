@@ -91,6 +91,7 @@ export default function RecurringTab() {
             {groups[g.key].map((t, i) => {
               const doneToday = t.last_done_at && t.last_done_at.slice(0, 10) === today;
               const remind = reminderLabel(t.remind_minutes);
+              const emailRemind = reminderLabel(t.email_remind_minutes);
               return (
                 <div key={t.id} style={{
                   display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px',
@@ -110,6 +111,7 @@ export default function RecurringTab() {
                     <div style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2 }}>
                       {ruleSummary(t)}{t.due_time ? ` à ${t.due_time.replace(':', 'h')}` : ''}
                       {remind && <> · Rappel {remind}</>}
+                      {emailRemind && <> · Rappel email {emailRemind}</>}
                     </div>
                     {t.notes && (
                       <div style={{ fontSize: 13, color: '#4B5563', marginTop: 4, whiteSpace: 'pre-wrap' }}>{t.notes}</div>

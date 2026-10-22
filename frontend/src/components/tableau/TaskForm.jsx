@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
+import { AuthContext } from '../../context/AuthContext';
 import TableauModal from './TableauModal';
 import { tableauApi, apiError, localToday, isoDowOf, WEEKDAYS, TABLEAU_COLOR, ruleSummary } from './tableauShared';
 
@@ -24,6 +25,43 @@ const input = {
 };
 const row = { marginBottom: 14 };
 
+const toMinutes = (r) => {
+  if (r.preset === '') return null;
+  if (r.preset === 'custom') return Math.max(0, Math.round(Number(r.amount) || 0)) * UNIT_MINUTES[r.unit];
+  return Number(r.preset);
+};
+
+/** Choix d'un délai de rappel (préréglages, ou délai libre en minutes / heures / jours). */
+function ReminderField({ title, value, onChange, disabled, hint }) {
+  return (
+    <div style={row}>
+      <label style={label}>{title}</label>
+      <select
+        style={input}
+        value={disabled ? '' : value.preset}
+        disabled={disabled}
+        onChange={(e) => onChange({ ...value, preset: e.target.value })}
+      >
+        {REMIND_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+      </select>
+      {disabled && <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 5 }}>{hint}</div>}
+      {!disabled && value.preset === 'custom' && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+          <input type="number" min={0} style={{ ...input, width: 90 }} value={value.amount}
+            onChange={(e) => onChange({ ...value, amount: e.target.value })} />
+          <select style={{ ...input, width: 'auto' }} value={value.unit}
+            onChange={(e) => onChange({ ...value, unit: e.target.value })}>
+            <option value="min">minutes</option>
+            <option value="h">heures</option>
+            <option value="j">jours</option>
+          </select>
+          <span style={{ fontSize: 14, color: '#374151' }}>avant</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function initialRemind(minutes) {
   if (minutes === null || minutes === undefined) return { preset: '', amount: 1, unit: 'h' };
   if (REMIND_PRESETS.some((p) => p.value === String(minutes))) return { preset: String(minutes), amount: 1, unit: 'h' };
@@ -35,6 +73,8 @@ function initialRemind(minutes) {
 /** Création / modification d'une tâche récurrente. */
 export default function TaskForm({ task, onClose, onSaved }) {
   const today = localToday();
+  const { user } = useContext(AuthContext);
+  const userEmail = user?.email;
   const [form, setForm] = useState(() => ({
     title: task?.title || '',
     notes: task?.notes || '',
@@ -46,6 +86,7 @@ export default function TaskForm({ task, onClose, onSaved }) {
     due_time: task?.due_time || '',
   }));
   const [remind, setRemind] = useState(() => initialRemind(task?.remind_minutes));
+  const [emailRemind, setEmailRemind] = useState(() => initialRemind(task?.email_remind_minutes));
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -53,12 +94,6 @@ export default function TaskForm({ task, onClose, onSaved }) {
   const toggleDay = (n) => set({
     weekdays: form.weekdays.includes(n) ? form.weekdays.filter((d) => d !== n) : [...form.weekdays, n].sort(),
   });
-
-  const remindMinutes = () => {
-    if (!form.due_time || remind.preset === '') return null;
-    if (remind.preset === 'custom') return Math.max(0, Math.round(Number(remind.amount) || 0)) * UNIT_MINUTES[remind.unit];
-    return Number(remind.preset);
-  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -68,7 +103,8 @@ export default function TaskForm({ task, onClose, onSaved }) {
       ...form,
       every: Number(form.every),
       due_time: form.due_time || null,
-      remind_minutes: remindMinutes(),
+      remind_minutes: form.due_time ? toMinutes(remind) : null,
+      email_remind_minutes: form.due_time ? toMinutes(emailRemind) : null,
     };
     try {
       if (task) await tableauApi.updateTask(task.id, body);
@@ -163,33 +199,10 @@ export default function TaskForm({ task, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={row}>
-          <label style={label}>Rappel</label>
-          <select
-            style={input}
-            value={form.due_time ? remind.preset : ''}
-            disabled={!form.due_time}
-            onChange={(e) => setRemind((r) => ({ ...r, preset: e.target.value }))}
-          >
-            {REMIND_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-          {!form.due_time && (
-            <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 5 }}>Indiquez une heure pour programmer un rappel.</div>
-          )}
-          {form.due_time && remind.preset === 'custom' && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
-              <input type="number" min={0} style={{ ...input, width: 90 }} value={remind.amount}
-                onChange={(e) => setRemind((r) => ({ ...r, amount: e.target.value }))} />
-              <select style={{ ...input, width: 'auto' }} value={remind.unit}
-                onChange={(e) => setRemind((r) => ({ ...r, unit: e.target.value }))}>
-                <option value="min">minutes</option>
-                <option value="h">heures</option>
-                <option value="j">jours</option>
-              </select>
-              <span style={{ fontSize: 14, color: '#374151' }}>avant</span>
-            </div>
-          )}
-        </div>
+        <ReminderField title="Rappel à l'écran" value={remind} onChange={setRemind} disabled={!form.due_time}
+          hint="Indiquez une heure pour programmer un rappel." />
+        <ReminderField title={`Rappel par email${userEmail ? ` (${userEmail})` : ''}`} value={emailRemind}
+          onChange={setEmailRemind} disabled={!form.due_time} hint="Indiquez une heure pour programmer un rappel." />
 
         <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 14 }}>
           {summary}{form.due_time ? ` à ${form.due_time.replace(':', 'h')}` : ''}.

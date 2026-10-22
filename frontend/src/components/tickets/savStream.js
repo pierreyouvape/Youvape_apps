@@ -11,7 +11,8 @@
 // Même interface qu'un EventSource pour ce qu'on en utilise :
 // addEventListener / removeEventListener / close. Les écouteurs posés avant
 // l'ouverture effective sont rattachés dès que la connexion existe.
-export function openSavStream(url, { reconnect = true } = {}) {
+// `tokenUrl` : route qui délivre le jeton (le Tableau a la sienne, même mécanique).
+export function openSavStream(url, { reconnect = true, tokenUrl = '/api/sav/stream-token' } = {}) {
   const listeners = [];
   let es = null;
   let closed = false;
@@ -31,7 +32,7 @@ export function openSavStream(url, { reconnect = true } = {}) {
 
   async function connect() {
     try {
-      const res = await fetch('/api/sav/stream-token', { method: 'POST' });
+      const res = await fetch(tokenUrl, { method: 'POST' });
       const data = await res.json();
       if (closed) return;
       if (!data.success) throw new Error(data.error || 'Jeton de flux refusé');

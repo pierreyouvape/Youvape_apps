@@ -14,6 +14,8 @@ const { checkPermission } = require('../middleware/permissionMiddleware');
 router.use(checkPermission('tableau', 'read'));
 
 router.get('/inbox', tableauController.getInbox);
+// Jeton d'ouverture du flux temps réel (le flux lui-même est monté dans server.js)
+router.post('/stream-token', tableauController.streamToken);
 router.get('/recipients', tableauController.getRecipients);
 
 router.get('/notes', tableauController.getNotes);

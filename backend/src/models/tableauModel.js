@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const userPermissionsModel = require('./userPermissionsModel');
 const { normalizeRule, nextOccurrence, parisToday, addDays } = require('../services/tableauRecurrence');
+const { notify } = require('../services/tableauEvents');
 
 /**
  * App Tableau : post-its, envois entre collègues, tâches récurrentes.
@@ -157,6 +158,7 @@ async function sendNote(userId, { note_id: noteId, to_user_id: toUserId, mode })
       [note.id, mode, userId, Number(toUserId), note.content, note.color],
     );
     await client.query('COMMIT');
+    notify([userId, toUserId], 'transfer');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -209,6 +211,7 @@ async function answerTransfer(userId, transferId, accept) {
       [t.id, accept ? 'accepted' : 'refused'],
     );
     await client.query('COMMIT');
+    notify([userId, t.from_user_id], 'transfer');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -226,7 +229,7 @@ async function cancelTransfer(userId, transferId) {
       `UPDATE tableau_note_transfers
           SET status = 'cancelled', answered_at = ${PARIS_NOW}, sender_seen_at = ${PARIS_NOW}
         WHERE id = $1 AND from_user_id = $2 AND status = 'pending'
-        RETURNING note_id, mode`,
+        RETURNING note_id, mode, to_user_id`,
       [transferId, userId],
     );
     if (!rows[0]) throw httpError(404, 'Envoi introuvable ou déjà traité');
@@ -234,6 +237,7 @@ async function cancelTransfer(userId, transferId) {
       await client.query('UPDATE tableau_notes SET in_transit = false WHERE id = $1', [rows[0].note_id]);
     }
     await client.query('COMMIT');
+    notify([userId, rows[0].to_user_id], 'transfer');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -249,6 +253,7 @@ async function markTransferSeen(userId, transferId) {
       WHERE id = $1 AND from_user_id = $2 AND status IN ('accepted', 'refused')`,
     [transferId, userId],
   );
+  notify([userId], 'transfer');
 }
 
 /* ─── Tâches récurrentes ────────────────────────────────── */
@@ -256,7 +261,7 @@ async function markTransferSeen(userId, transferId) {
 const TASK_COLUMNS = `t.id, t.title, t.notes, t.unit, t.every, t.weekdays, t.month_day,
   to_char(t.start_date, 'YYYY-MM-DD') AS start_date,
   to_char(t.due_time, 'HH24:MI') AS due_time,
-  t.remind_minutes,
+  t.remind_minutes, t.email_remind_minutes,
   to_char(t.next_due, 'YYYY-MM-DD') AS next_due`;
 
 /** Moment du rappel de l'échéance courante, en heure Paris. */
@@ -289,24 +294,34 @@ function normalizeTask(input) {
   }
   const dueTime = /^\d{2}:\d{2}$/.test(input.due_time || '') ? input.due_time : null;
   // Un rappel se cale sur l'heure de la tâche : sans heure, pas de rappel
-  let remind = null;
-  if (dueTime && input.remind_minutes !== null && input.remind_minutes !== undefined && input.remind_minutes !== '') {
-    remind = Number(input.remind_minutes);
-    if (!Number.isInteger(remind) || remind < 0 || remind > 60 * 24 * 60) throw httpError(400, 'Rappel invalide');
-  }
-  return { title, notes: String(input.notes || '').trim() || null, rule, dueTime, remind };
+  const minutesBefore = (v) => {
+    if (!dueTime || v === null || v === undefined || v === '') return null;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 60 * 24 * 60) throw httpError(400, 'Rappel invalide');
+    return n;
+  };
+  return {
+    title,
+    notes: String(input.notes || '').trim() || null,
+    rule,
+    dueTime,
+    remind: minutesBefore(input.remind_minutes),
+    emailRemind: minutesBefore(input.email_remind_minutes),
+  };
 }
 
 async function createTask(userId, input) {
-  const { title, notes, rule, dueTime, remind } = normalizeTask(input);
+  const { title, notes, rule, dueTime, remind, emailRemind } = normalizeTask(input);
   const nextDue = nextOccurrence(rule, addDays(rule.start_date, -1));
   const { rows } = await pool.query(
     `INSERT INTO tableau_tasks
-       (owner_id, title, notes, unit, every, weekdays, month_day, start_date, due_time, remind_minutes, next_due)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+       (owner_id, title, notes, unit, every, weekdays, month_day, start_date, due_time, remind_minutes,
+        email_remind_minutes, next_due)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
     [userId, title, notes, rule.unit, rule.every, rule.weekdays, rule.month_day, rule.start_date,
-      dueTime, remind, nextDue],
+      dueTime, remind, emailRemind, nextDue],
   );
+  notify([userId], 'task');
   return rows[0].id;
 }
 
@@ -316,7 +331,7 @@ async function createTask(userId, input) {
  * à partir d'aujourd'hui.
  */
 async function updateTask(userId, id, input) {
-  const { title, notes, rule, dueTime, remind } = normalizeTask(input);
+  const { title, notes, rule, dueTime, remind, emailRemind } = normalizeTask(input);
   const { rows } = await pool.query(
     `SELECT unit, every, weekdays, month_day, to_char(start_date, 'YYYY-MM-DD') AS start_date,
             to_char(next_due, 'YYYY-MM-DD') AS next_due
@@ -335,17 +350,19 @@ async function updateTask(userId, id, input) {
   await pool.query(
     `UPDATE tableau_tasks
         SET title = $3, notes = $4, unit = $5, every = $6, weekdays = $7, month_day = $8,
-            start_date = $9, due_time = $10, remind_minutes = $11, next_due = $12,
-            updated_at = ${PARIS_NOW}
+            start_date = $9, due_time = $10, remind_minutes = $11, email_remind_minutes = $12,
+            next_due = $13, updated_at = ${PARIS_NOW}
       WHERE id = $1 AND owner_id = $2`,
     [id, userId, title, notes, rule.unit, rule.every, rule.weekdays, rule.month_day, rule.start_date,
-      dueTime, remind, nextDue],
+      dueTime, remind, emailRemind, nextDue],
   );
+  notify([userId], 'task');
 }
 
 async function deleteTask(userId, id) {
   const { rowCount } = await pool.query('DELETE FROM tableau_tasks WHERE id = $1 AND owner_id = $2', [id, userId]);
   if (!rowCount) throw httpError(404, 'Tâche introuvable');
+  notify([userId], 'task');
 }
 
 const ruleOf = (t) => ({
@@ -377,6 +394,7 @@ async function completeTask(userId, id) {
       [id, nextDue],
     );
     await client.query('COMMIT');
+    notify([userId], 'task');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -406,6 +424,7 @@ async function undoTask(userId, id) {
       [id, rows[0].due_date],
     );
     await client.query('COMMIT');
+    notify([userId], 'task');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
@@ -420,6 +439,84 @@ async function dismissReminder(userId, id) {
     'UPDATE tableau_tasks SET reminder_dismissed_for = next_due WHERE id = $1 AND owner_id = $2',
     [id, userId],
   );
+  notify([userId], 'task');
+}
+
+/* ─── Tâche de fond (chaque minute) ─────────────────────── */
+
+const EMAIL_AT = "(t.next_due + t.due_time - make_interval(mins => t.email_remind_minutes))";
+const APP_URL = 'https://apps.youvape.fr/tableau/recurrentes';
+
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
+
+/**
+ * Rappels à l'écran arrivés à leur heure depuis le dernier passage : on prévient
+ * les navigateurs ouverts tout de suite, sans attendre leur relecture de secours.
+ */
+async function pushDueReminders() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT t.owner_id
+       FROM tableau_tasks t
+      WHERE t.due_time IS NOT NULL AND t.remind_minutes IS NOT NULL
+        AND ${REMINDER_AT} <= ${PARIS_NOW}
+        AND ${REMINDER_AT} > ${PARIS_NOW} - interval '75 seconds'
+        AND t.reminder_dismissed_for IS DISTINCT FROM t.next_due`,
+  );
+  notify(rows.map((r) => r.owner_id), 'reminder');
+}
+
+/**
+ * Rappels par email : un seul par échéance (`email_sent_for`). L'échéance est
+ * RÉSERVÉE avant l'envoi, pour qu'un passage qui chevauche le suivant ne double
+ * pas le message ; rendue si l'envoi échoue, pour retenter à la minute suivante.
+ *
+ * Une échéance passée depuis plus de 15 min n'envoie plus rien : sans ça, une
+ * tâche déjà en retard à l'enregistrement enverrait un email inutile.
+ */
+async function sendEmailReminders(sendMail) {
+  const { rows } = await pool.query(
+    `UPDATE tableau_tasks t
+        SET email_sent_for = t.next_due
+       FROM users u
+      WHERE u.id = t.owner_id AND u.disabled_at IS NULL
+        AND t.due_time IS NOT NULL AND t.email_remind_minutes IS NOT NULL
+        AND ${EMAIL_AT} <= ${PARIS_NOW}
+        AND (t.next_due + t.due_time) >= ${PARIS_NOW} - interval '15 minutes'
+        AND t.email_sent_for IS DISTINCT FROM t.next_due
+      RETURNING t.id, t.title, t.notes, t.unit, t.every, t.weekdays, t.month_day,
+                to_char(t.next_due, 'YYYY-MM-DD') AS next_due,
+                to_char(t.due_time, 'HH24:MI') AS due_time, u.email`,
+  );
+
+  for (const t of rows) {
+    const [y, m, d] = t.next_due.split('-');
+    const when = `le ${d}/${m}/${y} à ${t.due_time.replace(':', 'h')}`;
+    const notesHtml = t.notes
+      ? `<p style="margin:0 0 16px;color:#4B5563;white-space:pre-wrap">${escapeHtml(t.notes)}</p>`
+      : '';
+    const result = await sendMail({
+      to: t.email,
+      subject: `Rappel : ${t.title}`,
+      text: `Rappel : ${t.title}\nPrévu ${when}.\n${t.notes ? `\n${t.notes}\n` : ''}\nVos tâches : ${APP_URL}`,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1F2937;max-width:560px">
+        <p style="margin:0 0 6px;font-size:12px;color:#CA8A04;font-weight:bold;text-transform:uppercase">Tableau · tâche récurrente</p>
+        <h2 style="margin:0 0 8px;font-size:18px">${escapeHtml(t.title)}</h2>
+        <p style="margin:0 0 16px">Prévu <strong>${when}</strong>.</p>
+        ${notesHtml}
+        <p style="margin:0"><a href="${APP_URL}" style="color:#CA8A04;font-weight:bold">Ouvrir mes tâches</a></p>
+      </div>`,
+    });
+    if (!result?.success) {
+      console.error(`Tableau : rappel email non envoyé (tâche ${t.id}) — ${result?.error || 'erreur inconnue'}`);
+      await pool.query(
+        'UPDATE tableau_tasks SET email_sent_for = NULL WHERE id = $1 AND email_sent_for = $2',
+        [t.id, t.next_due],
+      );
+    }
+  }
+  return rows.length;
 }
 
 /* ─── Boîte de réception (interrogée toutes les minutes) ── */
@@ -477,4 +574,5 @@ module.exports = {
   sendNote, answerTransfer, cancelTransfer, markTransferSeen,
   getTasks, createTask, updateTask, deleteTask, completeTask, undoTask, dismissReminder,
   getInbox,
+  pushDueReminders, sendEmailReminders,
 };

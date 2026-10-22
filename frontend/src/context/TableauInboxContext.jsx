@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
+import { openSavStream } from '../components/tickets/savStream';
 import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError } from '../components/tableau/tableauShared';
 
 /**
@@ -10,9 +11,14 @@ import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError } from '../co
  *   - rappel d'une tâche récurrente arrivé à son heure.
  *
  * Monté une fois dans App.jsx (et pas dans AppShell, qui est remonté à chaque
- * changement d'app) : la boîte est relue toutes les minutes, et la pastille du
- * lanceur, celle de la barre latérale et la page Tableau lisent le même état.
- * Pas d'interrogation sans le droit `tableau` : le routeur répondrait 403.
+ * changement d'app) : la pastille du lanceur, celle de la barre latérale et la
+ * page Tableau lisent le même état.
+ *
+ * Temps réel : un flux SSE (/api/tableau/stream) signale chaque changement du
+ * compte — post-it envoyé, accepté, refusé, rappel arrivé à son heure — et la
+ * boîte est relue aussitôt. La relecture chaque minute reste en secours, si le
+ * flux est coupé. Pas d'interrogation sans le droit `tableau` : le routeur
+ * répondrait 403.
  */
 
 const EMPTY = { incoming: [], answers: [], sent: [], reminders: [] };
@@ -46,6 +52,16 @@ export function TableauInboxProvider({ children }) {
     window.addEventListener('focus', onFocus);
     return () => { clearInterval(t); window.removeEventListener('focus', onFocus); };
   }, [refresh, enabled]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const es = openSavStream('/api/tableau/stream', { tokenUrl: '/api/tableau/stream-token' });
+    const onChange = () => refresh();
+    es.addEventListener('change', onChange);
+    // Reconnexion après une coupure : des changements ont pu passer entre-temps
+    es.addEventListener('hello', onChange);
+    return () => es.close();
+  }, [enabled, refresh]);
 
   const count = inbox.incoming.length + inbox.answers.length + inbox.reminders.length;
 
