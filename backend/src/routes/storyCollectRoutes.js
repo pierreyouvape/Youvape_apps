@@ -16,6 +16,14 @@ const pool = require('../config/database');
  */
 const router = express.Router();
 
+// Seul le vrai site compte comme « site ». Une copie locale ou la préproduction
+// (staging.youvape.fr) passe en « preview » : le 21/10/2026, 153 événements de
+// tests faits sur une copie locale étaient arrivés comme de vraies vues.
+const PRODUCTION_HOSTS = new Set(['www.youvape.fr', 'youvape.fr']);
+const hostOf = (url) => {
+  try { return new URL(url).hostname.toLowerCase(); } catch { return null; }
+};
+
 const TYPES = new Set(['impression', 'open', 'view', 'progress', 'seek', 'cta_click', 'close']);
 const SOURCES = new Set(['site', 'preview', 'email']);
 const MAX_EVENTS = 50;
@@ -62,7 +70,10 @@ router.post('/', express.text({ type: '*/*', limit: '32kb' }), async (req, res) 
     hits.set(ip, h);
     if (h.count > MAX_PER_WINDOW) return;
 
-    const source = SOURCES.has(body.source) ? body.source : 'site';
+    let source = SOURCES.has(body.source) ? body.source : 'site';
+    // sendBeacon envoie l'origine et la page appelante : on s'y fie plutôt qu'au corps.
+    const from = hostOf(req.headers.origin) || hostOf(req.headers.referer);
+    if (source !== 'preview' && !PRODUCTION_HOSTS.has(from)) source = 'preview';
     const session = str(body.session, 40);
     const page = str(body.page, 300);
     const dev = device(req.headers['user-agent']);
