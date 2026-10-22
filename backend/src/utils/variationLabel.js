@@ -65,7 +65,11 @@ function buildVariationLabel(postTitle, parentTitle, productAttributes) {
  * @returns {string|null}
  */
 function variantText(productAttributes) {
+  // Deux attributs peuvent porter la même valeur (« couleur » et « coloris »
+  // à rose-gold sur le Kit Pod Kiwi 2) : on ne l'écrit qu'une fois.
+  const seen = new Set();
   const values = attributeValues(productAttributes)
+    .filter(v => !seen.has(v.toLowerCase()) && seen.add(v.toLowerCase()))
     .map(v => v.charAt(0).toUpperCase() + v.slice(1));
   return values.length ? values.join(' · ') : null;
 }

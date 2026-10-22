@@ -120,23 +120,38 @@ function WaveList({ token, onOpen, notice, setNotice }) {
 
 // ── Écran 2 : le picking d'une vague ────────────────────────────────────────
 
+// Le nom de la ligne de commande finit souvent par la déclinaison
+// (« Kit Pod Kiwi 2 - Rose Gold ») : écrite en gras juste dessous, on la retire
+// du nom pour ne la lire qu'une fois.
+const norm = (s) => s.toLowerCase().replace(/[\s-]+/g, '');
+const nameWithoutVariant = (name, variant) => {
+  if (!name || !variant) return name;
+  const values = new Set(variant.split(' · ').map(norm));
+  const parts = name.split(' - ');
+  while (parts.length > 1 && parts[parts.length - 1].split(/,\s*/).every(v => values.has(norm(v)))) parts.pop();
+  return parts.join(' - ');
+};
+
 /**
  * Une ligne de picking. La photo d'abord : on reconnaît l'article avant d'avoir
  * lu son nom. La ligne à prendre est en grand — c'est elle qu'on cherche des
- * yeux, le PDA à bout de bras ; les autres restent compactes.
+ * yeux, le PDA à bout de bras ; les autres restent compactes. Valider et
+ * Manquant passent sous l'article : le nom garde toute la largeur.
  */
 function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refProp }) {
   const remaining = line.qtyNeeded - line.qtyPicked - line.qtyMissing;
   const bg = !line.done ? (current ? C.violetL : C.white) : line.qtyMissing > 0 ? C.amberL : C.greenL;
   const big = current;
   const img = big ? 104 : 56;
+  const actions = mine && !line.done;
   return (
     <div ref={refProp} style={{
-      display: 'flex', alignItems: 'stretch', gap: big ? 12 : 8, padding: big ? 14 : 8, borderRadius: 14, background: bg,
+      display: 'flex', flexDirection: 'column', gap: big ? 12 : 6, padding: big ? 14 : 8, borderRadius: 14, background: bg,
       border: `${big ? 3 : 1}px solid ${big ? C.violet : C.greyB}`,
       boxShadow: big ? '0 6px 18px rgba(124,58,237,0.25)' : 'none',
       opacity: line.done ? 0.85 : 1,
     }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: big ? 12 : 8 }}>
       {line.imageUrl
         ? <img src={line.imageUrl} alt="" loading="lazy" style={{
           width: img, height: img, objectFit: 'contain', borderRadius: 10, background: C.white, flexShrink: 0, alignSelf: 'center',
@@ -153,7 +168,7 @@ function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refPro
           </span>
           <span style={{ fontSize: big ? 13 : 11.5, color: C.greyT }}>pour {line.ordersCount} cmd</span>
         </div>
-        <div style={{ fontWeight: 700, fontSize: big ? 18 : 14, lineHeight: 1.25, marginTop: 3 }}>{line.name}</div>
+        <div style={{ fontWeight: 700, fontSize: big ? 18 : 14, lineHeight: 1.25, marginTop: 3 }}>{nameWithoutVariant(line.name, line.variant)}</div>
         {line.variant && (
           <div style={{ fontWeight: 900, fontSize: big ? 20 : 15, lineHeight: 1.2, marginTop: 2, color: C.dark }}>{line.variant}</div>
         )}
@@ -170,19 +185,6 @@ function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refPro
         <span style={{ fontSize: big ? 34 : 20, fontWeight: 900, whiteSpace: 'nowrap', lineHeight: 1 }}>
           {line.qtyPicked}<span style={{ color: C.greyT, fontWeight: 600, fontSize: big ? 20 : 14 }}>/{line.qtyNeeded}</span>
         </span>
-        {mine && !line.done && (
-          <button disabled={busy} onClick={() => onValidate(line)} style={{
-            ...bigBtn(C.green), fontSize: big ? 17 : 13, padding: big ? '12px 16px' : '7px 10px',
-          }}>
-            Valider{remaining < line.qtyNeeded ? ` ${remaining}` : ''}
-          </button>
-        )}
-        {mine && !line.done && (
-          <button disabled={busy} onClick={() => onMissing(line)} style={{
-            border: `1px solid ${C.red}`, borderRadius: 8, background: C.white, color: C.red,
-            fontSize: 11.5, fontWeight: 700, padding: '3px 8px', fontFamily: 'inherit', cursor: 'pointer',
-          }}>Manquant</button>
-        )}
         {mine && line.done && (line.qtyManual > 0 || line.qtyMissing > 0) && (
           <button disabled={busy} onClick={() => onUndo(line)} style={{
             ...bigBtn(C.white, C.greyT), border: `1px solid ${C.greyB}`, fontSize: 12, padding: '5px 8px', fontWeight: 600,
@@ -190,6 +192,21 @@ function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refPro
         )}
         {line.done && line.qtyMissing === 0 && <span style={{ fontSize: 20, color: C.green }}>✓</span>}
       </div>
+    </div>
+
+      {actions && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: big ? 8 : 4 }}>
+          <button disabled={busy} onClick={() => onValidate(line)} style={{
+            ...bigBtn(C.green), fontSize: big ? 17 : 13, padding: big ? '12px 16px' : '7px 10px',
+          }}>
+            Valider{remaining < line.qtyNeeded ? ` ${remaining}` : ''}
+          </button>
+          <button disabled={busy} onClick={() => onMissing(line)} style={{
+            border: `1px solid ${C.red}`, borderRadius: 8, background: C.white, color: C.red,
+            fontSize: 11.5, fontWeight: 700, padding: '3px 8px', fontFamily: 'inherit', cursor: 'pointer',
+          }}>Manquant</button>
+        </div>
+      )}
     </div>
   );
 }
