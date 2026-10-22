@@ -84,6 +84,7 @@ const HISTORY_SORTERS = {
   weight_ecart:       inv => inv.weight_ecart ?? 0,
   total_ht:           inv => parseFloat(inv.total_ht ?? 0),
   supplements_total:  inv => parseFloat(inv.supplements_total ?? 0),
+  total_ttc:          inv => parseFloat(inv.total_ttc ?? 0),
   tariffs_applied_at: inv => inv.tariffs_applied_at ? 1 : 0,
   created_at:         inv => new Date(inv.created_at).getTime(),
 };
@@ -705,6 +706,80 @@ export default function ChronopostApp() {
   }
 
   const sortedHistory = useMemo(() => sortHistory(history, historySort), [history, historySort]);
+
+  // ── Recherche d'un colis dans l'historique : filtre le tableau aux factures qui le contiennent
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyMatches, setHistoryMatches] = useState(null); // null | { [invoiceId]: [{ order_id, tracking }] }
+  const [historyMatchLoading, setHistoryMatchLoading] = useState(false);
+
+  useEffect(() => {
+    const q = historyQuery.trim();
+    if (q.length < 3) { setHistoryMatches(null); setHistoryMatchLoading(false); return; }
+    let cancelled = false;
+    setHistoryMatchLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`${API_URL}/chronopost/search-order`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { q },
+        });
+        if (cancelled) return;
+        const byInvoice = {};
+        for (const r of data.results || []) (byInvoice[r.id] ||= []).push(r);
+        setHistoryMatches(byInvoice);
+      } catch {
+        if (!cancelled) setHistoryMatches({});
+      } finally {
+        if (!cancelled) setHistoryMatchLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [historyQuery, token]);
+
+  const visibleHistory = historyMatches ? sortedHistory.filter(inv => historyMatches[inv.id]) : sortedHistory;
+
+  async function openHistoryRow(inv) {
+    const match = historyMatches?.[inv.id]?.[0];
+    await handleLoadFromHistory(inv);
+    if (match) {
+      setSearchOrder(String(match.order_id || match.tracking));
+      setFilterTab('all');
+    }
+  }
+
+  const historySearchBox = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      <input
+        placeholder="Trouver un colis : n° de suivi ou n° de commande…"
+        value={historyQuery}
+        onChange={e => setHistoryQuery(e.target.value)}
+        style={{
+          padding: '8px 12px', border: `1px solid ${C.greyB}`, borderRadius: 8,
+          fontSize: 13, flex: 1, minWidth: 220, maxWidth: 420, background: C.white,
+        }}
+      />
+      {historyQuery && (
+        <button onClick={() => setHistoryQuery('')} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 10px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
+          ✕ Effacer
+        </button>
+      )}
+      <span style={{ fontSize: 12, color: C.greyT }}>
+        {historyMatchLoading ? 'Recherche…'
+          : historyMatches ? `${visibleHistory.length} facture${visibleHistory.length > 1 ? 's' : ''} contenant ce colis`
+          : historyQuery.trim() ? '3 caractères minimum' : ''}
+      </span>
+    </div>
+  );
+
+  function historyMatchLines(inv) {
+    const matches = historyMatches?.[inv.id];
+    if (!matches) return null;
+    return matches.map((m, k) => (
+      <div key={k} style={{ fontSize: 11.5, fontWeight: 500, color: C.greyT, marginTop: 2 }}>
+        📦 {m.tracking}{m.order_id ? ` · cmd ${m.order_id}` : ''}
+      </div>
+    ));
+  }
 
   const MONTH_NAMES = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
@@ -2297,6 +2372,7 @@ export default function ChronopostApp() {
                       ↻ Actualiser
                     </button>
                   </div>
+                  {history.length > 0 && historySearchBox}
 
                   {historyLoading ? (
                     <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
@@ -2318,6 +2394,7 @@ export default function ChronopostApp() {
                               { label: 'Écarts', key: 'weight_ecart', align: 'center' },
                               { label: 'Total HT', key: 'total_ht' },
                               { label: 'Suppléments HT', key: 'supplements_total' },
+                              { label: 'Total TTC', key: 'total_ttc' },
                               { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
                               { label: 'Enregistrée le', key: 'created_at' },
                               { label: '' },
@@ -2327,14 +2404,14 @@ export default function ChronopostApp() {
                           </tr>
                         </thead>
                         <tbody>
-                          {sortedHistory.map((inv, i) => (
+                          {visibleHistory.map((inv, i) => (
                             <tr key={inv.id}
-                              onClick={() => handleLoadFromHistory(inv)}
+                              onClick={() => openHistoryRow(inv)}
                               style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer', transition: 'background .1s' }}
                               onMouseEnter={e => e.currentTarget.style.background = C.accentL}
                               onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
                             >
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{historyMatchLines(inv)}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: C.accent }}>{inv.parcels_matched}</td>
@@ -2342,6 +2419,7 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: inv.weight_ecart > 0 ? C.red : C.dark }}>{inv.weight_ecart ?? '—'}</td>
                               <td style={{ padding: '9px 12px', fontWeight: 600 }}>{fmtEur(inv.total_ht)}</td>
                               <td style={{ padding: '9px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700 }}>{inv.total_ttc != null ? fmtEur(inv.total_ttc) : '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                                 {inv.tariffs_applied_at
                                   ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
@@ -2359,13 +2437,16 @@ export default function ChronopostApp() {
                         </tbody>
                         <tfoot>
                           <tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
-                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({history.length} factures)</td>
-                            <td colSpan={6} />
+                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({visibleHistory.length} factures)</td>
+                            <td colSpan={5} />
                             <td style={{ padding: '10px 12px', fontWeight: 800, color: C.primary }}>
-                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
+                              {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 700, color: C.orange }}>
-                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
+                              {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: 800 }}>
+                              {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.total_ttc || 0), 0))}
                             </td>
                             <td />
                           </tr>
@@ -2396,6 +2477,7 @@ export default function ChronopostApp() {
             )}
             {homeTab === 'historique' && (
             <div style={{ padding: 20 }}>
+              {!historyLoading && history.length > 0 && historySearchBox}
               {historyLoading ? (
                 <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
               ) : history.length === 0 ? (
@@ -2413,6 +2495,7 @@ export default function ChronopostApp() {
                           { label: 'Colis', key: 'total_parcels', align: 'center' },
                           { label: 'Total HT', key: 'total_ht' },
                           { label: 'Suppléments HT', key: 'supplements_total' },
+                          { label: 'Total TTC', key: 'total_ttc' },
                           { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
                           { label: 'Enregistrée le', key: 'created_at' },
                           { label: '' },
@@ -2422,18 +2505,19 @@ export default function ChronopostApp() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedHistory.map((inv, i) => (
+                      {visibleHistory.map((inv, i) => (
                         <tr key={inv.id}
-                          onClick={() => handleLoadFromHistory(inv)}
+                          onClick={() => openHistoryRow(inv)}
                           style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer' }}
                           onMouseEnter={e => e.currentTarget.style.background = C.accentL}
                           onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
                         >
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{historyMatchLines(inv)}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{fmtEur(inv.total_ht)}</td>
                           <td style={{ padding: '8px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 700 }}>{inv.total_ttc != null ? fmtEur(inv.total_ttc) : '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                             {inv.tariffs_applied_at
                               ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />

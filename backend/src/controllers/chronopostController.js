@@ -69,7 +69,7 @@ async function analyzeChronopostBuffer(buffer) {
   const pdfParser = new PDFParse(new Uint8Array(buffer));
   await pdfParser.load();
   const pdfData = await pdfParser.getText();
-  const { orders, supplements, globalCharges, invoiceNumber, invoiceDate } = parseChronopostPdf(pdfData.text);
+  const { orders, supplements, globalCharges, invoiceNumber, invoiceDate, totalTtc } = parseChronopostPdf(pdfData.text);
 
   const trackingsWithoutId = orders.filter(o => !o.order_id && o.tracking).map(o => o.tracking);
   if (trackingsWithoutId.length) {
@@ -95,11 +95,11 @@ async function analyzeChronopostBuffer(buffer) {
     supplements_count: supplements.length,
     supplements_total_ht: supplements.reduce((s, x) => s + (x.amount_ht || 0), 0),
   };
-  return { invoiceNumber, invoiceDate, orders, supplements, globalCharges, stats };
+  return { invoiceNumber, invoiceDate, totalTtc, orders, supplements, globalCharges, stats };
 }
 
 async function persistChronopostInvoice(parsed, pdfBuffer) {
-  const { invoiceNumber, invoiceDate, orders, supplements, globalCharges, stats } = parsed;
+  const { invoiceNumber, invoiceDate, totalTtc, orders, supplements, globalCharges, stats } = parsed;
   const existing = await pool.query('SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2', ['chronopost', invoiceNumber]);
   if (existing.rows.length) {
     if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, existing.rows[0].id]);
@@ -110,8 +110,8 @@ async function persistChronopostInvoice(parsed, pdfBuffer) {
   const invRes = await pool.query(`
     INSERT INTO carrier_invoices
       (carrier, invoice_number, invoice_date, total_parcels, parcels_matched,
-       total_ht, supplements_total, global_charges, country_totals, pdf_data)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
+       total_ht, supplements_total, global_charges, country_totals, pdf_data, total_ttc)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id
   `, [
     'chronopost', invoiceNumber, invoiceDate || null,
     stats?.total_orders || (orders || []).length,
@@ -119,6 +119,7 @@ async function persistChronopostInvoice(parsed, pdfBuffer) {
     totalHt,
     gc.reduce((s, g) => s + (g.amount_ht || 0), 0) + (supplements || []).reduce((s, x) => s + (x.amount_ht || 0), 0),
     JSON.stringify(gc), JSON.stringify(buildCountryTotals(orders, 'amount_ht')), pdfBuffer || null,
+    totalTtc ?? null,
   ]);
   const invoiceId = invRes.rows[0].id;
   if (orders?.length) {
@@ -211,6 +212,7 @@ function parseChronopostPdf(text) {
   let invoiceDate = null;
   let creditNumber = null;
   let relatedInvoiceNumber = null;
+  let totalTtc = null;
 
   // Extract invoice metadata
   for (const line of lines) {
@@ -222,6 +224,9 @@ function parseChronopostPdf(text) {
     if (relMatch && !relatedInvoiceNumber) relatedInvoiceNumber = relMatch[1];
     const dateMatch = line.match(/Date\s+(\d{2}\/\d{2}\/\d{4})/i);
     if (dateMatch && !invoiceDate) invoiceDate = dateMatch[1];
+    // Récapitulatif TVA : « TOTAL FACTURE <HT> <TVA> <TTC> » (présent sur les 66 factures au 22/10/2026)
+    const totMatch = line.match(/TOTAL FACTURE\s+(-?[\d\s.]*\d,\d{2})\s+(-?[\d\s.]*\d,\d{2})\s+(-?[\d\s.]*\d,\d{2})/i);
+    if (totMatch && totalTtc === null) totalTtc = parseFloat(totMatch[3].replace(/[\s.]/g, '').replace(',', '.'));
   }
 
   for (const line of lines) {
@@ -319,7 +324,7 @@ function parseChronopostPdf(text) {
     }
   }
 
-  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate, creditNumber, relatedInvoiceNumber };
+  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate, creditNumber, relatedInvoiceNumber, totalTtc };
 }
 
 /* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
@@ -521,7 +526,7 @@ exports.analyze = [
       const pdfParser = new PDFParse(uint8);
       await pdfParser.load();
       const pdfData = await pdfParser.getText();
-      const { orders, supplements, globalCharges, invoiceNumber, invoiceDate } =
+      const { orders, supplements, globalCharges, invoiceNumber, invoiceDate, totalTtc } =
         parseChronopostPdf(pdfData.text);
 
       // 2a. Résoudre les order_id manquants via numéro de suivi
@@ -560,6 +565,7 @@ exports.analyze = [
         success: true,
         invoiceNumber,
         invoiceDate,
+        totalTtc,
         orders,
         supplements,
         globalCharges,
@@ -651,7 +657,7 @@ exports.saveInvoice = [
       } else {
         parsed = req.body;
       }
-      const { invoiceNumber, invoiceDate, orders, supplements, globalCharges, stats } = parsed;
+      const { invoiceNumber, invoiceDate, totalTtc, orders, supplements, globalCharges, stats } = parsed;
 
       if (!invoiceNumber) return res.status(400).json({ success: false, error: 'invoiceNumber requis' });
 
@@ -679,8 +685,8 @@ exports.saveInvoice = [
       const invRes = await pool.query(`
         INSERT INTO carrier_invoices
           (carrier, invoice_number, invoice_date, total_parcels, parcels_matched,
-           total_ht, supplements_total, global_charges, country_totals, pdf_data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           total_ht, supplements_total, global_charges, country_totals, pdf_data, total_ttc)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING id
       `, [
         'chronopost', invoiceNumber, invoiceDate || null,
@@ -691,6 +697,7 @@ exports.saveInvoice = [
         JSON.stringify(gc),
         JSON.stringify(buildCountryTotals(orders, 'amount_ht')),
         pdfBuffer,
+        totalTtc ?? null,
       ]);
       const invoiceId = invRes.rows[0].id;
 
@@ -798,7 +805,7 @@ exports.getHistory = async (req, res) => {
     const result = await pool.query(`
       SELECT
         ci.id, ci.invoice_number, ci.invoice_date, ci.total_parcels,
-        ci.parcels_matched, ci.total_ht, ci.supplements_total,
+        ci.parcels_matched, ci.total_ht, ci.supplements_total, ci.total_ttc,
         ci.created_at, ci.tariffs_applied_at,
         COUNT(DISTINCT cip.id) AS parcel_count,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
@@ -1073,9 +1080,9 @@ exports.searchOrder = async (req, res) => {
       JOIN carrier_invoices ci ON ci.id = cip.invoice_id
       WHERE ci.carrier = 'chronopost'
         AND (cip.order_id::text = $1 OR cip.tracking ILIKE $2)
-      ORDER BY ci.created_at DESC
-      LIMIT 10
-    `, [q, `%${q}%`]);
+      ORDER BY ${newestInvoicesFirst('ci')}
+      LIMIT 50
+    `, [q, `%${q.replace(/\s+/g, '')}%`]);
 
     res.json({ success: true, results: result.rows });
   } catch (err) {
