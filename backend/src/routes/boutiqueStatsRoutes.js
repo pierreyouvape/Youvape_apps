@@ -10,5 +10,6 @@ const boutiqueStatsController = require('../controllers/boutiqueStatsController'
 
 router.get('/:shop', boutiqueStatsController.getRankings);
 router.get('/:shop/dormants', boutiqueStatsController.getDormants);
+router.get('/:shop/dormants/export', boutiqueStatsController.exportDormants);
 
 module.exports = router;

@@ -17,6 +17,7 @@
  * lisibles dans les outils du navigateur.
  */
 
+const ExcelJS = require('exceljs');
 const pool = require('../config/database');
 const { activeSql } = require('../utils/nextoreActive');
 
@@ -336,4 +337,99 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
   };
 }
 
-module.exports = { getRankings, getDormants, NONE };
+/**
+ * Tri des dormants, le même qu'à l'écran (DormantsTab) : « Jamais vendu » passe
+ * avant toute date, les ex aequo par ordre alphabétique.
+ */
+const DORMANT_SORTS = {
+  name: (r) => String(r.name || ''),
+  brand: (r) => String(r.brand || ''),
+  stock: (r) => r.stock,
+  lastSoldAt: (r) => r.lastSoldAt || '',
+  stockValue: (r) => r.stockValue || 0,
+};
+
+function sortDormants(products, sort, dir) {
+  const key = DORMANT_SORTS[sort] || DORMANT_SORTS.stock;
+  const d = dir === 'asc' ? 1 : -1;
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name), 'fr', { numeric: true });
+  return [...products].sort((a, b) => {
+    const va = key(a);
+    const vb = key(b);
+    const c = typeof va === 'string' ? va.localeCompare(vb, 'fr', { numeric: true }) : va - vb;
+    return d * c || byName(a, b);
+  });
+}
+
+/**
+ * Export Excel des produits dormants : exactement le tableau de l'écran
+ * (mêmes filtres, même tri, mêmes colonnes selon le niveau). Un .xlsx s'ouvre
+ * dans Excel et s'importe tel quel dans Google Sheets. Une 2e feuille rappelle
+ * les critères, pour qu'un fichier ressorti plus tard se relise seul.
+ *
+ * @param {{ id: number, name: string, slug: string }} shop
+ * @param {{ sort?: string, dir?: string }} order
+ */
+async function exportDormants(shop, since, withAmounts, filters = {}, order = {}) {
+  const data = await getDormants(shop.id, since, withAmounts, filters);
+  const rows = sortDormants(data.products, order.sort, order.dir);
+  const dateCell = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Produits dormants', { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = [
+    { header: 'Produit', key: 'name', width: 55 },
+    { header: 'Code', key: 'code', width: 12 },
+    { header: 'Marque', key: 'brand', width: 22 },
+    { header: 'Catégorie', key: 'category', width: 22 },
+    { header: 'Sous-catégorie', key: 'subcategory', width: 18 },
+    { header: 'Stock', key: 'stock', width: 9 },
+    { header: 'Dernière vente', key: 'lastSoldAt', width: 15 },
+    ...(withAmounts ? [
+      { header: 'Coût HT', key: 'cost', width: 11 },
+      { header: 'Valeur stock HT', key: 'stockValue', width: 16 },
+    ] : []),
+  ];
+  ws.getRow(1).font = { bold: true };
+  for (const r of rows) {
+    ws.addRow({
+      ...r,
+      subcategory: r.subcategory || '',
+      lastSoldAt: r.lastSoldAt ? dateCell(r.lastSoldAt) : 'Jamais vendu',
+    });
+  }
+  ws.getColumn('lastSoldAt').numFmt = 'dd/mm/yyyy';
+  if (withAmounts) {
+    ws.getColumn('cost').numFmt = '#,##0.00 €';
+    ws.getColumn('stockValue').numFmt = '#,##0.00 €';
+  }
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columns.length } };
+
+  const fr = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+  const optionName = (list, id) => (id ? (list.find((o) => o.id === id)?.name || id) : 'Toutes');
+  const info = wb.addWorksheet('Critères');
+  info.columns = [{ key: 'k', width: 26 }, { key: 'v', width: 50 }];
+  [
+    ['Boutique', shop.name],
+    ['Aucune vente depuis le', fr(since)],
+    ['Catégorie', optionName(data.options.categories, data.filters.category)],
+    ['Sous-catégorie', data.filters.category ? optionName(data.options.subcategories, data.filters.subcategory) : 'Toutes'],
+    ['Recherche', data.filters.search || '—'],
+    ['En stock seulement', data.filters.inStock ? 'Oui' : 'Non'],
+    ['Produits', data.totals.products],
+    ['Dont en stock', data.totals.inStock],
+    ['Unités en stock', data.totals.units],
+    ...(withAmounts ? [['Stock immobilisé HT', data.totals.stockValue]] : []),
+    ['Historique des ventes depuis le', fr(data.historyStart)],
+    ['Exporté le', new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }).format(new Date())],
+  ].forEach(([k, v]) => info.addRow({ k, v }));
+  info.getColumn('k').font = { bold: true };
+  if (withAmounts) info.getCell(`B${info.rowCount - 2}`).numFmt = '#,##0.00 €';
+
+  return {
+    buffer: await wb.xlsx.writeBuffer(),
+    filename: `produits_dormants_${shop.slug}_depuis_${since}.xlsx`,
+  };
+}
+
+module.exports = { getRankings, getDormants, exportDormants, NONE };

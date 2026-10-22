@@ -63,6 +63,16 @@ export default function DormantsTab({ shop, token }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState(null);
+  const [export_, setExport] = useState(false);
+
+  // Mêmes paramètres pour l'écran et pour l'export : le fichier est le tableau affiché.
+  const params = {
+    since,
+    category: categorie || undefined,
+    subcategory: sousCategorie || undefined,
+    search: rechercheEnvoyee || undefined,
+    in_stock: enStock ? 1 : undefined,
+  };
 
   useEffect(() => {
     let annule = false;
@@ -112,6 +122,33 @@ export default function DormantsTab({ shop, token }) {
     else { setTri(cle); setSens(SENS_PAR_DEFAUT[cle]); }
   };
   const thTri = (cle) => ({ onClick: () => trierPar(cle), active: tri === cle, dir: sens, color: INDIGO });
+
+  /** Le tableau affiché (filtres + tri) en .xlsx — s'ouvre dans Excel, s'importe dans Google Sheets. */
+  const exporter = async () => {
+    setExport(true);
+    try {
+      const res = await axios.get(`${API_URL}/boutique-stats/${shop.slug}/dormants/export`, {
+        ...authHeaders(token),
+        params: { ...params, sort: tri, dir: sens },
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(res.data);
+      const lien = document.createElement('a');
+      lien.href = url;
+      lien.download = `produits_dormants_${shop.slug}_depuis_${since}.xlsx`;
+      document.body.appendChild(lien);
+      lien.click();
+      lien.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      // Réponse d'erreur en Blob (responseType) : la relire pour en tirer le message.
+      let message = "Erreur lors de l'export";
+      try { message = JSON.parse(await err.response.data.text()).error || message; } catch { /* message par défaut */ }
+      setErreur(message);
+    } finally {
+      setExport(false);
+    }
+  };
 
   const sousCategoriesUtiles = Boolean(categorie)
     && (data?.options.subcategories || []).some((o) => o.id !== '__none__');
@@ -190,6 +227,16 @@ export default function DormantsTab({ shop, token }) {
             <Tuile label="Dont en stock" value={nf.format(data.totals.inStock)} />
             <Tuile label="Unités en stock" value={nf.format(data.totals.units)} />
             {avecMontants && <Tuile label="Stock immobilisé HT" value={eur.format(data.totals.stockValue)} sub="au prix d'achat" />}
+            <button
+              onClick={exporter}
+              disabled={export_ || loading || lignes.length === 0}
+              title="Le tableau tel qu'affiché (filtres et tri) — fichier .xlsx, s'ouvre dans Excel et s'importe dans Google Sheets"
+              style={{
+                ...champ, alignSelf: 'center', marginLeft: 'auto', cursor: 'pointer', fontWeight: 600,
+                background: INDIGO, color: '#fff', borderColor: INDIGO, padding: '9px 16px',
+                opacity: export_ || loading || lignes.length === 0 ? 0.5 : 1,
+              }}
+            >{export_ ? 'Export…' : `Exporter (${nf.format(lignes.length)}) · Excel / Google Sheets`}</button>
           </div>
 
           <div style={{ ...carte, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>

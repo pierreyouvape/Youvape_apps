@@ -75,4 +75,22 @@ const getDormants = async (req, res) => {
   }
 };
 
-module.exports = { getRankings, getDormants };
+/** GET /:shop/dormants/export?since[&filtres][&sort&dir] — le tableau de l'écran en .xlsx. */
+const exportDormants = async (req, res) => {
+  try {
+    const ok = await shopAccess(req, res);
+    if (!ok) return;
+    const filters = { ...queryFilters(req.query), inStock: req.query.in_stock === '1' };
+    const { buffer, filename } = await boutiqueStatsModel.exportDormants(
+      ok.wh, req.query.since, ok.level === 'responsable', filters,
+      { sort: String(req.query.sort || ''), dir: String(req.query.dir || '') }
+    );
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    fail(res, error, 'exportDormants');
+  }
+};
+
+module.exports = { getRankings, getDormants, exportDormants };
