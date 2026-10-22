@@ -7,6 +7,8 @@ import { Pastille, Tuile, Th, Td } from './StatsTab';
 /**
  * Boutique › Produits dormants — le catalogue actif de LA boutique de la page
  * qui n'a fait aucune vente caisse depuis N jours (droit `stats-boutiques`).
+ * Un produit sans stock au début de la période (reçu depuis) est écarté : il
+ * n'a pas pu se vendre. Le backend le décide et donne le nombre d'écartés.
  *
  * Conseiller : stock et date de dernière vente. Responsable : + coût HT et
  * valeur du stock immobilisé — le backend ne les envoie qu'à lui, les colonnes
@@ -238,6 +240,16 @@ export default function DormantsTab({ shop, token }) {
               }}
             >{export_ ? 'Export…' : `Exporter (${nf.format(lignes.length)}) · Excel / Google Sheets`}</button>
           </div>
+
+          {data.totals.excludedNoStock > 0 && (
+            <div style={{ fontSize: 12.5, color: C.greyT, margin: '-4px 0 14px' }}>
+              {nf.format(data.totals.excludedNoStock)} produit{data.totals.excludedNoStock > 1 ? 's' : ''} écarté{data.totals.excludedNoStock > 1 ? 's' : ''} :
+              aucun stock au {dateFr(data.since)} (jamais reçus, ou reçus depuis), ils n'ont pas pu se vendre.
+              {data.stockCheck === 'rebuilt' && data.stockHistoryStart && (
+                <> Stock au {dateFr(data.since)} reconstitué depuis le relevé du {dateFr(data.stockHistoryStart)} (achats reçus et ventes entre-temps).</>
+              )}
+            </div>
+          )}
 
           <div style={{ ...carte, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
             <div style={{ overflowX: 'auto' }}>

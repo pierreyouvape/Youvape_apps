@@ -248,6 +248,16 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
  * cette boutique, en AAAA-MM-JJ (null = jamais depuis le début de l'historique
  * Nextore, `historyStart`).
  *
+ * Un produit sans stock au DÉBUT de la période n'est pas dormant : il n'a
+ * simplement pas pu se vendre (ex. 15142, reçu la veille). Il est écarté et
+ * compté dans `totals.excludedNoStock`. Le stock au début de la période se lit :
+ *  - dans `nextore_stock_history` quand elle couvre la date (relevé complet le
+ *    18/08/2026, puis une ligne à chaque changement) → `stockCheck: 'history'` ;
+ *  - avant, il se RECONSTITUE à partir du relevé complet : stock relevé − achats
+ *    reçus + ventes nettes entre le début de la période et le relevé
+ *    → `stockCheck: 'rebuilt'`. Approché : les corrections d'inventaire de
+ *    cet intervalle n'y sont pas.
+ *
  * Responsable : + coût HT et valeur du stock immobilisé (stock × coût, stock
  * négatif compté 0). Le conseiller ne reçoit aucun montant.
  *
@@ -263,12 +273,28 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
   const subcategory = category ? (filters.subcategory || null) : null;
   const search = String(filters.search || '').trim().slice(0, 100);
 
+  // Début de la période : minuit, heure de Paris.
+  const START = "($2::date)::timestamp AT TIME ZONE 'Europe/Paris'";
+  // Achats et ventes sont datés en heure de Paris, sans fuseau.
+  const SNAPSHOT_LOCAL = "hist.started_at AT TIME ZONE 'Europe/Paris'";
+  const HAD_STOCK = `(CASE WHEN ${START} > hist.started_at THEN COALESCE(hs.stock, 0) > 0
+    ELSE COALESCE(s0.stock, 0)
+      - COALESCE((SELECT SUM(pi.quantity_received) FROM nextore_purchase_items pi
+          WHERE pi.warehouse_id = $1 AND pi.product_id = st.product_id
+            AND pi.purchased_at >= $2::date AND pi.purchased_at < ${SNAPSHOT_LOCAL}), 0)
+      + COALESCE((SELECT SUM(sa.quantity) FROM nextore_sales sa
+          WHERE sa.warehouse_id = $1 AND sa.product_id = st.product_id
+            AND sa.sold_at >= $2::date AND sa.sold_at < ${SNAPSHOT_LOCAL}), 0) > 0
+    END)`;
+
   const params = [warehouseId, since];
   const where = ['st.warehouse_id = $1', activeSql('p', 'st'), '(ls.last_sold_at IS NULL OR ls.last_sold_at < $2::date)'];
-  const optionsWhere = [...where];
+  // Les listes ne proposent que ce qui reste affichable ; la requête principale
+  // garde les écartés pour les compter.
+  const optionsWhere = [...where, HAD_STOCK];
   where.push(...categoryWhere(params, 'c.id', category));
   const optionsParams = [...params]; // sous-catégories : celles de la catégorie choisie
-  const subOptionsWhere = [...where];
+  const subOptionsWhere = [...where, HAD_STOCK];
   where.push(...categoryWhere(params, 'sc.id', subcategory));
   where.push(...searchWhere(searchWords(search), params, 'p.product_id', 'p.name'));
   if (filters.inStock) where.push('st.stock > 0');
@@ -282,7 +308,18 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
        FROM nextore_sales
        WHERE warehouse_id = $1 AND quantity > 0
        GROUP BY product_id
-     ) ls ON ls.product_id = st.product_id`;
+     ) ls ON ls.product_id = st.product_id
+     CROSS JOIN (
+       SELECT MIN(captured_at) AS started_at FROM nextore_stock_history WHERE warehouse_id = $1
+     ) hist
+     LEFT JOIN LATERAL (
+       SELECT h.stock FROM nextore_stock_history h
+       WHERE h.warehouse_id = $1 AND h.product_id = st.product_id AND h.captured_at < ${START}
+       ORDER BY h.captured_at DESC LIMIT 1
+     ) hs ON true
+     -- Relevé complet de départ : toutes ses lignes portent l'instant du premier relevé.
+     LEFT JOIN nextore_stock_history s0
+       ON s0.warehouse_id = $1 AND s0.product_id = st.product_id AND s0.captured_at = hist.started_at`;
 
   const options = (whereList, optParams, idExpr, nameExpr) => pool.query(
     `SELECT ${idExpr} AS id, ${nameExpr} AS name ${from}
@@ -291,13 +328,14 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
     optParams
   );
 
-  const [{ rows }, categoryOptions, subcategoryOptions, history] = await Promise.all([
+  const [{ rows: all }, categoryOptions, subcategoryOptions, history, stockHistory] = await Promise.all([
     pool.query(
       `SELECT p.product_id AS id, p.name, p.code, ${BRAND} AS brand,
               COALESCE(c.name, 'Sans catégorie') AS category, sc.name AS subcategory,
               COALESCE(st.stock, 0)::float AS stock,
               to_char(ls.last_sold_at, 'YYYY-MM-DD') AS last_sold_at, -- heure de Paris, jamais convertie
-              p.cost::float AS cost
+              p.cost::float AS cost,
+              ${HAD_STOCK} AS had_stock
        ${from}
        WHERE ${where.join(' AND ')}`,
       params
@@ -307,7 +345,13 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
       ? options(subOptionsWhere, optionsParams, `COALESCE(sc.id, '${NONE}')`, "COALESCE(sc.name, 'Sans sous-catégorie')")
       : Promise.resolve({ rows: [] }),
     pool.query("SELECT to_char(MIN(sold_at), 'YYYY-MM-DD') AS at FROM nextore_sales WHERE warehouse_id = $1", [warehouseId]),
+    pool.query(
+      "SELECT to_char(MIN(captured_at) AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD') AS at FROM nextore_stock_history WHERE warehouse_id = $1",
+      [warehouseId]
+    ),
   ]);
+  const rows = all.filter((r) => r.had_stock);
+  const stockHistoryStart = stockHistory.rows[0]?.at || null;
 
   const value = (r) => Math.max(0, r.stock) * (r.cost || 0);
   const products = rows.map((r) => ({
@@ -325,10 +369,14 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
   return {
     since,
     historyStart: history.rows[0]?.at || null,
+    stockHistoryStart,
+    // Le relevé du premier jour est pris en cours de journée : il couvre le lendemain.
+    stockCheck: stockHistoryStart && since > stockHistoryStart ? 'history' : 'rebuilt',
     filters: { category, subcategory, search, inStock: Boolean(filters.inStock) },
     options: { categories: categoryOptions.rows, subcategories: subcategoryOptions.rows },
     totals: {
       products: products.length,
+      excludedNoStock: all.length - rows.length,
       inStock: products.filter((r) => r.stock > 0).length,
       units: products.reduce((sum, r) => sum + Math.max(0, r.stock), 0),
       ...(withAmounts ? { stockValue: Math.round(rows.reduce((sum, r) => sum + value(r), 0) * 100) / 100 } : {}),
@@ -416,6 +464,7 @@ async function exportDormants(shop, since, withAmounts, filters = {}, order = {}
     ['Sous-catégorie', data.filters.category ? optionName(data.options.subcategories, data.filters.subcategory) : 'Toutes'],
     ['Recherche', data.filters.search || '—'],
     ['En stock seulement', data.filters.inStock ? 'Oui' : 'Non'],
+    ['Écartés (pas de stock au début)', data.totals.excludedNoStock],
     ['Produits', data.totals.products],
     ['Dont en stock', data.totals.inStock],
     ['Unités en stock', data.totals.units],
