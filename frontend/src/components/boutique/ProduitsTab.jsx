@@ -181,7 +181,7 @@ function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged })
   }, [p, here]);
 
   const disabled = !!p?.disabled_at;
-  const withStock = p ? p.shops.filter((s) => s.stock != null && s.stock !== 0) : [];
+  const others = p ? p.shops.filter((s) => s.warehouse_id !== Number(shop.id)) : [];
 
   return (
     <div onClick={onClose} style={{
@@ -221,24 +221,29 @@ function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged })
             }}>
               {p.deleted ? (
                 <div style={{ fontSize: 13.5, color: C.greyT }}>
-                  <b style={{ color: C.dark }}>Supprimé dans Nextore</b> — inactif dans les deux boutiques tant qu'il l'est dans Nextore.
+                  <b style={{ color: C.dark }}>Supprimé dans Nextore</b> — inactif dans toutes les boutiques tant qu'il l'est dans Nextore.
                 </div>
               ) : (
                 <>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 14, fontWeight: 600,
                     color: C.dark, cursor: canWrite && !saving ? 'pointer' : 'default' }}>
-                    <input type="checkbox" checked={disabled} disabled={!canWrite || saving}
+                    <input type="checkbox" checked={disabled} disabled={!canWrite || saving || !p.in_shop}
                            onChange={(e) => toggleDisabled(e.target.checked)} />
-                    Désactivé (les deux boutiques)
+                    Désactivé à {shop.label}
                   </label>
                   <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 6 }}>
                     {disabled
-                      ? `Désactivé le ${fmtStamp(p.disabled_at)}${p.disabled_by ? ` par ${p.disabled_by}` : ''}. Il redevient actif tout seul s'il se vend ou s'il est reçu.`
-                      : 'Un produit désactivé sort de la liste, du comptage et des besoins des deux boutiques.'}
+                      ? `Désactivé le ${fmtStamp(p.disabled_at)}${p.disabled_by ? ` par ${p.disabled_by}` : ''}. Il redevient actif tout seul s'il se vend ou s'il est reçu à ${shop.label}.`
+                      : `Un produit désactivé sort de la liste, du comptage et des besoins de ${shop.label}. Les autres boutiques ne changent pas.`}
+                    {others.map((o) => (
+                      <div key={o.warehouse_id} style={{ marginTop: 3 }}>
+                        {o.name} : {o.stock == null ? 'absent du stock' : o.disabled_at ? 'désactivé' : 'actif'}
+                      </div>
+                    ))}
                   </div>
-                  {withStock.length > 0 && (
+                  {here?.stock != null && here.stock !== 0 && (
                     <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: C.orangeL, color: C.orange, fontSize: 12.5, fontWeight: 600 }}>
-                      Il reste du stock : {withStock.map((s) => `${s.name} ${fmtNum(s.stock)}`).join(', ')}.
+                      Il reste {fmtNum(here.stock)} en stock à {shop.label}.
                       {disabled ? ' Il n\'apparaît plus dans les comptages.' : ' Désactivé, il disparaîtrait des comptages.'}
                     </div>
                   )}
@@ -441,7 +446,7 @@ export default function ProduitsTab({ shop, token }) {
   const bulk = async (ids, disabled) => {
     const n = ids.length;
     const verb = disabled ? 'Désactiver' : 'Réactiver';
-    if (!window.confirm(`${verb} ${n} produit${n > 1 ? 's' : ''} dans les deux boutiques ?`)) return;
+    if (!window.confirm(`${verb} ${n} produit${n > 1 ? 's' : ''} à ${shop.label} ?`)) return;
     setBulkBusy(true);
     setError(null);
     setNotice(null);
@@ -547,7 +552,7 @@ export default function ProduitsTab({ shop, token }) {
       {dormant && (
         <div style={{ padding: '10px 14px', background: C.accentL, color: '#7A4D00', borderRadius: 8, marginBottom: 14, fontSize: 13 }}>
           {months > 0
-            ? <>Produits actifs sans aucune vente depuis <b>{months} mois</b> dans les deux boutiques, et à <b>stock 0</b> dans les deux.
+            ? <>Produits actifs sans aucune vente depuis <b>{months} mois</b> à {shop.label}, et à <b>stock 0</b> ici. L'autre boutique n'est pas concernée.
                 {canWrite && ' Cochez-les puis « Désactiver la sélection ».'}</>
             : 'Indiquez une durée en mois.'}
         </div>

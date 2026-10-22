@@ -31,8 +31,12 @@ async function getRollingProposal(warehouseId, limit = 10) {
     wh,
   );
   const cooldown = new Set(cooldownRows.rows.map((r) => r.product_id));
-  // Produits désactivés ou supprimés dans Nextore : jamais proposés
-  const inactiveRows = await pool.query(`SELECT p.product_id FROM nextore_products p WHERE NOT ${activeSql('p')}`);
+  // Produits désactivés dans cette boutique ou supprimés dans Nextore : jamais proposés
+  const inactiveRows = await pool.query(
+    `SELECT st.product_id FROM nextore_stock st JOIN nextore_products p ON p.product_id = st.product_id
+     WHERE st.warehouse_id = $1 AND NOT ${activeSql('p', 'st')}`,
+    wh,
+  );
   for (const r of inactiveRows.rows) cooldown.add(r.product_id);
 
   // 1. Stock négatif (le plus négatif d'abord)
@@ -130,7 +134,7 @@ async function createComptage(warehouseId, { type, name, filterType, filterId, c
       `INSERT INTO nextore_comptage_items (comptage_id, product_id)
        SELECT $1, p.product_id FROM nextore_products p
        JOIN nextore_stock st ON st.product_id = p.product_id AND st.warehouse_id = $2
-       WHERE p.${col} = $3 AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${activeSql('p')}
+       WHERE p.${col} = $3 AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${activeSql('p', 'st')}
        ON CONFLICT (comptage_id, product_id) DO NOTHING`,
       [comptage.id, warehouseId, filterId],
     );

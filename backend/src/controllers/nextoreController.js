@@ -302,7 +302,7 @@ async function getProduct(req, res) {
   }
 }
 
-// POST /:shop/products/disabled — { product_ids, disabled } : (dé)sactive pour les deux boutiques
+// POST /:shop/products/disabled — { product_ids, disabled } : (dé)sactive dans cette boutique
 async function postProductsDisabled(req, res) {
   const wh = getShopOr400(req, res);
   if (!wh) return;
@@ -310,8 +310,8 @@ async function postProductsDisabled(req, res) {
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Aucun produit sélectionné' });
   try {
     const disabled = req.body?.disabled !== false;
-    const updated = await nextoreModel.setProductsDisabled(ids, disabled, req.user?.email);
-    console.log(`Nextore : ${updated} produit(s) ${disabled ? 'désactivé(s)' : 'réactivé(s)'} par ${req.user?.email}`);
+    const updated = await nextoreModel.setProductsDisabled(wh.id, ids, disabled, req.user?.email);
+    console.log(`Nextore ${wh.code} : ${updated} produit(s) ${disabled ? 'désactivé(s)' : 'réactivé(s)'} par ${req.user?.email}`);
     res.json({ ok: true, updated });
   } catch (err) {
     console.error('Nextore postProductsDisabled:', err);
