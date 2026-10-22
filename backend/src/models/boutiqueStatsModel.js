@@ -65,6 +65,33 @@ function categoryWhere(params, col, value) {
   return [`${col} = $${params.length}`];
 }
 
+/** Plusieurs catégories (ids Nextore, NONE = « Sans catégorie »). */
+function categoriesWhere(params, values) {
+  if (!values.length) return [];
+  const ids = values.filter((v) => v !== NONE);
+  const parts = [];
+  if (ids.length) { params.push(ids); parts.push(`c.id = ANY($${params.length}::text[])`); }
+  if (ids.length < values.length) parts.push('c.id IS NULL');
+  return [`(${parts.join(' OR ')})`];
+}
+
+/**
+ * Plusieurs sous-catégories : elles ne restreignent QUE leur catégorie. Une
+ * catégorie cochée sans sous-catégorie cochée reste entière (E-liquides › 10 ml
+ * + toute la Base). NONE (« Sans sous-catégorie ») vaut pour les catégories
+ * restreintes, ou pour toutes s'il est seul coché.
+ */
+function subcategoriesWhere(params, values) {
+  if (!values.length) return [];
+  const ids = values.filter((v) => v !== NONE);
+  const none = ids.length < values.length;
+  if (!ids.length) return ['sc.id IS NULL'];
+  params.push(ids);
+  const n = params.length;
+  return [`(COALESCE(c.id, '') <> ALL(ARRAY(SELECT category_id FROM nextore_subcategories WHERE id = ANY($${n}::text[])))
+    OR sc.id = ANY($${n}::text[])${none ? ' OR sc.id IS NULL' : ''})`];
+}
+
 /**
  * @param {number} warehouseId 1 = Montpellier, 2 = Castelnau
  * @param {string} from AAAA-MM-JJ (inclus)
@@ -261,7 +288,8 @@ async function getRankings(warehouseId, from, to, withAmounts, filters = {}) {
  * Responsable : + coût HT et valeur du stock immobilisé (stock × coût, stock
  * négatif compté 0). Le conseiller ne reçoit aucun montant.
  *
- * @param {{ category?: string, subcategory?: string, search?: string, inStock?: boolean }} filters
+ * @param {{ categories?: string[], subcategories?: string[], search?: string, inStock?: boolean }} filters
+ *   plusieurs catégories / sous-catégories possibles (voir subcategoriesWhere).
  */
 async function getDormants(warehouseId, since, withAmounts, filters = {}) {
   if (!DATE_RE.test(since || '')) {
@@ -269,8 +297,9 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
     err.statusCode = 400;
     throw err;
   }
-  const category = filters.category || null;
-  const subcategory = category ? (filters.subcategory || null) : null;
+  const categories = filters.categories || [];
+  // Une sous-catégorie n'a de sens que sous une catégorie cochée.
+  const subcategories = categories.length ? (filters.subcategories || []) : [];
   const search = String(filters.search || '').trim().slice(0, 100);
 
   // Début de la période : minuit, heure de Paris.
@@ -292,10 +321,10 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
   // Les listes ne proposent que ce qui reste affichable ; la requête principale
   // garde les écartés pour les compter.
   const optionsWhere = [...where, HAD_STOCK];
-  where.push(...categoryWhere(params, 'c.id', category));
-  const optionsParams = [...params]; // sous-catégories : celles de la catégorie choisie
+  where.push(...categoriesWhere(params, categories));
+  const optionsParams = [...params]; // sous-catégories : celles des catégories cochées
   const subOptionsWhere = [...where, HAD_STOCK];
-  where.push(...categoryWhere(params, 'sc.id', subcategory));
+  where.push(...subcategoriesWhere(params, subcategories));
   where.push(...searchWhere(searchWords(search), params, 'p.product_id', 'p.name'));
   if (filters.inStock) where.push('st.stock > 0');
 
@@ -321,8 +350,10 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
      LEFT JOIN nextore_stock_history s0
        ON s0.warehouse_id = $1 AND s0.product_id = st.product_id AND s0.captured_at = hist.started_at`;
 
-  const options = (whereList, optParams, idExpr, nameExpr) => pool.query(
-    `SELECT ${idExpr} AS id, ${nameExpr} AS name ${from}
+  // `category` : catégorie d'une sous-catégorie (« 10 ml » existe en Arômes ET
+  // en E-liquides) ; vide pour « Sans sous-catégorie », commune à toutes.
+  const options = (whereList, optParams, idExpr, nameExpr, withCategory = false) => pool.query(
+    `SELECT ${idExpr} AS id, ${nameExpr} AS name${withCategory ? ', MAX(c.name) FILTER (WHERE sc.id IS NOT NULL) AS category' : ''} ${from}
      WHERE ${whereList.join(' AND ')}
      GROUP BY 1, 2 ORDER BY (${idExpr} = '${NONE}'), 2`,
     optParams
@@ -341,8 +372,8 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
       params
     ),
     options(optionsWhere, [warehouseId, since], `COALESCE(c.id, '${NONE}')`, "COALESCE(c.name, 'Sans catégorie')"),
-    category
-      ? options(subOptionsWhere, optionsParams, `COALESCE(sc.id, '${NONE}')`, "COALESCE(sc.name, 'Sans sous-catégorie')")
+    categories.length
+      ? options(subOptionsWhere, optionsParams, `COALESCE(sc.id, '${NONE}')`, "COALESCE(sc.name, 'Sans sous-catégorie')", true)
       : Promise.resolve({ rows: [] }),
     pool.query("SELECT to_char(MIN(sold_at), 'YYYY-MM-DD') AS at FROM nextore_sales WHERE warehouse_id = $1", [warehouseId]),
     pool.query(
@@ -372,7 +403,7 @@ async function getDormants(warehouseId, since, withAmounts, filters = {}) {
     stockHistoryStart,
     // Le relevé du premier jour est pris en cours de journée : il couvre le lendemain.
     stockCheck: stockHistoryStart && since > stockHistoryStart ? 'history' : 'rebuilt',
-    filters: { category, subcategory, search, inStock: Boolean(filters.inStock) },
+    filters: { categories, subcategories, search, inStock: Boolean(filters.inStock) },
     options: { categories: categoryOptions.rows, subcategories: subcategoryOptions.rows },
     totals: {
       products: products.length,
@@ -454,14 +485,19 @@ async function exportDormants(shop, since, withAmounts, filters = {}, order = {}
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columns.length } };
 
   const fr = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
-  const optionName = (list, id) => (id ? (list.find((o) => o.id === id)?.name || id) : 'Toutes');
+  const optionNames = (list, ids) => (ids.length
+    ? ids.map((id) => {
+      const o = list.find((x) => x.id === id);
+      return o ? (o.category ? `${o.category} › ${o.name}` : o.name) : id;
+    }).join(', ')
+    : 'Toutes');
   const info = wb.addWorksheet('Critères');
   info.columns = [{ key: 'k', width: 26 }, { key: 'v', width: 50 }];
   [
     ['Boutique', shop.name],
     ['Aucune vente depuis le', fr(since)],
-    ['Catégorie', optionName(data.options.categories, data.filters.category)],
-    ['Sous-catégorie', data.filters.category ? optionName(data.options.subcategories, data.filters.subcategory) : 'Toutes'],
+    ['Catégories', optionNames(data.options.categories, data.filters.categories)],
+    ['Sous-catégories', optionNames(data.options.subcategories, data.filters.subcategories)],
     ['Recherche', data.filters.search || '—'],
     ['En stock seulement', data.filters.inStock ? 'Oui' : 'Non'],
     ['Écartés (pas de stock au début)', data.totals.excludedNoStock],

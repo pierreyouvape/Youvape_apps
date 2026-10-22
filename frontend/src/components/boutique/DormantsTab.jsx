@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL, authHeaders, C } from '../picking/pickingUi';
-import { jourParis, nf, eur, champ, carte, avecSelection } from './statsShared';
+import { jourParis, nf, eur, champ, carte } from './statsShared';
+import MultiSelect from './MultiSelect';
 import { Pastille, Tuile, Th, Td } from './StatsTab';
 
 /**
@@ -30,6 +31,21 @@ const depuisJours = (n) => { const d = new Date(); d.setDate(d.getDate() - (n - 
 
 const PAGE = 100;
 
+const NONE = '__none__';
+
+/**
+ * Options d'une liste à cocher : « 10 ml, 50 ml, 100 ml » en ordre numérique,
+ * « Sans… » en dernier ; une valeur cochée qui n'a plus de produit reste
+ * proposée, pour pouvoir la décocher.
+ */
+const optionsCochables = (options = [], valeurs, libelle = (o) => o.name) => {
+  const liste = [...options]
+    .sort((a, b) => (a.id === NONE) - (b.id === NONE) || libelle(a).localeCompare(libelle(b), 'fr', { numeric: true }))
+    .map((o) => ({ id: o.id, label: libelle(o) }));
+  for (const v of valeurs) if (!liste.some((o) => o.id === v)) liste.unshift({ id: v, label: 'Aucun produit dormant' });
+  return liste;
+};
+
 const dateFr = (s) => (s ? s.split('-').reverse().join('/') : '');
 
 /** Jours écoulés entre deux dates AAAA-MM-JJ. */
@@ -56,8 +72,8 @@ export default function DormantsTab({ shop, token }) {
   const [since, setSince] = useState(() => depuisJours(90));
   const [recherche, setRecherche] = useState('');
   const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
-  const [categorie, setCategorie] = useState('');
-  const [sousCategorie, setSousCategorie] = useState('');
+  const [categories, setCategories] = useState([]);
+  const [sousCategories, setSousCategories] = useState([]);
   const [enStock, setEnStock] = useState(false);
   const [tri, setTri] = useState('stock');
   const [sens, setSens] = useState('desc');
@@ -70,8 +86,8 @@ export default function DormantsTab({ shop, token }) {
   // Mêmes paramètres pour l'écran et pour l'export : le fichier est le tableau affiché.
   const params = {
     since,
-    category: categorie || undefined,
-    subcategory: sousCategorie || undefined,
+    category: categories.join(',') || undefined,
+    subcategory: sousCategories.join(',') || undefined,
     search: rechercheEnvoyee || undefined,
     in_stock: enStock ? 1 : undefined,
   };
@@ -84,8 +100,8 @@ export default function DormantsTab({ shop, token }) {
       ...authHeaders(token),
       params: {
         since,
-        category: categorie || undefined,
-        subcategory: sousCategorie || undefined,
+        category: categories.join(',') || undefined,
+        subcategory: sousCategories.join(',') || undefined,
         search: rechercheEnvoyee || undefined,
         in_stock: enStock ? 1 : undefined,
       },
@@ -94,7 +110,7 @@ export default function DormantsTab({ shop, token }) {
       .catch((err) => { if (!annule) setErreur(err.response?.data?.error || 'Erreur de chargement'); })
       .finally(() => { if (!annule) setLoading(false); });
     return () => { annule = true; };
-  }, [token, shop.slug, since, categorie, sousCategorie, rechercheEnvoyee, enStock]);
+  }, [token, shop.slug, since, categories, sousCategories, rechercheEnvoyee, enStock]);
 
   // La recherche part au serveur quand la frappe s'arrête.
   useEffect(() => {
@@ -102,7 +118,7 @@ export default function DormantsTab({ shop, token }) {
     return () => clearTimeout(t);
   }, [recherche]);
 
-  useEffect(() => { setLimite(PAGE); }, [tri, sens, shop.slug, since, categorie, sousCategorie, rechercheEnvoyee, enStock]);
+  useEffect(() => { setLimite(PAGE); }, [tri, sens, shop.slug, since, categories, sousCategories, rechercheEnvoyee, enStock]);
 
   const avecMontants = data?.totals?.stockValue !== undefined;
   const aujourdhui = jourParis();
@@ -152,8 +168,21 @@ export default function DormantsTab({ shop, token }) {
     }
   };
 
-  const sousCategoriesUtiles = Boolean(categorie)
-    && (data?.options.subcategories || []).some((o) => o.id !== '__none__');
+  const sousCategoriesUtiles = categories.length > 0
+    && (data?.options.subcategories || []).some((o) => o.id !== NONE);
+
+  // Une catégorie décochée emporte ses sous-catégories cochées.
+  const choisirCategories = (ids) => {
+    const noms = new Set((data?.options.categories || []).filter((o) => ids.includes(o.id)).map((o) => o.name));
+    setCategories(ids);
+    setSousCategories((subs) => (ids.length === 0 ? [] : subs.filter((id) => {
+      const o = (data?.options.subcategories || []).find((x) => x.id === id);
+      return id === NONE || !o || noms.has(o.category);
+    })));
+  };
+
+  // « 10 ml » existe en Arômes et en E-liquides : préfixé dès que plusieurs catégories sont cochées.
+  const libelleSousCategorie = (o) => (categories.length > 1 && o.category ? `${o.category} › ${o.name}` : o.name);
 
   const colonnes = avecMontants ? 7 : 5;
 
@@ -180,36 +209,34 @@ export default function DormantsTab({ shop, token }) {
           placeholder="Produit, marque, catégorie, code-barres…"
           style={{ ...champ, flex: '1 1 300px', maxWidth: 380, padding: '8px 12px' }}
         />
-        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Catégorie</span>
-        <select
-          value={categorie}
-          onChange={(e) => { setCategorie(e.target.value); setSousCategorie(''); }}
-          style={{ ...champ, minWidth: 200 }}
-        >
-          <option value="">Toutes</option>
-          {avecSelection(data?.options.categories, categorie).map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
-        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Sous-catégorie</span>
-        <select
-          value={sousCategorie}
-          onChange={(e) => setSousCategorie(e.target.value)}
-          disabled={!sousCategoriesUtiles}
-          style={{ ...champ, minWidth: 180, opacity: sousCategoriesUtiles ? 1 : 0.5 }}
-        >
-          <option value="">Toutes</option>
-          {avecSelection(data?.options.subcategories, sousCategorie).map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Catégories</span>
+        <MultiSelect
+          options={optionsCochables(data?.options.categories, categories)}
+          value={categories}
+          onChange={choisirCategories}
+          noun={['catégorie', 'catégories']}
+          color={INDIGO}
+        />
+        <span
+          style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}
+          title="Une catégorie dont aucune sous-catégorie n'est cochée reste entière"
+        >Sous-catégories</span>
+        <MultiSelect
+          options={optionsCochables(data?.options.subcategories, sousCategories, libelleSousCategorie)}
+          value={sousCategories}
+          onChange={setSousCategories}
+          noun={['sous-catégorie', 'sous-catégories']}
+          disabled={!sousCategoriesUtiles && sousCategories.length === 0}
+          color={INDIGO}
+          minWidth={180}
+        />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.dark, marginLeft: 8, cursor: 'pointer' }}>
           <input type="checkbox" checked={enStock} onChange={(e) => setEnStock(e.target.checked)} />
           En stock seulement
         </label>
-        {(categorie || recherche) && (
+        {(categories.length > 0 || recherche) && (
           <button
-            onClick={() => { setCategorie(''); setSousCategorie(''); setRecherche(''); }}
+            onClick={() => { setCategories([]); setSousCategories([]); setRecherche(''); }}
             style={{ ...champ, cursor: 'pointer', fontWeight: 600, color: INDIGO, borderColor: 'transparent', background: 'none' }}
           >Effacer</button>
         )}

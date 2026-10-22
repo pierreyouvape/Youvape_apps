@@ -50,6 +50,17 @@ const queryFilters = (q) => ({
   search: q.search ? String(q.search) : null,
 });
 
+/** Liste « a,b,c » d'ids (catégories, sous-catégories), 50 au plus. */
+const idList = (v) => (v ? String(v).split(',').map((x) => x.trim()).filter(Boolean).slice(0, 50) : []);
+
+/** Produits dormants : plusieurs catégories et sous-catégories possibles. */
+const dormantFilters = (q) => ({
+  categories: idList(q.category),
+  subcategories: idList(q.subcategory),
+  search: q.search ? String(q.search) : null,
+  inStock: q.in_stock === '1',
+});
+
 /** GET /:shop?from&to[&category&subcategory&search] — classements de la boutique sur la période. */
 const getRankings = async (req, res) => {
   try {
@@ -62,12 +73,12 @@ const getRankings = async (req, res) => {
   }
 };
 
-/** GET /:shop/dormants?since[&category&subcategory&search&in_stock=1] — produits sans vente depuis `since`. */
+/** GET /:shop/dormants?since[&category=a,b&subcategory=c,d&search&in_stock=1] — produits sans vente depuis `since`. */
 const getDormants = async (req, res) => {
   try {
     const ok = await shopAccess(req, res);
     if (!ok) return;
-    const filters = { ...queryFilters(req.query), inStock: req.query.in_stock === '1' };
+    const filters = dormantFilters(req.query);
     const data = await boutiqueStatsModel.getDormants(ok.wh.id, req.query.since, ok.level === 'responsable', filters);
     res.json({ level: ok.level, ...data });
   } catch (error) {
@@ -80,7 +91,7 @@ const exportDormants = async (req, res) => {
   try {
     const ok = await shopAccess(req, res);
     if (!ok) return;
-    const filters = { ...queryFilters(req.query), inStock: req.query.in_stock === '1' };
+    const filters = dormantFilters(req.query);
     const { buffer, filename } = await boutiqueStatsModel.exportDormants(
       ok.wh, req.query.since, ok.level === 'responsable', filters,
       { sort: String(req.query.sort || ''), dir: String(req.query.dir || '') }
