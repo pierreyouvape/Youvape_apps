@@ -3,7 +3,8 @@
  * mu-plugin WordPress `youvape-stories` lit (côté serveur, mis en cache).
  *
  *   stories/index.json            tout le nécessaire en un seul fichier :
- *     stories   slug → vidéo prête (URL, aperçu, vignette, GIF, bouton d'action)
+ *     stories   slug → vidéo prête (URL, aperçu, vignette, GIF, bouton d'action,
+ *               created_at fixe = date de création, updated_at = dernière compression)
  *     widgets   slug → { title, layout, stories: [slugs dans l'ordre] }
  *     products  wp_product_id → [slugs de widgets]   (fiches produit)
  *     pages     chemin de page → [slugs de widgets]   (ex. /youvape-awards)
@@ -44,6 +45,11 @@ const storyJson = (s) => ({
     }
     : null,
   updated_at: s.processed_at,
+  // Date de création de la story (premier envoi dans l'app) : fixe, jamais
+  // modifiée ensuite (ni republication, ni nouvelle version, ni nouveau widget).
+  // Sert d'`uploadDate` aux données structurées VideoObject du site, qui
+  // exigent une date stable — `updated_at`, lui, bouge à chaque compression.
+  created_at: s.created_at,
 });
 
 const publish = async ({ userId } = {}) => {
