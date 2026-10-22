@@ -26,6 +26,6 @@ WHERE p.product_id = st.product_id
   AND p.disabled_at IS NOT NULL
   AND st.disabled_at IS NULL;
 
--- Partie 2 (après déploiement) -----------------------------------------------
--- ALTER TABLE nextore_products DROP COLUMN IF EXISTS disabled_at;
--- ALTER TABLE nextore_products DROP COLUMN IF EXISTS disabled_by;
+-- Partie 2 (après déploiement, appliquée le 22/10/2026) ---------------------
+ALTER TABLE nextore_products DROP COLUMN IF EXISTS disabled_at;
+ALTER TABLE nextore_products DROP COLUMN IF EXISTS disabled_by;
