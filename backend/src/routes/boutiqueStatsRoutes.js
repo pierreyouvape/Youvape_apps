@@ -9,5 +9,6 @@ const router = express.Router();
 const boutiqueStatsController = require('../controllers/boutiqueStatsController');
 
 router.get('/:shop', boutiqueStatsController.getRankings);
+router.get('/:shop/dormants', boutiqueStatsController.getDormants);
 
 module.exports = router;

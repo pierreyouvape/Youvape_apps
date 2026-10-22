@@ -8,6 +8,7 @@ import ImportTab from '../components/boutique/ImportTab';
 import CommandesTab from '../components/boutique/CommandesTab';
 import ComptageTab from '../components/boutique/ComptageTab';
 import StatsTab from '../components/boutique/StatsTab';
+import DormantsTab from '../components/boutique/DormantsTab';
 import CoffreTab from '../components/boutique/CoffreTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
@@ -36,6 +37,7 @@ const IcBox   = () => <Ic><path d="M3.5 8 L12 4 L20.5 8 V16 L12 20 L3.5 16 Z" />
 const IcCart  = () => <Ic><path d="M3 4 H5.5 L7.6 15 H18 L20 7.5 H6.4" /><circle cx={9} cy={19} r={1.4} /><circle cx={16.5} cy={19} r={1.4} /></Ic>;
 const IcCount = () => <Ic><rect x={5} y={4} width={14} height={17} rx={2} /><path d="M9 4 V2.6 H15 V4" /><path d="M8.5 12 L11 14.5 L15.5 9.5" /></Ic>;
 const IcStats = () => <Ic><path d="M4 20 H20" /><path d="M7 20 V13" /><path d="M12 20 V8" /><path d="M17 20 V4" /></Ic>;
+const IcSleep = () => <Ic><path d="M18.5 14.5 A7.5 7.5 0 1 1 9.5 5.5 A6 6 0 0 0 18.5 14.5 Z" /><path d="M14 3.5 H18 L14 7.5 H18" /></Ic>;
 const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><circle cx={11} cy={12} r={3.2} /><path d="M11 12 H13.6" /><path d="M17 9.5 V14.5" /></Ic>;
 
 /* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable).
@@ -48,6 +50,7 @@ const SECTIONS = [
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
+  { key: 'dormants', label: 'Produits dormants', color: '#4338CA', Icon: IcSleep, ready: true, permKey: 'stats-boutiques' },
   // Droit à part `coffre-boutiques`, en plus du droit boutique.
   { key: 'coffre',   label: 'Coffre',   color: '#334155', Icon: IcSafe,  ready: true, permKey: 'coffre-boutiques' },
 ];
@@ -261,8 +264,16 @@ export default function BoutiqueApp() {
         {/* ── Section Statistiques (ventes caisse) ── */}
         {section === 'stats' && (
           <>
-            <ShopHeader shop={shop} subtitle={`Statistiques — produits, marques et catégories les plus vendus · vue ${statsLevel}`} onBack={goHome} />
+            <ShopHeader shop={shop} subtitle={`Statistiques — produits, marques et catégories, des plus aux moins vendus · vue ${statsLevel}`} onBack={goHome} />
             <StatsTab shop={shop} token={token} />
+          </>
+        )}
+
+        {/* ── Section Produits dormants (catalogue sans vente depuis N jours) ── */}
+        {section === 'dormants' && (
+          <>
+            <ShopHeader shop={shop} subtitle={`Produits dormants — catalogue de la boutique sans vente sur la durée choisie · vue ${statsLevel}`} onBack={goHome} />
+            <DormantsTab shop={shop} token={token} />
           </>
         )}
 

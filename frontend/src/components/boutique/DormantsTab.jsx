@@ -1,0 +1,255 @@
+import { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
+import { API_URL, authHeaders, C } from '../picking/pickingUi';
+import { jourParis, nf, eur, champ, carte, avecSelection } from './statsShared';
+import { Pastille, Tuile, Th, Td } from './StatsTab';
+
+/**
+ * Boutique › Produits dormants — le catalogue actif de LA boutique de la page
+ * qui n'a fait aucune vente caisse depuis N jours (droit `stats-boutiques`).
+ *
+ * Conseiller : stock et date de dernière vente. Responsable : + coût HT et
+ * valeur du stock immobilisé — le backend ne les envoie qu'à lui, les colonnes
+ * n'apparaissent que si la réponse les porte.
+ */
+
+const INDIGO = '#4338CA';
+
+/** Critère de temps : « aucune vente depuis N jours », aujourd'hui compris. */
+const DUREES = [
+  { key: 30, label: '30 jours' },
+  { key: 60, label: '60 jours' },
+  { key: 90, label: '90 jours' },
+  { key: 180, label: '6 mois' },
+  { key: 365, label: '1 an' },
+];
+
+const depuisJours = (n) => { const d = new Date(); d.setDate(d.getDate() - (n - 1)); return jourParis(d); };
+
+const PAGE = 100;
+
+const dateFr = (s) => (s ? s.split('-').reverse().join('/') : '');
+
+/** Jours écoulés entre deux dates AAAA-MM-JJ. */
+const ecart = (de, a) => Math.round((Date.parse(a) - Date.parse(de)) / 86400000);
+
+const ilYa = (jours) => {
+  if (jours < 60) return `il y a ${jours} j`;
+  if (jours < 730) return `il y a ${Math.round(jours / 30.4)} mois`;
+  return `il y a ${(jours / 365).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} ans`;
+};
+
+/** Tri d'une colonne ; « Jamais vendu » passe avant toute date (le plus dormant). */
+const TRIS = {
+  name: (r) => String(r.name || ''),
+  brand: (r) => String(r.brand || ''),
+  stock: (r) => r.stock,
+  lastSoldAt: (r) => r.lastSoldAt || '',
+  stockValue: (r) => r.stockValue || 0,
+};
+const SENS_PAR_DEFAUT = { name: 'asc', brand: 'asc', stock: 'desc', lastSoldAt: 'asc', stockValue: 'desc' };
+
+export default function DormantsTab({ shop, token }) {
+  const [duree, setDuree] = useState(90);
+  const [since, setSince] = useState(() => depuisJours(90));
+  const [recherche, setRecherche] = useState('');
+  const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
+  const [categorie, setCategorie] = useState('');
+  const [sousCategorie, setSousCategorie] = useState('');
+  const [enStock, setEnStock] = useState(false);
+  const [tri, setTri] = useState('stock');
+  const [sens, setSens] = useState('desc');
+  const [limite, setLimite] = useState(PAGE);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [erreur, setErreur] = useState(null);
+
+  useEffect(() => {
+    let annule = false;
+    setLoading(true);
+    setErreur(null);
+    axios.get(`${API_URL}/boutique-stats/${shop.slug}/dormants`, {
+      ...authHeaders(token),
+      params: {
+        since,
+        category: categorie || undefined,
+        subcategory: sousCategorie || undefined,
+        search: rechercheEnvoyee || undefined,
+        in_stock: enStock ? 1 : undefined,
+      },
+    })
+      .then((res) => { if (!annule) setData(res.data); })
+      .catch((err) => { if (!annule) setErreur(err.response?.data?.error || 'Erreur de chargement'); })
+      .finally(() => { if (!annule) setLoading(false); });
+    return () => { annule = true; };
+  }, [token, shop.slug, since, categorie, sousCategorie, rechercheEnvoyee, enStock]);
+
+  // La recherche part au serveur quand la frappe s'arrête.
+  useEffect(() => {
+    const t = setTimeout(() => setRechercheEnvoyee(recherche.trim()), 300);
+    return () => clearTimeout(t);
+  }, [recherche]);
+
+  useEffect(() => { setLimite(PAGE); }, [tri, sens, shop.slug, since, categorie, sousCategorie, rechercheEnvoyee, enStock]);
+
+  const avecMontants = data?.totals?.stockValue !== undefined;
+  const aujourdhui = jourParis();
+
+  const lignes = useMemo(() => {
+    const cle = TRIS[tri];
+    const dir = sens === 'asc' ? 1 : -1;
+    return [...(data?.products || [])].sort((a, b) => {
+      const va = cle(a);
+      const vb = cle(b);
+      const c = typeof va === 'string' ? va.localeCompare(vb, 'fr', { numeric: true }) : va - vb;
+      return dir * c || String(a.name).localeCompare(String(b.name), 'fr', { numeric: true });
+    });
+  }, [data, tri, sens]);
+
+  // Un clic sur la colonne de tri en cours l'inverse.
+  const trierPar = (cle) => {
+    if (cle === tri) setSens((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setTri(cle); setSens(SENS_PAR_DEFAUT[cle]); }
+  };
+  const thTri = (cle) => ({ onClick: () => trierPar(cle), active: tri === cle, dir: sens, color: INDIGO });
+
+  const sousCategoriesUtiles = Boolean(categorie)
+    && (data?.options.subcategories || []).some((o) => o.id !== '__none__');
+
+  const colonnes = avecMontants ? 7 : 5;
+
+  return (
+    <div>
+      {/* Critère de temps */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600 }}>Aucune vente depuis</span>
+        {DUREES.map((d) => (
+          <Pastille key={d.key} color={INDIGO} actif={duree === d.key}
+            onClick={() => { setDuree(d.key); setSince(depuisJours(d.key)); }}>{d.label}</Pastille>
+        ))}
+        <span style={{ color: C.greyT, fontSize: 13 }}>ou depuis le</span>
+        <input type="date" value={since} max={aujourdhui} style={champ}
+          onChange={(e) => { if (e.target.value) { setSince(e.target.value); setDuree(null); } }} />
+      </div>
+
+      {/* Recherche, catégorie, stock */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
+        <input
+          type="search"
+          value={recherche}
+          onChange={(e) => setRecherche(e.target.value)}
+          placeholder="Produit, marque, catégorie, code-barres…"
+          style={{ ...champ, flex: '1 1 300px', maxWidth: 380, padding: '8px 12px' }}
+        />
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Catégorie</span>
+        <select
+          value={categorie}
+          onChange={(e) => { setCategorie(e.target.value); setSousCategorie(''); }}
+          style={{ ...champ, minWidth: 200 }}
+        >
+          <option value="">Toutes</option>
+          {avecSelection(data?.options.categories, categorie).map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 13, color: C.greyT, fontWeight: 600, marginLeft: 8 }}>Sous-catégorie</span>
+        <select
+          value={sousCategorie}
+          onChange={(e) => setSousCategorie(e.target.value)}
+          disabled={!sousCategoriesUtiles}
+          style={{ ...champ, minWidth: 180, opacity: sousCategoriesUtiles ? 1 : 0.5 }}
+        >
+          <option value="">Toutes</option>
+          {avecSelection(data?.options.subcategories, sousCategorie).map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, color: C.dark, marginLeft: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={enStock} onChange={(e) => setEnStock(e.target.checked)} />
+          En stock seulement
+        </label>
+        {(categorie || recherche) && (
+          <button
+            onClick={() => { setCategorie(''); setSousCategorie(''); setRecherche(''); }}
+            style={{ ...champ, cursor: 'pointer', fontWeight: 600, color: INDIGO, borderColor: 'transparent', background: 'none' }}
+          >Effacer</button>
+        )}
+      </div>
+
+      {erreur && (
+        <div style={{
+          background: C.redL, borderLeft: `4px solid ${C.red}`, color: '#7F1D1D',
+          padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13.5,
+        }}>{erreur}</div>
+      )}
+
+      {data && (
+        <>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+            <Tuile label="Produits dormants" value={nf.format(data.totals.products)} sub={`sans vente depuis le ${dateFr(data.since)}`} />
+            <Tuile label="Dont en stock" value={nf.format(data.totals.inStock)} />
+            <Tuile label="Unités en stock" value={nf.format(data.totals.units)} />
+            {avecMontants && <Tuile label="Stock immobilisé HT" value={eur.format(data.totals.stockValue)} sub="au prix d'achat" />}
+          </div>
+
+          <div style={{ ...carte, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <Th {...thTri('name')}>Produit</Th>
+                    <Th {...thTri('brand')}>Marque</Th>
+                    <Th>Catégorie</Th>
+                    <Th align="right" {...thTri('stock')}>Stock</Th>
+                    <Th {...thTri('lastSoldAt')}>Dernière vente</Th>
+                    {avecMontants && <Th align="right">Coût HT</Th>}
+                    {avecMontants && <Th align="right" {...thTri('stockValue')}>Valeur stock</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {lignes.length === 0 ? (
+                    <tr><td colSpan={colonnes} style={{ padding: 28, textAlign: 'center', color: C.greyM }}>
+                      {loading ? 'Chargement…' : 'Aucun produit dormant ne correspond.'}
+                    </td></tr>
+                  ) : lignes.slice(0, limite).map((r, i) => (
+                    <tr key={r.id} style={{ background: i % 2 ? C.zebra : C.white }}>
+                      <Td bold>
+                        {r.name || '—'}
+                        {r.code && <span style={{ color: C.greyM, fontWeight: 400, fontSize: 12, marginLeft: 8 }}>{r.code}</span>}
+                      </Td>
+                      <Td>{r.brand}</Td>
+                      <Td color={C.greyT}>{r.category}{r.subcategory ? ` › ${r.subcategory}` : ''}</Td>
+                      <Td align="right" bold color={r.stock > 0 ? C.dark : r.stock < 0 ? C.red : C.greyM}>{nf.format(r.stock)}</Td>
+                      <Td color={r.lastSoldAt ? C.dark : C.greyT}>
+                        {r.lastSoldAt ? (
+                          <>
+                            {dateFr(r.lastSoldAt)}
+                            <span style={{ color: C.greyM, fontSize: 12, marginLeft: 8 }}>{ilYa(ecart(r.lastSoldAt, aujourdhui))}</span>
+                          </>
+                        ) : (
+                          <span title={data.historyStart ? `Aucune vente dans cette boutique depuis le début de l'historique (${dateFr(data.historyStart)})` : undefined}>
+                            Jamais vendu
+                          </span>
+                        )}
+                      </Td>
+                      {avecMontants && <Td align="right" color={C.greyT}>{r.cost != null ? eur.format(r.cost) : '—'}</Td>}
+                      {avecMontants && <Td align="right" bold>{r.stockValue ? eur.format(r.stockValue) : '—'}</Td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {lignes.length > limite && (
+              <div style={{ padding: 12, textAlign: 'center' }}>
+                <button onClick={() => setLimite((l) => l + PAGE * 5)} style={{ ...champ, cursor: 'pointer', fontWeight: 600 }}>
+                  Afficher plus ({nf.format(lignes.length - limite)} restants)
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

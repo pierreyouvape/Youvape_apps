@@ -1,23 +1,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL, authHeaders, C } from '../picking/pickingUi';
+import { MAUVE, MAUVE_TRACK, jourParis, nf, eur, champ, carte, avecSelection } from './statsShared';
 
 /**
  * Boutique › Statistiques — ventes caisse Nextore de LA boutique de la page,
  * droit `stats-boutiques`.
+ *
+ * Tout le catalogue actif de la boutique est classé, même sans vente (qté 0),
+ * et le classement s'inverse (moins vendus en tête) pour voir ce qui ne part pas.
  *
  * Conseiller : quantités et part du CA. Responsable : + CA HT. L'écran ne
  * décide de rien : un conseiller ne REÇOIT aucun montant (le backend les
  * retire), la colonne CA HT n'apparaît que si la réponse les porte.
  */
 
-const MAUVE = '#A21CAF';
-const MAUVE_TRACK = '#FAE8FF';
 // Part des unités : une autre teinte, pour ne pas la lire comme la part du CA.
 const CYAN = '#0E7490';
 const CYAN_TRACK = '#CFFAFE';
-
-const jourParis = (d = new Date()) => new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(d);
 
 /** Bornes d'un préréglage, recalculées à chaque choix (jamais figées). */
 const PERIODES = [
@@ -43,47 +43,24 @@ const ONGLETS = [
 
 const PAGE = 100;
 
-const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
-const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
 const pctFmt = (p) => `${p.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
 
 const dateHeure = (s) => (s ? new Intl.DateTimeFormat('fr-FR', {
   timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
 }).format(new Date(s)) : null);
 
-const champ = {
-  padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`,
-  fontSize: 13.5, fontFamily: 'inherit', color: C.dark, background: C.white,
-};
-
-const carte = {
-  background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, marginBottom: 16,
-};
-
-/**
- * Options d'une liste, triées « 10 ml, 50 ml, 100 ml » (ordre numérique), la
- * valeur « Sans… » en dernier. La sélection courante reste proposée même si
- * elle n'a plus de vente sur la nouvelle période.
- */
-const avecSelection = (options = [], valeur) => {
-  const liste = [...options].sort((a, b) => (a.id === '__none__') - (b.id === '__none__')
-    || a.name.localeCompare(b.name, 'fr', { numeric: true }));
-  if (valeur && !liste.some((o) => o.id === valeur)) liste.unshift({ id: valeur, name: 'Aucune vente sur la période' });
-  return liste;
-};
-
 /* ─── PETITS COMPOSANTS ─────────────────────────────────── */
-function Pastille({ actif, onClick, children }) {
+export function Pastille({ actif, onClick, children, color = MAUVE }) {
   return (
     <button onClick={onClick} style={{
       ...champ, cursor: 'pointer', fontWeight: 600,
-      background: actif ? MAUVE : C.white, color: actif ? '#fff' : C.dark,
-      borderColor: actif ? MAUVE : C.greyB,
+      background: actif ? color : C.white, color: actif ? '#fff' : C.dark,
+      borderColor: actif ? color : C.greyB,
     }}>{children}</button>
   );
 }
 
-function Tuile({ label, value, sub }) {
+export function Tuile({ label, value, sub }) {
   return (
     <div style={{ ...carte, marginBottom: 0, flex: '1 1 170px', padding: '14px 16px' }}>
       <div style={{ fontSize: 12.5, color: C.greyT, fontWeight: 600 }}>{label}</div>
@@ -106,16 +83,17 @@ function Part({ value, max, color = MAUVE, track = MAUVE_TRACK }) {
   );
 }
 
-function Th({ children, align = 'left', onClick, active }) {
+/** En-tête ; `active` + `dir` ('asc' | 'desc') marquent la colonne de tri. */
+export function Th({ children, align = 'left', onClick, active, dir = 'desc', color = MAUVE }) {
   return <th onClick={onClick} style={{
-    padding: '10px 12px', textAlign: align, fontWeight: 700, color: active ? MAUVE : C.greyT,
+    padding: '10px 12px', textAlign: align, fontWeight: 700, color: active ? color : C.greyT,
     fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 0.3,
     borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap',
     cursor: onClick ? 'pointer' : 'default', userSelect: 'none',
-  }}>{children}{active ? ' ▼' : ''}</th>;
+  }}>{children}{active ? (dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>;
 }
 
-function Td({ children, align = 'left', bold, color }) {
+export function Td({ children, align = 'left', bold, color }) {
   return <td style={{
     padding: '9px 12px', textAlign: align, color: color || C.dark, fontWeight: bold ? 700 : 400,
     borderBottom: `1px solid ${C.greyB}`, fontSize: 13.5, fontVariantNumeric: 'tabular-nums',
@@ -128,6 +106,7 @@ export default function StatsTab({ shop, token }) {
   const [[from, to], setRange] = useState(() => PERIODES[1].range());
   const [onglet, setOnglet] = useState('products');
   const [tri, setTri] = useState('pct'); // 'pct' (part du CA) | 'qty' (unités)
+  const [sens, setSens] = useState('desc'); // 'desc' plus vendus en tête | 'asc' moins vendus
   const [recherche, setRecherche] = useState('');
   const [rechercheEnvoyee, setRechercheEnvoyee] = useState('');
   const [categorie, setCategorie] = useState('');
@@ -162,7 +141,7 @@ export default function StatsTab({ shop, token }) {
     return () => clearTimeout(t);
   }, [recherche]);
 
-  useEffect(() => { setLimite(PAGE); }, [onglet, tri, shop.slug, from, to, categorie, sousCategorie, rechercheEnvoyee]);
+  useEffect(() => { setLimite(PAGE); }, [onglet, tri, sens, shop.slug, from, to, categorie, sousCategorie, rechercheEnvoyee]);
 
   const choisirPeriode = (p) => {
     setPeriode(p.key);
@@ -172,12 +151,27 @@ export default function StatsTab({ shop, token }) {
   const avecMontants = data?.totals?.ca_ht !== undefined;
 
   // Recherche et filtres sont appliqués par le serveur : le rang se lit dans
-  // la sélection (« Pulp » → le classement des produits Pulp).
+  // la sélection (« Pulp » → le classement des produits Pulp). Le rang reste
+  // celui des plus vendus quand le classement s'inverse (le dernier = n° 2 082),
+  // les ex aequo restent par ordre alphabétique dans les deux sens.
   const lignes = useMemo(() => {
-    const liste = [...(data?.[onglet] || [])];
-    if (tri === 'qty') liste.sort((a, b) => b.qty - a.qty);
-    return liste.map((r, i) => ({ ...r, rang: i + 1 }));
-  }, [data, onglet, tri]);
+    const valeur = (r) => (tri === 'qty' ? [r.qty, r.pct] : [r.pct, r.qty]);
+    const compare = (dir) => (a, b) => {
+      const [a1, a2] = valeur(a);
+      const [b1, b2] = valeur(b);
+      return dir * (a1 - b1) || dir * (a2 - b2) || String(a.name).localeCompare(String(b.name), 'fr');
+    };
+    const rangs = new Map([...(data?.[onglet] || [])].sort(compare(-1)).map((r, i) => [r.id, i + 1]));
+    return [...(data?.[onglet] || [])]
+      .sort(compare(sens === 'asc' ? 1 : -1))
+      .map((r) => ({ ...r, rang: rangs.get(r.id) }));
+  }, [data, onglet, tri, sens]);
+
+  // Un clic sur la colonne de tri en cours l'inverse ; sur une autre, repart des plus vendus.
+  const trierPar = (cle) => {
+    if (cle === tri) setSens((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setTri(cle); setSens('desc'); }
+  };
 
   const filtre = Boolean(categorie || rechercheEnvoyee);
 
@@ -277,7 +271,8 @@ export default function StatsTab({ shop, token }) {
             {filtre && <Tuile label="Part du CA de la boutique" value={pctFmt(data.totals.selectionPct)} sub="pour la sélection" />}
             {filtre && <Tuile label="Part des unités de la boutique" value={pctFmt(data.totals.selectionQtyPct)} sub="pour la sélection" />}
             <Tuile label="Unités vendues" value={nf.format(data.totals.qty)} sub="retours déduits" />
-            <Tuile label="Références vendues" value={nf.format(data.products.length)} />
+            <Tuile label="Références vendues" value={nf.format(data.totals.soldRefs)} />
+            <Tuile label="Références sans vente" value={nf.format(data.totals.unsoldRefs)} sub="au catalogue de la boutique" />
           </div>
 
           <div style={{ ...carte, opacity: loading ? 0.6 : 1, transition: 'opacity 0.15s' }}>
@@ -290,6 +285,10 @@ export default function StatsTab({ shop, token }) {
                   {libelleOnglet(o)} <span style={{ opacity: 0.7, fontWeight: 500 }}>({nf.format(data[o.key].length)})</span>
                 </Pastille>
               ))}
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <Pastille actif={sens === 'desc'} onClick={() => setSens('desc')}>▼ Plus vendus</Pastille>
+                <Pastille actif={sens === 'asc'} onClick={() => setSens('asc')}>▲ Moins vendus</Pastille>
+              </span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -298,16 +297,16 @@ export default function StatsTab({ shop, token }) {
                   <tr>
                     <Th align="right">#</Th>
                     <Th>{libelleOnglet(ONGLETS.find((o) => o.key === onglet)).replace(/s$/, '')}</Th>
-                    <Th align="right" onClick={() => setTri('qty')} active={tri === 'qty'}>Qté vendue</Th>
-                    <Th onClick={() => setTri('qty')} active={tri === 'qty'}>Part des unités</Th>
-                    <Th onClick={() => setTri('pct')} active={tri === 'pct'}>Part du CA</Th>
+                    <Th align="right" onClick={() => trierPar('qty')} active={tri === 'qty'} dir={sens}>Qté vendue</Th>
+                    <Th onClick={() => trierPar('qty')} active={tri === 'qty'} dir={sens}>Part des unités</Th>
+                    <Th onClick={() => trierPar('pct')} active={tri === 'pct'} dir={sens}>Part du CA</Th>
                     {avecMontants && <Th align="right">CA HT</Th>}
                   </tr>
                 </thead>
                 <tbody>
                   {lignes.length === 0 ? (
                     <tr><td colSpan={avecMontants ? 6 : 5} style={{ padding: 28, textAlign: 'center', color: C.greyM }}>
-                      {loading ? 'Chargement…' : filtre ? 'Aucune vente ne correspond sur la période.' : 'Aucune vente sur la période.'}
+                      {loading ? 'Chargement…' : filtre ? 'Aucun produit ne correspond.' : 'Aucun produit sur la période.'}
                     </td></tr>
                   ) : lignes.slice(0, limite).map((r, i) => (
                     <tr
@@ -322,7 +321,7 @@ export default function StatsTab({ shop, token }) {
                         {r.name || '—'}
                         {cliquable && <span className="stats-voir" style={{ color: MAUVE, fontWeight: 600, fontSize: 12, marginLeft: 8 }}>Voir les produits ›</span>}
                       </Td>
-                      <Td align="right" color={r.qty < 0 ? C.red : C.dark}>{nf.format(r.qty)}</Td>
+                      <Td align="right" color={r.qty < 0 ? C.red : r.qty === 0 ? C.greyM : C.dark}>{nf.format(r.qty)}</Td>
                       <Td><Part value={r.qtyPct} max={maxQtyPct} color={CYAN} track={CYAN_TRACK} /></Td>
                       <Td><Part value={r.pct} max={maxPct} /></Td>
                       {avecMontants && <Td align="right" bold>{eur.format(r.ca_ht)}</Td>}

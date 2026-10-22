@@ -29,25 +29,50 @@ const fail = (res, error, where) => {
   return res.status(500).json({ error: 'Erreur serveur' });
 };
 
+/** Niveau et boutique de la requête, ou réponse 403 envoyée (null). */
+async function shopAccess(req, res) {
+  const { level, shops } = await access(req.user);
+  if (!level) {
+    res.status(403).json({ error: 'Accès refusé : droit « Stats boutiques » requis' });
+    return null;
+  }
+  const wh = resolveWarehouse(req.params.shop);
+  if (!wh || !shops.some((s) => s.id === wh.id)) {
+    res.status(403).json({ error: "Accès refusé : vous n'avez pas accès à cette boutique" });
+    return null;
+  }
+  return { level, wh };
+}
+
+const queryFilters = (q) => ({
+  category: q.category ? String(q.category) : null,
+  subcategory: q.subcategory ? String(q.subcategory) : null,
+  search: q.search ? String(q.search) : null,
+});
+
 /** GET /:shop?from&to[&category&subcategory&search] — classements de la boutique sur la période. */
 const getRankings = async (req, res) => {
   try {
-    const { level, shops } = await access(req.user);
-    if (!level) return res.status(403).json({ error: 'Accès refusé : droit « Stats boutiques » requis' });
-    const wh = resolveWarehouse(req.params.shop);
-    if (!wh || !shops.some((s) => s.id === wh.id)) {
-      return res.status(403).json({ error: "Accès refusé : vous n'avez pas accès à cette boutique" });
-    }
-    const filters = {
-      category: req.query.category ? String(req.query.category) : null,
-      subcategory: req.query.subcategory ? String(req.query.subcategory) : null,
-      search: req.query.search ? String(req.query.search) : null,
-    };
-    const data = await boutiqueStatsModel.getRankings(wh.id, req.query.from, req.query.to, level === 'responsable', filters);
-    res.json({ level, ...data });
+    const ok = await shopAccess(req, res);
+    if (!ok) return;
+    const data = await boutiqueStatsModel.getRankings(ok.wh.id, req.query.from, req.query.to, ok.level === 'responsable', queryFilters(req.query));
+    res.json({ level: ok.level, ...data });
   } catch (error) {
     fail(res, error, 'getRankings');
   }
 };
 
-module.exports = { getRankings };
+/** GET /:shop/dormants?since[&category&subcategory&search&in_stock=1] — produits sans vente depuis `since`. */
+const getDormants = async (req, res) => {
+  try {
+    const ok = await shopAccess(req, res);
+    if (!ok) return;
+    const filters = { ...queryFilters(req.query), inStock: req.query.in_stock === '1' };
+    const data = await boutiqueStatsModel.getDormants(ok.wh.id, req.query.since, ok.level === 'responsable', filters);
+    res.json({ level: ok.level, ...data });
+  } catch (error) {
+    fail(res, error, 'getDormants');
+  }
+};
+
+module.exports = { getRankings, getDormants };
