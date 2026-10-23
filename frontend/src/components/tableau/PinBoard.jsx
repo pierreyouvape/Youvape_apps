@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTableauInbox } from '../../context/TableauInboxContext';
 import StickyNote from './StickyNote';
 import ImageItem from './ImageItem';
+import NoteReminderDialog from './NoteReminderDialog';
 import TableauModal from './TableauModal';
 import {
   tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR, previewText, imageFilesOf, copyImageToClipboard,
@@ -40,6 +42,9 @@ export default function PinBoard() {
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(null); // { note, mode }
   const [selectedId, setSelectedId] = useState(null); // image seule sélectionnée
+  const [reminderFor, setReminderFor] = useState(null); // post-it dont on règle le rappel
+  const [flashId, setFlashId] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const boardRef = useRef(null);
@@ -62,6 +67,21 @@ export default function PinBoard() {
   // réponse arrive dans la boîte.
   const answersKey = inbox.answers.map((a) => a.id).join(',');
   useEffect(() => { if (answersKey) load(); }, [answersKey, load]);
+
+  // Rappel arrivé (ou fermé ailleurs) : le cadre rouge du post-it suit
+  const remindersKey = inbox.noteReminders.map((r) => r.id).join(',');
+  useEffect(() => { load(); }, [remindersKey, load]);
+
+  // « Voir » depuis une notification de rappel : /tableau/epingle?note=ID
+  const focusId = Number(searchParams.get('note')) || null;
+  useEffect(() => {
+    if (!focusId || !notes.some((n) => n.id === focusId)) return undefined;
+    document.getElementById(`tableau-note-${focusId}`)?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    setFlashId(focusId);
+    setSearchParams({}, { replace: true });
+    const t = setTimeout(() => setFlashId(null), 2600);
+    return () => clearTimeout(t);
+  }, [focusId, notes, setSearchParams]);
 
   const patchLocal = (id, patch) => setNotes((ns) => ns.map((n) => (n.id === id ? { ...n, ...patch } : n)));
   const save = (id, patch) => tableauApi.updateNote(id, patch).catch((e) => setError(apiError(e)));
@@ -174,6 +194,10 @@ export default function PinBoard() {
 
   return (
     <div>
+      <style>{`
+        @keyframes tableauFlash { 0%, 100% { transform: scale(1); } 25%, 75% { transform: scale(1.04); } 50% { transform: scale(0.98); } }
+        .tableau-flash { animation: tableauFlash 0.65s ease-in-out 3; }
+      `}</style>
       <InboxPanel inbox={inbox} act={act} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -236,11 +260,21 @@ export default function PinBoard() {
               onColor={(color) => { patchLocal(n.id, { color }); save(n.id, { color }); }}
               onDelete={() => removeNote(n)}
               onSend={(mode) => setSending({ note: n, mode })}
+              onReminder={() => setReminderFor(n)}
+              flash={flashId === n.id}
               onError={setError}
             />
           )))}
         </div>
       </div>
+
+      {reminderFor && (
+        <NoteReminderDialog
+          note={notes.find((n) => n.id === reminderFor.id) || reminderFor}
+          onClose={() => setReminderFor(null)}
+          onSaved={(note) => { setReminderFor(null); setNotes((ns) => ns.map((n) => (n.id === note.id ? note : n))); refresh(); }}
+        />
+      )}
 
       {sending && (
         <SendDialog

@@ -26,6 +26,8 @@ exports.createImage = handle((req) => tableauModel.createImage(uid(req), req.fil
 exports.uploadMedia = handle((req) => tableauModel.uploadMedia(req.file));
 exports.updateNote = handle((req) => tableauModel.updateNote(uid(req), id(req), req.body || {}));
 exports.deleteNote = handle((req) => tableauModel.deleteNote(uid(req), id(req)));
+exports.setNoteReminder = handle((req) => tableauModel.setNoteReminder(uid(req), id(req), req.body || {}));
+exports.clearNoteReminder = handle((req) => tableauModel.clearNoteReminder(uid(req), id(req)));
 
 exports.sendNote = handle((req) => tableauModel.sendNote(uid(req), req.body || {}));
 exports.acceptTransfer = handle((req) => tableauModel.answerTransfer(uid(req), id(req), true));

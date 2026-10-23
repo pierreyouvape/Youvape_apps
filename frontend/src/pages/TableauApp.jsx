@@ -44,7 +44,7 @@ export default function TableauApp() {
 
   // Pastilles d'onglet : post-its reçus et réponses côté Épinglé, rappels côté Récurrentes
   const badges = {
-    epingle: inbox.incoming.length + inbox.answers.length,
+    epingle: inbox.incoming.length + inbox.answers.length + inbox.noteReminders.length,
     recurrentes: inbox.reminders.length,
   };
 

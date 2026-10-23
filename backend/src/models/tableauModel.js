@@ -49,6 +49,8 @@ async function getRecipients(userId) {
 /* ─── Post-its ──────────────────────────────────────────── */
 
 const NOTE_COLUMNS = `n.id, n.kind, n.content, n.color, n.x, n.y, n.width, n.height, n.z, n.image_file,
+  to_char(n.remind_at, 'YYYY-MM-DD HH24:MI') AS remind_at, n.remind_screen, n.remind_email,
+  (n.remind_at IS NOT NULL AND n.remind_screen AND n.remind_at <= ${PARIS_NOW}) AS remind_due,
   ${USER_NAME('rf')} AS received_from_name`;
 
 /**
@@ -152,6 +154,43 @@ async function updateNote(userId, id, input) {
   return getNote(userId, id);
 }
 
+/**
+ * Rappel unique d'un post-it : { remind_at: 'YYYY-MM-DD HH:MM', screen, email }.
+ * Personnel : il ne suit pas le post-it envoyé ou copié.
+ */
+async function setNoteReminder(userId, id, input) {
+  const at = String(input.remind_at || '').replace('T', ' ');
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at)) throw httpError(400, 'Date et heure du rappel invalides');
+  const screen = input.screen === true;
+  const email = input.email === true;
+  if (!screen && !email) throw httpError(400, 'Choisissez une notification, un email, ou les deux');
+  const { rows } = await pool.query(
+    `UPDATE tableau_notes
+        SET remind_at = $3::timestamp, remind_screen = $4, remind_email = $5, remind_email_sent = false
+      WHERE id = $1 AND owner_id = $2 AND kind = 'note' AND NOT in_transit
+      RETURNING ($3::timestamp > ${PARIS_NOW}) AS future`,
+    [id, userId, at, screen, email],
+  );
+  if (!rows[0]) throw httpError(404, 'Post-it introuvable');
+  if (!rows[0].future) {
+    await clearNoteReminder(userId, id);
+    throw httpError(400, 'Cette date est déjà passée');
+  }
+  notify([userId], 'reminder');
+  return getNote(userId, id);
+}
+
+/** Retire le rappel — c'est aussi le « OK » d'un rappel arrivé à son heure. */
+async function clearNoteReminder(userId, id) {
+  await pool.query(
+    `UPDATE tableau_notes SET remind_at = NULL, remind_email_sent = false
+      WHERE id = $1 AND owner_id = $2`,
+    [id, userId],
+  );
+  notify([userId], 'reminder');
+  return getNote(userId, id);
+}
+
 async function deleteNote(userId, id) {
   const { rows } = await pool.query(
     `DELETE FROM tableau_notes WHERE id = $1 AND owner_id = $2 AND NOT in_transit
@@ -227,6 +266,7 @@ async function answerTransfer(userId, transferId, accept) {
         await client.query(
           `UPDATE tableau_notes
               SET owner_id = $2, in_transit = false, received_from = $3, x = 40, y = 40, z = $4,
+                  remind_at = NULL, remind_email_sent = false,
                   updated_at = ${PARIS_NOW}
             WHERE id = $1`,
           [t.note_id, userId, t.from_user_id, z],
@@ -502,6 +542,7 @@ async function sweepMedia() {
 
 const EMAIL_AT = "(t.next_due + t.due_time - make_interval(mins => t.email_remind_minutes))";
 const APP_URL = 'https://apps.youvape.fr/tableau/recurrentes';
+const BOARD_URL = 'https://apps.youvape.fr/tableau/epingle';
 
 const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -518,9 +559,72 @@ async function pushDueReminders() {
       WHERE t.due_time IS NOT NULL AND t.remind_minutes IS NOT NULL
         AND ${REMINDER_AT} <= ${PARIS_NOW}
         AND ${REMINDER_AT} > ${PARIS_NOW} - interval '75 seconds'
-        AND t.reminder_dismissed_for IS DISTINCT FROM t.next_due`,
+        AND t.reminder_dismissed_for IS DISTINCT FROM t.next_due
+     UNION
+     SELECT n.owner_id
+       FROM tableau_notes n
+      WHERE n.remind_at IS NOT NULL AND n.remind_screen AND NOT n.in_transit
+        AND n.remind_at <= ${PARIS_NOW}
+        AND n.remind_at > ${PARIS_NOW} - interval '75 seconds'`,
   );
   notify(rows.map((r) => r.owner_id), 'reminder');
+}
+
+/** Texte d'un post-it (HTML) pour un email : sans balises, images comptées. */
+function plainText(html) {
+  const images = (String(html || '').match(/<img\b/g) || []).length;
+  const text = String(html || '')
+    .replace(/<br\s*\/?>|<\/(p|li)>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return { text, images };
+}
+
+/**
+ * Rappels email des post-its : un seul envoi, réservé avant l'envoi et rendu en
+ * cas d'échec. Un rappel email seul disparaît du post-it une fois parti ; avec
+ * notification, il reste jusqu'au « OK ». Rattrapage limité à 12 h (backend
+ * arrêté au moment voulu), au-delà l'email n'a plus de sens.
+ */
+async function sendNoteEmailReminders(sendMail) {
+  const { rows } = await pool.query(
+    `UPDATE tableau_notes n
+        SET remind_email_sent = true
+       FROM users u
+      WHERE u.id = n.owner_id AND u.disabled_at IS NULL
+        AND n.remind_at IS NOT NULL AND n.remind_email AND NOT n.remind_email_sent AND NOT n.in_transit
+        AND n.remind_at <= ${PARIS_NOW}
+        AND n.remind_at >= ${PARIS_NOW} - interval '12 hours'
+      RETURNING n.id, n.owner_id, n.content, n.remind_screen,
+                to_char(n.remind_at, 'DD/MM/YYYY à HH24"h"MI') AS at_label, u.email`,
+  );
+  for (const n of rows) {
+    const { text, images } = plainText(n.content);
+    const imgs = images ? `(${images} image${images > 1 ? 's' : ''})` : '';
+    const firstLine = (text.split('\n')[0] || 'Post-it').slice(0, 70);
+    const result = await sendMail({
+      to: n.email,
+      subject: `Rappel : ${firstLine}`,
+      text: `Rappel programmé le ${n.at_label}.\n\n${text}${imgs ? `\n${imgs}` : ''}\n\nVotre tableau : ${BOARD_URL}`,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1F2937;max-width:560px">
+        <p style="margin:0 0 6px;font-size:12px;color:#CA8A04;font-weight:bold;text-transform:uppercase">Tableau · rappel de post-it</p>
+        <p style="margin:0 0 12px;color:#6B7280">Programmé le ${n.at_label}.</p>
+        <div style="background:#FEF3C7;border-radius:6px;padding:12px 14px;margin:0 0 16px;white-space:pre-wrap">${escapeHtml(text) || '(post-it sans texte)'}${imgs ? `<br><em style="color:#6B7280">${imgs}</em>` : ''}</div>
+        <p style="margin:0"><a href="${BOARD_URL}" style="color:#CA8A04;font-weight:bold">Ouvrir mon tableau</a></p>
+      </div>`,
+    });
+    if (!result?.success) {
+      console.error(`Tableau : rappel email de post-it non envoyé (${n.id}) — ${result?.error || 'erreur inconnue'}`);
+      await pool.query('UPDATE tableau_notes SET remind_email_sent = false WHERE id = $1', [n.id]);
+    } else if (!n.remind_screen) {
+      await pool.query('UPDATE tableau_notes SET remind_at = NULL WHERE id = $1', [n.id]);
+      notify([n.owner_id], 'reminder');
+    }
+  }
+  return rows.length;
 }
 
 /**
@@ -578,7 +682,7 @@ async function sendEmailReminders(sendMail) {
 /* ─── Boîte de réception (interrogée toutes les minutes) ── */
 
 async function getInbox(userId) {
-  const [incoming, answers, sent, reminders] = await Promise.all([
+  const [incoming, answers, sent, reminders, noteReminders] = await Promise.all([
     pool.query(
       `SELECT t.id, t.mode, t.content, t.color, ${USER_NAME('u')} AS from_name,
               to_char(t.created_at, 'YYYY-MM-DD HH24:MI') AS created_at
@@ -614,12 +718,21 @@ async function getInbox(userId) {
         ORDER BY t.next_due, t.due_time`,
       [userId],
     ),
+    pool.query(
+      `SELECT n.id, n.content, n.color, to_char(n.remind_at, 'YYYY-MM-DD HH24:MI') AS remind_at
+         FROM tableau_notes n
+        WHERE n.owner_id = $1 AND n.remind_at IS NOT NULL AND n.remind_screen AND NOT n.in_transit
+          AND n.remind_at <= ${PARIS_NOW}
+        ORDER BY n.remind_at`,
+      [userId],
+    ),
   ]);
   return {
     incoming: incoming.rows,
     answers: answers.rows,
     sent: sent.rows,
     reminders: reminders.rows,
+    noteReminders: noteReminders.rows,
   };
 }
 
@@ -627,8 +740,9 @@ module.exports = {
   COLORS,
   getRecipients,
   getNotes, createNote, createImage, uploadMedia, updateNote, deleteNote, sweepMedia,
+  setNoteReminder, clearNoteReminder,
   sendNote, answerTransfer, cancelTransfer, markTransferSeen,
   getTasks, createTask, updateTask, deleteTask, completeTask, undoTask, dismissReminder,
   getInbox,
-  pushDueReminders, sendEmailReminders,
+  pushDueReminders, sendEmailReminders, sendNoteEmailReminders,
 };

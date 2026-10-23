@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import NoteEditor from './NoteEditor';
-import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError } from './tableauShared';
+import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError, formatDue } from './tableauShared';
 
 const SAVE_DELAY_MS = 700;
 
@@ -12,7 +12,7 @@ const SAVE_DELAY_MS = 700;
  * lâcher (onSave), une seule requête par geste. Le texte (images comprises)
  * s'enregistre seul, 0,7 s après la dernière modification.
  */
-export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onColor, onError }) {
+export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onColor, onError, onReminder, flash }) {
   const c = noteColor(note.color);
   const [menu, setMenu] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -88,11 +88,16 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
 
   return (
     <div
+      id={`tableau-note-${note.id}`}
+      className={flash ? 'tableau-flash' : undefined}
       onPointerDownCapture={onFront}
       style={{
         position: 'absolute', left: note.x, top: note.y, width: note.width, height: note.height, zIndex: note.z,
         background: c.bg, color: c.ink, borderRadius: 6, display: 'flex', flexDirection: 'column',
-        boxShadow: '0 6px 16px rgba(0,0,0,0.13), 0 1px 2px rgba(0,0,0,0.10)',
+        // Rappel arrivé : entouré de rouge jusqu'au « OK »
+        boxShadow: note.remind_due
+          ? '0 0 0 3px #DC2626, 0 6px 16px rgba(0,0,0,0.13)'
+          : '0 6px 16px rgba(0,0,0,0.13), 0 1px 2px rgba(0,0,0,0.10)',
       }}
     >
       <div
@@ -109,6 +114,13 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
         }}>
           {note.received_from_name ? `De ${note.received_from_name}` : ''}
         </span>
+        {note.remind_at && (
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={onReminder}
+            title={note.remind_due ? 'Rappel arrivé : cliquer pour le fermer' : 'Modifier le rappel'}
+            style={{ ...barBtn, ...(note.remind_due ? { background: '#DC2626', color: '#fff' } : {}) }}>
+            ⏰ {formatDue(note.remind_at.slice(0, 10), note.remind_at.slice(11, 16))}
+          </button>
+        )}
         {selectedImage && (
           // onMouseDown : sans ça, le clic retire le focus de l'éditeur et
           // désélectionne l'image avant que le bouton ne la copie.
@@ -153,6 +165,7 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
                 ))}
               </div>
               <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image…</button>
+              <button style={menuItem} onClick={() => { flush(); setMenu(false); onReminder(); }}>{note.remind_at ? 'Modifier le rappel…' : 'Rappel…'}</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('move'); }}>Envoyer à…</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('copy'); }}>Envoyer une copie à…</button>
               <button style={{ ...menuItem, color: '#B91C1C' }} onClick={() => { setMenu(false); onDelete(); }}>Supprimer</button>

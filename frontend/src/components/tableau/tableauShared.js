@@ -36,6 +36,9 @@ export const tableauApi = {
   uploadMedia: (file) => post('/media', imageForm(file)),
   updateNote: (id, body) => axios.patch(`${API_URL}/tableau/notes/${id}`, body).then((r) => r.data),
   deleteNote: (id) => axios.delete(`${API_URL}/tableau/notes/${id}`).then((r) => r.data),
+  // Rappel d'un post-it : { remind_at: 'YYYY-MM-DD HH:MM', screen, email }
+  setReminder: (id, body) => axios.put(`${API_URL}/tableau/notes/${id}/reminder`, body).then((r) => r.data),
+  clearReminder: (id) => axios.delete(`${API_URL}/tableau/notes/${id}/reminder`).then((r) => r.data),
   send: (noteId, toUserId, mode) => post('/transfers', { note_id: noteId, to_user_id: toUserId, mode }),
   accept: (id) => post(`/transfers/${id}/accept`),
   refuse: (id) => post(`/transfers/${id}/refuse`),

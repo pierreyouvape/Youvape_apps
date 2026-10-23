@@ -21,7 +21,7 @@ import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError, previewText 
  * répondrait 403.
  */
 
-const EMPTY = { incoming: [], answers: [], sent: [], reminders: [] };
+const EMPTY = { incoming: [], answers: [], sent: [], reminders: [], noteReminders: [] };
 const POLL_MS = 60 * 1000;
 const MAX_TOASTS = 3;
 
@@ -63,7 +63,7 @@ export function TableauInboxProvider({ children }) {
     return () => es.close();
   }, [enabled, refresh]);
 
-  const count = inbox.incoming.length + inbox.answers.length + inbox.reminders.length;
+  const count = inbox.incoming.length + inbox.answers.length + inbox.reminders.length + inbox.noteReminders.length;
 
   return (
     <TableauInboxContext.Provider value={{ inbox, count, refresh }}>
@@ -117,6 +117,15 @@ function TableauToasts({ inbox, refresh }) {
         ? `Il est revenu sur votre tableau. « ${preview(t.content)} »`
         : `« ${preview(t.content)} »`,
       actions: [{ label: 'OK', primary: true, onClick: run(() => tableauApi.seen(t.id)) }],
+    })),
+    ...inbox.noteReminders.map((n) => ({
+      key: `note-rem-${n.id}-${n.remind_at}`, color: n.color,
+      title: 'Rappel de post-it',
+      body: preview(n.content),
+      actions: [
+        { label: 'Voir', primary: true, onClick: () => navigate(`/tableau/epingle?note=${n.id}`) },
+        { label: 'OK', onClick: run(() => tableauApi.clearReminder(n.id)) },
+      ],
     })),
     ...inbox.reminders.map((t) => ({
       key: `rem-${t.id}-${t.next_due}`, color: null,

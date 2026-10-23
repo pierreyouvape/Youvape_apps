@@ -1134,6 +1134,7 @@ const setupTableauRemindersCron = () => {
       const tableauModel = require('../models/tableauModel');
       await tableauModel.pushDueReminders();
       await tableauModel.sendEmailReminders(require('./alertService').sendMail);
+      await tableauModel.sendNoteEmailReminders(require('./alertService').sendMail);
     } catch (error) {
       console.error('Erreur cron rappels Tableau:', error.message);
     }
