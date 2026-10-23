@@ -414,6 +414,10 @@ const pdfImportModel = {
         pdf_price: line.pdfGross,      // prix brut HT dans l'unité de la ligne
         pdf_price_net: line.pdfNet,    // prix net après remise
         discount_percent: discountPercent,
+        // Remise de pied du document reportée sur la ligne (Cloud Vapor : remise
+        // progressive + escompte CB) : propre à cette commande, l'écran ne la
+        // remplace pas par le tarif validé d'une commande passée.
+        document_discount: Boolean(item.document_discount),
         supplier_price: line.dbPrice,
         unit_price: line.unitPrice,
         // Pack : facteur appliqué à la quantité du document
@@ -469,6 +473,9 @@ const pdfImportModel = {
       // Anomalies de lecture du document (lignes non reprises, total incohérent).
       // Affichées en rouge dans l'écran d'import : une ligne perdue doit se voir.
       parse_warnings: parseWarnings,
+      // Remises de pied reportées sur chaque article (libellé, montant imprimé) :
+      // elles n'apparaissent plus en lignes « remise », l'écran les rappelle.
+      folded_discounts: (parsed.foldedDiscounts || []).map(d => ({ label: d.product_name, amount: d.unit_price })),
       // Drapeaux du parseur, renvoyés par l'écran lors d'un mapping manuel (mapLine)
       conversion,
       items: allItems,

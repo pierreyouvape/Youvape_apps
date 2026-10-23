@@ -1,0 +1,88 @@
+EMC (YOUVAPE), YOUVAPE SITE
+580 AVENUE DE L'AUBE ROUGE
+34170 CASTELNAU LE LEZ
+France
+SIRET : 78950843900013
+TVA: FR87789508439 	Facture INV/2026/02555
+Date de	Date de
+facturatio	facturatio
+nn
+22/10/202
+6
+Date	Date
+d'échéanc	d'échéanc
+ee
+06/11/202
+6
+Date de	Date de
+livraison	livraison
+22/10/202
+6
+Source	Source
+S08644
+Numéro	Numéro
+de client	de client
+78950843
+900013
+Référence	Référence
+pay_11zDs
+6BROdSH
+dlbdR0SR
+2u
+Adresse du client :	Adresse du client :
+8 BOULEVARD VICTOR HUGO
+34000 MONTPELLIER
+France
+Type d'opération :	Type d'opération :
+Livraison de biens
+Conditions de paiement : 15 jours
+DESCRIPTION 	QUANTITÉ 	PRIX UNITAIRE 	TAXES 	MONTANT
+[BLUE VELVET-10ML-18MG] BLUE VELVET-10ML (18MG) 	100,00 Unité(s) 	1,50 	TVA 20% 	150,00 €
+[BLUE VELVET-50ML-00MG] BLUE VELVET-50ML 	138,00 Unité(s) 	4,90 	TVA 20% 	676,20 €
+[BLUE VELVET-10ML-12MG] BLUE VELVET-10ML (12MG) 	140,00 Unité(s) 	1,50 	TVA 20% 	210,00 €
+[BLUE VELVET-10ML-03MG] BLUE VELVET-10ML (03MG) 	500,00 Unité(s) 	1,50 	TVA 20% 	750,00 €
+[ASSAULT-100ML-00MG] ASSAULT-100ML 	10,00 Unité(s) 	5,90 	TVA 20% 	59,00 €
+[SCOUT-100ML-00MG] SCOUT-100ML 	25,00 Unité(s) 	5,90 	TVA 20% 	147,50 €
+[BLUE VELVET-10ML-06MG] BLUE VELVET-10ML (06MG) 	300,00 Unité(s) 	1,50 	TVA 20% 	450,00 €
+[SUPPORT-100ML-00MG] SUPPORT-100ML 	10,00 Unité(s) 	5,90 	TVA 20% 	59,00 €
+[Remise] Remise
+Remise progressive (-15%)
+1,00 Unité(s) 	-375,26 	TVA 20% 	-375,26 €
+[Remise] Remise
+Escompte paiement CB (-1%)
+1,00 Unité(s) 	-21,26 	TVA 20% 	-21,26 €
+[Frais de port] Livraison standard
+Chronopost
+1,00 Unité(s) 	0,00 	TVA 20% 	0,00 €
+Fabricant Nantais d'e-liquides pour cigarettes électroniques	Fabricant Nantais d'e-liquides pour cigarettes électroniques
+CLOUD VAPOR
+1 Chemin de la Chatterie, Greenpark
+44800 Saint-Herblain
+France
+CLOUD VAPOR – SAS au capital de 14 928 € – 1 Chemin de la Chatterie, 44800 Saint-Herblain, France - +33 9 80 80 86 84 –
+commercial@cloudvapor.com – www.b2b.cloudvapor.com - RCS Nantes 797956166 – SIRET 79795616600053 – TVA
+FR78797956166
+
+-- 1 of 2 --
+
+Communication de paiement : INV/2026/02555	INV/2026/02555
+sur ce compte : FR76 3004 7141 2100 0203 5550 281 - CIC NANTES	FR76 3004 7141 2100 0203 5550 281 - CIC NANTES
+LOIRE ENTREPRISES	LOIRE ENTREPRISES
+Option pour le paiement de la taxe d'après les débits
+Scanner le code QR avec
+votre application bancaire
+https://b2b.cloudvapor.com/cgv
+Montant hors taxes 	2 105,18 €
+TVA 20% 	421,04 €
+Total	Total 	2 526,22	2 526,22 €€
+Fabricant Nantais d'e-liquides pour cigarettes électroniques	Fabricant Nantais d'e-liquides pour cigarettes électroniques
+CLOUD VAPOR
+1 Chemin de la Chatterie, Greenpark
+44800 Saint-Herblain
+France
+CLOUD VAPOR – SAS au capital de 14 928 € – 1 Chemin de la Chatterie, 44800 Saint-Herblain, France - +33 9 80 80 86 84 –
+commercial@cloudvapor.com – www.b2b.cloudvapor.com - RCS Nantes 797956166 – SIRET 79795616600053 – TVA
+FR78797956166
+
+-- 2 of 2 --
+

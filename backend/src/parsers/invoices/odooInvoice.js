@@ -82,7 +82,11 @@ const NOISE = [
   /^sur ce compte/i,
   /^Option pour le paiement/i,
   /^(Pénalité|Pénalités) de retard/i,
-  /^Escompte/i,
+  // « Escompte pour paiement anticipé : néant » est un pied de page, mais pas
+  // « Escompte paiement CB (-1%) » : chez Cloud Vapor, c'est le libellé d'une
+  // ligne de remise (INV/2026/02555). Le jeter coupait la ligne de sa référence
+  // « [Remise] », et l'escompte passait pour un article.
+  /^Escompte\b.*:/i,
   /^Aucun escompte/i,
   /^Nature des opérations/i,
   /^Mode de paiement/i,
@@ -200,7 +204,11 @@ function parseHeader(text) {
   // Les recherches d'en-tête tournent donc sur une copie à plat, où les sauts de
   // ligne deviennent des espaces. Les totaux, eux, restent ancrés en début de
   // ligne sur le texte d'origine — les aplatir les rendrait ambigus.
-  const flat = text.replace(/\s*\n\s*/g, ' ');
+  // Depuis octobre 2026 (INV/2026/02555), l'en-tête imprime chaque étiquette en
+  // double (« Source Source S08644 », « Date de Date de facturatio facturatio nn »)
+  // et coupe l'année à la colonne (« 22/10/202 » puis « 6 ») : on recolle l'année,
+  // et les motifs ci-dessous tolèrent l'étiquette répétée.
+  const flat = text.replace(/\s*\n\s*/g, ' ').replace(/\b(\d{2}\/\d{2}\/\d{3}) (\d)\b/g, '$1$2');
 
   const grab = (re, i = 1, source = flat) => {
     const m = source.match(re);
@@ -231,16 +239,17 @@ function parseHeader(text) {
     correctsInvoice: grab(/Extourne de\s*:?\s*([A-Z0-9][A-Z0-9/\-.]*)/i),
     isProforma: /PRO\s*FORMA/i.test(text),
     // « Date de la facture », « Date de facturation », « Date de l'avoir ».
-    date: date(/Date\s+de\s+(?:la\s+|l')?(?:factur\w*|avoir)\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
-    dueDate: date(/Date\s+d'échéance\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
+    date: date(/Date\s+de\s+(?:Date\s+de\s+)?(?:la\s+|l')?(?:factur\w*|avoir)(?:\s+factur\w*)?(?:\s+n+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
+    dueDate: date(/Date\s+(?:Date\s+)?d'échéanc\w*(?:\s+d'échéanc\w*)?(?:\s+e+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     // « Origine » chez JoshNoa et Levest, « Source » chez LIPS et Cloud Vapor.
-    orderRefOnDoc: grab(/(?:Origine|Source)\s*:?\s+(\S+)/i),
+    orderRefOnDoc: grab(/(?:Origine|Source)\s*:?\s+(?:(?:Origine|Source)\s+)?(\S+)/i),
     // Celui-ci reste sur le texte d'origine : à plat, la capture avalerait
     // l'étiquette suivante (« Transfert bancaire À régler avant le… »).
     statedPaymentMethod: grab(/Mode de paiement\s*:?\s*\n\s*([^\n]+)/i, 1, text),
     totalHt: amount(/Montant (?:hors taxes|HT)\s+([-\d  .,]+)\s*€/i),
     totalTva: amount(/^TVA\s+[\d.,]+\s*%\s+([-\d  .,]+)\s*€/im),
-    totalTtc: amount(/^Total\s+([-\d  .,]+)\s*€/im),
+    // « Total 2 597,87 € », ou en double : « Total Total 2 526,22 2 526,22 €€ ».
+    totalTtc: amount(/^Total(?:\s+Total)?\s+(-?\d{1,3}(?:[  ]\d{3})*[.,]\d{2})\b/im),
     payments,
   };
 }

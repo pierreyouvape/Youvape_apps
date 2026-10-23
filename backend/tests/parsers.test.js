@@ -254,10 +254,49 @@ console.log('Cloud Vapor — INV/2025/04126 (2 pages)');
     assert.ok(!cv.items.some((i) => i.supplier_sku === 'Delivery_007'));
   });
 
-  test('Cloud Vapor INV/2025/04126 : lignes - remise = « Montant hors taxes » (2 164,89 €)', () => {
+  test('Cloud Vapor INV/2025/04126 : la remise de 30 % est reportée sur chaque article (net = 2 164,89 €)', () => {
     assert.strictEqual(sumLines(cv.items), 3092.70);
-    assert.strictEqual(cv.discountItems.length, 1);
-    assert.strictEqual(Math.round((3092.70 + cv.discountItems[0].unit_price) * 100) / 100, 2164.89);
+    assert.strictEqual(cv.discountItems.length, 0);
+    assert.strictEqual(cv.foldedDiscounts.length, 1);
+    assert.ok(cv.items.every((i) => i.discount_percent === 30 && i.document_discount));
+    const net = cv.items.reduce((s, i) => s + i.total_ht * (1 - i.discount_percent / 100), 0);
+    assert.strictEqual(Math.round(net * 100) / 100, 2164.89);
+  });
+}
+
+// ── Cloud Vapor : remises « [Remise] » prises pour des articles ───────────────
+// Depuis octobre 2026, les remises portent des crochets (« [Remise] Remise /
+// Remise progressive (-15%) ») : elles passaient pour des articles de réf.
+// « Remise », jamais rapprochés, et la commande partait sans ses -15 % et -1 %.
+console.log('Cloud Vapor — INV/2026/02555 (remise progressive + escompte CB)');
+{
+  const cvParser = require('../src/parsers/cloudvaporParser');
+  const cv = cvParser.parse(fixture('cloudvapor-INV-2026-02555.txt'));
+
+  test('Cloud Vapor INV/2026/02555 : 8 articles, aucune « Remise » parmi eux', () => {
+    assert.strictEqual(cv.items.length, 8);
+    assert.ok(!cv.items.some((i) => /remise/i.test(i.supplier_sku)));
+    assert.strictEqual(sumLines(cv.items), 2501.70);
+    assert.strictEqual(cv.orderNumber, 'S08644');
+  });
+
+  test('Cloud Vapor INV/2026/02555 : -15 % puis -1 % = 15,85 % sur chaque article', () => {
+    assert.strictEqual(cv.discountItems.length, 0);
+    assert.deepStrictEqual(cv.foldedDiscounts.map((d) => d.unit_price), [-375.26, -21.26]);
+    assert.ok(cv.items.every((i) => i.discount_percent === 15.85 && i.document_discount));
+    const net = cv.items.reduce((s, i) => s + i.total_ht * (1 - i.discount_percent / 100), 0);
+    assert.strictEqual(Math.round(net * 100) / 100, 2105.18);
+    const bv50 = cv.items.find((i) => i.supplier_sku === 'BLUE VELVET-50ML-00MG');
+    assert.strictEqual(Math.round(bv50.unit_price_net * (1 - bv50.discount_percent / 100) * 10000) / 10000, 4.1234);
+  });
+
+  test('Cloud Vapor : une remise qui ne retombe pas sur toute la facture reste une ligne à part', () => {
+    const items = [{ total_ht: 100 }, { total_ht: 50 }];
+    // 10 % annoncés, mais 10 € seulement (10 % d'une partie des articles)
+    assert.strictEqual(cvParser.foldGlobalDiscounts(items, [{ rate: 0.10, unit_price: -10 }]), false);
+    // Remise sans pourcentage
+    assert.strictEqual(cvParser.foldGlobalDiscounts(items, [{ rate: null, unit_price: -15 }]), false);
+    assert.ok(items.every((i) => i.discount_percent === undefined));
   });
 }
 
@@ -271,6 +310,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['cigaccess-FA128317.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cigaccess-FA129179.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cloudvapor-INV-2025-04126.txt', 'cloudvaporParser', 'odooInvoice'],
+    ['cloudvapor-INV-2026-02555.txt', 'cloudvaporParser', 'odooInvoice'],
     ['curieux-FA063171.txt', 'curieuxParser', 'prestashopInvoice'],
     ['curieux-FA072952.txt', 'curieuxParser', 'prestashopInvoice'],
     ['etasty-FA060440.txt', 'etastyParser', 'prestashopInvoice'],

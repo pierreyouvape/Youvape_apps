@@ -194,6 +194,11 @@ const ImportPdfPage = () => {
       setLastVerified(prev => ({ ...prev, ...data }));
       setItems(prev => prev.map(item => {
         if (item.item_type === 'discount' || !item.matched || item.priceEdited) return item;
+        // Remise de pied du document reportée sur la ligne (remise progressive
+        // Cloud Vapor : elle dépend du volume de CETTE commande) : un tarif validé
+        // passé l'écraserait (INV/2026/02555 : -8 % d'une ancienne commande au
+        // lieu des -15,85 % imprimés).
+        if (item.document_discount) return item;
         const v = data[item.product_id];
         if (!v) return item;
         // Tarif validé net → on le pose comme prix et on annule la remise
@@ -933,6 +938,13 @@ const ImportPdfPage = () => {
                       )}
                     </div>
                   ))}
+
+                  {(parsedData.folded_discounts || []).length > 0 && (
+                    <div style={{ marginTop: 14, padding: '10px 14px', background: '#EAF3FB', borderRadius: 8, border: '1px solid #BFDCEF', fontSize: 13, color: '#1B4F78', lineHeight: 1.5 }}>
+                      <strong>Remises du document reportées sur chaque article</strong> (colonne « Remise % ») :{' '}
+                      {parsedData.folded_discounts.map(d => `${d.label} ${fmt(d.amount)} €`).join(' · ')}
+                    </div>
+                  )}
 
                   {existingOrder && (
                     <div style={{ marginTop: 14, padding: '12px 14px', background: '#EEF2FF', borderRadius: 8, border: '1px solid #C7D2FE', fontSize: 13, color: '#3730A3', lineHeight: 1.5 }}>

@@ -184,6 +184,34 @@ test('les deux règlements d\'une même facture sont remontés', () => {
   assert.ok(close(montants[1], 2338.08));
 });
 
+/* ─── Cloud Vapor — INV/2026/02555, remises « [Remise] » (PDF réel) ──────── */
+
+const cv2 = parseInvoice(fixture('cloudvapor-INV-2026-02555.txt'));
+
+console.log('\nCloud Vapor — INV/2026/02555 (PDF réel)');
+
+test('les remises entre crochets sont des remises, pas des articles', () => {
+  const remises = cv2.lines.filter((l) => l.kind === 'discount');
+  assert.deepStrictEqual(remises.map((l) => l.lineTotalHt), [-375.26, -21.26]);
+  assert.strictEqual(cv2.lines.filter((l) => l.kind === 'product').length, 8);
+});
+
+test('les lignes retombent sur le total imprimé (2 105,18 €)', () => {
+  const somme = cv2.lines.reduce((s, l) => s + l.lineTotalHt, 0);
+  assert.ok(close(somme, 2105.18, 0.02), `somme ${somme}`);
+  assert.strictEqual(cv2.warnings.length, 0);
+  assert.strictEqual(cv2.number, 'INV/2026/02555');
+  assert.strictEqual(cv2.orderRefOnDoc, 'S08644');
+});
+
+test('l\'en-tête aux étiquettes doublées et à l\'année coupée est lu', () => {
+  assert.strictEqual(cv2.date, '2026-10-22');
+  assert.strictEqual(cv2.dueDate, '2026-11-06');
+  assert.ok(close(cv2.totalHt, 2105.18));
+  assert.ok(close(cv2.totalTva, 421.04));
+  assert.ok(close(cv2.totalTtc, 2526.22));
+});
+
 /* ─── JoshNoa — V3/2026/36311, facture entière (PDF réel) ────────────────── */
 
 const josh = parseInvoice(fixture('joshnoa-V3202636311.txt'));
