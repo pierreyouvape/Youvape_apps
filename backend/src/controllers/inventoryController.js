@@ -37,10 +37,28 @@ module.exports = {
     await inventoryModel.cancel(id(req), req.user.id);
     res.json({ ok: true });
   }),
+  gaps: handle(async (req, res) => res.json({ gaps: await inventoryModel.gaps(id(req)) })),
+  sendGaps: handle(async (req, res) => res.json(await inventoryModel.sendGaps(id(req), req.body?.itemIds, req.user.id))),
+  retryGaps: handle(async (req, res) => res.json(await inventoryModel.retryGaps(id(req), req.body?.itemIds, req.user.id))),
+  ignoreGaps: handle(async (req, res) => res.json(await inventoryModel.ignoreGaps(id(req), req.body?.itemIds, req.user.id))),
+  unignoreGaps: handle(async (req, res) => res.json(await inventoryModel.unignoreGaps(id(req), req.body?.itemIds, req.user.id))),
+  requestRecount: handle(async (req, res) => {
+    await inventoryModel.requestRecount(id(req), item(req), req.user.id);
+    res.json({ ok: true });
+  }),
+  fixLocation: handle(async (req, res) => {
+    res.json(await inventoryModel.fixLocation(id(req), item(req), req.body?.location, req.user));
+  }),
+  close: handle(async (req, res) => {
+    await inventoryModel.close(id(req), req.user.id);
+    res.json({ ok: true });
+  }),
 
   // ── PDA ──
-  current: handle(async (req, res) => res.json(await inventoryPdaModel.current(req.user.id))),
-  findLocation: handle(async (req, res) => res.json(await inventoryPdaModel.findLocation(req.query.code))),
+  current: handle(async (req, res) => res.json(await inventoryPdaModel.current(req.user.id, req.query.inventory))),
+  findLocation: handle(async (req, res) => {
+    res.json(await inventoryPdaModel.findLocation(req.query.code, req.query.inventory));
+  }),
   getLocation: handle(async (req, res) => res.json(await inventoryPdaModel.getLocation(loc(req), req.user.id))),
   take: handle(async (req, res) => res.json(await inventoryPdaModel.take(loc(req), req.user.id))),
   scan: handle(async (req, res) => {
@@ -62,7 +80,9 @@ module.exports = {
   }),
   reopen: handle(async (req, res) => res.json(await inventoryPdaModel.reopen(loc(req), req.user.id))),
   validateDay: handle(async (req, res) => res.json(await inventoryPdaModel.validateDay(req.user.id))),
-  listRecounts: handle(async (req, res) => res.json({ recounts: await inventoryPdaModel.listRecounts(req.user.id) })),
+  listRecounts: handle(async (req, res) => {
+    res.json({ recounts: await inventoryPdaModel.listRecounts(req.user.id, req.query.inventory) });
+  }),
   getRecount: handle(async (req, res) => res.json(await inventoryPdaModel.getRecount(item(req), req.user.id))),
   takeRecount: handle(async (req, res) => res.json(await inventoryPdaModel.takeRecount(item(req), req.user.id))),
   scanRecount: handle(async (req, res) => res.json(await inventoryPdaModel.scanRecount(item(req), req.user.id, req.body?.code))),

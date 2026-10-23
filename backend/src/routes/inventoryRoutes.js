@@ -40,5 +40,14 @@ router.get('/:id', read, c.get);
 router.post('/:id/locations/:locationId/release', write, c.releaseLocation);
 router.post('/:id/recounts/:itemId/release', write, c.releaseRecount);
 router.post('/:id/cancel', write, c.cancel);
+// Lot 2 : écarts, envoi à BMS, emplacement, clôture.
+router.get('/:id/gaps', read, c.gaps);
+router.post('/:id/gaps/send', write, c.sendGaps);
+router.post('/:id/gaps/retry', write, c.retryGaps);
+router.post('/:id/gaps/ignore', write, c.ignoreGaps);
+router.post('/:id/gaps/unignore', write, c.unignoreGaps);
+router.post('/:id/items/:itemId/recount', write, c.requestRecount);
+router.post('/:id/items/:itemId/location', write, c.fixLocation);
+router.post('/:id/close', write, c.close);
 
 module.exports = router;

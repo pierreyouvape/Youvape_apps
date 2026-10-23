@@ -329,6 +329,11 @@ function CreateView({ token, onCreated, onCancel }) {
             <span>
               <strong>{nf.format(preview.refs)}</strong> références à compter sur <strong>{nf.format(preview.locations)}</strong> emplacements
               {preview.withoutLocation > 0 && <span style={{ color: C.amber }}> — dont {nf.format(preview.withoutLocation)} sans emplacement</span>}
+              {preview.excluded > 0 && (
+                <div style={{ fontSize: 13.5, color: C.amber, marginTop: 4 }}>
+                  {nf.format(preview.excluded)} référence(s) exclue(s) : déjà dans {preview.excludedIn.map(n => `« ${n} »`).join(', ')}, en cours.
+                </div>
+              )}
             </span>
           )}
         </div>
@@ -409,11 +414,27 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
         </div>
         <button onClick={onBack} style={btn('ghost')}>Tous les inventaires</button>
         {open && canWrite && (
+          <button
+            onClick={() => act('/close', `Clôturer « ${inv.name} » ? Il ne pourra plus bouger.`, 'Inventaire clôturé.')}
+            disabled={!inv.closing?.closable}
+            title={inv.closing?.closable ? '' : `Pas encore : ${inv.closing?.reasons.join(', ')}`}
+            style={{ ...btn(), background: C.green, opacity: inv.closing?.closable ? 1 : 0.45 }}
+          >
+            Clôturer
+          </button>
+        )}
+        {open && canWrite && (
           <button onClick={() => act('/cancel', `Annuler « ${inv.name} » ? Les comptages sont conservés mais l'inventaire ne pourra plus avancer.`, 'Inventaire annulé.')} style={btn('danger')}>
             Annuler l'inventaire
           </button>
         )}
       </div>
+
+      {open && inv.closing && !inv.closing.closable && (
+        <div style={{ fontSize: 13, color: C.greyT, marginTop: -8 }}>
+          Avant de clôturer : {inv.closing.reasons.join(' · ')}.
+        </div>
+      )}
 
       <div style={{ ...panel }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 10 }}>
@@ -436,6 +457,7 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
 
       <Tabs
         tabs={[
+          { key: 'gaps', label: 'Écarts' },
           { key: 'locations', label: 'Emplacements' },
           { key: 'counters', label: 'Compteurs' },
           { key: 'recounts', label: `Recomptages${inv.recounts.length ? ` (${inv.recounts.length})` : ''}` },
@@ -532,6 +554,10 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
         </div>
       )}
 
+      {tab === 'gaps' && (
+        <GapsView token={token} id={id} canWrite={canWrite && open} setMessage={setMessage} onChanged={load} />
+      )}
+
       {tab === 'recounts' && (
         <>
           <p style={{ margin: 0, fontSize: 13, color: C.greyT }}>
@@ -579,18 +605,261 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
   );
 }
 
+// ── Écarts (lot 2) ──────────────────────────────────────────────────────────
+
+const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const signed = (n) => (n > 0 ? `+${nf.format(n)}` : nf.format(n));
+
+const GAP_STATE = {
+  todo: { label: 'À traiter', color: C.accent, bg: C.accentL },
+  queued: { label: 'En file', color: C.blue, bg: C.blueL },
+  sending: { label: 'Envoi…', color: C.blue, bg: C.blueL },
+  sent: { label: 'Envoyé', color: C.green, bg: C.greenL },
+  error: { label: 'Erreur', color: C.red, bg: C.redL },
+  ignored: { label: 'Écarté', color: C.greyT, bg: C.grey },
+  conform: { label: 'Conforme', color: C.green, bg: C.greenL },
+  unknown: { label: 'Inconnu de BMS', color: C.red, bg: C.redL },
+};
+
+const GAP_FILTERS = [
+  { key: 'todo', label: 'À traiter', test: g => ['todo', 'error', 'queued', 'sending', 'unknown'].includes(g.state) || (g.elsewhere.length > 0 && !g.locationFixedTo) },
+  { key: 'sent', label: 'Envoyés', test: g => g.state === 'sent' },
+  { key: 'ignored', label: 'Écartés', test: g => g.state === 'ignored' },
+  { key: 'conform', label: 'Conformes', test: g => g.state === 'conform' },
+  { key: 'all', label: 'Tout', test: () => true },
+];
+
+/**
+ * Écart de chaque référence au comptage définitif (emplacements validés ou
+ * recomptée) : théorique relevé au comptage, compté, écart et sa valeur HT.
+ * Le responsable envoie à BMS (mouvement de l'écart), écarte, ou fait recompter.
+ */
+function GapsView({ token, id, canWrite, setMessage, onChanged }) {
+  const [rows, setRows] = useState(null);
+  const [filter, setFilter] = useState('todo');
+  const [selected, setSelected] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/inventaire/${id}/gaps`, authHeaders(token));
+      setRows(data.gaps);
+    } catch (err) {
+      setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
+    }
+  }, [token, id, setMessage]);
+  useEffect(() => { load(); }, [load]);
+
+  // Envois en cours : on suit la file de près.
+  const inFlight = (rows || []).some(g => g.state === 'queued' || g.state === 'sending');
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const t = setInterval(() => { load(); onChanged(); }, 4000);
+    return () => clearInterval(t);
+  }, [inFlight, load, onChanged]);
+
+  const post = async (url, body, done) => {
+    setBusy(true);
+    try {
+      const { data } = await axios.post(`${API_URL}/inventaire/${id}${url}`, body, authHeaders(token));
+      if (done) setMessage({ kind: 'ok', text: done(data) });
+      setSelected(new Set());
+      await load();
+      onChanged();
+    } catch (err) {
+      setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!rows) return <p style={{ color: C.greyT }}>Chargement…</p>;
+
+  const f = GAP_FILTERS.find(x => x.key === filter);
+  const shown = rows.filter(f.test);
+  const count = (k) => rows.filter(GAP_FILTERS.find(x => x.key === k).test).length;
+  const selectable = (g) => canWrite && ['todo', 'error'].includes(g.state);
+  const picked = rows.filter(g => selected.has(g.id));
+  const pickedTodo = picked.filter(g => g.state === 'todo');
+  const pickedErr = picked.filter(g => g.state === 'error');
+
+  // Ce qui reste à décider, en pièces et en valeur.
+  const todo = rows.filter(g => g.state === 'todo');
+  const plus = todo.filter(g => g.gap > 0);
+  const minus = todo.filter(g => g.gap < 0);
+  const sum = (list, k) => list.reduce((a, g) => a + (g[k] || 0), 0);
+  const sent = rows.filter(g => g.state === 'sent');
+
+  const toggle = (gid) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(gid)) next.delete(gid); else next.add(gid);
+    return next;
+  });
+  const allIds = shown.filter(selectable).map(g => g.id);
+  const allChecked = allIds.length > 0 && allIds.every(x => selected.has(x));
+
+  const send = () => {
+    const p = sum(pickedTodo.filter(g => g.gap > 0), 'gap');
+    const m = sum(pickedTodo.filter(g => g.gap < 0), 'gap');
+    const v = sum(pickedTodo, 'value');
+    if (!window.confirm(`Envoyer ${pickedTodo.length} écart(s) à BMS ?\n\nEntrées : ${signed(p)} · Sorties : ${signed(m)} pièces\nValeur nette : ${eur.format(v)} HT\n\nChaque écart part en mouvement d'ajustement.`)) return;
+    post('/gaps/send', { itemIds: pickedTodo.map(g => g.id) }, d => `${d.queued} écart(s) en cours d'envoi à BMS.`);
+  };
+  const ignore = () => {
+    const list = [...pickedTodo, ...pickedErr];
+    if (!window.confirm(`Écarter ${list.length} écart(s) ? Rien ne partira dans BMS pour ces références.`)) return;
+    post('/gaps/ignore', { itemIds: list.map(g => g.id) }, d => `${d.ignored} écart(s) écarté(s).`);
+  };
+  const retry = () => {
+    const uncertain = pickedErr.some(g => /VÉRIFIEZ/.test(g.pushError || ''));
+    if (uncertain && !window.confirm('Certains envois ont eu une réponse BMS incertaine : avez-vous vérifié dans BMS que le mouvement n\'est PAS passé ? Sinon il partira deux fois.')) return;
+    post('/gaps/retry', { itemIds: pickedErr.map(g => g.id) }, d => `${d.queued} envoi(s) relancé(s).`);
+  };
+  const recount = (g) => {
+    if (!window.confirm(`Faire recompter « ${g.name} » au PDA ? Le nouveau comptage fera foi.`)) return;
+    post(`/items/${g.id}/recount`, {}, () => 'Référence renvoyée au recomptage (PDA › À recompter).');
+  };
+  const fixLocation = (g, loc) => {
+    if (!window.confirm(`Ranger « ${g.name} » en ${loc} dans BMS (au lieu de ${g.currentLocation || 'aucun emplacement'}) ?`)) return;
+    post(`/items/${g.id}/location`, { location: loc }, d => `Emplacement BMS : ${d.location}.`);
+  };
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <Kpi label="Écarts à traiter" value={nf.format(todo.length)} sub={`${count('conform')} référence(s) conforme(s)`} color={todo.length ? C.accent : undefined} />
+        <Kpi label="En plus" value={`${signed(sum(plus, 'gap'))} pcs`} sub={eur.format(sum(plus, 'value'))} />
+        <Kpi label="En moins" value={`${signed(sum(minus, 'gap'))} pcs`} sub={eur.format(sum(minus, 'value'))} />
+        <Kpi label="Valeur nette à traiter" value={eur.format(sum(todo, 'value'))} sub="HT, au coût du catalogue" />
+        <Kpi label="Envoyés à BMS" value={nf.format(sent.length)} sub={`${eur.format(sum(sent, 'value'))} HT`} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {GAP_FILTERS.map(x => (
+          <button key={x.key} onClick={() => { setFilter(x.key); setSelected(new Set()); }} style={{
+            ...btn('ghost'), padding: '6px 12px', fontSize: 13,
+            background: filter === x.key ? BLUE : C.white, color: filter === x.key ? C.white : C.dark,
+            border: `1px solid ${filter === x.key ? BLUE : C.greyB}`,
+          }}>{x.label} ({count(x.key)})</button>
+        ))}
+        <span style={{ flex: 1 }} />
+        {canWrite && pickedTodo.length > 0 && (
+          <button disabled={busy} onClick={send} style={btn()}>Envoyer à BMS ({pickedTodo.length})</button>
+        )}
+        {canWrite && pickedErr.length > 0 && (
+          <button disabled={busy} onClick={retry} style={btn()}>Réessayer ({pickedErr.length})</button>
+        )}
+        {canWrite && (pickedTodo.length + pickedErr.length) > 0 && (
+          <button disabled={busy} onClick={ignore} style={btn('ghost')}>Écarter ({pickedTodo.length + pickedErr.length})</button>
+        )}
+      </div>
+
+      <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {canWrite && (
+                <th style={{ ...th, width: 30 }}>
+                  <input type="checkbox" checked={allChecked} disabled={!allIds.length}
+                    onChange={() => setSelected(allChecked ? new Set() : new Set(allIds))} />
+                </th>
+              )}
+              <th style={th}>Produit</th><th style={th}>Emplacement</th>
+              <th style={{ ...th, textAlign: 'right' }}>Théorique</th><th style={{ ...th, textAlign: 'right' }}>Compté</th>
+              <th style={{ ...th, textAlign: 'right' }}>Écart</th><th style={{ ...th, textAlign: 'right' }}>Valeur HT</th>
+              <th style={th}>État</th>{canWrite && <th style={th} />}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 && (
+              <tr><td style={{ ...td, color: C.greyT }} colSpan={canWrite ? 9 : 7}>
+                {rows.length === 0 ? 'Aucune référence au comptage définitif pour l\'instant (emplacements à valider, relevés en cours).' : 'Rien ici.'}
+              </td></tr>
+            )}
+            {shown.map(g => {
+              const gs = GAP_STATE[g.state];
+              return (
+                <tr key={g.id}>
+                  {canWrite && (
+                    <td style={td}>
+                      {selectable(g) && <input type="checkbox" checked={selected.has(g.id)} onChange={() => toggle(g.id)} />}
+                    </td>
+                  )}
+                  <td style={td}>
+                    <div style={{ fontWeight: 600 }}>{g.name}</div>
+                    <div style={{ fontSize: 12, color: C.greyT, fontFamily: 'monospace' }}>{g.sku}{g.brand ? ` · ${g.brand}` : ''}</div>
+                  </td>
+                  <td style={{ ...td, fontSize: 12.5 }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{locLabel(g.currentLocation)}</span>
+                    {g.locationFixedTo && <div style={{ color: C.green }}>rangé en {g.locationFixedTo}</div>}
+                    {!g.locationFixedTo && g.elsewhere.map(loc => (
+                      <div key={loc} style={{ color: C.amber, display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                        trouvé en <strong style={{ fontFamily: 'monospace' }}>{loc}</strong>
+                        {canWrite && (
+                          <button disabled={busy} onClick={() => fixLocation(g, loc)} style={{ ...btn('ghost'), padding: '2px 8px', fontSize: 12 }}>
+                            Ranger ici
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right' }}>{g.theoretical ?? '—'}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    {g.counted}
+                    {g.recounted && <div style={{ fontSize: 11.5, color: C.greyT }}>recompté{g.firstCounted != null ? ` (1er : ${g.firstCounted})` : ''}</div>}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: g.gap > 0 ? C.green : g.gap < 0 ? C.red : C.greyT }}>
+                    {g.gap == null ? '—' : signed(g.gap)}
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', color: g.value > 0 ? C.green : g.value < 0 ? C.red : C.greyT }}>
+                    {g.value == null ? '—' : eur.format(g.value)}
+                  </td>
+                  <td style={{ ...td, fontSize: 12.5 }}>
+                    <Chip color={gs.color} bg={gs.bg}>{gs.label}</Chip>
+                    {g.state === 'sent' && (
+                      <div style={{ color: C.greyT, marginTop: 3 }}>
+                        {signed(g.pushQty)} · {g.decidedBy}{g.bmsMovementId ? ` · mvt ${g.bmsMovementId}` : ''}
+                      </div>
+                    )}
+                    {g.state === 'ignored' && <div style={{ color: C.greyT, marginTop: 3 }}>par {g.decidedBy}</div>}
+                    {g.state === 'error' && <div style={{ color: C.red, marginTop: 3, maxWidth: 280 }}>{g.pushError}</div>}
+                  </td>
+                  {canWrite && (
+                    <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {['todo', 'error', 'ignored', 'conform'].includes(g.state) && (
+                        <button disabled={busy} onClick={() => recount(g)} style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>
+                          Recompter
+                        </button>
+                      )}
+                      {g.state === 'ignored' && (
+                        <button disabled={busy} onClick={() => post('/gaps/unignore', { itemIds: [g.id] }, () => 'Écart rétabli.')}
+                          style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5, marginLeft: 6 }}>
+                          Rétablir
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Liste ───────────────────────────────────────────────────────────────────
 
 function ListView({ list, canWrite, onOpen, onCreate }) {
-  const hasOpen = list.some(i => i.status === 'open');
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {canWrite && (
         <div>
-          <button onClick={onCreate} disabled={hasOpen} title={hasOpen ? 'Un inventaire est déjà en cours' : ''} style={{ ...btn(), opacity: hasOpen ? 0.5 : 1 }}>
+          <button onClick={onCreate} style={btn()}>
             Nouvel inventaire
           </button>
-          {hasOpen && <span style={{ marginLeft: 12, fontSize: 13, color: C.greyT }}>Un seul inventaire à la fois : terminez ou annulez celui en cours.</span>}
         </div>
       )}
       {list.length === 0 && <p style={{ color: C.greyT }}>Aucun inventaire pour l'instant.</p>}

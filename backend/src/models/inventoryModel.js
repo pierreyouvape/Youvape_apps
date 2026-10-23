@@ -17,6 +17,9 @@
 
 const pool = require('../config/database');
 const { STOCK_VALUE_SCOPE } = require('./stockValuationModel');
+const pdaProductModel = require('./pdaProductModel');
+const inventoryPushService = require('../services/inventoryPushService');
+const { gapOf } = require('../services/inventoryRules');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 
@@ -125,19 +128,33 @@ const options = async () => {
   };
 };
 
-/** « X références, Y emplacements » avant de créer. */
+// Décision Pierre (23/10/2026) : une référence ne vit que dans UN inventaire
+// ouvert — sinon son écart partirait deux fois dans BMS. Celles déjà engagées
+// ailleurs sont exclues à la création, et l'aperçu le dit.
+const BUSY_SQL = `
+  SELECT oi.product_id, ov.name FROM inventory_items oi
+    JOIN inventories ov ON ov.id = oi.inventory_id AND ov.status = 'open'`;
+
+/** « X références, Y emplacements » avant de créer (+ celles exclues car déjà engagées). */
 const preview = async ({ kind, filters }) => {
   checkKind(kind);
   const params = [];
   const where = filterSql(kind, cleanFilters(filters), params);
   const { rows: [r] } = await pool.query(
-    `SELECT count(*)::int AS refs,
-            count(DISTINCT COALESCE(btrim(p.shelf_location), ''))::int AS locations,
-            count(*) FILTER (WHERE COALESCE(btrim(p.shelf_location), '') = '')::int AS without_location
-       ${SCOPE_FROM}${where}`,
+    `WITH m AS (SELECT p.id, COALESCE(btrim(p.shelf_location), '') AS loc ${SCOPE_FROM}${where}),
+          busy AS (${BUSY_SQL})
+     SELECT count(*) FILTER (WHERE b.product_id IS NULL)::int AS refs,
+            count(DISTINCT m.loc) FILTER (WHERE b.product_id IS NULL)::int AS locations,
+            count(*) FILTER (WHERE b.product_id IS NULL AND m.loc = '')::int AS without_location,
+            count(*) FILTER (WHERE b.product_id IS NOT NULL)::int AS excluded,
+            COALESCE(array_agg(DISTINCT b.name) FILTER (WHERE b.name IS NOT NULL), '{}') AS excluded_in
+       FROM m LEFT JOIN busy b ON b.product_id = m.id`,
     params
   );
-  return { refs: r.refs, locations: r.locations, withoutLocation: r.without_location };
+  return {
+    refs: r.refs, locations: r.locations, withoutLocation: r.without_location,
+    excluded: r.excluded, excludedIn: r.excluded_in,
+  };
 };
 
 const create = async ({ name, kind, filters }, userId) => {
@@ -151,27 +168,21 @@ const create = async ({ name, kind, filters }, userId) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    let inventoryId;
-    try {
-      const { rows: [inv] } = await client.query(
-        `INSERT INTO inventories (name, kind, filters, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
-        [title, kind, kind === 'global' ? {} : clean, userId]
-      );
-      inventoryId = inv.id;
-    } catch (error) {
-      if (error.code !== '23505') throw error;
-      const { rows: [open] } = await pool.query(`SELECT name FROM inventories WHERE status = 'open'`);
-      throw httpError(409, `Un inventaire est déjà en cours : « ${open?.name} ». Terminez-le ou annulez-le d'abord.`);
-    }
+    const { rows: [inv] } = await client.query(
+      `INSERT INTO inventories (name, kind, filters, created_by) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [title, kind, kind === 'global' ? {} : clean, userId]
+    );
+    const inventoryId = inv.id;
 
     const shifted = where.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`);
     const { rowCount } = await client.query(
       `INSERT INTO inventory_items (inventory_id, product_id, sku, name, expected_location)
        SELECT $1::int, p.id, p.sku, p.post_title, COALESCE(btrim(p.shelf_location), '')
-         ${SCOPE_FROM}${shifted}`,
+         ${SCOPE_FROM}${shifted}
+          AND NOT EXISTS (SELECT 1 FROM (${BUSY_SQL}) busy WHERE busy.product_id = p.id)`,
       [inventoryId, ...params]
     );
-    if (rowCount === 0) throw httpError(400, 'Aucune référence ne correspond : rien à inventorier.');
+    if (rowCount === 0) throw httpError(400, 'Aucune référence à compter : elles sont toutes déjà dans un inventaire en cours, ou aucune ne correspond.');
 
     await client.query(
       `INSERT INTO inventory_locations (inventory_id, location)
@@ -276,7 +287,8 @@ const get = async (id) => {
 
   return {
     id: v.id, name: v.name, kind: v.kind, filters: v.filters, status: v.status,
-    createdAt: v.created_at, createdBy: v.created_by_name,
+    createdAt: v.created_at, createdBy: v.created_by_name, closedAt: v.closed_at,
+    closing: v.status === 'open' ? await closeCheck(id) : null,
     stats: {
       total: s.total, counted: s.counted, recounted: s.recounted, recount: s.recount, pending: s.pending,
       refWaiting: s.ref_waiting, refErrors: s.ref_errors, addedByScan: s.added_by_scan,
@@ -337,4 +349,201 @@ const cancel = async (inventoryId, userId) => {
   await log(inventoryId, userId, 'cancel');
 };
 
-module.exports = { options, preview, create, list, get, releaseLocation, releaseRecount, cancel, log };
+// ── Lot 2 : écarts, envoi à BMS, emplacements, clôture ──────────────────────
+
+/**
+ * Les références dont le comptage est DÉFINITIF : comptées dans des
+ * emplacements validés (ou recomptées), stock théorique relevé.
+ */
+const gaps = async (inventoryId) => {
+  const { rows } = await pool.query(
+    `SELECT i.id, i.product_id, i.sku, i.name, i.expected_location, i.status, i.recount_qty,
+            i.ref_physical, i.ref_picked, i.ref_error, i.first_counted, i.first_theoretical,
+            i.decision, i.decided_at, ud.name AS decided_name, i.push_status, i.push_qty, i.push_at,
+            i.push_error, i.bms_movement_id, i.location_fixed_to,
+            COALESCE(p.computed_cost, p.wc_cog_cost, 0)::float AS cost,
+            COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
+            p.shelf_location AS current_location,
+            ${inventoryPushService.COUNTED_SQL} AS counted,
+            ARRAY(SELECT DISTINCT l.location FROM inventory_counts c JOIN inventory_locations l ON l.id = c.location_id
+                   WHERE c.inventory_id = i.inventory_id AND c.product_id = i.product_id AND c.qty > 0) AS found_in
+       FROM inventory_items i
+       JOIN products p ON p.id = i.product_id
+       LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
+       LEFT JOIN users ud ON ud.id = i.decided_by
+      WHERE i.inventory_id = $1 AND i.status IN ('counted', 'recounted') AND NOT i.ref_needed
+        AND (i.ref_at IS NOT NULL OR i.ref_error IS NOT NULL)
+      ORDER BY i.expected_location, i.name`,
+    [inventoryId]
+  );
+  return rows.map(r => {
+    const unknown = !!r.ref_error;
+    const { counted, theoretical, gap } = gapOf(r);
+    // Trouvé ailleurs que là où le produit est rangé (dans BMS, d'après nous).
+    const elsewhere = r.found_in.filter(l => l && l !== (r.current_location || '').trim());
+    let state = 'conform';
+    if (unknown) state = 'unknown';
+    else if (r.push_status) state = r.push_status;
+    else if (r.decision === 'ignore') state = 'ignored';
+    else if (gap !== 0) state = 'todo';
+    return {
+      id: r.id, productId: r.product_id, sku: r.sku, name: r.name, brand: r.brand,
+      expectedLocation: r.expected_location, currentLocation: r.current_location || '',
+      foundIn: r.found_in, elsewhere, locationFixedTo: r.location_fixed_to,
+      recounted: r.status === 'recounted', firstCounted: r.first_counted, firstTheoretical: r.first_theoretical,
+      counted, theoretical: unknown ? null : theoretical, gap: unknown ? null : gap,
+      value: unknown ? null : Math.round(gap * r.cost * 100) / 100,
+      state, refError: r.ref_error,
+      decidedBy: r.decided_name, decidedAt: r.decided_at,
+      pushQty: r.push_qty, pushAt: r.push_at, pushError: r.push_error, bmsMovementId: r.bms_movement_id,
+    };
+  });
+};
+
+const assertOpen = async (inventoryId) => {
+  const { rows: [v] } = await pool.query('SELECT status FROM inventories WHERE id = $1', [inventoryId]);
+  if (!v) throw httpError(404, 'Inventaire introuvable.');
+  if (v.status !== 'open') throw httpError(400, 'Cet inventaire n\'est plus en cours.');
+};
+
+/** Les lignes choisies qui sont bien « à traiter » (écart non nul, rien de décidé). */
+const todoIds = async (inventoryId, itemIds, states = ['todo']) => {
+  const wanted = new Set((Array.isArray(itemIds) ? itemIds : []).map(Number));
+  return (await gaps(inventoryId)).filter(g => wanted.has(g.id) && states.includes(g.state)).map(g => g.id);
+};
+
+/** « Envoyer à BMS » : les écarts partent dans la file. */
+const sendGaps = async (inventoryId, itemIds, userId) => {
+  await assertOpen(inventoryId);
+  const ids = await todoIds(inventoryId, itemIds);
+  if (!ids.length) throw httpError(400, 'Aucun écart à envoyer dans cette sélection.');
+  await pool.query(
+    `UPDATE inventory_items SET decision = 'send', decided_by = $2, decided_at = NOW(),
+            push_status = 'queued', push_error = NULL
+      WHERE id = ANY($1::int[]) AND push_status IS NULL`,
+    [ids, userId]
+  );
+  await log(inventoryId, userId, 'send', { qty: ids.length });
+  inventoryPushService.kick();
+  return { queued: ids.length };
+};
+
+/** Relance des envois en erreur (après vérification dans BMS si la réponse était incertaine). */
+const retryGaps = async (inventoryId, itemIds, userId) => {
+  await assertOpen(inventoryId);
+  const ids = await todoIds(inventoryId, itemIds, ['error']);
+  if (!ids.length) throw httpError(400, 'Aucun envoi en erreur dans cette sélection.');
+  await pool.query(
+    `UPDATE inventory_items SET push_status = 'queued', push_error = NULL, decided_by = $2, decided_at = NOW()
+      WHERE id = ANY($1::int[]) AND push_status = 'error'`,
+    [ids, userId]
+  );
+  await log(inventoryId, userId, 'retry', { qty: ids.length });
+  inventoryPushService.kick();
+  return { queued: ids.length };
+};
+
+/** « Écarter » : l'écart est vu et volontairement laissé de côté (rien ne part). */
+const ignoreGaps = async (inventoryId, itemIds, userId) => {
+  await assertOpen(inventoryId);
+  const ids = await todoIds(inventoryId, itemIds, ['todo', 'error']);
+  if (!ids.length) throw httpError(400, 'Aucun écart à écarter dans cette sélection.');
+  await pool.query(
+    `UPDATE inventory_items SET decision = 'ignore', decided_by = $2, decided_at = NOW(),
+            push_status = NULL, push_error = NULL
+      WHERE id = ANY($1::int[]) AND push_status IS DISTINCT FROM 'sent' AND push_status IS DISTINCT FROM 'sending'`,
+    [ids, userId]
+  );
+  await log(inventoryId, userId, 'ignore', { qty: ids.length });
+  return { ignored: ids.length };
+};
+
+/** Revenir sur un « Écarter ». */
+const unignoreGaps = async (inventoryId, itemIds, userId) => {
+  await assertOpen(inventoryId);
+  const ids = await todoIds(inventoryId, itemIds, ['ignored']);
+  await pool.query(
+    `UPDATE inventory_items SET decision = NULL, decided_by = NULL, decided_at = NULL
+      WHERE id = ANY($1::int[]) AND decision = 'ignore'`,
+    [ids]
+  );
+  await log(inventoryId, userId, 'unignore', { qty: ids.length });
+  return { restored: ids.length };
+};
+
+/**
+ * « Faire recompter » depuis le bureau : la référence repart au PDA, même si
+ * elle a déjà été recomptée ; le nouveau chiffre fera foi.
+ */
+const requestRecount = async (inventoryId, itemId, userId) => {
+  await assertOpen(inventoryId);
+  const g = (await gaps(inventoryId)).find(x => x.id === Number(itemId));
+  if (!g) throw httpError(404, 'Référence introuvable ou pas encore définitive.');
+  if (['sent', 'sending', 'queued'].includes(g.state)) throw httpError(400, 'Écart déjà envoyé à BMS : plus de recomptage possible.');
+  await pool.query(
+    `UPDATE inventory_items
+        SET status = 'recount', first_counted = COALESCE(first_counted, $2), first_theoretical = COALESCE(first_theoretical, $3),
+            recount_qty = NULL, recount_by = NULL, recount_at = NULL, recount_locked_by = NULL,
+            decision = NULL, decided_by = NULL, decided_at = NULL, push_status = NULL, push_error = NULL
+      WHERE id = $1`,
+    [g.id, g.counted, g.theoretical]
+  );
+  await log(inventoryId, userId, 'recount_request', { productId: g.productId });
+};
+
+/** « Ranger en X » : l'emplacement du produit change dans BMS (relu avant d'y croire). */
+const fixLocation = async (inventoryId, itemId, location, user) => {
+  await assertOpen(inventoryId);
+  const { rows: [i] } = await pool.query(
+    'SELECT product_id FROM inventory_items WHERE id = $1 AND inventory_id = $2', [itemId, inventoryId]
+  );
+  if (!i) throw httpError(404, 'Référence introuvable.');
+  const product = await pdaProductModel.setLocation(i.product_id, location, user);
+  await pool.query(
+    'UPDATE inventory_items SET location_fixed_to = $2, location_fixed_at = NOW() WHERE id = $1',
+    [itemId, product.location]
+  );
+  await log(inventoryId, user.id, 'location', { productId: i.product_id, code: product.location });
+  return { location: product.location };
+};
+
+/** Ce qui empêche encore de clôturer (vide = on peut). */
+const closeCheck = async (inventoryId) => {
+  const { rows: [s] } = await pool.query(
+    `SELECT
+       (SELECT count(*)::int FROM inventory_locations WHERE inventory_id = $1 AND status <> 'validated') AS locations,
+       count(*) FILTER (WHERE status = 'pending')::int AS pending,
+       count(*) FILTER (WHERE status = 'recount')::int AS recount,
+       count(*) FILTER (WHERE ref_needed)::int AS ref_waiting,
+       count(*) FILTER (WHERE push_status IN ('queued', 'sending'))::int AS sending,
+       count(*) FILTER (WHERE push_status = 'error')::int AS errors
+     FROM inventory_items WHERE inventory_id = $1`,
+    [inventoryId]
+  );
+  const todo = (await gaps(inventoryId)).filter(g => g.state === 'todo').length;
+  const reasons = [];
+  if (s.locations) reasons.push(`${s.locations} emplacement(s) pas encore validé(s)`);
+  if (s.pending) reasons.push(`${s.pending} référence(s) pas encore comptée(s)`);
+  if (s.recount) reasons.push(`${s.recount} recomptage(s) à faire`);
+  if (s.ref_waiting) reasons.push(`${s.ref_waiting} relevé(s) BMS en attente`);
+  if (todo) reasons.push(`${todo} écart(s) à envoyer ou écarter`);
+  if (s.sending) reasons.push(`${s.sending} envoi(s) BMS en cours`);
+  if (s.errors) reasons.push(`${s.errors} envoi(s) BMS en erreur`);
+  return { closable: reasons.length === 0, reasons };
+};
+
+const close = async (inventoryId, userId) => {
+  await assertOpen(inventoryId);
+  const check = await closeCheck(inventoryId);
+  if (!check.closable) throw httpError(400, `Impossible de clôturer : ${check.reasons.join(', ')}.`);
+  await pool.query(
+    `UPDATE inventories SET status = 'closed', closed_at = NOW(), closed_by = $2 WHERE id = $1 AND status = 'open'`,
+    [inventoryId, userId]
+  );
+  await log(inventoryId, userId, 'close_inventory');
+};
+
+module.exports = {
+  options, preview, create, list, get, releaseLocation, releaseRecount, cancel, log,
+  gaps, sendGaps, retryGaps, ignoreGaps, unignoreGaps, requestRecount, fixLocation, close,
+};

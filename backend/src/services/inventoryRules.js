@@ -47,4 +47,26 @@ const pickedNotShipped = (unshippedOrders, waveLines) => {
   return result;
 };
 
-module.exports = { RECOUNT_MIN_PIECES, RECOUNT_MIN_RATIO, needsRecount, aisleOf, compareLocations, pickedNotShipped };
+/**
+ * Écart d'une référence (lot 2). La quantité retenue est celle du recomptage
+ * s'il y en a eu un (il fait foi), sinon la somme de ses emplacements ; le
+ * théorique est le physique BMS relevé moins le prélevé non expédié.
+ *
+ * @param {{status, recount_qty, counted, ref_physical, ref_picked}} item
+ * @returns {{counted: number, theoretical: number, gap: number}}
+ */
+const gapOf = (item) => {
+  const counted = item.status === 'recounted' ? Number(item.recount_qty) || 0 : Number(item.counted) || 0;
+  const theoretical = Math.max(0, (Number(item.ref_physical) || 0) - (Number(item.ref_picked) || 0));
+  return { counted, theoretical, gap: counted - theoretical };
+};
+
+/** Mouvement BMS qui corrige un écart : entrée si on a trouvé plus, sortie sinon. */
+const movementFor = (gap) => {
+  if (!gap) return null;
+  return { direction: gap > 0 ? 'in' : 'out', qty: Math.abs(gap) };
+};
+
+module.exports = {
+  RECOUNT_MIN_PIECES, RECOUNT_MIN_RATIO, needsRecount, aisleOf, compareLocations, pickedNotShipped, gapOf, movementFor,
+};

@@ -48,6 +48,7 @@ const errorText = (err) => err.response?.data?.error || (err.response?.status ==
 
 const BLUE = '#0369A1';
 const locLabel = (l) => l || 'Sans emplacement';
+const INVENTORY_KEY = 'pdaInventaire.inventory';
 const pct = (n, total) => (total ? Math.floor((n / total) * 100) : 0);
 
 const card = { background: C.white, borderRadius: 14, border: `1px solid ${C.greyB}`, padding: 14 };
@@ -129,13 +130,13 @@ const STATUS = {
 
 // ── Écran 1 : les emplacements ──────────────────────────────────────────────
 
-function HomeScreen({ token, data, reload, onOpenLocation, onRecounts, showFlash, onScanRef, onCamera }) {
+function HomeScreen({ token, data, inventoryId, onChoose, reload, onOpenLocation, onRecounts, showFlash, onScanRef, onCamera }) {
   const [filter, setFilter] = useState('todo');
   const [confirmDay, setConfirmDay] = useState(false);
 
   onScanRef.current = async (code) => {
     try {
-      const { id } = await api(token).get(`/locations/find?code=${encodeURIComponent(code)}`);
+      const { id } = await api(token).get(`/locations/find?code=${encodeURIComponent(code)}&inventory=${inventoryId}`);
       beep(true);
       onOpenLocation(id);
     } catch (err) {
@@ -157,10 +158,27 @@ function HomeScreen({ token, data, reload, onOpenLocation, onRecounts, showFlash
 
   if (!data) return <p style={{ color: C.greyT, padding: 20 }}>Chargement…</p>;
   if (!data.inventory) {
+    if (!data.inventories?.length) {
+      return (
+        <p style={{ color: C.greyT, textAlign: 'center', padding: 30, fontSize: 16 }}>
+          Aucun inventaire en cours. Il se crée au bureau, dans l'app Inventaire.
+        </p>
+      );
+    }
+    // Plusieurs inventaires en cours : on choisit d'abord lequel on compte.
     return (
-      <p style={{ color: C.greyT, textAlign: 'center', padding: 30, fontSize: 16 }}>
-        Aucun inventaire en cours. Il se crée au bureau, dans l'app Inventaire.
-      </p>
+      <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+        <p style={{ margin: '4px 2px', color: C.greyT, fontSize: 15 }}>Quel inventaire comptez-vous ?</p>
+        {data.inventories.map(v => (
+          <button key={v.id} onClick={() => onChoose(v.id)} style={{
+            ...card, textAlign: 'left', width: '100%', fontFamily: 'inherit', color: C.dark, border: `2px solid ${C.greyB}`,
+          }}>
+            <div style={{ fontWeight: 900, fontSize: 17 }}>{v.name}</div>
+            <div style={{ fontSize: 14, color: C.greyT, margin: '6px 0' }}>{v.done} / {v.total} réfs · {pct(v.done, v.total)} %</div>
+            <ProgressBar done={v.done} total={v.total} />
+          </button>
+        ))}
+      </div>
     );
   }
 
@@ -180,7 +198,12 @@ function HomeScreen({ token, data, reload, onOpenLocation, onRecounts, showFlash
   return (
     <div style={{ padding: 14, display: 'grid', gap: 12 }}>
       <div style={card}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>{data.inventory.name}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontWeight: 900, fontSize: 18, flex: 1 }}>{data.inventory.name}</div>
+          {data.inventories?.length > 1 && (
+            <button onClick={() => onChoose(null)} style={{ ...smallBtn, fontSize: 13, padding: '6px 10px' }}>Changer</button>
+          )}
+        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '8px 0' }}>
           <span style={{ fontSize: 30, fontWeight: 900, color: C.green }}>{pct(progress.done, progress.total)} %</span>
           <span style={{ fontSize: 15, color: C.greyT }}>{progress.done} / {progress.total} réfs comptées</span>
@@ -499,11 +522,11 @@ function CodeSheet({ onCode, onClose }) {
 
 // ── Écran 3 : à recompter ───────────────────────────────────────────────────
 
-function RecountList({ token, onOpen, showFlash }) {
+function RecountList({ token, inventoryId, onOpen, showFlash }) {
   const [list, setList] = useState(null);
   useEffect(() => {
-    api(token).get('/recounts').then(d => setList(d.recounts)).catch(err => showFlash('error', errorText(err)));
-  }, [token, showFlash]);
+    api(token).get(`/recounts?inventory=${inventoryId}`).then(d => setList(d.recounts)).catch(err => showFlash('error', errorText(err)));
+  }, [token, inventoryId, showFlash]);
 
   if (!list) return <p style={{ color: C.greyT, padding: 20 }}>Chargement…</p>;
   return (
@@ -659,6 +682,10 @@ export default function PdaInventaire() {
   const navigate = useNavigate();
   const [screen, setScreen] = useState({ kind: 'home' });
   const [data, setData] = useState(null);
+  // L'inventaire choisi (plusieurs peuvent être ouverts), gardé sur ce PDA.
+  const [inventoryId, setInventoryId] = useState(() => {
+    try { return Number(localStorage.getItem(INVENTORY_KEY)) || null; } catch { return null; }
+  });
   const [flash, setFlash] = useState(null);
   const [camera, setCamera] = useState(false);
   const onScanRef = useRef(null);
@@ -671,11 +698,23 @@ export default function PdaInventaire() {
 
   const reload = useCallback(async () => {
     try {
-      setData(await api(token).get('/current'));
+      const d = await api(token).get(`/current${inventoryId ? `?inventory=${inventoryId}` : ''}`);
+      setData(d);
+      // Inventaire choisi clos depuis, ou un seul ouvert : on suit le serveur.
+      if ((d.inventory?.id || null) !== inventoryId) setInventoryId(d.inventory?.id || null);
     } catch (err) {
       showFlash('error', errorText(err));
     }
-  }, [token, showFlash]);
+  }, [token, inventoryId, showFlash]);
+
+  useEffect(() => {
+    try {
+      if (inventoryId) localStorage.setItem(INVENTORY_KEY, String(inventoryId));
+      else localStorage.removeItem(INVENTORY_KEY);
+    } catch { /* stockage indisponible : on redemandera */ }
+  }, [inventoryId]);
+
+  const choose = useCallback((id) => { setData(null); setInventoryId(id); }, []);
 
   useEffect(() => {
     if (screen.kind !== 'home') return undefined;
@@ -714,7 +753,8 @@ export default function PdaInventaire() {
       <div onClick={releaseButton}>
         {screen.kind === 'home' && (
           <HomeScreen
-            token={token} data={data} reload={reload} showFlash={showFlash} onScanRef={onScanRef} onCamera={openCamera}
+            token={token} data={data} inventoryId={inventoryId} onChoose={choose}
+            reload={reload} showFlash={showFlash} onScanRef={onScanRef} onCamera={openCamera}
             onOpenLocation={(id) => setScreen({ kind: 'location', id })} onRecounts={recounts}
           />
         )}
@@ -725,7 +765,7 @@ export default function PdaInventaire() {
           />
         )}
         {screen.kind === 'recounts' && (
-          <RecountList token={token} showFlash={showFlash} onOpen={(id) => setScreen({ kind: 'recount', id })} />
+          <RecountList token={token} inventoryId={inventoryId} showFlash={showFlash} onOpen={(id) => setScreen({ kind: 'recount', id })} />
         )}
         {screen.kind === 'recount' && (
           <RecountScreen

@@ -4,11 +4,12 @@
  * Ce qui est couvert :
  *   - la règle de recomptage (5 pièces ET plus de 15 % du théorique) ;
  *   - l'allée d'un emplacement et le tri des emplacements ;
- *   - le prélevé non expédié d'une vague, déduit du physique BMS.
+ *   - le prélevé non expédié d'une vague, déduit du physique BMS ;
+ *   - l'écart (recomptage prioritaire) et le mouvement BMS qui le corrige.
  */
 
 const assert = require('assert');
-const { needsRecount, aisleOf, compareLocations, pickedNotShipped } = require('../src/services/inventoryRules');
+const { needsRecount, aisleOf, compareLocations, pickedNotShipped, gapOf, movementFor } = require('../src/services/inventoryRules');
 
 // ── Recomptage ──────────────────────────────────────────────────────────────
 assert.strictEqual(needsRecount(10, 10), false, 'aucun écart');
@@ -47,5 +48,17 @@ assert.deepStrictEqual([...pickedNotShipped(unshipped, [{ line_key: 'BOOST', pro
 
 // Tout est parti : rien à déduire.
 assert.strictEqual(pickedNotShipped([], lines).size, 0);
+
+// ── Écart et mouvement (lot 2) ──────────────────────────────────────────────
+// Cas réel du 23/10/2026 : Base Mix&Go 1L 50/50, BMS 12, compté 13.
+assert.deepStrictEqual(gapOf({ status: 'counted', counted: 13, ref_physical: 12, ref_picked: 0 }), { counted: 13, theoretical: 12, gap: 1 });
+assert.deepStrictEqual(movementFor(1), { direction: 'in', qty: 1 });
+// Le prélevé non expédié n'est plus en rayon : il ne compte pas comme manquant.
+assert.deepStrictEqual(gapOf({ status: 'counted', counted: 8, ref_physical: 10, ref_picked: 2 }).gap, 0);
+// Recompté : le recomptage fait foi, pas la somme des emplacements.
+assert.deepStrictEqual(gapOf({ status: 'recounted', counted: 25, recount_qty: 14, ref_physical: 14, ref_picked: 0 }).gap, 0);
+assert.deepStrictEqual(gapOf({ status: 'recounted', counted: 25, recount_qty: 0, ref_physical: 6, ref_picked: 0 }).gap, -6);
+assert.deepStrictEqual(movementFor(-6), { direction: 'out', qty: 6 });
+assert.strictEqual(movementFor(0), null);
 
 console.log('inventory.test.js : OK');

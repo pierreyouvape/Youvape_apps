@@ -26,10 +26,22 @@ const { aisleOf, compareLocations } = require('../services/inventoryRules');
 
 const httpError = (status, message, extra = {}) => Object.assign(new Error(message), { statusCode: status }, extra);
 
-const openInventory = async () => {
-  const { rows: [v] } = await pool.query(`SELECT id, name, kind FROM inventories WHERE status = 'open'`);
-  if (!v) throw httpError(404, 'Aucun inventaire en cours.');
-  return v;
+/**
+ * L'inventaire sur lequel on compte. Plusieurs peuvent être ouverts (lot 2,
+ * 23/10/2026) : le PDA envoie celui choisi ; s'il n'y en a qu'un, c'est lui.
+ */
+const openInventory = async (inventoryId) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, kind FROM inventories WHERE status = 'open' ORDER BY created_at`
+  );
+  if (!rows.length) throw httpError(404, 'Aucun inventaire en cours.');
+  if (inventoryId) {
+    const v = rows.find(r => r.id === Number(inventoryId));
+    if (!v) throw httpError(404, 'Cet inventaire n\'est plus en cours.');
+    return v;
+  }
+  if (rows.length > 1) throw httpError(400, 'Choisissez d\'abord un inventaire.');
+  return rows[0];
 };
 
 // Photo de la déclinaison, sinon du parent ; marque idem.
@@ -42,9 +54,17 @@ const PRODUCT_JOIN = `
 
 // ── Accueil ─────────────────────────────────────────────────────────────────
 
-const current = async (userId) => {
-  const { rows: [v] } = await pool.query(`SELECT id, name, kind FROM inventories WHERE status = 'open'`);
-  if (!v) return { inventory: null };
+const current = async (userId, inventoryId) => {
+  const { rows: open } = await pool.query(
+    `SELECT v.id, v.name, v.kind,
+            (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id) AS total,
+            (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id
+                AND i.status IN ('counted', 'recounted')) AS done
+       FROM inventories v WHERE v.status = 'open' ORDER BY v.created_at`
+  );
+  const inventories = open.map(r => ({ id: r.id, name: r.name, kind: r.kind, total: r.total, done: r.done }));
+  const v = inventoryId ? open.find(r => r.id === Number(inventoryId)) : (open.length === 1 ? open[0] : null);
+  if (!v) return { inventory: null, inventories };
 
   const { rows } = await pool.query(
     `SELECT l.id, l.location, l.status, l.assigned_to, l.closed_by, u.name AS assigned_name,
@@ -82,6 +102,7 @@ const current = async (userId) => {
 
   return {
     inventory: { id: v.id, name: v.name, kind: v.kind },
+    inventories,
     progress: { total: s.total, done: s.done, recount: s.recount },
     locations,
     myClosed: rows.filter(l => l.status === 'closed' && l.closed_by === userId).length,
@@ -90,8 +111,8 @@ const current = async (userId) => {
 };
 
 /** Étiquette de rayon scannée : « e5-3 », « E5-3 » et « E 5-3 » désignent E 5-3. */
-const findLocation = async (code) => {
-  const v = await openInventory();
+const findLocation = async (code, inventoryId) => {
+  const v = await openInventory(inventoryId);
   const { rows } = await pool.query('SELECT id, location FROM inventory_locations WHERE inventory_id = $1', [v.id]);
   const spaced = (s) => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
   const compact = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -251,9 +272,17 @@ const scan = async (locationId, userId, code, chosenProductId) => {
   if (candidates.length === 0) {
     if (l.kind !== 'global') throw httpError(404, `Ce produit n'est pas dans cet inventaire (${value}).`);
     const { rows: countable } = await pool.query(
-      `SELECT id FROM products WHERE id = ANY($1::int[]) AND product_type IN ('simple', 'variation')`, [ids]
+      `SELECT p.id,
+              (SELECT ov.name FROM inventory_items oi JOIN inventories ov ON ov.id = oi.inventory_id AND ov.status = 'open'
+                WHERE oi.product_id = p.id LIMIT 1) AS busy_in
+         FROM products p
+        WHERE p.id = ANY($1::int[]) AND p.product_type IN ('simple', 'variation')`, [ids]
     );
-    candidates = countable.map(r => r.id);
+    const busy = countable.find(r => r.busy_in);
+    if (busy && countable.every(r => r.busy_in)) {
+      throw httpError(409, `Ce produit est compté dans l'inventaire « ${busy.busy_in} » (${value}).`);
+    }
+    candidates = countable.filter(r => !r.busy_in).map(r => r.id);
     if (candidates.length === 0) throw httpError(404, `Ce code désigne un pack, comptez ses articles (${value}).`);
   }
   if (candidates.length > 1) {
@@ -375,26 +404,30 @@ const reopen = async (locationId, userId) => {
   return getLocation(locationId, userId);
 };
 
-/** « Valider ma journée » : mes emplacements terminés deviennent définitifs. */
+/**
+ * « Valider ma journée » : mes emplacements terminés deviennent définitifs,
+ * dans tous les inventaires en cours (on a pu en compter plusieurs).
+ */
 const validateDay = async (userId) => {
-  const v = await openInventory();
   const { rows } = await pool.query(
-    `UPDATE inventory_locations SET status = 'validated', validated_at = NOW()
-      WHERE inventory_id = $1 AND status = 'closed' AND closed_by = $2 RETURNING id`,
-    [v.id, userId]
+    `UPDATE inventory_locations l SET status = 'validated', validated_at = NOW()
+       FROM inventories v
+      WHERE v.id = l.inventory_id AND v.status = 'open' AND l.status = 'closed' AND l.closed_by = $1
+      RETURNING l.id, l.inventory_id`,
+    [userId]
   );
-  if (rows.length) {
+  for (const inventoryId of new Set(rows.map(r => r.inventory_id))) {
+    const ids = rows.filter(r => r.inventory_id === inventoryId).map(r => r.id);
     const { rows: products } = await pool.query(
-      'SELECT DISTINCT product_id FROM inventory_counts WHERE location_id = ANY($1::int[])',
-      [rows.map(r => r.id)]
+      'SELECT DISTINCT product_id FROM inventory_counts WHERE location_id = ANY($1::int[])', [ids]
     );
-    await inventoryRefService.evaluate(v.id, products.map(p => p.product_id));
+    await inventoryRefService.evaluate(inventoryId, products.map(p => p.product_id));
+    await inventoryModel.log(inventoryId, userId, 'validate', { qty: ids.length });
   }
-  await inventoryModel.log(v.id, userId, 'validate', { qty: rows.length });
   const { rows: [{ counting }] } = await pool.query(
-    `SELECT count(*)::int AS counting FROM inventory_locations
-      WHERE inventory_id = $1 AND status = 'counting' AND assigned_to = $2`,
-    [v.id, userId]
+    `SELECT count(*)::int AS counting FROM inventory_locations l JOIN inventories v ON v.id = l.inventory_id
+      WHERE v.status = 'open' AND l.status = 'counting' AND l.assigned_to = $1`,
+    [userId]
   );
   return { validated: rows.length, stillCounting: counting };
 };
@@ -427,8 +460,8 @@ const recountFromRow = (r, userId) => {
   };
 };
 
-const listRecounts = async (userId) => {
-  const v = await openInventory();
+const listRecounts = async (userId, inventoryId) => {
+  const v = await openInventory(inventoryId);
   const { rows } = await pool.query(
     `${RECOUNT_SQL} WHERE i.inventory_id = $1 AND i.status = 'recount' ORDER BY i.expected_location, i.name`,
     [v.id]
