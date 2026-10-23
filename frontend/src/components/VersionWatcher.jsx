@@ -23,43 +23,64 @@ import { useLocation } from 'react-router-dom';
  * moitié saisie. Inacceptable.
  *
  * On relit donc `index.html` — non mis en cache, donc toujours frais — et on y
- * lit le nom du bundle. S'il diffère de celui que cette page exécute, c'est qu'un
- * déploiement a eu lieu : on le DIT, et l'utilisateur recharge quand il n'a rien
- * en cours. Jamais de rechargement d'autorité.
+ * lit les EMPREINTES des blocs (inscrites au build par vite-plugin-app-versions.js,
+ * un bloc = le premier segment de l'adresse : `pda`, `tableau`, `stats`…). On ne
+ * prévient que si le SOCLE commun ou le bloc AFFICHÉ a changé : une mise à jour
+ * de Tableau ne dérange ni le PDA, ni les Rapports, ni le SAV. On le DIT, et
+ * l'utilisateur recharge quand il n'a rien en cours. Jamais de rechargement
+ * d'autorité.
  */
 
-/** Le bundle que CETTE page exécute, lu dans sa propre balise script. */
-function bundleCourant() {
-  const el = document.querySelector('script[type="module"][src*="/assets/"]');
-  return el?.getAttribute('src') || null;
-}
+const SELECTEUR = 'script[type="application/json"]#app-versions';
 
-/** Le bundle que le serveur sert MAINTENANT. `null` si la question n'aboutit pas. */
-async function bundleServi() {
+/** Les empreintes que CETTE page exécute, lues une fois pour toutes. `null` en dev (pas de build). */
+const COURANTES = (() => {
+  try {
+    return JSON.parse(document.querySelector(SELECTEUR)?.textContent || 'null');
+  } catch {
+    return null;
+  }
+})();
+
+/** Les empreintes que le serveur sert MAINTENANT. `null` si la question n'aboutit pas. */
+async function versionsServies() {
   try {
     const rep = await fetch(`/index.html?v=${Date.now()}`, { cache: 'no-store' });
     if (!rep.ok) return null;
     const html = await rep.text();
-    return html.match(/\/assets\/index-[A-Za-z0-9_-]+\.js/)?.[0] || null;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return JSON.parse(doc.querySelector(SELECTEUR)?.textContent || 'null');
   } catch {
     // Hors ligne, ou serveur qui redémarre pendant un déploiement : on retentera.
     return null;
   }
 }
 
+/** Le bloc de l'adresse : `/pda/picking` → `pda`. */
+const blocDe = (pathname) => pathname.split('/')[1] || '';
+
+/** Le socle commun, ou le bloc affiché, diffère-t-il de ce qui est servi ? */
+function concerne(courant, servi, bloc) {
+  if (!courant || !servi?.blocs) return false;
+  if (servi.socle !== courant.socle) return true;
+  return (servi.blocs[bloc] ?? null) !== (courant.blocs?.[bloc] ?? null);
+}
+
 // Toutes les cinq minutes. Assez souvent pour qu'un déploiement se voie dans la
-// foulée, assez rare pour rester invisible — une requête de 1 Ko.
+// foulée, assez rare pour rester invisible — une requête de quelques Ko.
 const INTERVALLE_MS = 5 * 60 * 1000;
 
 export default function VersionWatcher() {
-  const [nouvelleVersion, setNouvelleVersion] = useState(false);
-  const { pathname } = useLocation();
+  const [servi, setServi] = useState(null);
+  // La navigation où l'on a fermé le bandeau (`key` change à chaque écran
+  // visité) : il revient à l'écran suivant, même en revenant sur celui-ci.
+  const [fermeSur, setFermeSur] = useState(null);
+  const { pathname, key } = useLocation();
 
   const verifier = useCallback(async () => {
-    const courant = bundleCourant();
-    if (!courant) return;                    // dev (pas de bundle) : rien à surveiller
-    const servi = await bundleServi();
-    if (servi && servi !== courant) setNouvelleVersion(true);
+    if (!COURANTES) return;                  // dev : rien à surveiller
+    const v = await versionsServies();
+    if (v) setServi(v);
   }, []);
 
   // À chaque changement d'écran, et à intervalle régulier pour celui qui reste
@@ -69,6 +90,9 @@ export default function VersionWatcher() {
     const t = setInterval(verifier, INTERVALLE_MS);
     return () => clearInterval(t);
   }, [verifier, pathname]);
+
+  const nouvelleVersion = fermeSur !== key
+    && concerne(COURANTES, servi, blocDe(pathname));
 
   if (!nouvelleVersion) return null;
 
@@ -96,7 +120,7 @@ export default function VersionWatcher() {
       {/* Refusable : on ne recharge pas la tablette d'un magasinier au milieu
           d'un comptage. Le rappel reviendra au prochain changement d'écran. */}
       <button
-        onClick={() => setNouvelleVersion(false)}
+        onClick={() => setFermeSur(key)}
         title="Plus tard"
         style={{
           background: 'transparent', color: 'rgba(255,255,255,0.75)', border: 'none',

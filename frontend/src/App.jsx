@@ -1,73 +1,79 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { AuthProvider } from './context/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
-import Home from './pages/Home';
-import ReviewsApp from './pages/ReviewsApp';
-import RewardsApp from './pages/RewardsApp';
-import EmailApp from './pages/EmailApp';
-import SettingsApp from './pages/SettingsApp';
-import StatsApp from './pages/StatsApp';
-import PurchasesApp from './pages/PurchasesApp';
-import PurchasesAppV2 from './pages/PurchasesAppV2';
-import CreateOrderPage from './pages/CreateOrderPage';
-import ImportPdfPage from './pages/ImportPdfPage';
-import CustomersApp from './pages/CustomersApp';
-import CustomerDetail from './pages/CustomerDetail';
-import ProductsApp from './pages/ProductsApp';
-import ProductDetail from './pages/ProductDetail';
-import OrdersApp from './pages/OrdersApp';
-import OrderDetail from './pages/OrderDetail';
-import BrandDetail from './pages/BrandDetail';
-import SubBrandDetail from './pages/SubBrandDetail';
-import CategoryDetail from './pages/CategoryDetail';
-import SubCategoryDetail from './pages/SubCategoryDetail';
-import ShippingSettings from './pages/ShippingSettings';
-import ReportsSettingsApp from './pages/ReportsSettingsApp';
-import CatalogApp from './pages/CatalogApp';
-import PackingApp from './pages/PackingApp';
-import PackingSettings from './pages/PackingSettings';
-import BordereauApp from './pages/BordereauApp';
-import ShipmentHistoryApp from './pages/ShipmentHistoryApp';
-import ShipmentStatsApp from './pages/ShipmentStatsApp';
-import PickingApp from './pages/PickingApp';
-import PickingSettings from './pages/PickingSettings';
-import PdaHome from './pages/PdaHome';
-import PdaPicking from './pages/PdaPicking';
-import PdaProduit from './pages/PdaProduit';
-import PdaInventaire from './pages/PdaInventaire';
-import PdaDebug from './pages/PdaDebug';
-import InventoryApp from './pages/InventoryApp';
-import ReturnsApp from './pages/ReturnsApp';
-import ReceptionApp from './pages/ReceptionApp';
-import FinancierApp from './pages/FinancierApp';
-import OrdersSearchApp from './pages/OrdersSearchApp';
-import TicketsApp from './pages/TicketsApp';
-import TicketDetailPage from './pages/TicketDetailPage';
-import TicketsSettingsApp from './pages/TicketsSettingsApp';
-import ChronopostApp from './pages/ChronopostApp';
-import ColissimoApp from './pages/ColissimoApp';
-import LettreSuivieApp from './pages/LettreSuivieApp';
-import MondialRelayApp from './pages/MondialRelayApp';
-import TransporteursApp from './pages/TransporteursApp';
-import VeilleApp from './pages/VeilleApp';
-import SeoApp from './pages/SeoApp';
-import InscritsApp from './pages/InscritsApp';
-import PromosApp from './pages/PromosApp';
-import SupplierInvoicesApp from './pages/SupplierInvoicesApp';
-import BoutiqueApp from './pages/BoutiqueApp';
-import PromoDetail from './pages/PromoDetail';
-import StoriesApp from './pages/StoriesApp';
-import ProcessApp from './pages/ProcessApp';
-import ProcessDetail from './pages/ProcessDetail';
-import ATBApp from './pages/ATBApp';
-import TableauApp from './pages/TableauApp';
-import EmployeesApp from './pages/EmployeesApp';
 import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
 import VersionWatcher from './components/VersionWatcher';
+import EcranIndisponible from './components/EcranIndisponible';
+import { page } from './utils/lazyPage';
 import { TableauInboxProvider } from './context/TableauInboxContext';
+
+// Un fichier par écran, chargé à la demande et rangé dans son bloc (= premier
+// segment de l'adresse). Voir utils/lazyPage.js : le bloc décide qui est prévenu
+// d'une nouvelle version.
+const Home = page('home', () => import('./pages/Home'));
+const ReviewsApp = page('reviews', () => import('./pages/ReviewsApp'));
+const RewardsApp = page('rewards', () => import('./pages/RewardsApp'));
+const EmailApp = page('emails', () => import('./pages/EmailApp'));
+const SettingsApp = page('settings', () => import('./pages/SettingsApp'));
+const StatsApp = page('stats', () => import('./pages/StatsApp'));
+const PurchasesApp = page('purchases', () => import('./pages/PurchasesApp'));
+const PurchasesAppV2 = page('purchases-v2', () => import('./pages/PurchasesAppV2'));
+const CreateOrderPage = page('purchases', () => import('./pages/CreateOrderPage'));
+const ImportPdfPage = page('purchases', () => import('./pages/ImportPdfPage'));
+const CustomersApp = page('customers', () => import('./pages/CustomersApp'));
+const CustomerDetail = page('customers', () => import('./pages/CustomerDetail'));
+const ProductsApp = page('products', () => import('./pages/ProductsApp'));
+const ProductDetail = page('products', () => import('./pages/ProductDetail'));
+const OrdersApp = page('orders', () => import('./pages/OrdersApp'));
+const OrderDetail = page('orders', () => import('./pages/OrderDetail'));
+const BrandDetail = page('brands', () => import('./pages/BrandDetail'));
+const SubBrandDetail = page('sub-brands', () => import('./pages/SubBrandDetail'));
+const CategoryDetail = page('categories', () => import('./pages/CategoryDetail'));
+const SubCategoryDetail = page('sub-categories', () => import('./pages/SubCategoryDetail'));
+const ShippingSettings = page('stats', () => import('./pages/ShippingSettings'));
+const ReportsSettingsApp = page('financier', () => import('./pages/ReportsSettingsApp'));
+const CatalogApp = page('catalog', () => import('./pages/CatalogApp'));
+const PackingApp = page('packing', () => import('./pages/PackingApp'));
+const PackingSettings = page('packing', () => import('./pages/PackingSettings'));
+const BordereauApp = page('bordereau', () => import('./pages/BordereauApp'));
+const ShipmentHistoryApp = page('expeditions', () => import('./pages/ShipmentHistoryApp'));
+const ShipmentStatsApp = page('stats-expedition', () => import('./pages/ShipmentStatsApp'));
+const PickingApp = page('picking', () => import('./pages/PickingApp'));
+const PickingSettings = page('picking', () => import('./pages/PickingSettings'));
+const PdaHome = page('pda', () => import('./pages/PdaHome'));
+const PdaPicking = page('pda', () => import('./pages/PdaPicking'));
+const PdaProduit = page('pda', () => import('./pages/PdaProduit'));
+const PdaInventaire = page('pda', () => import('./pages/PdaInventaire'));
+const PdaDebug = page('pda', () => import('./pages/PdaDebug'));
+const InventoryApp = page('inventaire', () => import('./pages/InventoryApp'));
+const ReturnsApp = page('retours', () => import('./pages/ReturnsApp'));
+const ReceptionApp = page('reception', () => import('./pages/ReceptionApp'));
+const FinancierApp = page('financier', () => import('./pages/FinancierApp'));
+const OrdersSearchApp = page('commandes', () => import('./pages/OrdersSearchApp'));
+const TicketsApp = page('tickets', () => import('./pages/TicketsApp'));
+const TicketDetailPage = page('tickets', () => import('./pages/TicketDetailPage'));
+const TicketsSettingsApp = page('tickets', () => import('./pages/TicketsSettingsApp'));
+const ChronopostApp = page('chronopost', () => import('./pages/ChronopostApp'));
+const ColissimoApp = page('colissimo', () => import('./pages/ColissimoApp'));
+const LettreSuivieApp = page('lettre-suivie', () => import('./pages/LettreSuivieApp'));
+const MondialRelayApp = page('mondial-relay', () => import('./pages/MondialRelayApp'));
+const TransporteursApp = page('transporteurs', () => import('./pages/TransporteursApp'));
+const VeilleApp = page('veille', () => import('./pages/VeilleApp'));
+const SeoApp = page('seo', () => import('./pages/SeoApp'));
+const InscritsApp = page('inscrits', () => import('./pages/InscritsApp'));
+const PromosApp = page('promos', () => import('./pages/PromosApp'));
+const SupplierInvoicesApp = page('factures-fournisseurs', () => import('./pages/SupplierInvoicesApp'));
+const BoutiqueApp = page('boutique', () => import('./pages/BoutiqueApp'));
+const PromoDetail = page('promos', () => import('./pages/PromoDetail'));
+const StoriesApp = page('stories', () => import('./pages/StoriesApp'));
+const ProcessApp = page('process', () => import('./pages/ProcessApp'));
+const ProcessDetail = page('process', () => import('./pages/ProcessDetail'));
+const ATBApp = page('atb', () => import('./pages/ATBApp'));
+const TableauApp = page('tableau', () => import('./pages/TableauApp'));
+const EmployeesApp = page('employes', () => import('./pages/EmployeesApp'));
 
 const PAGE_TITLES = {
   '/home': 'Accueil',
@@ -144,6 +150,11 @@ function App() {
         <VersionWatcher />
         {/* Post-its reçus et rappels de l'app Tableau : pastilles + toasts dans toutes les apps */}
         <TableauInboxProvider>
+        {/* Écrans chargés à la demande : un écran qui ne vient pas (réseau,
+            fichier disparu après un déploiement) affiche un message et un bouton
+            Recharger au lieu d'une page blanche. */}
+        <EcranIndisponible>
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Chargement…</div>}>
         <Routes>
           <Route path="/" element={<Navigate to="/home" />} />
           <Route path="/login" element={<Login />} />
@@ -695,6 +706,8 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
+        </EcranIndisponible>
         </TableauInboxProvider>
       </BrowserRouter>
     </AuthProvider>

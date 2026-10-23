@@ -2,6 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import axios from 'axios'
 import './index.css'
+// Feuilles d'écran aux classes GLOBALES (.btn, .tab-button, .alert, .loading…) dont
+// d'autres écrans profitent sans les importer. Chargées ici, partout et dans cet
+// ordre, comme du temps où toute l'app tenait dans un seul fichier — chargées
+// avec leur seul écran (utils/lazyPage.js), elles manqueraient aux autres.
+import './pages/SettingsApp.css'
+import './pages/PurchasesApp.css'
 import App from './App.jsx'
 
 // Intercepteur global : attache le token JWT (localStorage) à chaque requête axios.

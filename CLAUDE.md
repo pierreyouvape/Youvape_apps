@@ -371,6 +371,20 @@ Le bug est neutralisé côté backend en attendant
 (`backend/src/services/brandMapService.js`) — ne pas supprimer ce service en
 même temps qu'une mise à jour du plugin.
 
+### Frontend : un fichier par écran, bandeau de version par bloc (23/10/2026)
+
+- Chaque écran se déclare dans `App.jsx` par `page('<bloc>', () => import('./pages/…'))`
+  (`utils/lazyPage.js`), le **bloc** étant le premier segment de l'adresse (`/pda/picking` → `pda`).
+  Le bandeau « nouvelle version » (`VersionWatcher`) ne s'affiche que si le **socle** (main.jsx,
+  App.jsx et leurs imports) ou le **bloc affiché** a changé : empreintes calculées au build par
+  `frontend/vite-plugin-app-versions.js` et inscrites dans `index.html`. Le build échoue si un
+  écran est importé en dur ou si un bloc ne correspond à aucune adresse.
+- Le chunk `socle` (`socleChunk`, manualChunks) est indispensable : sans lui, un mot changé dans
+  Tableau renommait les 110 fichiers du build.
+- ⚠️ **CSS global** : une feuille importée par un seul écran ne se charge plus qu'avec lui.
+  `SettingsApp.css` et `PurchasesApp.css` définissent des classes globales (`.btn`, `.tab-button`,
+  `.alert`…) : elles sont importées dans `main.jsx`. Une nouvelle feuille globale va au même endroit.
+
 ---
 
 ## Connexion VPS
