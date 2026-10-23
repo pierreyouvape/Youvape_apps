@@ -33,34 +33,55 @@ const SCOPE_FROM = `
   LEFT JOIN products par ON p.product_type = 'variation' AND par.wp_product_id = p.wp_parent_id
  WHERE ${STOCK_VALUE_SCOPE}`;
 
-const LIST_KEYS = { categories: 'category', subCategories: 'subCategory', brands: 'brand', subBrands: 'subBrand' };
-
-// Deux familles : une sous-catégorie est un morceau de sa catégorie, une
-// sous-marque un morceau de sa marque.
-const FAMILIES = [['categories', 'subCategories'], ['brands', 'subBrands']];
-
-const cleanFilters = (filters = {}) => Object.fromEntries(Object.keys(LIST_KEYS).map(k => [
-  k, [...new Set((Array.isArray(filters[k]) ? filters[k] : []).map(v => String(v)).filter(Boolean))],
-]));
+const uniq = (list) => [...new Set((Array.isArray(list) ? list : []).map(v => String(v)).filter(Boolean))];
 
 /**
- * Filtre SQL d'un inventaire partiel. Dans une famille, les cases
- * s'additionnent (une catégorie OU une sous-catégorie d'une autre, une marque
- * OU la sous-marque d'une autre) ; les deux familles se croisent (telle
- * marque DANS telle sous-catégorie).
+ * Une sous-catégorie se désigne par son COUPLE catégorie + nom : cinq noms
+ * existent sous plusieurs catégories (« Eliquides Sel de Nicotine » sous DLUO
+ * et sous E-liquides). Les sous-marques, elles, ont des noms uniques.
+ */
+const cleanFilters = (filters = {}) => {
+  const seen = new Set();
+  const subCategories = (Array.isArray(filters.subCategories) ? filters.subCategories : [])
+    .map(s => ({ category: String(s?.category || ''), name: String(s?.name || '') }))
+    .filter(s => s.category && s.name && !seen.has(`${s.category}\u0001${s.name}`) && seen.add(`${s.category}\u0001${s.name}`));
+  return {
+    categories: uniq(filters.categories),
+    subCategories,
+    brands: uniq(filters.brands),
+    subBrands: uniq(filters.subBrands),
+  };
+};
+
+/**
+ * Filtre SQL d'un inventaire partiel, famille par famille :
+ *   - catégories : une catégorie cochée seule est prise ENTIÈRE ; si des
+ *     sous-catégories y sont cochées, elle se limite à celles-ci ;
+ *   - marques : une marque OU la sous-marque d'une autre (cocher la marque
+ *     couvre toutes ses sous-marques) ;
+ * et les deux familles se croisent (telle marque DANS telle sous-catégorie).
  */
 const filterSql = (kind, filters, params) => {
   if (kind === 'global') return '';
   const parts = [];
-  for (const family of FAMILIES) {
-    const ors = [];
-    for (const key of family) {
-      if (!filters[key].length) continue;
-      params.push(filters[key]);
-      ors.push(`${DIM[LIST_KEYS[key]]} = ANY($${params.length}::text[])`);
-    }
-    if (ors.length) parts.push(`(${ors.join(' OR ')})`);
+  const add = (value) => { params.push(value); return `$${params.length}`; };
+
+  const narrowed = new Set(filters.subCategories.map(s => s.category));
+  const whole = filters.categories.filter(c => !narrowed.has(c));
+  const cats = [];
+  if (whole.length) cats.push(`${DIM.category} = ANY(${add(whole)}::text[])`);
+  if (filters.subCategories.length) {
+    const c = add(filters.subCategories.map(s => s.category));
+    const n = add(filters.subCategories.map(s => s.name));
+    cats.push(`(${DIM.category}, ${DIM.subCategory}) IN (SELECT * FROM unnest(${c}::text[], ${n}::text[]))`);
   }
+  if (cats.length) parts.push(`(${cats.join(' OR ')})`);
+
+  const brands = [];
+  if (filters.brands.length) brands.push(`${DIM.brand} = ANY(${add(filters.brands)}::text[])`);
+  if (filters.subBrands.length) brands.push(`${DIM.subBrand} = ANY(${add(filters.subBrands)}::text[])`);
+  if (brands.length) parts.push(`(${brands.join(' OR ')})`);
+
   if (!parts.length) throw httpError(400, 'Choisissez au moins une catégorie, sous-catégorie, marque ou sous-marque.');
   return ` AND ${parts.join(' AND ')}`;
 };

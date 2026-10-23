@@ -25,6 +25,7 @@ const pct = (n, total) => (total ? Math.floor((n / total) * 100) : 0);
 // WooCommerce stocke « & » en entité dans les noms de catégorie.
 const decode = (s) => String(s || '').replace(/&amp;/g, '&');
 const locLabel = (l) => l || 'Sans emplacement';
+const SEP = '\u0001';
 const aisleOf = (l) => String(l || '').trim().split(/[\s-]/)[0].toUpperCase();
 const byLocation = (a, b) => {
   if (!a.location !== !b.location) return a.location ? -1 : 1;
@@ -98,7 +99,7 @@ const filtersText = (inv) => {
   const f = inv.filters || {};
   return [
     f.categories?.length && `Catégories : ${f.categories.map(decode).join(', ')}`,
-    f.subCategories?.length && `Sous-catégories : ${f.subCategories.map(decode).join(', ')}`,
+    f.subCategories?.length && `Sous-catégories : ${f.subCategories.map(sc => decode(sc.name || sc)).join(', ')}`,
     f.brands?.length && `Marques : ${f.brands.map(decode).join(', ')}`,
     f.subBrands?.length && `Sous-marques : ${f.subBrands.map(decode).join(', ')}`,
   ].filter(Boolean).join(' · ');
@@ -139,6 +140,7 @@ function CreateView({ token, onCreated, onCancel }) {
   const [name, setName] = useState('');
   const [options, setOptions] = useState(null);
   const [cats, setCats] = useState(new Set());
+  // Une sous-catégorie = son couple catégorie + nom (SEP) : des noms existent sous plusieurs catégories.
   const [subs, setSubs] = useState(new Set());
   const [brands, setBrands] = useState(new Set());
   const [subBrands, setSubBrands] = useState(new Set());
@@ -154,9 +156,11 @@ function CreateView({ token, onCreated, onCancel }) {
   }, [token]);
 
   const filters = useMemo(() => ({
-    categories: [...cats], subCategories: [...subs], brands: [...brands], subBrands: [...subBrands],
+    categories: [...cats],
+    subCategories: [...subs].map(k => { const [category, name] = k.split(SEP); return { category, name }; }),
+    brands: [...brands], subBrands: [...subBrands],
   }), [cats, subs, brands, subBrands]);
-  const picked = [...cats, ...subs, ...brands, ...subBrands];
+  const picked = [...cats, ...[...subs].map(k => k.split(SEP)[1]), ...brands, ...subBrands];
   const empty = kind === 'partial' && picked.length === 0;
 
   useEffect(() => {
@@ -192,12 +196,18 @@ function CreateView({ token, onCreated, onCancel }) {
     }
   };
 
+  // Décocher une catégorie retire ses sous-catégories (elles ne sont plus affichées).
+  const toggleCategory = (name) => {
+    if (cats.has(name)) setSubs(prev => new Set([...prev].filter(k => k.split(SEP)[0] !== name)));
+    toggle(setCats)(name);
+  };
   const catItems = (options?.categories || []).map(c => ({
-    key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name), onToggle: () => toggle(setCats)(c.name),
+    key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name), onToggle: () => toggleCategory(c.name),
   }));
-  const subItems = (options?.categories || []).flatMap(c => [
+  // Les sous-catégories des catégories cochées ; toutes si aucune ne l'est.
+  const subItems = (options?.categories || []).filter(c => !cats.size || cats.has(c.name)).flatMap(c => [
     { key: `h:${c.name}`, header: true, value: c.name },
-    ...c.subCategories.map(s => ({ key: `s:${c.name}:${s.name}`, value: s.name, count: s.count, indent: true })),
+    ...c.subCategories.map(s => ({ key: `${c.name}${SEP}${s.name}`, value: s.name, count: s.count, indent: true })),
   ]);
   // Une marque et ses sous-marques en dessous. La recherche garde la marque
   // quand elle porte sur une de ses sous-marques.
@@ -240,8 +250,9 @@ function CreateView({ token, onCreated, onCancel }) {
       {kind === 'partial' && (
         <>
           <p style={{ margin: 0, fontSize: 13, color: C.greyT }}>
-            Les catégories et sous-catégories cochées s'additionnent, de même que les marques et
-            sous-marques ; les deux se croisent (ex. telle marque <em>dans</em> telle sous-catégorie).
+            Une catégorie cochée seule est prise entière ; cochez ensuite ses sous-catégories pour la
+            limiter à celles-ci. Une marque cochée couvre ses sous-marques. Catégories et marques se
+            croisent (ex. telle marque <em>dans</em> telle sous-catégorie).
           </p>
           {!options && <p style={{ color: C.greyT }}>Chargement…</p>}
           {options && (
@@ -257,7 +268,7 @@ function CreateView({ token, onCreated, onCancel }) {
                     ? <div key={it.key} style={{ fontSize: 12, fontWeight: 800, color: C.greyT, textTransform: 'uppercase', margin: '8px 2px 2px' }}>{decode(it.value)}</div>
                     : (
                       <label key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', fontSize: 13.5, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={subs.has(it.value)} onChange={() => toggle(setSubs)(it.value)} />
+                        <input type="checkbox" checked={subs.has(it.key)} onChange={() => toggle(setSubs)(it.key)} />
                         <span style={{ flex: 1 }}>{decode(it.value)}</span>
                         <span style={{ color: C.greyT, fontSize: 12 }}>{nf.format(it.count)}</span>
                       </label>
