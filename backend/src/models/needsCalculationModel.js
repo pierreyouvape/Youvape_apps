@@ -72,6 +72,21 @@ const needsCalculationModel = {
            ) g),
           '{}'::jsonb
         ) as supplier_skus,
+        -- Map { supplier_id: [{ sku, pack_qty, pack_price }] } : le prix d'achat
+        -- saisi dans l'app sur chaque réf. (« Prix HT du pack »), qui fait foi.
+        COALESCE(
+          (SELECT jsonb_object_agg(g.supplier_id::text, g.refs)
+           FROM (
+             SELECT supplier_id,
+                    jsonb_agg(jsonb_build_object(
+                      'sku', supplier_sku, 'pack_qty', pack_qty, 'pack_price', pack_price
+                    ) ORDER BY pack_qty, supplier_sku) AS refs
+             FROM supplier_refs
+             WHERE product_id = p.id AND pack_price IS NOT NULL
+             GROUP BY supplier_id
+           ) g),
+          '{}'::jsonb
+        ) as supplier_ref_prices,
         p.image_url,
         p.weight,
         p.price,
@@ -347,6 +362,7 @@ const needsCalculationModel = {
       supplier_lead_time_days: parseInt(p.supplier_lead_time_days) || 2,
       supplier_sku: p.supplier_sku,
       supplier_skus: p.supplier_skus || {},
+      supplier_ref_prices: p.supplier_ref_prices || {},
       supplier_price: p.supplier_price,
       last_verified_prices: verifiedPricesMap.get(p.id) || {},
       incoming_qty: incomingMap.get(p.id) || 0,

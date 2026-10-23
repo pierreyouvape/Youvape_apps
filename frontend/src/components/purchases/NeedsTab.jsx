@@ -247,6 +247,7 @@ const TriStateCheckbox = ({ value, onChange, label }) => {
 // ==================== COMPOSANT PRINCIPAL ====================
 
 const NEEDS_COLUMNS = [
+  { key: 'supplier_ref_price',  label: 'Prix fournisseur' },
   { key: 'verified_price',      label: 'Tarif achat' },
   { key: 'discounted_price',    label: 'Tarif Remisé' },
   { key: 'weight',              label: 'Poids' },
@@ -370,6 +371,32 @@ const NeedsTab = ({ token, onCompactChange }) => {
     return (
       <span title={title} style={{ whiteSpace: 'nowrap' }}>
         {verified.unit_price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
+      </span>
+    );
+  };
+
+  // Prix d'achat saisi dans l'app sur les réfs fournisseur (« Prix HT du pack »),
+  // ramené à la pièce. Fournisseur sélectionné en priorité, sinon celui de la
+  // fiche — même repli que getVerifiedPrice. Plusieurs réfs (unité, pack…) :
+  // on affiche la pièce la moins chère, le détail est dans l'infobulle.
+  const renderSupplierRefPrice = (row) => {
+    const map = row.supplier_ref_prices;
+    const key = (supplierId && supplierId !== NO_SUPPLIER)
+      ? String(supplierId)
+      : (row.supplier_id != null ? String(row.supplier_id) : null);
+    const refs = (key && map && map[key]) || [];
+    const priced = refs
+      .map(r => ({ ...r, piece: Number(r.pack_price) / Math.max(Number(r.pack_qty) || 1, 1) }))
+      .filter(r => Number.isFinite(r.piece));
+    if (priced.length === 0) return <span style={{ color: '#cbd5e1' }}>-</span>;
+    const fmt = (v) => v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const best = priced.reduce((a, b) => (b.piece < a.piece ? b : a));
+    const title = priced.map(r =>
+      `${r.sku} : ${fmt(Number(r.pack_price))} € HT${Number(r.pack_qty) > 1 ? ` le pack de ${r.pack_qty} (${fmt(r.piece)} €/pièce)` : ''}`
+    ).join('\n');
+    return (
+      <span title={title} style={{ whiteSpace: 'nowrap' }}>
+        {fmt(best.piece)} €
       </span>
     );
   };
@@ -1116,6 +1143,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                   <SortableHeader column="family" label="Produit" />
                   <th>Réf. fournisseur</th>
                   <th style={{ width: '30px' }}></th>
+                  {isVisible('supplier_ref_price') && <th className="text-right">Prix fournisseur</th>}
                   {isVisible('verified_price') && <th className="text-right">Tarif achat</th>}
                   {isVisible('discounted_price') && <th className="text-right">Tarif Remisé</th>}
                   <th>SKU</th>
@@ -1179,6 +1207,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         </a>
                       )}
                     </td>
+                    {isVisible('supplier_ref_price') && <td></td>}
                     {isVisible('verified_price') && <td></td>}
                     {isVisible('discounted_price') && <td></td>}
                     <td></td>
@@ -1268,6 +1297,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                         </a>
                       )}
                     </td>
+                    {isVisible('supplier_ref_price') && <td className="text-right">{renderSupplierRefPrice(row)}</td>}
                     {isVisible('verified_price') && <td className="text-right">{renderVerifiedPrice(row)}</td>}
                     {isVisible('discounted_price') && (
                       row.discounted_price != null
