@@ -191,7 +191,10 @@ function parseChronopostPdf(text) {
     { re: /Supplément Zones? Difficiles?/i, label: 'Zone difficile d\'accès' },
     { re: /Supplément manutention/i, label: 'Supplément manutention' },
     { re: /[ÉE]tiquette non conforme/i, label: 'Étiquette non conforme' },
-    { re: /Supplément hors norme/i, label: 'Supplément hors norme' },
+    { re: /Supplément hors[\s-]norme/i, label: 'Supplément hors norme' },
+    { re: /Supplément Corse/i, label: 'Supplément Corse' },
+    { re: /Supplément Annonce incompl[eè]te/i, label: 'Annonce incomplète' },
+    { re: /Assurance Valeur d[eé]clar[eé]e/i, label: 'Assurance valeur déclarée' },
     { re: /Supplément Zone Internationale [ÉE]loign[ée]+/i, label: 'Zone Internationale Éloignée' },
     { re: /Supplément zone éloignée/i, label: 'Zone éloignée' },
     { re: /Supplément carburant/i, label: 'Surcharge carburant' },
@@ -204,6 +207,7 @@ function parseChronopostPdf(text) {
     { re: /Participation eco[^0-9]*([\d,]+)\s+colis\s+à\s+([\d,]+)\s+EUR\s+(-?[\d,]+)/i, type: 'eco' },
     { re: /Surcharge Carburant[^:]*:\s*([\d,]+)\s*%[^0-9]*([\d,]+)\s+EUR\s+(-?[\d,]+)/i, type: 'carburant' },
     { re: /Frais de gestion de compte\s*:?\s*(-?[\d,]+)/i, type: 'gestion' },
+    { re: /Sous-Total Collecte [àa] vide\s+(-?[\d,]+)/i, type: 'collecte' },
   ];
 
   let lastOrderId = null;
@@ -274,12 +278,24 @@ function parseChronopostPdf(text) {
       continue;
     }
 
+    // ── Envoi multi-colis : le montant n'est pas sur les lignes des colis mais sur
+    // la ligne de regroupement « 2 Obj 20,371 85,72 GT » → porté par le 1er colis du groupe
+    const groupMatch = line.match(/^\d+\s+Obj\s+\d+,\d{3}\s+(-?\d+),(\d{2})(?!\d)/);
+    if (groupMatch) {
+      let first = orders.length;
+      while (first > 0 && orders[first - 1].amount_ht == null) first--;
+      if (first < orders.length) orders[first].amount_ht = parseFloat(`${groupMatch[1]}.${groupMatch[2]}`);
+      continue;
+    }
+
     // ── Per-order supplement (no tracking, follows an order line)
     let foundSuppl = false;
     for (const { re, label } of SUPPLEMENT_PATTERNS) {
       if (re.test(line)) {
-        // Extract amount from line (négatif possible sur les avoirs)
-        const amtMatch = line.match(/(-?\d+),(\d{2})/);
+        // Montant = dernier nombre à 2 décimales (négatif possible sur les avoirs) :
+        // « Assurance Valeur déclarée 300,00 EUR 5,00 N » → 5,00, pas la valeur déclarée
+        const amts = [...line.matchAll(/(-?\d+),(\d{2})(?!\d)/g)];
+        const amtMatch = amts[amts.length - 1];
         const amount = amtMatch ? parseFloat(`${amtMatch[1]}.${amtMatch[2]}`) : null;
         supplements.push({
           description: label,
@@ -314,9 +330,14 @@ function parseChronopostPdf(text) {
           description = 'Frais de gestion de compte';
           detail = '';
           amount_ht = parseFloat(gm[1].replace(',', '.'));
+        } else if (type === 'collecte') {
+          description = 'Collecte à vide';
+          detail = '';
+          amount_ht = parseFloat(gm[1].replace(',', '.'));
         }
-        // Avoid duplicates
-        if (!globalCharges.find(g => g.description === description)) {
+        // Avoid duplicates (même ligne répétée) ; deux surcharges carburant
+        // (aérien + routier) diffèrent par leur détail et sont gardées toutes les deux
+        if (!globalCharges.find(g => g.description === description && g.detail === (detail || '') && g.amount_ht === amount_ht)) {
           globalCharges.push({ description, detail: detail || '', amount_ht });
         }
         break;

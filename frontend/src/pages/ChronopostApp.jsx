@@ -566,8 +566,9 @@ function computeTarifParams(orders, globalCharges) {
         ecoUnit = (g.amount_ht || 0) / (orders.length || 1);
       }
     } else if (/carburant/i.test(desc)) {
+      // Deux surcharges possibles (aérien puis routier) : on garde la première, comme avant
       const m = detail.match(/([\d.]+)\s*%/);
-      if (m) carburantRate = parseFloat(m[1]) / 100;
+      if (m && carburantRate === 0) carburantRate = parseFloat(m[1]) / 100;
     } else if (/frais de gestion/i.test(desc)) {
       fraisGestionTotal = g.amount_ht || 0;
     }
@@ -576,7 +577,7 @@ function computeTarifParams(orders, globalCharges) {
 }
 
 // Suppléments plats (hors base carburant) : pénalités administratives
-const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme/i;
+const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme|annonce\s+incompl|assurance/i;
 
 function computeSupplMaps(supplements) {
   const supplByTracking = {};      // total pour affichage tooltip
