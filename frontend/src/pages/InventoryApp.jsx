@@ -101,7 +101,7 @@ const filtersText = (inv) => {
     f.categories?.length && `Catégories : ${f.categories.map(decode).join(', ')}`,
     f.subCategories?.length && `Sous-catégories : ${f.subCategories.map(sc => decode(sc.name || sc)).join(', ')}`,
     f.brands?.length && `Marques : ${f.brands.map(decode).join(', ')}`,
-    f.subBrands?.length && `Sous-marques : ${f.subBrands.map(decode).join(', ')}`,
+    f.subBrands?.length && `Sous-marques : ${f.subBrands.map(sb => decode(sb.name || sb)).join(', ')}`,
   ].filter(Boolean).join(' · ');
 };
 
@@ -122,12 +122,42 @@ function CheckList({ title, items, selectedCount, search, onSearch }) {
         {items.map(it => (
           <label key={it.key} style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', fontSize: 13.5, cursor: 'pointer',
-            paddingLeft: it.indent ? 22 : 2, fontWeight: it.indent ? 400 : 600,
+            fontWeight: 600,
           }}>
             <input type="checkbox" checked={it.checked} onChange={it.onToggle} />
             <span style={{ flex: 1 }}>{decode(it.value)}</span>
             <span style={{ color: C.greyT, fontSize: 12 }}>{nf.format(it.count)}</span>
           </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Enfants (sous-catégories, sous-marques) rangés sous le nom de leur parent. */
+function ChildList({ title, groups, selected, onToggle }) {
+  return (
+    <div style={{ ...panel, padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <strong style={{ flex: 1, fontSize: 14 }}>{title}</strong>
+        {selected.size > 0 && <Chip color={BLUE} bg={BLUE_L}>{selected.size}</Chip>}
+      </div>
+      <div style={{ overflowY: 'auto', maxHeight: 382 }}>
+        {groups.length === 0 && <p style={{ fontSize: 13, color: C.greyT, margin: 4 }}>Aucune.</p>}
+        {groups.map(g => (
+          <div key={g.parent}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: C.greyT, textTransform: 'uppercase', margin: '8px 2px 2px' }}>{decode(g.parent)}</div>
+            {g.children.map(c => {
+              const key = `${g.parent}${SEP}${c.name}`;
+              return (
+                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', fontSize: 13.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={selected.has(key)} onChange={() => onToggle(key)} />
+                  <span style={{ flex: 1 }}>{decode(c.name)}</span>
+                  <span style={{ color: C.greyT, fontSize: 12 }}>{nf.format(c.count)}</span>
+                </label>
+              );
+            })}
+          </div>
         ))}
       </div>
     </div>
@@ -158,9 +188,10 @@ function CreateView({ token, onCreated, onCancel }) {
   const filters = useMemo(() => ({
     categories: [...cats],
     subCategories: [...subs].map(k => { const [category, name] = k.split(SEP); return { category, name }; }),
-    brands: [...brands], subBrands: [...subBrands],
+    brands: [...brands],
+    subBrands: [...subBrands].map(k => { const [brand, name] = k.split(SEP); return { brand, name }; }),
   }), [cats, subs, brands, subBrands]);
-  const picked = [...cats, ...[...subs].map(k => k.split(SEP)[1]), ...brands, ...subBrands];
+  const picked = [...cats, ...[...subs].map(k => k.split(SEP)[1]), ...brands, ...[...subBrands].map(k => k.split(SEP)[1])];
   const empty = kind === 'partial' && picked.length === 0;
 
   useEffect(() => {
@@ -196,35 +227,28 @@ function CreateView({ token, onCreated, onCancel }) {
     }
   };
 
-  // Décocher une catégorie retire ses sous-catégories (elles ne sont plus affichées).
-  const toggleCategory = (name) => {
-    if (cats.has(name)) setSubs(prev => new Set([...prev].filter(k => k.split(SEP)[0] !== name)));
-    toggle(setCats)(name);
+  // Décocher un parent retire les enfants qu'on y avait cochés (ils ne sont plus affichés).
+  const toggleParent = (selected, setParent, setChildren) => (name) => {
+    if (selected.has(name)) setChildren(prev => new Set([...prev].filter(k => k.split(SEP)[0] !== name)));
+    toggle(setParent)(name);
   };
   const catItems = (options?.categories || []).map(c => ({
-    key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name), onToggle: () => toggleCategory(c.name),
+    key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name),
+    onToggle: () => toggleParent(cats, setCats, setSubs)(c.name),
   }));
-  // Les sous-catégories des catégories cochées ; toutes si aucune ne l'est.
-  const subItems = (options?.categories || []).filter(c => !cats.size || cats.has(c.name)).flatMap(c => [
-    { key: `h:${c.name}`, header: true, value: c.name },
-    ...c.subCategories.map(s => ({ key: `${c.name}${SEP}${s.name}`, value: s.name, count: s.count, indent: true })),
-  ]);
-  // Une marque et ses sous-marques en dessous. La recherche garde la marque
-  // quand elle porte sur une de ses sous-marques.
   const q = brandSearch.trim().toLowerCase();
-  const brandItems = (options?.brands || []).flatMap(b => {
-    const brandMatch = !q || decode(b.name).toLowerCase().includes(q);
-    const subMatches = b.subBrands.filter(sb => brandMatch || decode(sb.name).toLowerCase().includes(q));
-    if (!brandMatch && subMatches.length === 0) return [];
-    return [
-      { key: `b:${b.name}`, value: b.name, count: b.count, checked: brands.has(b.name), onToggle: () => toggle(setBrands)(b.name) },
-      ...subMatches.map(sb => ({
-        key: `sb:${b.name}:${sb.name}`, value: sb.name, count: sb.count, indent: true,
-        checked: brands.has(b.name) || subBrands.has(sb.name),
-        onToggle: () => !brands.has(b.name) && toggle(setSubBrands)(sb.name),
-      })),
-    ];
-  });
+  const brandItems = (options?.brands || [])
+    .filter(b => !q || decode(b.name).toLowerCase().includes(q))
+    .map(b => ({
+      key: `b:${b.name}`, value: b.name, count: b.count, checked: brands.has(b.name),
+      onToggle: () => toggleParent(brands, setBrands, setSubBrands)(b.name),
+    }));
+  // Les enfants des parents cochés ; tous si aucun ne l'est.
+  const childGroups = (parents, selected, childKey) => parents
+    .filter(p => p[childKey].length && (!selected.size || selected.has(p.name)))
+    .map(p => ({ parent: p.name, children: p[childKey] }));
+  const subGroups = childGroups(options?.categories || [], cats, 'subCategories');
+  const subBrandGroups = childGroups(options?.brands || [], brands, 'subBrands');
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -250,33 +274,18 @@ function CreateView({ token, onCreated, onCancel }) {
       {kind === 'partial' && (
         <>
           <p style={{ margin: 0, fontSize: 13, color: C.greyT }}>
-            Une catégorie cochée seule est prise entière ; cochez ensuite ses sous-catégories pour la
-            limiter à celles-ci. Une marque cochée couvre ses sous-marques. Catégories et marques se
+            Une catégorie ou une marque cochée seule est prise entière ; cochez ensuite ses
+            sous-catégories ou sous-marques pour la limiter à celles-ci. Catégories et marques se
             croisent (ex. telle marque <em>dans</em> telle sous-catégorie).
           </p>
           {!options && <p style={{ color: C.greyT }}>Chargement…</p>}
           {options && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               <CheckList title="Catégories" items={catItems} selectedCount={cats.size} />
-              <div style={{ ...panel, padding: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <strong style={{ flex: 1, fontSize: 14 }}>Sous-catégories</strong>
-                  {subs.size > 0 && <Chip color={BLUE} bg={BLUE_L}>{subs.size}</Chip>}
-                </div>
-                <div style={{ overflowY: 'auto', maxHeight: 382 }}>
-                  {subItems.map(it => (it.header
-                    ? <div key={it.key} style={{ fontSize: 12, fontWeight: 800, color: C.greyT, textTransform: 'uppercase', margin: '8px 2px 2px' }}>{decode(it.value)}</div>
-                    : (
-                      <label key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px', fontSize: 13.5, cursor: 'pointer' }}>
-                        <input type="checkbox" checked={subs.has(it.key)} onChange={() => toggle(setSubs)(it.key)} />
-                        <span style={{ flex: 1 }}>{decode(it.value)}</span>
-                        <span style={{ color: C.greyT, fontSize: 12 }}>{nf.format(it.count)}</span>
-                      </label>
-                    )))}
-                </div>
-              </div>
-              <CheckList title="Marques et sous-marques" items={brandItems} selectedCount={brands.size + subBrands.size}
+              <ChildList title="Sous-catégories" groups={subGroups} selected={subs} onToggle={toggle(setSubs)} />
+              <CheckList title="Marques" items={brandItems} selectedCount={brands.size}
                 search={brandSearch} onSearch={setBrandSearch} />
+              <ChildList title="Sous-marques" groups={subBrandGroups} selected={subBrands} onToggle={toggle(setSubBrands)} />
             </div>
           )}
         </>

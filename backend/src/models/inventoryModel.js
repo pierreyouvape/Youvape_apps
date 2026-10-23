@@ -35,53 +35,56 @@ const SCOPE_FROM = `
 
 const uniq = (list) => [...new Set((Array.isArray(list) ? list : []).map(v => String(v)).filter(Boolean))];
 
-/**
- * Une sous-catégorie se désigne par son COUPLE catégorie + nom : cinq noms
- * existent sous plusieurs catégories (« Eliquides Sel de Nicotine » sous DLUO
- * et sous E-liquides). Les sous-marques, elles, ont des noms uniques.
- */
-const cleanFilters = (filters = {}) => {
+/** Couples parent + enfant, dédoublonnés : [{ category, name }] ou [{ brand, name }]. */
+const pairs = (list, parentKey) => {
   const seen = new Set();
-  const subCategories = (Array.isArray(filters.subCategories) ? filters.subCategories : [])
-    .map(s => ({ category: String(s?.category || ''), name: String(s?.name || '') }))
-    .filter(s => s.category && s.name && !seen.has(`${s.category}\u0001${s.name}`) && seen.add(`${s.category}\u0001${s.name}`));
-  return {
-    categories: uniq(filters.categories),
-    subCategories,
-    brands: uniq(filters.brands),
-    subBrands: uniq(filters.subBrands),
-  };
+  return (Array.isArray(list) ? list : [])
+    .map(s => ({ [parentKey]: String(s?.[parentKey] || ''), name: String(s?.name || '') }))
+    .filter(s => {
+      const key = `${s[parentKey]}\u0001${s.name}`;
+      if (!s[parentKey] || !s.name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 };
 
 /**
- * Filtre SQL d'un inventaire partiel, famille par famille :
- *   - catégories : une catégorie cochée seule est prise ENTIÈRE ; si des
- *     sous-catégories y sont cochées, elle se limite à celles-ci ;
- *   - marques : une marque OU la sous-marque d'une autre (cocher la marque
- *     couvre toutes ses sous-marques) ;
- * et les deux familles se croisent (telle marque DANS telle sous-catégorie).
+ * Une sous-catégorie se désigne par son COUPLE catégorie + nom : cinq noms
+ * existent sous plusieurs catégories (« Eliquides Sel de Nicotine » sous DLUO
+ * et sous E-liquides). Les sous-marques suivent la même règle.
+ */
+const cleanFilters = (filters = {}) => ({
+  categories: uniq(filters.categories),
+  subCategories: pairs(filters.subCategories, 'category'),
+  brands: uniq(filters.brands),
+  subBrands: pairs(filters.subBrands, 'brand'),
+});
+
+/**
+ * Filtre SQL d'un inventaire partiel. Dans chaque famille (catégories,
+ * marques), un parent coché seul est pris ENTIER ; si des enfants y sont
+ * cochés, il se limite à ceux-ci. Les deux familles se croisent (telle marque
+ * DANS telle sous-catégorie).
  */
 const filterSql = (kind, filters, params) => {
   if (kind === 'global') return '';
-  const parts = [];
   const add = (value) => { params.push(value); return `$${params.length}`; };
-
-  const narrowed = new Set(filters.subCategories.map(s => s.category));
-  const whole = filters.categories.filter(c => !narrowed.has(c));
-  const cats = [];
-  if (whole.length) cats.push(`${DIM.category} = ANY(${add(whole)}::text[])`);
-  if (filters.subCategories.length) {
-    const c = add(filters.subCategories.map(s => s.category));
-    const n = add(filters.subCategories.map(s => s.name));
-    cats.push(`(${DIM.category}, ${DIM.subCategory}) IN (SELECT * FROM unnest(${c}::text[], ${n}::text[]))`);
-  }
-  if (cats.length) parts.push(`(${cats.join(' OR ')})`);
-
-  const brands = [];
-  if (filters.brands.length) brands.push(`${DIM.brand} = ANY(${add(filters.brands)}::text[])`);
-  if (filters.subBrands.length) brands.push(`${DIM.subBrand} = ANY(${add(filters.subBrands)}::text[])`);
-  if (brands.length) parts.push(`(${brands.join(' OR ')})`);
-
+  const family = (parents, children, parentKey, parentDim, childDim) => {
+    const narrowed = new Set(children.map(c => c[parentKey]));
+    const whole = parents.filter(p => !narrowed.has(p));
+    const ors = [];
+    if (whole.length) ors.push(`${parentDim} = ANY(${add(whole)}::text[])`);
+    if (children.length) {
+      const pa = add(children.map(c => c[parentKey]));
+      const na = add(children.map(c => c.name));
+      ors.push(`(${parentDim}, ${childDim}) IN (SELECT * FROM unnest(${pa}::text[], ${na}::text[]))`);
+    }
+    return ors.length ? `(${ors.join(' OR ')})` : null;
+  };
+  const parts = [
+    family(filters.categories, filters.subCategories, 'category', DIM.category, DIM.subCategory),
+    family(filters.brands, filters.subBrands, 'brand', DIM.brand, DIM.subBrand),
+  ].filter(Boolean);
   if (!parts.length) throw httpError(400, 'Choisissez au moins une catégorie, sous-catégorie, marque ou sous-marque.');
   return ` AND ${parts.join(' AND ')}`;
 };
