@@ -151,48 +151,49 @@ function Line({ line, current, mine, busy, onValidate, onMissing, onUndo, refPro
       boxShadow: big ? '0 6px 18px rgba(124,58,237,0.25)' : 'none',
       opacity: line.done ? 0.85 : 1,
     }}>
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: big ? 12 : 8 }}>
-      {line.imageUrl
-        ? <img src={line.imageUrl} alt="" loading="lazy" style={{
-          width: img, height: img, objectFit: 'contain', borderRadius: 10, background: C.white, flexShrink: 0, alignSelf: 'center',
-        }} />
-        : <div style={{
-          width: img, height: img, borderRadius: 10, background: C.greyB, flexShrink: 0, alignSelf: 'center',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.greyM, fontSize: big ? 30 : 18,
-        }}>?</div>}
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 900, fontSize: big ? 30 : 18, lineHeight: 1.1, color: line.location ? C.dark : C.greyM }}>
-            {line.location || 'Sans empl.'}
-          </span>
-          <span style={{ fontSize: big ? 13 : 11.5, color: C.greyT }}>pour {line.ordersCount} cmd</span>
-        </div>
-        <div style={{ fontWeight: 700, fontSize: big ? 18 : 14, lineHeight: 1.25, marginTop: 3 }}>{nameWithoutVariant(line.name, line.variant)}</div>
-        {line.variant && (
-          <div style={{ fontWeight: 900, fontSize: big ? 20 : 15, lineHeight: 1.2, marginTop: 2, color: C.dark }}>{line.variant}</div>
-        )}
-        <div style={{ fontSize: big ? 13 : 11.5, color: C.greyT, marginTop: 2 }}>
-          {[line.brand, line.sku && `SKU ${line.sku}`].filter(Boolean).join(' · ')}
-          {line.hasBarcode === false && <strong style={{ color: C.amber }}> · pas de code-barres</strong>}
-        </div>
-        {line.done && line.qtyMissing > 0 && (
-          <div style={{ fontSize: 13, fontWeight: 800, color: C.amber, marginTop: 4 }}>Manquant : {line.qtyMissing}</div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'space-between', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontWeight: 900, fontSize: big ? 30 : 18, lineHeight: 1.1, color: line.location ? C.dark : C.greyM }}>
+          {line.location || 'Sans empl.'}
+        </span>
+        <span style={{ fontSize: big ? 13 : 11.5, color: C.greyT, flex: 1 }}>pour {line.ordersCount} cmd</span>
+        {line.done && line.qtyMissing === 0 && <span style={{ fontSize: 20, color: C.green }}>✓</span>}
         <span style={{ fontSize: big ? 34 : 20, fontWeight: 900, whiteSpace: 'nowrap', lineHeight: 1 }}>
           {line.qtyPicked}<span style={{ color: C.greyT, fontWeight: 600, fontSize: big ? 20 : 14 }}>/{line.qtyNeeded}</span>
         </span>
-        {mine && line.done && (line.qtyManual > 0 || line.qtyMissing > 0) && (
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: big ? 12 : 8 }}>
+        {line.imageUrl
+          ? <img src={line.imageUrl} alt="" loading="lazy" style={{
+            width: img, height: img, objectFit: 'contain', borderRadius: 10, background: C.white, flexShrink: 0, alignSelf: 'center',
+          }} />
+          : <div style={{
+            width: img, height: img, borderRadius: 10, background: C.greyB, flexShrink: 0, alignSelf: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.greyM, fontSize: big ? 30 : 18,
+          }}>?</div>}
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: big ? 18 : 14, lineHeight: 1.25 }}>{nameWithoutVariant(line.name, line.variant)}</div>
+          {line.variant && (
+            <div style={{ fontWeight: 900, fontSize: big ? 20 : 15, lineHeight: 1.2, marginTop: 2, color: C.dark }}>{line.variant}</div>
+          )}
+          <div style={{ fontSize: big ? 13 : 11.5, color: C.greyT, marginTop: 2 }}>
+            {[line.brand, line.sku && `SKU ${line.sku}`].filter(Boolean).join(' · ')}
+            {line.hasBarcode === false && <strong style={{ color: C.amber }}> · pas de code-barres</strong>}
+          </div>
+          {line.done && line.qtyMissing > 0 && (
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.amber, marginTop: 4 }}>Manquant : {line.qtyMissing}</div>
+          )}
+        </div>
+      </div>
+
+      {mine && line.done && (line.qtyManual > 0 || line.qtyMissing > 0) && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button disabled={busy} onClick={() => onUndo(line)} style={{
             ...bigBtn(C.white, C.greyT), border: `1px solid ${C.greyB}`, fontSize: 12, padding: '5px 8px', fontWeight: 600,
           }}>Annuler</button>
-        )}
-        {line.done && line.qtyMissing === 0 && <span style={{ fontSize: 20, color: C.green }}>✓</span>}
-      </div>
-    </div>
+        </div>
+      )}
 
       {actions && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: big ? 8 : 4 }}>
@@ -223,6 +224,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
   const [missingAsk, setMissingAsk] = useState(null);
   const [typed, setTyped] = useState('');
   const currentRef = useRef(null);
+  const headerRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -296,8 +298,13 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
   useScanner(scan, !!wave && !typing && !packAsk && !missingAsk);
 
   const current = wave?.lines.find(l => !l.done);
+  // La ligne à prendre s'aligne juste sous l'en-tête collant (barre PDA +
+  // avancement) : centrée, une carte haute y cachait son emplacement.
   useEffect(() => {
-    currentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const el = currentRef.current;
+    if (!el) return;
+    el.style.scrollMarginTop = `${56 + (headerRef.current?.offsetHeight || 0) + 8}px`;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [current?.id]);
 
   const assign = async () => {
@@ -338,7 +345,7 @@ function WaveScreen({ token, waveId, onBack, setNotice, notice }) {
 
   return (
     <div style={{ paddingBottom: 110 }}>
-      <div style={{ padding: '12px 14px', background: C.white, borderBottom: `1px solid ${C.greyB}`, position: 'sticky', top: 56, zIndex: 5 }}>
+      <div ref={headerRef} style={{ padding: '12px 14px', background: C.white, borderBottom: `1px solid ${C.greyB}`, position: 'sticky', top: 56, zIndex: 5 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
           <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: 22, flex: 1 }}>{wave.waveNumber}</span>
           <span style={{ fontSize: 14, color: C.greyT }}>{wave.orders} cmd</span>
