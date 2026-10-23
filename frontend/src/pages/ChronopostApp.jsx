@@ -726,7 +726,10 @@ export default function ChronopostApp() {
         });
         if (cancelled) return;
         const byInvoice = {};
-        for (const r of data.results || []) (byInvoice[r.id] ||= []).push(r);
+        for (const r of data.results || []) {
+          byInvoice[r.id] ||= [];
+          if (r.tracking) byInvoice[r.id].push(r);
+        }
         setHistoryMatches(byInvoice);
       } catch {
         if (!cancelled) setHistoryMatches({});
@@ -740,7 +743,7 @@ export default function ChronopostApp() {
   const visibleHistory = historyMatches ? sortedHistory.filter(inv => historyMatches[inv.id]) : sortedHistory;
 
   async function openHistoryRow(inv) {
-    const match = historyMatches?.[inv.id]?.[0];
+    const match = historyMatches?.[inv.id]?.[0]; // absent si la facture a été trouvée par son n°
     await handleLoadFromHistory(inv);
     if (match) {
       setSearchOrder(String(match.order_id || match.tracking));
@@ -751,7 +754,7 @@ export default function ChronopostApp() {
   const historySearchBox = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
       <input
-        placeholder="Trouver un colis : n° de suivi ou n° de commande…"
+        placeholder="Trouver une facture ou un colis : n° de facture, de suivi ou de commande…"
         value={historyQuery}
         onChange={e => setHistoryQuery(e.target.value)}
         style={{
@@ -766,7 +769,7 @@ export default function ChronopostApp() {
       )}
       <span style={{ fontSize: 12, color: C.greyT }}>
         {historyMatchLoading ? 'Recherche…'
-          : historyMatches ? `${visibleHistory.length} facture${visibleHistory.length > 1 ? 's' : ''} contenant ce colis`
+          : historyMatches ? `${visibleHistory.length} facture${visibleHistory.length > 1 ? 's' : ''} trouvée${visibleHistory.length > 1 ? 's' : ''}`
           : historyQuery.trim() ? '3 caractères minimum' : ''}
       </span>
     </div>
@@ -932,13 +935,13 @@ export default function ChronopostApp() {
       });
       if (!data.success) throw new Error(data.error);
       if (!data.results.length) {
-        setGlobalSearchError(`Aucune commande/suivi correspondant à "${q}" trouvé dans les factures enregistrées.`);
+        setGlobalSearchError(`Aucune facture, commande ou n° de suivi correspondant à "${q}" dans les factures enregistrées.`);
         return;
       }
       if (data.results.length === 1) {
         const r = data.results[0];
         await handleLoadFromHistory({ id: r.id });
-        setSearchOrder(String(r.order_id || r.tracking || q));
+        setSearchOrder(r.order_id || r.tracking ? String(r.order_id || r.tracking) : '');
         setFilterTab('all');
       } else {
         setGlobalSearchResults(data.results);
@@ -953,7 +956,7 @@ export default function ChronopostApp() {
     setGlobalSearchLoading(true);
     try {
       await handleLoadFromHistory({ id: r.id });
-      setSearchOrder(String(r.order_id || r.tracking || globalSearch.trim()));
+      setSearchOrder(r.order_id || r.tracking ? String(r.order_id || r.tracking) : '');
       setFilterTab('all');
     } catch (e) {
       setGlobalSearchError(e.message);
@@ -1470,7 +1473,7 @@ export default function ChronopostApp() {
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <input
-              placeholder="Rechercher une commande ou un n° de suivi dans toutes les factures…"
+              placeholder="Rechercher une facture, une commande ou un n° de suivi dans toutes les factures…"
               value={globalSearch}
               onChange={e => setGlobalSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleGlobalSearch(); }}
@@ -1511,7 +1514,7 @@ export default function ChronopostApp() {
                   onMouseEnter={e => e.currentTarget.style.background = C.accentL}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
-                  Facture <strong>{r.invoice_number}</strong> ({r.invoice_date || '—'}) — Commande <strong>{r.order_id || '—'}</strong> · Suivi {r.tracking}
+                  Facture <strong>{r.invoice_number}</strong> ({r.invoice_date || '—'}){r.tracking ? <> — Commande <strong>{r.order_id || '—'}</strong> · Suivi {r.tracking}</> : null}
                 </div>
               ))}
             </div>

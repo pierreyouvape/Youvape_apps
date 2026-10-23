@@ -1105,7 +1105,16 @@ exports.searchOrder = async (req, res) => {
       LIMIT 50
     `, [q, `%${q.replace(/\s+/g, '')}%`]);
 
-    res.json({ success: true, results: result.rows });
+    // N° de facture : la facture elle-même, sans colis ciblé
+    const invoices = await pool.query(`
+      SELECT ci.id, ci.invoice_number, ci.invoice_date, NULL AS order_id, NULL AS tracking
+      FROM carrier_invoices ci
+      WHERE ci.carrier = 'chronopost' AND ci.invoice_number ILIKE $1
+      ORDER BY ${newestInvoicesFirst('ci')}
+      LIMIT 20
+    `, [`%${q.replace(/\s+/g, '')}%`]);
+
+    res.json({ success: true, results: [...invoices.rows, ...result.rows] });
   } catch (err) {
     console.error('[Chronopost] searchOrder error:', err);
     res.status(500).json({ success: false, error: err.message });
