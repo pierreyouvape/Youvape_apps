@@ -49,7 +49,9 @@ module.exports = {
   fixLocation: handle(async (req, res) => {
     res.json(await inventoryModel.fixLocation(id(req), item(req), req.body?.location, req.user));
   }),
-  close: handle(async (req, res) => {
+  // Pas « close » : c'est le nom de la fin d'emplacement côté PDA, plus bas —
+  // la seconde clé écrasait la première (23/10/2026, « NaN » en clôturant).
+  closeInventory: handle(async (req, res) => {
     await inventoryModel.close(id(req), req.user.id);
     res.json({ ok: true });
   }),

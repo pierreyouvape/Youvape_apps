@@ -48,6 +48,6 @@ router.post('/:id/gaps/ignore', write, c.ignoreGaps);
 router.post('/:id/gaps/unignore', write, c.unignoreGaps);
 router.post('/:id/items/:itemId/recount', write, c.requestRecount);
 router.post('/:id/items/:itemId/location', write, c.fixLocation);
-router.post('/:id/close', write, c.close);
+router.post('/:id/close', write, c.closeInventory);
 
 module.exports = router;
