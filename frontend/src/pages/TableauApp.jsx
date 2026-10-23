@@ -10,6 +10,7 @@ import { TABLEAU_COLOR } from '../components/tableau/tableauShared';
 /** Clé de permission de l'app (miroir de `APPS` et de backend/src/config/apps.js). */
 const PERM_KEY = 'tableau';
 
+/** Onglets de l'app, dans l'ordre d'affichage. */
 const TABS = [
   { key: 'epingle', label: 'Épinglé', subtitle: 'Vos post-its, à placer où vous voulez. Vous seul les voyez.' },
   { key: 'recurrentes', label: 'Récurrentes', subtitle: 'Vos tâches qui reviennent, avec rappel si besoin.' },
