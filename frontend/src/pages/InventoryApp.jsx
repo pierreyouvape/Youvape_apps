@@ -236,8 +236,38 @@ function CreateView({ token, onCreated, onCancel }) {
     key: `c:${c.name}`, value: c.name, count: c.count, checked: cats.has(c.name),
     onToggle: () => toggleParent(cats, setCats, setSubs)(c.name),
   }));
+  // Marques présentes dans les catégories cochées (même règle que le serveur :
+  // une catégorie seule est entière, ses sous-catégories cochées la limitent),
+  // recomptées. Une marque cochée reste affichée même si elle sort du filtre.
+  const brandOptions = useMemo(() => {
+    const narrowed = new Set([...subs].map(k => k.split(SEP)[0]));
+    const inCats = (r) => (!cats.size && !subs.size)
+      || (cats.has(r.c) && !narrowed.has(r.c))
+      || subs.has(`${r.c}${SEP}${r.sc}`);
+    const byBrand = new Map();
+    for (const r of options?.combos || []) {
+      if (!inCats(r)) continue;
+      const b = byBrand.get(r.b) || { name: r.b, count: 0, subBrands: new Map() };
+      b.count += r.n;
+      if (r.sb) b.subBrands.set(r.sb, (b.subBrands.get(r.sb) || 0) + r.n);
+      byBrand.set(r.b, b);
+    }
+    for (const name of brands) if (!byBrand.has(name)) byBrand.set(name, { name, count: 0, subBrands: new Map() });
+    for (const k of subBrands) {
+      const [brand, name] = k.split(SEP);
+      if (!byBrand.has(brand)) byBrand.set(brand, { name: brand, count: 0, subBrands: new Map() });
+      if (!byBrand.get(brand).subBrands.has(name)) byBrand.get(brand).subBrands.set(name, 0);
+    }
+    const sortFr = (a, b) => a.name.localeCompare(b.name, 'fr');
+    return [...byBrand.values()].sort(sortFr).map(b => ({
+      name: b.name,
+      count: b.count,
+      subBrands: [...b.subBrands].map(([name, count]) => ({ name, count })).sort(sortFr),
+    }));
+  }, [options, cats, subs, brands, subBrands]);
+
   const q = brandSearch.trim().toLowerCase();
-  const brandItems = (options?.brands || [])
+  const brandItems = brandOptions
     .filter(b => !q || decode(b.name).toLowerCase().includes(q))
     .map(b => ({
       key: `b:${b.name}`, value: b.name, count: b.count, checked: brands.has(b.name),
@@ -248,7 +278,7 @@ function CreateView({ token, onCreated, onCancel }) {
     .filter(p => p[childKey].length && (!selected.size || selected.has(p.name)))
     .map(p => ({ parent: p.name, children: p[childKey] }));
   const subGroups = childGroups(options?.categories || [], cats, 'subCategories');
-  const subBrandGroups = childGroups(options?.brands || [], brands, 'subBrands');
+  const subBrandGroups = childGroups(brandOptions, brands, 'subBrands');
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -275,8 +305,8 @@ function CreateView({ token, onCreated, onCancel }) {
         <>
           <p style={{ margin: 0, fontSize: 13, color: C.greyT }}>
             Une catégorie ou une marque cochée seule est prise entière ; cochez ensuite ses
-            sous-catégories ou sous-marques pour la limiter à celles-ci. Catégories et marques se
-            croisent (ex. telle marque <em>dans</em> telle sous-catégorie).
+            sous-catégories ou sous-marques pour la limiter à celles-ci. Les marques proposées sont
+            celles des catégories cochées, et l'inventaire porte sur leur croisement.
           </p>
           {!options && <p style={{ color: C.greyT }}>Chargement…</p>}
           {options && (

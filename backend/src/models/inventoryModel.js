@@ -93,36 +93,35 @@ const checkKind = (kind) => {
   if (!['global', 'partial'].includes(kind)) throw httpError(400, 'Type d\'inventaire inconnu.');
 };
 
-/** Catégories et marques du périmètre (avec leurs sous-catégories, sous-marques), et leur nombre de références. */
+/**
+ * Catégories et marques du périmètre, avec leurs sous-catégories et
+ * sous-marques. Envoyées en COMBINAISONS (catégorie, sous-catégorie, marque,
+ * sous-marque → nombre de réfs, ~500 lignes) : l'écran ne propose ainsi que
+ * les marques présentes dans les catégories cochées, et les recompte.
+ */
 const options = async () => {
-  const { rows: cats } = await pool.query(
-    `SELECT ${DIM.category} AS category, ${DIM.subCategory} AS sub_category, count(*)::int AS n
+  const { rows } = await pool.query(
+    `SELECT ${DIM.category} AS c, ${DIM.subCategory} AS sc, ${DIM.brand} AS b, ${DIM.subBrand} AS sb,
+            count(*)::int AS n
        ${SCOPE_FROM}
-      GROUP BY 1, 2`
-  );
-  const { rows: brands } = await pool.query(
-    `SELECT ${DIM.brand} AS brand, ${DIM.subBrand} AS sub_brand, count(*)::int AS n ${SCOPE_FROM} GROUP BY 1, 2`
+      GROUP BY 1, 2, 3, 4`
   );
   const byCat = new Map();
-  for (const r of cats) {
-    if (!r.category) continue;
-    const c = byCat.get(r.category) || { name: r.category, count: 0, subCategories: [] };
+  for (const r of rows) {
+    if (!r.c) continue;
+    const c = byCat.get(r.c) || { name: r.c, count: 0, subs: new Map() };
     c.count += r.n;
-    if (r.sub_category) c.subCategories.push({ name: r.sub_category, count: r.n });
-    byCat.set(r.category, c);
-  }
-  const byBrand = new Map();
-  for (const r of brands) {
-    if (!r.brand) continue;
-    const b = byBrand.get(r.brand) || { name: r.brand, count: 0, subBrands: [] };
-    b.count += r.n;
-    if (r.sub_brand) b.subBrands.push({ name: r.sub_brand, count: r.n });
-    byBrand.set(r.brand, b);
+    if (r.sc) c.subs.set(r.sc, (c.subs.get(r.sc) || 0) + r.n);
+    byCat.set(r.c, c);
   }
   const sortFr = (a, b) => a.name.localeCompare(b.name, 'fr');
   return {
-    categories: [...byCat.values()].sort(sortFr).map(c => ({ ...c, subCategories: c.subCategories.sort(sortFr) })),
-    brands: [...byBrand.values()].sort(sortFr).map(b => ({ ...b, subBrands: b.subBrands.sort(sortFr) })),
+    categories: [...byCat.values()].sort(sortFr).map(c => ({
+      name: c.name,
+      count: c.count,
+      subCategories: [...c.subs].map(([name, count]) => ({ name, count })).sort(sortFr),
+    })),
+    combos: rows.filter(r => r.b).map(r => ({ c: r.c, sc: r.sc, b: r.b, sb: r.sb, n: r.n })),
   };
 };
 
