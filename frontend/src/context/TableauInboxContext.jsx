@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AuthContext } from './AuthContext';
 import { openSavStream } from '../components/tickets/savStream';
-import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError } from '../components/tableau/tableauShared';
+import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError, previewText } from '../components/tableau/tableauShared';
 
 /**
  * Notifications de l'app Tableau, visibles depuis TOUTES les apps :
@@ -81,11 +81,7 @@ const btn = (primary) => ({
   background: primary ? TABLEAU_COLOR : '#F3F4F6', color: primary ? '#fff' : '#374151',
 });
 
-const preview = (text) => {
-  const s = (text || '').trim().replace(/\s+/g, ' ');
-  if (!s) return '(post-it vide)';
-  return s.length > 90 ? `${s.slice(0, 90)}…` : s;
-};
+const preview = (html) => previewText(html, 90);
 
 function TableauToasts({ inbox, refresh }) {
   const { pathname } = useLocation();

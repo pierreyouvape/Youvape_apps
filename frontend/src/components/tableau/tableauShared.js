@@ -18,11 +18,22 @@ export const noteColor = (key) => NOTE_COLORS[key] || NOTE_COLORS.jaune;
 
 const post = (path, body) => axios.post(`${API_URL}/tableau${path}`, body).then((r) => r.data);
 
+const imageForm = (file, fields = {}) => {
+  const fd = new FormData();
+  Object.entries(fields).forEach(([k, v]) => fd.append(k, String(v)));
+  fd.append('image', file);
+  return fd;
+};
+
 export const tableauApi = {
   inbox: () => axios.get(`${API_URL}/tableau/inbox`).then((r) => r.data),
   recipients: () => axios.get(`${API_URL}/tableau/recipients`).then((r) => r.data),
   notes: () => axios.get(`${API_URL}/tableau/notes`).then((r) => r.data),
   createNote: (body) => post('/notes', body),
+  // Image collée seule : { x, y, width, height } = place et taille d'affichage
+  createImage: (file, box) => post('/notes/image', imageForm(file, box)),
+  // Image insérée dans le texte d'un post-it → { url } signée
+  uploadMedia: (file) => post('/media', imageForm(file)),
   updateNote: (id, body) => axios.patch(`${API_URL}/tableau/notes/${id}`, body).then((r) => r.data),
   deleteNote: (id) => axios.delete(`${API_URL}/tableau/notes/${id}`).then((r) => r.data),
   send: (noteId, toUserId, mode) => post('/transfers', { note_id: noteId, to_user_id: toUserId, mode }),
@@ -40,6 +51,47 @@ export const tableauApi = {
 };
 
 export const apiError = (e) => e?.response?.data?.error || e?.message || 'Erreur';
+
+/* ─── Images ─── */
+
+/** Fichiers image d'un presse-papiers ou d'un dépôt (DataTransfer). */
+export const imageFilesOf = (dataTransfer) =>
+  Array.from(dataTransfer?.items || [])
+    .filter((it) => it.kind === 'file')
+    .map((it) => it.getAsFile())
+    .filter((f) => f && (f.type.startsWith('image/') || /\.hei[cf]$/i.test(f.name)));
+
+/**
+ * Remet une image dans le presse-papiers, pour la coller ailleurs (mail, SAV…).
+ * Toujours en PNG : c'est le seul format image que les navigateurs acceptent d'y
+ * écrire. Le blob est passé en promesse, sans quoi Safari refuse l'écriture
+ * (elle doit partir dans le geste de l'utilisateur).
+ */
+export async function copyImageToClipboard(url) {
+  const toPng = async () => {
+    const blob = await (await fetch(url)).blob();
+    if (blob.type === 'image/png') return blob;
+    const bmp = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    canvas.getContext('2d').drawImage(bmp, 0, 0);
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  };
+  await navigator.clipboard.write([new ClipboardItem({ 'image/png': toPng() })]);
+}
+
+/** Aperçu texte d'un post-it (HTML) : son texte, et le nombre d'images. */
+export function previewText(html, max = 140) {
+  const doc = new DOMParser().parseFromString(html || '', 'text/html');
+  const images = doc.querySelectorAll('img').length;
+  doc.querySelectorAll('br').forEach((el) => el.replaceWith(' '));
+  doc.querySelectorAll('p, li').forEach((el) => el.append(' '));
+  const text = (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+  const cut = text.length > max ? `${text.slice(0, max)}…` : text;
+  const imgs = images ? `(${images} image${images > 1 ? 's' : ''})` : '';
+  return [cut, imgs].filter(Boolean).join(' ') || '(post-it vide)';
+}
 
 /* ─── Dates (chaînes 'YYYY-MM-DD', jamais new Date(chaîne)) ─── */
 

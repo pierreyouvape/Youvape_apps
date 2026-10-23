@@ -1,7 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const tableauController = require('../controllers/tableauController');
+const multer = require('multer');
 const { checkPermission } = require('../middleware/permissionMiddleware');
+const { MAX_IMAGE_SIZE } = require('../utils/tableauMedia');
+
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_IMAGE_SIZE, files: 1 },
+});
+
+// Sans ce gestionnaire, une image trop lourde repartirait en 500 HTML
+const uploadImage = (req, res, next) => {
+  memoryUpload.single('image')(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: `Image trop lourde (${Math.round(MAX_IMAGE_SIZE / 1048576)} Mo maximum)` });
+    }
+    console.error('[Tableau] upload :', err);
+    return res.status(400).json({ error: "L'envoi de l'image a échoué" });
+  });
+};
 
 /*
  * App Tableau — post-its et tâches récurrentes, personnels.
@@ -20,6 +39,10 @@ router.get('/recipients', tableauController.getRecipients);
 
 router.get('/notes', tableauController.getNotes);
 router.post('/notes', tableauController.createNote);
+// Image collée seule sur le tableau (multipart : image + x, y, width, height)
+router.post('/notes/image', uploadImage, tableauController.createImage);
+// Image insérée dans le texte d'un post-it : renvoie son lien signé
+router.post('/media', uploadImage, tableauController.uploadMedia);
 router.patch('/notes/:id', tableauController.updateNote);
 router.delete('/notes/:id', tableauController.deleteNote);
 

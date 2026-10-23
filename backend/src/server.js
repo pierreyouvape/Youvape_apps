@@ -138,6 +138,8 @@ app.use('/api/atb', authMiddleware, atbRoutes); // ATB — Anthony Tool Box (dro
 // authMiddleware refuse par construction.
 const tableauController = require('./controllers/tableauController');
 app.get('/api/tableau/stream', tableauController.streamAuth, tableauController.stream);
+// Images : lien signé, une balise <img> ne pose pas d'en-tête Authorization
+app.get('/api/tableau/media/:filename', tableauController.getMedia);
 app.use('/api/tableau', authMiddleware, tableauRoutes); // Tableau — post-its et tâches récurrentes personnels (droit `tableau` dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
 // Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,

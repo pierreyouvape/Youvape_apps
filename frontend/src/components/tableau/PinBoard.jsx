@@ -1,8 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTableauInbox } from '../../context/TableauInboxContext';
 import StickyNote from './StickyNote';
+import ImageItem from './ImageItem';
 import TableauModal from './TableauModal';
-import { tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR } from './tableauShared';
+import {
+  tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR, previewText, imageFilesOf, copyImageToClipboard,
+} from './tableauShared';
+
+/** Taille d'affichage maximale d'une image collée (elle se redimensionne ensuite). */
+const IMAGE_MAX = 360;
+
+/** Saisie en cours (post-it, champ) : le collage et les touches lui reviennent. */
+const isTyping = (el) => !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+
+/** Dimensions naturelles d'une image, ramenées à IMAGE_MAX. HEIC illisible ici : format par défaut. */
+async function displaySize(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, IMAGE_MAX / Math.max(bmp.width, bmp.height));
+    return { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) };
+  } catch {
+    return { width: 320, height: 240 };
+  }
+}
 
 const btn = (primary) => ({
   border: 'none', borderRadius: 8, padding: '7px 13px', fontSize: 13, fontWeight: 700,
@@ -10,21 +30,20 @@ const btn = (primary) => ({
   background: primary ? TABLEAU_COLOR : '#F3F4F6', color: primary ? '#fff' : '#374151',
 });
 
-const preview = (text) => {
-  const s = (text || '').trim();
-  if (!s) return '(post-it vide)';
-  return s.length > 140 ? `${s.slice(0, 140)}…` : s;
-};
+const preview = (html) => previewText(html);
 
-/** Onglet Épinglé : surface libre de post-its + boîte de réception des envois. */
+/** Onglet Épinglé : surface libre de post-its et d'images + boîte de réception des envois. */
 export default function PinBoard() {
   const { inbox, refresh } = useTableauInbox();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(null); // { note, mode }
+  const [selectedId, setSelectedId] = useState(null); // image seule sélectionnée
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const boardRef = useRef(null);
+  const pointerRef = useRef(null); // dernière position de la souris sur le tableau
 
   const load = useCallback(async () => {
     try {
@@ -67,13 +86,74 @@ export default function PinBoard() {
   };
 
   const removeNote = async (note) => {
-    if (note.content.trim() && !window.confirm('Supprimer ce post-it ?')) return;
+    if (note.kind === 'note' && note.content.trim() && !window.confirm('Supprimer ce post-it ?')) return;
     try {
       await tableauApi.deleteNote(note.id);
       setNotes((ns) => ns.filter((n) => n.id !== note.id));
     } catch (e) {
       setError(apiError(e));
     }
+  };
+
+  // Image collée sur le tableau : posée là où est la souris (sinon en haut à gauche)
+  const addImages = async (files) => {
+    let { x, y } = pointerRef.current || { x: 40 + (notes.length % 6) * 28, y: 40 + (notes.length % 6) * 28 };
+    for (const file of files) {
+      try {
+        const size = await displaySize(file);
+        const item = await tableauApi.createImage(file, { x, y, ...size });
+        setNotes((ns) => [...ns, item]);
+        setSelectedId(item.id);
+        x += 24;
+        y += 24;
+      } catch (e) {
+        setError(apiError(e));
+      }
+    }
+  };
+  const addImagesRef = useRef(addImages);
+  addImagesRef.current = addImages;
+
+  const selectedRef = useRef(null);
+  selectedRef.current = notes.find((n) => n.id === selectedId && n.kind === 'image') || null;
+
+  useEffect(() => {
+    // Cmd+V hors d'un post-it : l'image se pose seule sur le tableau
+    const onPaste = (e) => {
+      if (isTyping(document.activeElement)) return;
+      const files = imageFilesOf(e.clipboardData);
+      if (!files.length) return;
+      e.preventDefault();
+      addImagesRef.current(files);
+    };
+    // Image sélectionnée : Cmd+C la copie, Suppr l'efface, Échap la désélectionne
+    const onKey = (e) => {
+      const item = selectedRef.current;
+      if (!item || isTyping(document.activeElement)) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+        e.preventDefault();
+        copyImageToClipboard(item.image_url).catch((err) => setError(apiError(err)));
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        removeRef.current(item);
+        setSelectedId(null);
+      } else if (e.key === 'Escape') {
+        setSelectedId(null);
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('paste', onPaste);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+  const removeRef = useRef(removeNote);
+  removeRef.current = removeNote;
+
+  const trackPointer = (e) => {
+    const r = boardRef.current?.getBoundingClientRect();
+    if (r) pointerRef.current = { x: Math.max(0, Math.round(e.clientX - r.left)), y: Math.max(0, Math.round(e.clientY - r.top)) };
   };
 
   // Action de la boîte : on relit le tableau ET la boîte (pastilles, toasts)
@@ -111,11 +191,18 @@ export default function PinBoard() {
             +
           </button>
         ))}
+        <span style={{ fontSize: 12.5, color: '#8A99A4' }}>
+          Cmd+V sur le tableau pour y coller une image, ou dans un post-it pour l'ajouter à son texte.
+        </span>
         {error && <span style={{ fontSize: 13, color: '#B91C1C', fontWeight: 600 }}>{error}</span>}
       </div>
 
       <div style={{ overflowX: 'auto', borderRadius: 14, border: '1px solid #E5E7EB' }}>
-        <div style={{
+        <div
+          ref={boardRef}
+          onPointerMove={trackPointer}
+          onPointerDown={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+          style={{
           position: 'relative', minWidth: '100%', width: boardWidth, height: boardHeight,
           backgroundColor: '#FBFAF7',
           backgroundImage: 'radial-gradient(#E3DED3 1px, transparent 1px)', backgroundSize: '22px 22px',
@@ -128,18 +215,30 @@ export default function PinBoard() {
               Aucun post-it. Choisissez une couleur ci-dessus pour en créer un.
             </div>
           )}
-          {notes.map((n) => (
+          {notes.map((n) => (n.kind === 'image' ? (
+            <ImageItem
+              key={n.id}
+              item={n}
+              selected={selectedId === n.id}
+              onSelect={() => { setSelectedId(n.id); bringToFront(n.id); }}
+              onLocalChange={(patch) => patchLocal(n.id, patch)}
+              onSave={(patch) => { patchLocal(n.id, patch); save(n.id, patch); }}
+              onDelete={() => { removeNote(n); setSelectedId(null); }}
+              onError={setError}
+            />
+          ) : (
             <StickyNote
               key={n.id}
               note={n}
               onLocalChange={(patch) => patchLocal(n.id, patch)}
               onSave={(patch) => { patchLocal(n.id, patch); save(n.id, patch); }}
-              onFront={() => bringToFront(n.id)}
+              onFront={() => { bringToFront(n.id); setSelectedId(null); }}
               onColor={(color) => { patchLocal(n.id, { color }); save(n.id, { color }); }}
               onDelete={() => removeNote(n)}
               onSend={(mode) => setSending({ note: n, mode })}
+              onError={setError}
             />
-          ))}
+          )))}
         </div>
       </div>
 

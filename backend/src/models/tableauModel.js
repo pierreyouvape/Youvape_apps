@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const userPermissionsModel = require('./userPermissionsModel');
 const { normalizeRule, nextOccurrence, parisToday, addDays } = require('../services/tableauRecurrence');
 const { notify } = require('../services/tableauEvents');
+const media = require('../utils/tableauMedia');
 
 /**
  * App Tableau : post-its, envois entre collègues, tâches récurrentes.
@@ -47,8 +48,19 @@ async function getRecipients(userId) {
 
 /* ─── Post-its ──────────────────────────────────────────── */
 
-const NOTE_COLUMNS = `n.id, n.content, n.color, n.x, n.y, n.width, n.height, n.z,
+const NOTE_COLUMNS = `n.id, n.kind, n.content, n.color, n.x, n.y, n.width, n.height, n.z, n.image_file,
   ${USER_NAME('rf')} AS received_from_name`;
+
+/**
+ * kind = 'note' : post-it, `content` en HTML (images comprises).
+ * kind = 'image' : image posée seule, `image_file`.
+ * Les liens d'images sont signés à chaque lecture.
+ */
+const toClient = ({ image_file: file, ...n }) => ({
+  ...n,
+  content: media.signHtml(media.asHtml(n.content)),
+  image_url: media.signedUrl(file),
+});
 
 async function getNotes(userId) {
   const { rows } = await pool.query(
@@ -59,7 +71,7 @@ async function getNotes(userId) {
       ORDER BY n.z, n.id`,
     [userId],
   );
-  return rows;
+  return rows.map(toClient);
 }
 
 async function getNote(userId, id) {
@@ -71,7 +83,7 @@ async function getNote(userId, id) {
     [id, userId],
   );
   if (!rows[0]) throw httpError(404, 'Post-it introuvable');
-  return rows[0];
+  return toClient(rows[0]);
 }
 
 /** Plan au-dessus de tous les post-its du compte. */
@@ -94,21 +106,40 @@ async function createNote(userId, input) {
   return getNote(userId, rows[0].id);
 }
 
+/** Image collée seule sur le tableau (taille d'affichage calculée par le navigateur). */
+async function createImage(userId, file, input) {
+  const filename = await media.saveImage(file);
+  const z = await topZ(pool, userId);
+  const { rows } = await pool.query(
+    `INSERT INTO tableau_notes (owner_id, kind, image_file, x, y, width, height, z)
+     VALUES ($1, 'image', $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [userId, filename, clampInt(input.x, 0, 20000), clampInt(input.y, 0, 20000),
+      clampInt(input.width, 40, 2000), clampInt(input.height, 40, 2000), z],
+  );
+  return getNote(userId, rows[0].id);
+}
+
+/** Image insérée dans le texte d'un post-it : l'éditeur reçoit son lien signé. */
+async function uploadMedia(file) {
+  const filename = await media.saveImage(file);
+  return { url: media.signedUrl(filename) };
+}
+
 /** Mise à jour partielle : seuls les champs fournis sont écrits. */
 async function updateNote(userId, id, input) {
   const sets = [];
   const params = [id, userId];
   const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
 
-  if (input.content !== undefined) set('content', String(input.content));
+  if (input.content !== undefined) set('content', media.stripSignatures(input.content));
   if (input.color !== undefined) {
     if (!COLORS.includes(input.color)) throw httpError(400, 'Couleur inconnue');
     set('color', input.color);
   }
   if (input.x !== undefined) set('x', clampInt(input.x, 0, 20000));
   if (input.y !== undefined) set('y', clampInt(input.y, 0, 20000));
-  if (input.width !== undefined) set('width', clampInt(input.width, 140, 1200));
-  if (input.height !== undefined) set('height', clampInt(input.height, 100, 1200));
+  if (input.width !== undefined) set('width', clampInt(input.width, 40, 2000));
+  if (input.height !== undefined) set('height', clampInt(input.height, 40, 2000));
   if (input.z !== undefined) set('z', clampInt(input.z, 0, 1000000));
   if (!sets.length) return getNote(userId, id);
 
@@ -122,11 +153,13 @@ async function updateNote(userId, id, input) {
 }
 
 async function deleteNote(userId, id) {
-  const { rowCount } = await pool.query(
-    'DELETE FROM tableau_notes WHERE id = $1 AND owner_id = $2 AND NOT in_transit',
+  const { rows } = await pool.query(
+    `DELETE FROM tableau_notes WHERE id = $1 AND owner_id = $2 AND NOT in_transit
+     RETURNING content, image_file`,
     [id, userId],
   );
-  if (!rowCount) throw httpError(404, 'Post-it introuvable');
+  if (!rows[0]) throw httpError(404, 'Post-it introuvable');
+  media.removeFiles([rows[0].image_file, ...media.htmlFiles(rows[0].content)]);
 }
 
 /* ─── Envois ────────────────────────────────────────────── */
@@ -142,12 +175,16 @@ async function sendNote(userId, { note_id: noteId, to_user_id: toUserId, mode })
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT id, content, color FROM tableau_notes
+      `SELECT id, kind, content, color FROM tableau_notes
         WHERE id = $1 AND owner_id = $2 AND NOT in_transit FOR UPDATE`,
       [noteId, userId],
     );
     const note = rows[0];
     if (!note) throw httpError(404, 'Post-it introuvable');
+    if (note.kind !== 'note') throw httpError(400, 'Seuls les post-its s\'envoient');
+    // Copie : ses propres exemplaires des images, dès l'envoi — l'original peut
+    // être modifié ou supprimé avant la réponse.
+    const content = mode === 'copy' ? media.copyHtmlImages(note.content).html : note.content;
 
     if (mode === 'move') {
       await client.query('UPDATE tableau_notes SET in_transit = true WHERE id = $1', [note.id]);
@@ -155,7 +192,7 @@ async function sendNote(userId, { note_id: noteId, to_user_id: toUserId, mode })
     await client.query(
       `INSERT INTO tableau_note_transfers (note_id, mode, from_user_id, to_user_id, content, color)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [note.id, mode, userId, Number(toUserId), note.content, note.color],
+      [note.id, mode, userId, Number(toUserId), content, note.color],
     );
     await client.query('COMMIT');
     notify([userId, toUserId], 'transfer');
@@ -211,6 +248,7 @@ async function answerTransfer(userId, transferId, accept) {
       [t.id, accept ? 'accepted' : 'refused'],
     );
     await client.query('COMMIT');
+    if (!accept && t.mode === 'copy') media.removeFiles(media.htmlFiles(t.content));
     notify([userId, t.from_user_id], 'transfer');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -229,7 +267,7 @@ async function cancelTransfer(userId, transferId) {
       `UPDATE tableau_note_transfers
           SET status = 'cancelled', answered_at = ${PARIS_NOW}, sender_seen_at = ${PARIS_NOW}
         WHERE id = $1 AND from_user_id = $2 AND status = 'pending'
-        RETURNING note_id, mode, to_user_id`,
+        RETURNING note_id, mode, to_user_id, content`,
       [transferId, userId],
     );
     if (!rows[0]) throw httpError(404, 'Envoi introuvable ou déjà traité');
@@ -237,6 +275,7 @@ async function cancelTransfer(userId, transferId) {
       await client.query('UPDATE tableau_notes SET in_transit = false WHERE id = $1', [rows[0].note_id]);
     }
     await client.query('COMMIT');
+    if (rows[0].mode === 'copy') media.removeFiles(media.htmlFiles(rows[0].content));
     notify([userId, rows[0].to_user_id], 'transfer');
   } catch (e) {
     await client.query('ROLLBACK');
@@ -442,6 +481,23 @@ async function dismissReminder(userId, id) {
   notify([userId], 'task');
 }
 
+/* ─── Nettoyage des images (chaque nuit) ────────────────── */
+
+/** Supprime les fichiers que plus aucun post-it ni envoi en attente n'utilise. */
+async function sweepMedia() {
+  const [notes, transfers] = await Promise.all([
+    pool.query('SELECT content, image_file FROM tableau_notes'),
+    pool.query("SELECT content FROM tableau_note_transfers WHERE status = 'pending'"),
+  ]);
+  const referenced = new Set();
+  notes.rows.forEach((n) => {
+    if (n.image_file) referenced.add(n.image_file);
+    media.htmlFiles(n.content).forEach((f) => referenced.add(f));
+  });
+  transfers.rows.forEach((t) => media.htmlFiles(t.content).forEach((f) => referenced.add(f)));
+  return media.sweep(referenced);
+}
+
 /* ─── Tâche de fond (chaque minute) ─────────────────────── */
 
 const EMAIL_AT = "(t.next_due + t.due_time - make_interval(mins => t.email_remind_minutes))";
@@ -570,7 +626,7 @@ async function getInbox(userId) {
 module.exports = {
   COLORS,
   getRecipients,
-  getNotes, createNote, updateNote, deleteNote,
+  getNotes, createNote, createImage, uploadMedia, updateNote, deleteNote, sweepMedia,
   sendNote, answerTransfer, cancelTransfer, markTransferSeen,
   getTasks, createTask, updateTask, deleteTask, completeTask, undoTask, dismissReminder,
   getInbox,

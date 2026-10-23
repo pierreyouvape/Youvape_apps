@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { NOTE_COLORS, noteColor } from './tableauShared';
+import NoteEditor from './NoteEditor';
+import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError } from './tableauShared';
 
 const SAVE_DELAY_MS = 700;
 
@@ -8,23 +9,20 @@ const SAVE_DELAY_MS = 700;
  *
  * Déplacement par la barre du haut, taille par le coin bas-droit : la position
  * bouge à l'écran pendant le geste (onLocalChange) et n'est enregistrée qu'au
- * lâcher (onSave), une seule requête par geste. Le texte s'enregistre seul,
- * 0,7 s après la dernière frappe.
+ * lâcher (onSave), une seule requête par geste. Le texte (images comprises)
+ * s'enregistre seul, 0,7 s après la dernière modification.
  */
-export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onColor }) {
+export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onColor, onError }) {
   const c = noteColor(note.color);
-  const [text, setText] = useState(note.content);
   const [menu, setMenu] = useState(false);
-  const focused = useRef(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [copied, setCopied] = useState(false);
   const saveTimer = useRef(null);
   const pending = useRef(null);
+  const editorRef = useRef(null);
+  const fileRef = useRef(null);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
-
-  // Relecture du tableau : on ne remplace pas un texte en cours de frappe
-  useEffect(() => {
-    if (!focused.current) setText(note.content);
-  }, [note.content]);
 
   const flush = () => {
     clearTimeout(saveTimer.current);
@@ -36,11 +34,20 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
   // Un texte tapé juste avant de quitter l'onglet part quand même
   useEffect(() => flush, []);
 
-  const onType = (e) => {
-    setText(e.target.value);
-    pending.current = e.target.value;
+  const onEdit = (html) => {
+    pending.current = html;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(flush, SAVE_DELAY_MS);
+  };
+
+  const copySelected = async () => {
+    try {
+      await copyImageToClipboard(selectedImage);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      onError(apiError(e));
+    }
   };
 
   const startGesture = (kind) => (e) => {
@@ -74,13 +81,17 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
     display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
     padding: '8px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#1F2937',
   };
+  const barBtn = {
+    background: 'rgba(255,255,255,0.7)', border: 'none', borderRadius: 5, cursor: 'pointer', color: c.ink,
+    fontSize: 11, fontWeight: 800, padding: '3px 7px', fontFamily: 'inherit', whiteSpace: 'nowrap',
+  };
 
   return (
     <div
       onPointerDownCapture={onFront}
       style={{
         position: 'absolute', left: note.x, top: note.y, width: note.width, height: note.height, zIndex: note.z,
-        background: c.bg, borderRadius: 6, display: 'flex', flexDirection: 'column',
+        background: c.bg, color: c.ink, borderRadius: 6, display: 'flex', flexDirection: 'column',
         boxShadow: '0 6px 16px rgba(0,0,0,0.13), 0 1px 2px rgba(0,0,0,0.10)',
       }}
     >
@@ -98,6 +109,14 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
         }}>
           {note.received_from_name ? `De ${note.received_from_name}` : ''}
         </span>
+        {selectedImage && (
+          // onMouseDown : sans ça, le clic retire le focus de l'éditeur et
+          // désélectionne l'image avant que le bouton ne la copie.
+          <button onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.preventDefault()}
+            onClick={copySelected} style={barBtn} title="Copier l'image (ou Cmd+C)">
+            {copied ? 'Copiée ✓' : "Copier l'image"}
+          </button>
+        )}
         <button
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => setMenu((m) => !m)}
@@ -133,23 +152,26 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
                   />
                 ))}
               </div>
+              <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image…</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('move'); }}>Envoyer à…</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('copy'); }}>Envoyer une copie à…</button>
               <button style={{ ...menuItem, color: '#B91C1C' }} onClick={() => { setMenu(false); onDelete(); }}>Supprimer</button>
             </div>
           </>
         )}
+        <input
+          ref={fileRef} type="file" accept="image/*,.heic,.heif" multiple hidden
+          onChange={(e) => { editorRef.current?.insertFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
+        />
       </div>
-      <textarea
-        value={text}
-        onChange={onType}
-        onFocus={() => { focused.current = true; }}
-        onBlur={() => { focused.current = false; flush(); }}
-        placeholder="Écrire…"
-        style={{
-          flex: 1, minHeight: 0, resize: 'none', border: 'none', outline: 'none', background: 'transparent',
-          padding: '8px 10px 14px', fontSize: 14, lineHeight: 1.4, color: c.ink, fontFamily: 'inherit',
-        }}
+      <NoteEditor
+        ref={editorRef}
+        value={note.content}
+        onChange={onEdit}
+        onUpload={tableauApi.uploadMedia}
+        onFocusChange={(focused) => { if (!focused) flush(); }}
+        onImageSelect={setSelectedImage}
+        onError={(e) => onError(apiError(e))}
       />
       <div
         onPointerDown={startGesture('resize')}

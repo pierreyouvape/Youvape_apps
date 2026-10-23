@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const tableauModel = require('../models/tableauModel');
 const tableauEvents = require('../services/tableauEvents');
+const tableauMedia = require('../utils/tableauMedia');
 
 /** Enveloppe commune : erreurs métier (statusCode) renvoyées telles quelles. */
 const handle = (fn) => async (req, res) => {
@@ -21,6 +22,8 @@ exports.getInbox = handle((req) => tableauModel.getInbox(uid(req)));
 
 exports.getNotes = handle((req) => tableauModel.getNotes(uid(req)));
 exports.createNote = handle((req) => tableauModel.createNote(uid(req), req.body || {}));
+exports.createImage = handle((req) => tableauModel.createImage(uid(req), req.file, req.body || {}));
+exports.uploadMedia = handle((req) => tableauModel.uploadMedia(req.file));
 exports.updateNote = handle((req) => tableauModel.updateNote(uid(req), id(req), req.body || {}));
 exports.deleteNote = handle((req) => tableauModel.deleteNote(uid(req), id(req)));
 
@@ -37,6 +40,21 @@ exports.deleteTask = handle((req) => tableauModel.deleteTask(uid(req), id(req)))
 exports.completeTask = handle((req) => tableauModel.completeTask(uid(req), id(req)));
 exports.undoTask = handle((req) => tableauModel.undoTask(uid(req), id(req)));
 exports.dismissReminder = handle((req) => tableauModel.dismissReminder(uid(req), id(req)));
+
+/**
+ * Sert une image. Hors authMiddleware (monté dans server.js) : une balise <img>
+ * ne porte pas d'en-tête Authorization, c'est la signature du lien qui contrôle.
+ */
+exports.getMedia = (req, res) => {
+  const { filename } = req.params;
+  if (!tableauMedia.verify(filename, req.query.exp, req.query.sig)) {
+    return res.status(403).json({ error: 'Lien expiré ou invalide' });
+  }
+  const resolved = tableauMedia.resolvePath(filename);
+  if (!resolved) return res.status(404).json({ error: 'Image introuvable' });
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.sendFile(resolved);
+};
 
 /* ─── Temps réel (SSE) ──────────────────────────────────── */
 

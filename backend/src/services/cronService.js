@@ -1120,6 +1120,7 @@ const setupOrderDuplicatesCron = () => {
 // ==================== TABLEAU : RAPPELS DES TÂCHES RÉCURRENTES ====================
 
 let tableauRemindersCronJob = null;
+let tableauMediaSweepJob = null;
 
 const setupTableauRemindersCron = () => {
   if (tableauRemindersCronJob) {
@@ -1138,6 +1139,17 @@ const setupTableauRemindersCron = () => {
     }
   }, { timezone: 'Europe/Paris' });
   console.log('Cron rappels Tableau configure: chaque minute');
+
+  // Images que plus aucun post-it n'utilise (retirées du texte, copies refusées…)
+  if (tableauMediaSweepJob) tableauMediaSweepJob.stop();
+  tableauMediaSweepJob = cron.schedule('20 4 * * *', async () => {
+    try {
+      const removed = await require('../models/tableauModel').sweepMedia();
+      if (removed) console.log(`Tableau : ${removed} image(s) orpheline(s) supprimée(s)`);
+    } catch (error) {
+      console.error('Erreur cron nettoyage images Tableau:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
 };
 
 
