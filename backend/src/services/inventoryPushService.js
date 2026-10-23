@@ -9,7 +9,8 @@
  * File `inventory_items.push_status` : queued → sending → sent | error.
  * « sending » est posé AVANT l'appel : une ligne restée là (serveur arrêté au
  * mauvais moment) n'est jamais renvoyée seule — le mouvement est peut-être
- * parti, il faut regarder BMS. Quota BMS (« Too Many Attempts ») : la ligne
+ * parti, il faut regarder BMS. Au bout de STALE_MINUTES, elle passe en erreur
+ * « VÉRIFIEZ » : sinon aucun bouton ne la reprenait et elle bloquait la clôture. Quota BMS (« Too Many Attempts ») : la ligne
  * revient en file et le cron de la minute suivante reprend.
  */
 
@@ -19,6 +20,8 @@ const pdaProductModel = require('../models/pdaProductModel');
 const { gapOf, movementFor } = require('./inventoryRules');
 
 const PAUSE_MS = 200;
+// Un envoi prend quelques secondes : au-delà, le serveur s'est arrêté pendant l'appel.
+const STALE_MINUTES = 10;
 const BATCH = 200;
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -67,6 +70,13 @@ const processQueue = async () => {
   if (running) return;
   running = true;
   try {
+    await pool.query(
+      `UPDATE inventory_items
+          SET push_status = 'error',
+              push_error = 'Envoi interrompu (serveur redémarré pendant l''appel) : VÉRIFIEZ dans BMS si le mouvement est passé avant de réessayer.'
+        WHERE push_status = 'sending' AND push_at < NOW() - make_interval(mins => $1)`,
+      [STALE_MINUTES]
+    );
     const { rows: ids } = await pool.query(
       `SELECT i.id FROM inventory_items i JOIN inventories v ON v.id = i.inventory_id AND v.status = 'open'
         WHERE i.push_status = 'queued' ORDER BY i.id LIMIT $1`,
@@ -75,7 +85,7 @@ const processQueue = async () => {
     for (const { id } of ids) {
       // Le verrou : seule la ligne passée de queued à sending part.
       const { rows: [r] } = await pool.query(
-        `UPDATE inventory_items i SET push_status = 'sending'
+        `UPDATE inventory_items i SET push_status = 'sending', push_at = NOW()
           WHERE i.id = $1 AND i.push_status = 'queued'
           RETURNING i.id, i.sku, i.status, i.recount_qty, i.ref_physical, i.ref_picked, i.decided_by,
                     ${COUNTED_SQL} AS counted,
