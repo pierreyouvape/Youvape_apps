@@ -442,6 +442,10 @@ const ImportPdfPage = () => {
     if (item.verifiedApplied && item.unit_price) return item.unit_price * (1 - (item.discount || 0) / 100);
     if (!item.unit_price) return item.supplier_price ?? null;
     const pdfNet = item.unit_price * (1 - (item.discount || 0) / 100);
+    // Remise du document (remise progressive Cloud Vapor, fonction du montant de
+    // CETTE commande) : un tarif retenu sur une commande plus grosse, donc plus
+    // remisée, ne doit pas passer devant le prix réellement facturé.
+    if (item.document_discount) return pdfNet;
     if (item.supplier_price != null && item.supplier_price < pdfNet) return item.supplier_price;
     return pdfNet;
   };
@@ -568,7 +572,9 @@ const ImportPdfPage = () => {
             supplier_sku: item.supplier_sku,
             qty_ordered: item.qty_ordered,
             unit_price: effectivePrice(item),
-            discount_percent: item.discount || 0,
+            // effectivePrice est DÉJÀ net de la remise : la renvoyer en plus la
+            // déduisait deux fois (S08644, 23/10/2026 : 1,2623 € à -15,85 %).
+            discount_percent: 0,
             stock_before: item.current_stock,
           })),
           ...discountItems.map(item => ({
@@ -625,7 +631,7 @@ const ImportPdfPage = () => {
           supplier_sku: item.supplier_sku,
           qty_ordered: item.qty_ordered,
           unit_price: effectivePrice(item),
-          discount_percent: item.discount || 0,
+          discount_percent: 0, // prix déjà net, cf. création de commande
           stock_before: item.current_stock,
           extra: inExistingOrder(item) && !!item.extra,
         })),
