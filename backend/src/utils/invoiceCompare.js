@@ -592,7 +592,16 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
   // sont payées SOUS le prix commandé.
   const remisePar = new Map();       // toutes remises confondues → coût réel
   const remiseCibleePar = new Map(); // remises CIBLÉES seulement → plafond
+  // Remises déjà rencontrées plus haut dans le document. Une remise en cascade
+  // porte sur le montant DÉJÀ remisé : chez Cloud Vapor (INV/2026/02555),
+  // « Escompte paiement CB (-1%) » vaut 21,26 € sur 2 126,44 € (2 501,70 € de
+  // produits − 375,26 € de remise progressive). Comparée au seul brut, son
+  // assiette passait pour partielle et l'escompte n'était imputé à personne :
+  // les tarifs « réels » sortaient à −15 % au lieu de −15,85 %.
+  let remisesPrecedentes = 0;
   for (const d of remises) {
+    const assietteNette = round2(productTotal - remisesPrecedentes);
+    remisesPrecedentes = round2(remisesPrecedentes + Math.abs(d.invoicedTotal));
     const visees = linesTargetedBy(d, produits, options.supplierCode);
     const regle = linesTargetedBy.derniereRegle;
     const parEcart = linesTargetedBy.parEcart;
@@ -611,8 +620,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     // contraire — c'est le cas de Cosmer, GFC, Revolute et Cloud Vapor, dont les
     // remises de pied n'annoncent aucun taux et sont bel et bien globales.
     const annonce = impliedBaseOf(d);
+    const tol = Math.max(0.10, productTotal * 0.01);
     if (!visees && annonce
-        && Math.abs(annonce.base - productTotal) > Math.max(0.10, productTotal * 0.01)) {
+        && Math.abs(annonce.base - productTotal) > tol
+        && Math.abs(annonce.base - assietteNette) > tol) {
       d.scope = {
         targeted: false,
         unallocated: true,

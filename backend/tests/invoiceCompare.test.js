@@ -1357,6 +1357,32 @@ test('LCA 361704 : deux factures pour une commande se complètent, aucune ne voi
   assert.strictEqual(rb.summary.qtyGap, 0);
 });
 
+/* ─── Cloud Vapor INV/2026/02555 : remise progressive puis escompte CB ───── */
+
+test('un escompte en cascade porte sur le montant déjà remisé et se répartit', () => {
+  // -15 % sur 2 501,70 € = 375,26 € ; puis -1 % sur 2 126,44 € = 21,26 €. Comparé
+  // au seul brut, l'escompte passait pour partiel et n'était imputé à personne :
+  // les tarifs retenus sortaient à 1,275 € (-15 %) au lieu de 1,2623 € (-15,85 %).
+  const CV = [['BV18', 100, 1.50], ['BV50', 138, 4.90], ['BV12', 140, 1.50], ['BV03', 500, 1.50],
+    ['ASSAULT', 10, 5.90], ['SCOUT', 25, 5.90], ['BV06', 300, 1.50], ['SUPPORT', 10, 5.90]];
+  const r = compareInvoiceToOrder({
+    invoice: {
+      totalHt: 2105.18,
+      lines: [
+        ...CV.map(([ref, qty, pu]) => ({ ref, qty, lineTotalHt: Math.round(qty * pu * 100) / 100 })),
+        { ref: 'Remise', label: 'Remise Remise progressive (-15%)', qty: 1, lineTotalHt: -375.26, kind: 'discount' },
+        { ref: 'Remise', label: 'Remise Escompte paiement CB (-1%)', qty: 1, lineTotalHt: -21.26, kind: 'discount' },
+      ],
+    },
+    order: { lines: CV.map(([ref, qty, pu]) => ({ ref, qty, price: Math.round(pu * 0.8415 * 10000) / 10000 })) },
+  });
+  const escompte = r.lines.filter((l) => l.verdict === 'discount')[1];
+  assert.ok(!(escompte.scope && escompte.scope.unallocated), "l'escompte n'a pas été réparti");
+  assert.ok(close(byRef(r, 'BV18').effectiveUnitCost, 1.26225, 0.0002), `coût ${byRef(r, 'BV18').effectiveUnitCost}`);
+  assert.ok(close(byRef(r, 'BV50').effectiveUnitCost, 4.12335, 0.0002), `coût ${byRef(r, 'BV50').effectiveUnitCost}`);
+  assert.strictEqual(r.summary.claimable, 0);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);
