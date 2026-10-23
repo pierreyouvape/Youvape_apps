@@ -193,10 +193,23 @@ const recordPublication = async ({ userId, widgetsCount, storiesCount }) => {
   return rows[0];
 };
 
+/** Résultat de la purge du cache du site pour une publication (cf. sitePurgeService). */
+const recordPurge = async (publicationId, { status, attempts, http, error, result }) => {
+  await pool.query(
+    `UPDATE story_publications
+        SET purge_status = $2, purge_attempts = $3, purge_at = NOW(), purge_result = $4
+      WHERE id = $1
+        -- « Nouvel essai en cours » ne doit jamais écraser l'issue finale déjà notée.
+        AND ($2 <> 'retrying' OR purge_status IS NULL)`,
+    [publicationId, status, attempts || 0, JSON.stringify({ http: http ?? null, error: error || null, ...(result || {}) })],
+  );
+};
+
 /** Dernière publication et présence de modifications postérieures. */
 const publicationState = async () => {
   const { rows } = await pool.query(
     `SELECT p.published_at, p.widgets_count, p.stories_count, u.email AS published_by_email,
+            p.purge_status, p.purge_at, p.purge_attempts, p.purge_result->>'error' AS purge_error,
             GREATEST(
               (SELECT max(updated_at) FROM story_widgets),
               (SELECT max(updated_at) FROM stories)
@@ -228,5 +241,6 @@ module.exports = {
   searchProducts,
   dataForPublish,
   recordPublication,
+  recordPurge,
   publicationState,
 };

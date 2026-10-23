@@ -43,6 +43,34 @@ const Thumb = ({ url, size = 36 }) => (url ? (
 ));
 
 /**
+ * Résultat de la purge du cache du site après une publication. Un échec
+ * n'annule pas la publication : le site la voit au plus tard 5 min après.
+ */
+const PurgeNotice = ({ purge }) => {
+  if (!purge) return null;
+  if (purge.status === 'ok') {
+    return (
+      <div style={{ color: C.vert, marginTop: 4 }}>
+        Cache du site vidé{purge.urls !== null ? ` (${purge.urls} page${purge.urls > 1 ? 's' : ''})` : ''} : les changements sont visibles tout de suite.
+      </div>
+    );
+  }
+  if (purge.status === 'skipped') {
+    return <div style={{ color: C.grisM, marginTop: 4 }}>Vidage du cache du site non configuré : les changements seront visibles d’ici 5 minutes.</div>;
+  }
+  return (
+    <div style={{ color: C.orange, fontWeight: 700, marginTop: 4 }}>
+      ⚠ Publié, mais le cache du site n’a pas pu être vidé
+      {purge.error ? ` (${purge.error})` : ''}.
+      <span style={{ fontWeight: 400 }}>
+        {purge.status === 'retrying' ? ' Nouvel essai automatique dans quelques secondes.' : ''}
+        {' '}La publication reste valide : le site l’affichera au plus tard dans 5 minutes.
+      </span>
+    </div>
+  );
+};
+
+/**
  * Ouvre la page d'aperçu sur ce seul widget. Elle lit la DERNIÈRE PUBLICATION :
  * un widget en brouillon, ou modifié depuis, n'y apparaît qu'après « Publier ».
  */
@@ -125,6 +153,12 @@ const StoryWidgets = ({ stories }) => {
               ? `Dernière publication le ${dateFr(last.published_at)}${last.published_by_email ? ` par ${last.published_by_email}` : ''} — ${last.widgets_count} widget(s), ${last.stories_count} vidéo(s).`
               : 'Rien n’a encore été publié.'}
             {' '}Les modifications ne partent sur le site qu’après « Publier ».
+            {last?.purge_status === 'failed' && (
+              <span style={{ color: C.orange }}> Le cache du site n’avait pas pu être vidé ({last.purge_error || 'erreur'}).</span>
+            )}
+            {last?.purge_status === 'retrying' && (
+              <span style={{ color: C.orange }}> Vidage du cache du site : nouvel essai en cours.</span>
+            )}
           </div>
         </div>
         {publication?.pending && (
@@ -141,6 +175,7 @@ const StoryWidgets = ({ stories }) => {
             {lastResult.empty_widgets?.length > 0 && (
               <span style={{ color: C.orange }}> Widgets vides non publiés : {lastResult.empty_widgets.join(', ')}.</span>
             )}
+            <PurgeNotice purge={lastResult.purge} />
           </div>
         )}
       </div>

@@ -18,6 +18,7 @@
  */
 const r2 = require('./r2Service');
 const widgetModel = require('../models/storyWidgetModel');
+const sitePurge = require('./sitePurgeService');
 
 const FORMAT_VERSION = 1;
 
@@ -120,6 +121,20 @@ const publish = async ({ userId } = {}) => {
     widgetsCount: live.size,
     storiesCount: data.stories.length,
   });
+
+  // Une seule purge par publication, et seulement APRÈS l'écriture d'index.json
+  // (sinon le site relirait l'ancienne version). Son échec n'annule rien : la
+  // publication est faite, le site la verra au plus tard 5 min après.
+  let purge;
+  try {
+    purge = await sitePurge.purgeAfterPublish({
+      onFinal: (final) => widgetModel.recordPurge(record.id, final),
+    });
+    await widgetModel.recordPurge(record.id, purge);
+  } catch (err) {
+    console.error('[stories/purge] imprévu :', err.message);
+    purge = { status: 'failed', attempts: 0, error: err.message };
+  }
   return {
     published_at: record.published_at,
     widgets: live.size,
@@ -128,6 +143,13 @@ const publish = async ({ userId } = {}) => {
     pages: Object.keys(pages).length,
     empty_widgets: Object.keys(widgets).filter((slug) => !live.has(slug)),
     index_url: r2.publicUrl('stories/index.json'),
+    purge: {
+      status: purge.status,
+      attempts: purge.attempts,
+      error: purge.error || null,
+      stories: purge.result?.stories ?? null,
+      urls: Array.isArray(purge.result?.urls) ? purge.result.urls.length : null,
+    },
   };
 };
 
