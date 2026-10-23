@@ -305,6 +305,36 @@ function DataPanel({ page, onSaved, onAnalyze, setMsg }) {
         </Card>
       )}
 
+      {d.tables?.length > 0 && (
+        <Card style={{ marginBottom: 14, padding: 0, overflowX: 'auto' }}>
+          <div style={{ padding: '14px 16px 8px' }}>
+            <h3 style={{ margin: 0, fontSize: 15, color: C.saphirF }}>Tableaux automatiques possibles</h3>
+            <div style={{ fontSize: 12, color: C.grisM, marginTop: 4 }}>
+              Shortcode [product_table] du thème : une marque × une catégorie, 10 produits au plus (au-delà, les 10 plus vendus). Il se remplit depuis les fiches et se met à jour tout seul.
+            </div>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={th}>Marque</th><th style={th}>Catégorie</th><th style={{ ...th, textAlign: 'right' }}>Produits</th><th style={th}>Shortcode</th><th style={th} />
+            </tr></thead>
+            <tbody>
+              {d.tables.map((g) => (
+                <tr key={`${g.brand}|${g.category}`}>
+                  <td style={td}>
+                    {g.brand_name || 'inconnue'}
+                    {g.brand && !g.brand_ok && <div style={{ fontSize: 11, color: C.rouge }}>page marque introuvable : slug à vérifier</div>}
+                  </td>
+                  <td style={td}>{g.category || '—'}</td>
+                  <td style={tdNum}>{g.count}{g.count > 10 ? ' (10 affichés)' : ''}</td>
+                  <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: C.grisF }}>{g.shortcode || 'impossible : tableau HTML'}</td>
+                  <td style={td}>{g.shortcode && <CopyButton text={g.shortcode} />}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       <Card style={{ marginBottom: 14, padding: 0, overflowX: 'auto' }}>
         <div style={{ padding: '14px 16px 8px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <h3 style={{ margin: 0, fontSize: 15, color: C.saphirF }}>Google Ads (volumes de recherche)</h3>

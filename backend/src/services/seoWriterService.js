@@ -38,6 +38,7 @@ const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return y
 const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const pathOf = (url) => (url || '').replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/';
 const decode = (s) => (s || '')
+  .replace(/&#(\d+);/g, (m, n) => (['38', '39', '8217'].includes(n) ? m : String.fromCodePoint(Number(n))))
   .replace(/&amp;/g, '&').replace(/&#0?39;|&#8217;|&rsquo;/g, '’').replace(/&nbsp;|&#160;/g, ' ')
   .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&laquo;/g, '«').replace(/&raquo;/g, '»');
 const textOf = (html) => decode((html || '').replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
@@ -390,6 +391,67 @@ const getProgress = (id, kind = 'analyze') => {
   return { ...p, elapsed: Math.round((Date.now() - p.startedAt) / 1000), idle: Math.round((Date.now() - p.updatedAt) / 1000) };
 };
 
+/* ─── Tableaux automatiques [product_table] ────────────── */
+
+// Le shortcode du thème (class-product-table.php) exige une marque (pwb-brand)
+// et une catégorie (product_cat), et n'affiche que 10 produits au plus.
+const TABLE_MAX = 10;
+const slugify = (s) => norm(s).replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const keyName = (s) => norm(decode(s)).replace(/[^a-z0-9]+/g, '');
+// Colonnes proposées selon la catégorie (alias du thème ou slug d'attribut sans pa_).
+const TABLE_PRESETS = [
+  { re: /^puffs?$/, columns: 'name,autonomie,contenance,taux-de-nicotine', headers: 'Modèle,Batterie,Réservoir,Nicotine' },
+  { re: /^kits-format-pod$|^kits-format-box$|^kits-ecigarettes$/, columns: 'name,autonomie,capacite,charge', headers: 'Référence,Autonomie,Capacité,Charge' },
+  { re: /^cartouches-pre-remplies$/, columns: 'name,contenance,taux-de-nicotine,compatibilite', headers: 'Référence,Contenance,Nicotine,Compatible avec' },
+  { re: /^cartouches-pods$|^cartouches/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
+  { re: /^eliquides|^boosters|^bases/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
+];
+// Colonnes à ne jamais afficher (description de goût, promesse de performance).
+const TABLE_BANNED_COLUMNS = /(^|,)\s*(pa_)?(gout|saveur[a-z-]*|saveurs[a-z-]*|fruits|boissons|classics|gourmandises|plantes|types-de-e-liquides|nombre-de-puffs|production-de-vapeur)\s*(,|$)/;
+const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,autonomie,contenance,charge', headers: 'Référence,Autonomie,Contenance,Charge' };
+
+let brandCache = null;
+const loadBrandIndex = async () => {
+  if (brandCache && Date.now() - brandCache.at < 10 * 60 * 1000) return brandCache.map;
+  const r = await pool.query(
+    `SELECT post_title, brand FROM products
+     WHERE post_status = 'publish' AND (wp_parent_id IS NULL OR wp_parent_id = 0) AND brand IS NOT NULL AND brand <> ''`
+  );
+  const map = new Map(r.rows.map((x) => [keyName(x.post_title), x.brand]));
+  brandCache = { at: Date.now(), map };
+  return map;
+};
+
+// Produits de la page regroupés par marque × catégorie : chaque groupe est un
+// [product_table] possible, prêt à coller.
+const productTableGroups = async (products) => {
+  if (!products?.length) return [];
+  const brands = await loadBrandIndex();
+  const groups = new Map();
+  for (const p of products) {
+    const segs = pathOf(p.url).split('/').filter(Boolean);
+    const category = segs.length >= 3 ? segs[segs.length - 2] : null;
+    const brandName = brands.get(keyName(p.name)) || null;
+    const brand = brandName ? slugify(brandName) : null;
+    const k = `${brand}|${category}`;
+    const g = groups.get(k) || { brand, brand_name: brandName, category, products: [] };
+    g.products.push(p.name);
+    groups.set(k, g);
+  }
+  const out = [...groups.values()].sort((a, b) => b.products.length - a.products.length);
+  const idx = await loadIndexability(out.filter((g) => g.brand).map((g) => `${SITE}/marque/${g.brand}`));
+  for (const g of out) {
+    g.count = g.products.length;
+    g.brand_ok = !!g.brand && idx.get(`${SITE}/marque/${g.brand}`)?.http_status === 200;
+    const preset = presetFor(g.category || '');
+    const extra = g.count > TABLE_MAX ? ' orderby="popularity"' : '';
+    g.shortcode = g.brand && g.category
+      ? `[product_table brand="${g.brand}" category="${g.category}" columns="${preset.columns}" headers="${preset.headers}"${extra}]`
+      : null;
+  }
+  return out;
+};
+
 const analyze = async (id) => {
   await ensureTables();
   const row = await getRow(id);
@@ -448,7 +510,8 @@ const analyze = async (id) => {
     ? row.target_queries
     : topic.filter((q) => !q.excluded).slice(0, DEFAULT_TARGETS).map((q) => q.query);
 
-  const data = { range, page_queries: pageQueries.slice(0, 60), topic, competitors, facts, links };
+  const tables = await productTableGroups(page.products);
+  const data = { range, page_queries: pageQueries.slice(0, 60), topic, competitors, facts, links, tables };
   const r = await pool.query(
     `UPDATE seo_pages SET page = $2, data = $3, topic_terms = $4, target_queries = $5, analyzed_at = now(), updated_at = now(),
        label = COALESCE(label, $6)
@@ -562,21 +625,38 @@ LIVRABLE
 - méta-description : 160 caractères maximum, factuelle.
 - H1 : en général on garde celui en place.
 - intro (champ « Description » du terme) : 2 à 3 phrases factuelles, en <p>.
-- bas de page (bloc affiché dans content-category-seo-text), dans cet ordre : l'image bannière de la page reprise en tête dans un <p><img …></p> (l'équipe la veut en double) ; un H2 de présentation avec un tableau ; des sections H2 qui reprennent les requêtes, chacune avec ses liens ; une FAQ de 4 à 7 questions ; la phrase « Produits réservés aux adultes. Si vous ne fumez pas, ne vapotez pas. » si elle existait déjà.
+- bas de page (bloc affiché dans content-category-seo-text), sur le modèle de /marque/oxva, dans cet ordre :
+  1. un H2 de présentation puis l'image bannière de la page dans un <p><img …></p> (l'équipe la veut en double ; s'il n'y en a pas, pas d'image) ;
+  2. un paragraphe visible de 2 à 3 phrases ;
+  3. [more] seul sur sa ligne, puis tout le reste du texte (sections H2/H3 qui reprennent les requêtes, tableaux, liens), puis [/more] seul sur sa ligne : le thème le replie derrière « Lire la suite » ;
+  4. APRÈS [/more], visible : un H2 de FAQ reprenant la requête principale (ex. « Questions fréquentes sur les puffs JNR ») et la FAQ de 4 à 7 questions en shortcodes ;
+  5. la phrase « Produits réservés aux adultes. Si vous ne fumez pas, ne vapotez pas. ».
 - Le texte est complet, prêt à coller : jamais un morceau à insérer.
 - liens à ajouter AILLEURS vers la page : depuis la page qui capte aujourd'hui la requête principale, et depuis la page marque ; ancre = requête visée.
 
 CODE DU THÈME (obligatoire)
 - Liens RELATIFS uniquement (href="/etiquette-produit/…"), jamais https://www.youvape.fr dans un href. Seule l'URL de l'image reste absolue.
-- Tableau : reprendre exactement ce style (largeurs égales : 25 % × 4, 33/33/34 % × 3 ou 50 % × 2 ; première colonne orange avec lien blanc souligné) :
+- [more] et [/more] : chacun seul sur sa ligne, entre deux blocs, jamais à l'intérieur d'un <p> (le thème imprime un <div>). Un seul [more] par bloc.
+- Tableaux de produits : utiliser le shortcode du thème, qui se remplit tout seul depuis les fiches et se met à jour quand un produit change :
+  [product_table brand="slug-marque" category="slug-categorie" columns="name,autonomie,capacite,charge" headers="Référence,Autonomie,Capacité,Charge"]
+  · brand (slug de la marque) et category (slug de la catégorie) sont OBLIGATOIRES : reprends ceux de la section « Tableaux automatiques possibles » du brief, sans les inventer ;
+  · un tableau = une marque × une catégorie, 10 produits au plus ; au-delà, ajouter orderby="popularity" (les 10 plus vendus) et le dire dans un point à vérifier ;
+  · columns : « name » en premier, puis des alias (autonomie, capacite, contenance, charge, compatibilite) ou des attributs (taux-de-nicotine, ratio-pg-vg, tirage, sels-de-nicotine, affichage, port-de-recharge, cartouches-compatibles, pods-compatibles…) ; headers : autant de libellés que de colonnes ;
+  · JAMAIS de colonne de goût, de saveur ou de recette (gout, saveur*, fruits, boissons, types-de-e-liquides…) ni de nombre de bouffées (nombre-de-puffs) ;
+  · un tableau HTML fixe, dans ce style, seulement pour ce que le shortcode ne sait pas montrer (comparaison entre marques, caractéristique absente des attributs) :
 ${THEME_TABLE}
-- FAQ : reprendre exactement ce code (id répété tel quel, comme le thème) :
-${THEME_FAQ}
+- FAQ : shortcodes du thème, qui produisent aussi les données structurées FAQPage pour Google :
+  [faq_container]
+  [faq title="h3" question="Question ?"]Réponse en une ou deux phrases.[/faq]
+  [/faq_container]
+  · jamais de guillemet droit (") dans la question (il fermerait l'attribut) : utiliser « » ;
+  · ne plus écrire la FAQ en HTML (<div class="faq-container">…) : sans shortcode, pas de FAQPage.
 
 RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage : impératives)
 - Rédaction neutre et factuelle : caractéristiques, compatibilités, mode d'emploi, conservation.
 - JAMAIS : arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
 - Les mots « goût » et « saveur » sont génériques et très recherchés (« gout jnr », « double gout », « puff 4 saveurs ») : ils sont permis, mais SEULEMENT de façon neutre — « double goût », « 4 saveurs » pour un modèle à plusieurs cartouches, nombre de goûts disponibles tiré des fiches, renvoi à la liste de la fiche. Ne jamais décrire un goût ni une saveur (fruit, fraîcheur, recette). Signale chaque emploi dans "points_a_verifier" pour l'avocat.
+- Le shortcode [annee] affiche l'année en cours : à utiliser plutôt qu'une année écrite en dur.
 - Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. N'écris jamais « interchangeable » pour une cartouche (les cartouches ne passent pas d'un modèle à l'autre).
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
 - JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
@@ -638,6 +718,15 @@ ${mdTable(['Page', 'Impr.', 'Robots', 'Requêtes'], d.competitors.map((c) => [pa
     ? `## Google Ads (Planificateur, recherches mensuelles ; paliers arrondis sans campagne active)
 ${mdTable(['Mot-clé', 'Rech./mois', 'Impr. GSC/mois', 'Pos. GSC', 'Écarté'], ads.slice(0, 120).map((a) => [a.keyword, a.volume, a.gsc_per_month || 'absent', a.position, a.excluded || '']))}`
     : '## Google Ads\nAucun export importé.');
+  if (d.tables?.length) {
+    parts.push(`## Tableaux automatiques possibles ([product_table], 10 produits au plus par tableau)
+${mdTable(['Marque', 'Catégorie', 'Produits', 'Shortcode proposé'], d.tables.map((g) => [
+    g.brand ? `${g.brand_name} (${g.brand})${g.brand_ok ? '' : ' — page marque introuvable, slug à vérifier'}` : 'marque inconnue',
+    g.category || 'inconnue',
+    `${g.count}${g.count > TABLE_MAX ? ' (au-delà de 10 : orderby="popularity")' : ''}`,
+    g.shortcode || 'impossible (marque ou catégorie inconnue) : tableau HTML',
+  ]))}`);
+  }
   parts.push(`## Caractéristiques des fiches produits (seule source des faits)
 ${d.facts.map((f) => `### ${f.title || pathOf(f.url)} — ${pathOf(f.url)}
 ${f.error ? `(non lue : ${f.error})` : [f.points_cles, f.caracteristiques, f.contenu].filter(Boolean).join('\n')}`).join('\n\n') || 'Aucune fiche.'}`);
@@ -655,7 +744,7 @@ const getBrief = async (id) => {
 
 const HREF_RE = /href="([^"]+)"/gi;
 
-const lintDraft = async (draft, page) => {
+const lintDraft = async (draft, page, data = null) => {
   if (!draft) return [];
   const out = [];
   const add = (level, text) => out.push({ level, text });
@@ -681,8 +770,32 @@ const lintDraft = async (draft, page) => {
   if (noindex.length) add('error', `Lien(s) vers une page en noindex : ${noindex.map(pathOf).join(', ')}. Une étiquette en noindex reste sans lien (masquée par le thème) : retirer le lien, ou lier la fiche produit qui la remplace.`);
   const unknown = internal.filter((u) => !idx.has(u));
   if (unknown.length) add('info', `Indexabilité non vérifiée (pages hors relevé) : ${unknown.map(pathOf).slice(0, 8).join(', ')}.`);
-  if (html.includes('faq-question') && !html.includes('faq-container')) add('error', 'FAQ sans <div class="faq-container">.');
-  if (/faq/i.test(html) && !html.includes('faq-question')) add('warn', 'FAQ sans le code du thème (faq-question).');
+  // Shortcodes du thème (modèle /marque/oxva).
+  const body = draft.body_html || '';
+  const opens = (body.match(/\[more\b[^\]]*\]/g) || []).length;
+  const closes = (body.match(/\[\/more\]/g) || []).length;
+  if (opens !== closes) add('error', `[more] et [/more] ne vont pas par paires (${opens} ouverture(s), ${closes} fermeture(s)).`);
+  if (/<p>[^<]*\[\/?more\]/.test(body)) add('error', '[more] ou [/more] à l’intérieur d’un <p> : le mettre seul sur sa ligne entre deux blocs.');
+  if (!opens && textOf(body).split(' ').length > 250) add('warn', 'Texte long sans [more] : replier la suite derrière « Lire la suite » comme sur /marque/oxva.');
+  const faqs = body.match(/\[faq\b[^\]]*\]/g) || [];
+  if (faqs.length && !body.includes('[faq_container]')) add('error', '[faq] sans [faq_container].');
+  if (faqs.some((f) => !/question="[^"]+"/.test(f))) add('error', '[faq] sans attribut question="…" (ou guillemet droit dans la question).');
+  if (body.includes('faq-question')) add('warn', 'FAQ écrite en HTML : utiliser [faq_container][faq title="h3" question="…"]…[/faq] pour avoir les données FAQPage.');
+  if (!faqs.length && !body.includes('faq-question')) add('warn', 'Pas de FAQ.');
+  const lastMore = body.lastIndexOf('[/more]');
+  if (lastMore >= 0 && body.indexOf('[faq_container]') >= 0 && body.indexOf('[faq_container]') < lastMore) add('info', 'La FAQ est repliée dans [more] : sur /marque/oxva elle est visible, après [/more].');
+  for (const t of body.match(/\[product_table\b[^\]]*\]/g) || []) {
+    const attr = (n) => (t.match(new RegExp(`${n}="([^"]*)"`)) || [])[1];
+    if (!attr('brand') || !attr('category')) add('error', `[product_table] sans brand ou category : ${t}`);
+    const cols = (attr('columns') || 'name').split(',').map((x) => x.trim()).filter(Boolean);
+    if (TABLE_BANNED_COLUMNS.test(cols.join(','))) add('error', `[product_table] avec une colonne de goût ou de bouffées : ${attr('columns')}`);
+    const heads = (attr('headers') || '').split(',').filter((x) => x.trim());
+    if (heads.length && heads.length !== cols.length) add('warn', `[product_table] : ${cols.length} colonnes pour ${heads.length} en-têtes (le thème ignore alors les en-têtes).`);
+    const known = (page?.tables || data?.tables || []);
+    if (known.length && attr('brand') && !known.some((g) => g.brand === attr('brand') && g.category === attr('category'))) {
+      add('warn', `[product_table] brand="${attr('brand')}" category="${attr('category')}" : combinaison absente des produits de la page, à vérifier.`);
+    }
+  }
   if (page?.seo_html?.includes('réservés aux adultes') && !html.includes('réservés aux adultes')) add('warn', 'La mention « Produits réservés aux adultes » de l’ancien texte a disparu.');
   if (page?.banner && draft.body_html && !draft.body_html.includes(page.banner.src.split('/').pop().replace(/-\d+x\d+(?=\.)/, ''))) {
     add('info', 'L’image bannière n’est pas reprise en tête du bas de page.');
@@ -792,6 +905,7 @@ const verifyLive = async (id) => {
   });
   const toNoindex = [...liveIdx.values()].filter((x) => /noindex/.test(x.robots || '')).map((x) => pathOf(x.url));
   add(!toNoindex.length, 'Aucun lien vers une page en noindex', toNoindex.length ? toNoindex.join(', ') : null);
+  if (page.has_faq) add(page.faq_schema, 'Données FAQPage présentes (shortcode [faq])', page.faq_schema ? null : 'FAQ en HTML : passer aux shortcodes [faq_container][faq …]');
   add(!page.menu_masked, 'Lien du menu vers la page non masqué', page.menu_masked ? 'span data-obflink-url : Google ne le suit pas' : null);
   // Liens attendus depuis d'autres pages.
   const sources = (draft.liens_a_ajouter || []).filter((l) => l.depuis);
@@ -964,7 +1078,7 @@ const getPage = async (id) => {
   const range = row.data?.range || await dataRange();
   const [ads, lint, events] = await Promise.all([
     adsWithGsc(row.ads, range),
-    lintDraft(row.draft, row.page),
+    lintDraft(row.draft, row.page, row.data),
     pool.query('SELECT id, at::text AS at, note, created_by FROM seo_page_events WHERE page_id = $1 ORDER BY at DESC, id DESC', [id]),
   ]);
   const names = await userNames([row.status_by, row.created_by, row.draft?.edited_by, ...events.rows.map((e) => e.created_by)]);
@@ -1115,5 +1229,5 @@ module.exports = {
   startGeneration, importDraft, verifyLive, getPositions, addEvent, deleteEvent, deletePage, aiConfigured,
   // Tests
   parseAdsCsv, parseTerms, matchTerms, normalizeUrl, parsePage, dataRange, loadPageQueries, loadTopicQueries,
-  defaultTerms, productFacts, sampleProducts, buildBrief, lintDraft, fetchHtml,
+  defaultTerms, productFacts, sampleProducts, buildBrief, lintDraft, fetchHtml, productTableGroups,
 };
