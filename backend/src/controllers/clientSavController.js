@@ -115,8 +115,9 @@ function plainTextToSafeHtml(text) {
  * d'un id venu du corps de la requête. Toutes les requêtes ci-dessous sont
  * scopées sur ces valeurs (anti-IDOR).
  *
- * Règle métier : l'espace n'expose que les tickets nés de l'espace client
- * (source = 'account'). Pas d'historique email/Gravity Forms/Zendesk.
+ * Règle métier : l'espace expose les tickets nés côté client (espace client,
+ * formulaire public, Gravity Forms), et les tickets manuels ou email dès qu'un
+ * agent y a répondu publiquement. Jamais l'historique Zendesk.
  *
  * Garde-fou statut : on ne renvoie jamais le libellé interne (label) au client.
  * On renvoie client_label, avec un repli "En cours de traitement" si NULL.
@@ -129,10 +130,24 @@ const AGENT_DISPLAY_NAME = 'Service client YouVape';
 
 /**
  * Origines de tickets visibles par le client dans son espace.
- * `zendesk`, `email` et `manual` en sont volontairement exclus : ce sont des
- * fils créés côté agent ou importés, dont le client n'a jamais eu de vue web.
+ * `zendesk` en est volontairement exclu : c'est de l'historique importé, dont le
+ * client n'a jamais eu de vue web.
  */
 const CLIENT_VISIBLE_SOURCES = [CLIENT_TICKET_SOURCE, PUBLIC_TICKET_SOURCE, 'gravity_form'];
+
+/**
+ * Origines visibles seulement une fois qu'un agent y a répondu PUBLIQUEMENT.
+ *
+ * Un ticket manuel (ouvert par un agent, ex. pour un Retour) ou né d'un email
+ * n'a rien à montrer tant qu'il ne porte que des notes internes. Mais dès qu'une
+ * réponse publique est partie, le client l'a reçue par mail : la lui cacher ici
+ * ne protège rien, et le pousse à rouvrir demande sur demande depuis son compte.
+ * Ces demandes étant fusionnées dans le ticket caché, elles disparaissaient à
+ * leur tour (#9901226, 5 demandes en deux jours, 22-23/10/2026).
+ *
+ * Constante interpolée dans le SQL (jamais une valeur venue de la requête).
+ */
+const CLIENT_VISIBLE_ONCE_ANSWERED_SOURCES = ['manual', 'email'];
 
 /**
  * Statuts de commande proposables au client dans le sélecteur « Commande
@@ -184,7 +199,20 @@ const CLIENT_OWNERSHIP_SQL = `(
       AND lower(t.customer_email) = lower($2::text)
     )
   )
-  AND t.source = ANY($3::text[])
+  AND (
+    t.source = ANY($3::text[])
+    OR (
+      t.source IN (${CLIENT_VISIBLE_ONCE_ANSWERED_SOURCES.map((s) => `'${s}'`).join(', ')})
+      -- Au moins une réponse publique d'un agent (les messages système de
+      -- fusion sont is_private, donc exclus).
+      AND EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(t.messages, '[]'::jsonb)) m
+        WHERE COALESCE((m->>'is_agent')::boolean, false)
+          AND NOT COALESCE((m->>'is_private')::boolean, false)
+          AND NOT COALESCE((m->>'is_system')::boolean, false)
+      )
+    )
+  )
   -- Ticket absorbé par une fusion : masqué au client. Il ne contient RIEN que la
   -- cible n'ait déjà (la fusion y recopie ses messages), et le laisser visible
   -- produirait un cul-de-sac étiqueté « Résolu », ses messages en double, et une
@@ -247,7 +275,7 @@ const clientSavController = {
   },
 
   // ─── Détail d'un ticket du client connecté (fil de discussion) ────────────
-  // Scoping anti-IDOR : la requête filtre sur customer_id ET source='account'.
+  // Scoping anti-IDOR : la requête filtre sur CLIENT_OWNERSHIP_SQL.
   // Un ticket qui n'appartient pas au client (ou hors espace) renvoie 404 —
   // jamais 403 détaillé, pour ne pas révéler l'existence du ticket.
   getMyTicket: async (req, res) => {
