@@ -23,6 +23,7 @@ const docStore = require('../utils/supplierDocStore');
 const lifecycleModel = require('../models/orderLifecycleModel');
 const { buildClaimMessage } = require('../utils/invoiceClaimMessage');
 const invoiceParsers = require('../parsers/invoices');
+const pool = require('../config/database');
 
 /**
  * POST /api/supplier-invoices/analyse — lire un document SANS rien enregistrer.
@@ -85,6 +86,7 @@ async function recontrolerFacturesDe(orderId, saufDocumentId = null) {
     try {
       const document = await supplierDocumentModel.getDocument(id);
       if (!document || (document.orders[0] || {}).id !== orderId) continue;
+      if ((document.analysis || {}).manual) continue;
       const analysis = await reanalyse(document);
       await supplierDocumentModel.replaceLines(id, analysis.comparison, undefined, analysis.vouchersUsed);
       faits.push({ id, number: document.number });
@@ -216,6 +218,110 @@ async function uploadDocument(req, res) {
   } catch (error) {
     if (stored) docStore.removeDocument(stored.filePath);
     console.error('[supplier-invoices] dépôt :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+/**
+ * POST /api/supplier-invoices/manual — ranger une facture SANS la lire.
+ *
+ * Réservé aux fournisseurs déclarés dans `isManualInvoiceSupplier` (AliExpress) :
+ * numéro, date et montants sont saisis, le fichier n'est que la pièce
+ * comptable. Pas de lignes, donc rien à comparer : le document naît « contrôlé »
+ * et n'attend plus que son règlement. Plusieurs factures peuvent viser la même
+ * commande — c'est le cas courant chez AliExpress, une par vendeur.
+ */
+async function uploadManualDocument(req, res) {
+  let stored = null;
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'Aucun fichier reçu' });
+    }
+    const supplierId = parseInt(req.body.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) {
+      return res.status(400).json({ error: 'Fournisseur manquant' });
+    }
+    const { rows: supRows } = await pool.query('SELECT id, name, code FROM suppliers WHERE id = $1', [supplierId]);
+    const supplier = supRows[0];
+    if (!supplier) return res.status(404).json({ error: 'Fournisseur introuvable' });
+    if (!invoiceParsers.isManualInvoiceSupplier(supplier)) {
+      return res.status(400).json({ error: `Les factures ${supplier.name} se contrôlent par lecture du document` });
+    }
+
+    const number = String(req.body.number || '').trim();
+    if (!number) return res.status(400).json({ error: 'Numéro de facture manquant' });
+    const docDate = String(req.body.doc_date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(docDate)) return res.status(400).json({ error: 'Date de facture manquante' });
+
+    // Virgule ou point : c'est recopié d'un PDF à la main.
+    const montant = (v) => {
+      if (v === undefined || v === null || String(v).trim() === '') return null;
+      const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+      return Number.isFinite(n) ? Math.round(n * 100) / 100 : NaN;
+    };
+    const totalTtc = montant(req.body.total_ttc);
+    const totalTva = montant(req.body.total_tva) ?? 0;
+    if (totalTtc === null || Number.isNaN(totalTtc) || totalTtc <= 0) {
+      return res.status(400).json({ error: 'Montant TTC manquant ou invalide' });
+    }
+    if (Number.isNaN(totalTva) || totalTva < 0 || totalTva > totalTtc) {
+      return res.status(400).json({ error: 'Montant de TVA invalide' });
+    }
+
+    let order = null;
+    const orderId = req.body.order_id ? parseInt(req.body.order_id, 10) : null;
+    if (Number.isFinite(orderId)) {
+      const { rows } = await pool.query(
+        'SELECT id, bms_reference, order_number FROM purchase_orders WHERE id = $1 AND supplier_id = $2',
+        [orderId, supplierId],
+      );
+      if (!rows[0]) return res.status(400).json({ error: 'Cette commande n\'est pas une commande de ce fournisseur' });
+      order = rows[0];
+    }
+
+    stored = docStore.saveDocument({
+      supplierId,
+      buffer: req.file.buffer,
+      originalName: req.file.originalname,
+    });
+
+    const saved = await supplierDocumentModel.createDocument({
+      supplier,
+      invoice: {
+        docType: 'invoice',
+        number,
+        date: docDate,
+        dueDate: null,
+        totalHt: Math.round((totalTtc - totalTva) * 100) / 100,
+        totalTva,
+        totalTtc,
+        statedPaymentMethod: null,
+        orderRefOnDoc: null,
+        lines: [],
+        warnings: [],
+        manual: true,
+      },
+      order,
+      comparison: null,
+      filePath: stored.filePath,
+      originalName: stored.originalName,
+      matchedBy: 'manual',
+      userId: req.user && req.user.id,
+      status: 'checked',
+    });
+
+    if (saved.duplicate) {
+      docStore.removeDocument(stored.filePath);
+      return res.status(409).json({
+        error: `La facture ${number} de ${supplier.name} est déjà enregistrée`,
+        existing: saved.existing,
+      });
+    }
+
+    return res.status(201).json({ document: saved.document, order });
+  } catch (error) {
+    if (stored) docStore.removeDocument(stored.filePath);
+    console.error('[supplier-invoices] dépôt manuel :', error.message);
     return res.status(500).json({ error: error.message || 'Erreur serveur' });
   }
 }
@@ -384,6 +490,11 @@ async function getClaimMessage(req, res) {
  * tarifs, pour que les deux lisent la facture de la même façon.
  */
 async function reanalyse(document) {
+  if ((document.analysis || {}).manual) {
+    const e = new Error('Facture saisie à la main, sans lecture du document : rien à recontrôler');
+    e.status = 422;
+    throw e;
+  }
   if (!document.file_path) {
     const e = new Error('Le fichier d\'origine n\'est plus disponible');
     e.status = 422;
@@ -772,7 +883,18 @@ async function listUnpaid(req, res) {
 
 /** GET /api/supplier-invoices/parsers — fournisseurs dont on sait lire les factures. */
 async function getParsers(req, res) {
-  return res.json({ suppliers: invoiceParsers.availableInvoiceParsers() });
+  try {
+    // Les fournisseurs rangés sans parseur, par identifiant : leur code BMS
+    // n'est pas toujours renseigné, l'écran ne peut donc pas filtrer dessus.
+    const { rows } = await pool.query('SELECT id, name, code FROM suppliers');
+    return res.json({
+      suppliers: invoiceParsers.availableInvoiceParsers(),
+      manualSupplierIds: rows.filter(invoiceParsers.isManualInvoiceSupplier).map((r) => r.id),
+    });
+  } catch (error) {
+    console.error('[supplier-invoices] parseurs :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
 }
 
 module.exports = {
@@ -783,6 +905,7 @@ module.exports = {
   listCandidateOrders,
   analyseDocument,
   uploadDocument,
+  uploadManualDocument,
   listDocuments,
   getDocument,
   downloadDocument,

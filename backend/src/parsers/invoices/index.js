@@ -50,7 +50,19 @@ const parsers = {
   'Pulp': prestashopInvoice,
 };
 
+// Fournisseurs dont la facture est rangée SANS parseur ni contrôle (demande du
+// 26/10/2026) : on dépose le fichier et on saisit numéro, date et montant.
+// AliExpress envoie une facture par vendeur — huit pour une seule commande —
+// au gabarit changeant, et le prix y est celui déjà payé en ligne : rien à
+// réclamer, seulement une pièce comptable à garder et à régler. Reconnu au
+// nom comme au code, ce dernier n'étant pas toujours renseigné dans BMS.
+const MANUAL_INVOICE_SUPPLIER = /ali\s*express/i;
+
+const isManualInvoiceSupplier = (supplier) => !!supplier
+  && (MANUAL_INVOICE_SUPPLIER.test(supplier.name || '') || MANUAL_INVOICE_SUPPLIER.test(supplier.code || ''));
+
 module.exports = {
+  isManualInvoiceSupplier,
   getInvoiceParser: (supplierCode) => parsers[supplierCode] || null,
   hasInvoiceParser: (supplierCode) => !!parsers[supplierCode],
   availableInvoiceParsers: () => Object.keys(parsers),

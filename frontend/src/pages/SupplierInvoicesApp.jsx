@@ -1005,7 +1005,7 @@ function OrderPicker({ supplierId, busy, onPick }) {
           <button
             key={o.id}
             type="button"
-            onClick={() => onPick(o.id)}
+            onClick={() => onPick(o.id, o)}
             disabled={busy}
             style={{
               display: 'flex', width: '100%', gap: 12, alignItems: 'center', justifyContent: 'space-between',
@@ -1021,6 +1021,136 @@ function OrderPicker({ supplierId, busy, onPick }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Dépôt SANS lecture, pour les fournisseurs dont on ne contrôle pas la facture
+ * (AliExpress : une facture par vendeur, plusieurs pour une même commande, au
+ * prix déjà payé en ligne). On saisit numéro, date et montant ; la commande et
+ * la date restent en place d'une facture à l'autre pour enchaîner les dépôts.
+ */
+function ManualInvoiceForm({ supplierId, mobile, onSaved }) {
+  const [order, setOrder] = useState(null);
+  const [file, setFile] = useState(null);
+  const [number, setNumber] = useState('');
+  const [docDate, setDocDate] = useState(new Date().toISOString().slice(0, 10));
+  const [ttc, setTtc] = useState('');
+  const [tva, setTva] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [deposees, setDeposees] = useState([]);
+  const fileInput = useRef(null);
+
+  const choisir = (f) => {
+    setFile(f || null);
+    // Le nom du fichier porte souvent le numéro : une suggestion, à corriger.
+    if (f && !number) setNumber(f.name.replace(/\.[^.]+$/, ''));
+  };
+
+  const save = async () => {
+    setBusy(true); setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('supplier_id', supplierId);
+      form.append('number', number.trim());
+      form.append('doc_date', docDate);
+      form.append('total_ttc', ttc);
+      if (tva !== '') form.append('total_tva', tva);
+      if (order) form.append('order_id', order.id);
+      const { data } = await axios.post(`${BASE}/manual`, form);
+      setDeposees((l) => [...l, data.document]);
+      setFile(null); setNumber(''); setTtc(''); setTva('');
+      if (fileInput.current) fileInput.current.value = '';
+      onSaved();
+    } catch (e) {
+      const d = e.response?.data;
+      setError(d?.existing ? `${d.error} (enregistrée le ${date(d.existing.doc_date)})` : (d?.error || e.message));
+    } finally { setBusy(false); }
+  };
+
+  const totalDepose = deposees.reduce((t, d) => t + Number(d.total_ttc || 0), 0);
+  const pret = file && number.trim() && docDate && ttc !== '' && !busy;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ padding: 13, background: C.mainL, color: C.dark, borderRadius: 10, fontSize: 13 }}>
+        Factures de ce fournisseur rangées <strong>sans contrôle</strong> : dépose le fichier, saisis le numéro,
+        la date et le montant. Elles sont enregistrées « contrôlées » et n'attendent plus que leur règlement.
+      </div>
+
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 4 }}>Commande</div>
+        {order ? (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13.5 }}>
+            <strong>{order.bms_reference || order.order_number}</strong>
+            <span style={{ color: C.greyT }}>{date(order.order_date)} · {eur(order.total_amount)}</span>
+            <Btn variant="secondary" small onClick={() => setOrder(null)}>Changer</Btn>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: C.greyM }}>Facultatif, mais permet de retrouver la facture depuis la commande.</div>
+            <OrderPicker supplierId={supplierId} busy={busy} onPick={(id, o) => setOrder(o)} />
+          </>
+        )}
+      </div>
+
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); if (e.dataTransfer.files[0]) choisir(e.dataTransfer.files[0]); }}
+        onClick={() => fileInput.current?.click()}
+        style={{
+          border: `2px dashed ${dragging ? C.main : C.greyB}`, borderRadius: 12, padding: mobile ? 20 : 24,
+          textAlign: 'center', cursor: 'pointer', background: dragging ? C.mainL : C.white,
+        }}
+      >
+        <input ref={fileInput} type="file" accept=".pdf,.png,.jpg,.jpeg" style={{ display: 'none' }}
+          onChange={(e) => choisir(e.target.files[0])} />
+        <div style={{ fontWeight: 600, color: file ? C.main : C.greyT, fontSize: 14 }}>
+          {file ? file.name : 'Déposer la facture ici, ou cliquer pour choisir'}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <Field label="N° de facture" width={220}>
+          <input value={number} onChange={(e) => setNumber(e.target.value)} style={inputStyle} />
+        </Field>
+        <Field label="Date" width={160}>
+          <input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} style={inputStyle} />
+        </Field>
+        <Field label="Montant TTC (€)" width={140}>
+          <input inputMode="decimal" value={ttc} onChange={(e) => setTtc(e.target.value)} style={inputStyle} />
+        </Field>
+        <Field label="dont TVA (€)" width={120}>
+          <input inputMode="decimal" value={tva} onChange={(e) => setTva(e.target.value)} placeholder="0" style={inputStyle} />
+        </Field>
+        <Btn onClick={save} disabled={!pret}>{busy ? 'Enregistrement…' : 'Enregistrer la facture'}</Btn>
+      </div>
+
+      {error && (
+        <div style={{ padding: 14, background: C.redL, color: C.red, borderRadius: 10, fontSize: 13.5, fontWeight: 600 }}>
+          {error}
+        </div>
+      )}
+
+      {deposees.length > 0 && (
+        <div style={{ background: C.white, borderRadius: 10, border: `1px solid ${C.greyB}`, padding: 12, fontSize: 13 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>
+            {deposees.length} facture{deposees.length > 1 ? 's' : ''} enregistrée{deposees.length > 1 ? 's' : ''} · {eur(totalDepose)} TTC
+          </div>
+          {deposees.map((d) => (
+            <div key={d.id} style={{ display: 'flex', gap: 12, padding: '3px 0', color: C.greyT }}>
+              <span style={{ color: C.dark, fontWeight: 600 }}>{d.number}</span>
+              <span>{date(d.doc_date)}</span>
+              <span>{eur(d.total_ttc)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1114,6 +1244,21 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
   const totals = result?.comparison?.totals;
   const summary = result?.comparison?.summary;
+  const manual = !!suppliers.find((s) => String(s.id) === String(supplierId))?.manual;
+
+  if (manual) {
+    return (
+      <div style={{ padding: mobile ? '16px' : '22px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <Field label="Fournisseur" width={230}>
+          <select value={supplierId} onChange={(e) => { setSupplierId(e.target.value); reset(); }} style={inputStyle}>
+            <option value="">Choisir…</option>
+            {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </Field>
+        <ManualInvoiceForm key={supplierId} supplierId={supplierId} mobile={mobile} onSaved={onSaved} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: mobile ? '16px' : '22px 40px', display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -2917,7 +3062,12 @@ export default function SupplierInvoicesApp() {
       // formes plutôt que de parier sur l'une d'elles.
       const list = Array.isArray(s.data) ? s.data : (s.data?.data || s.data?.suppliers || []);
       const known = new Set(p.data.suppliers || []);
-      const usable = list.filter((x) => known.has(x.code)).sort((a, b) => a.name.localeCompare(b.name));
+      // Plus ceux qu'on range sans lecture (AliExpress), signalés par le serveur.
+      const manual = new Set(p.data.manualSupplierIds || []);
+      const usable = list
+        .filter((x) => known.has(x.code) || manual.has(x.id))
+        .map((x) => (manual.has(x.id) ? { ...x, manual: true } : x))
+        .sort((a, b) => a.name.localeCompare(b.name));
       setSuppliers(usable);
       // Une liste vide n'est pas un état normal : sans message, l'écran donne
       // un menu déroulant muet et rien n'explique pourquoi.

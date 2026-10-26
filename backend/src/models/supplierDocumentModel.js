@@ -235,7 +235,7 @@ async function insertLines(client, documentId, lines) {
   }
 }
 
-async function createDocument({ supplier, invoice, order, comparison, filePath, originalName, matchedBy, userId, vouchersUsed = [] }, db = pool) {
+async function createDocument({ supplier, invoice, order, comparison, filePath, originalName, matchedBy, userId, vouchersUsed = [], status = 'to_check' }, db = pool) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -267,7 +267,7 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
         invoice.totalTtc,
         invoice.statedPaymentMethod,
         invoice.orderRefOnDoc,
-        'to_check',
+        status,
         filePath,
         comparison
           ? JSON.stringify({
@@ -278,7 +278,8 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
               correctsInvoice: invoice.correctsInvoice || null,
               statedPayments: invoice.payments || [],
             })
-          : JSON.stringify({ warnings: invoice.warnings || [], originalName }),
+          // `manual` : saisie à la main, sans PDF lu — rien à recontrôler.
+          : JSON.stringify({ warnings: invoice.warnings || [], originalName, ...(invoice.manual ? { manual: true } : {}) }),
         userId || null,
       ],
     );
