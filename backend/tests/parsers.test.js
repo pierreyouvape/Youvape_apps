@@ -76,6 +76,14 @@ const CASES = [
     mustContain: '013167-3-Blue',
   },
   {
+    label: 'CigAccess FA129523 (n° de facture sans le « # », 26/10/2026)',
+    parser: require('../src/parsers/cigaccessParser'),
+    text: fixture('cigaccess-FA129523.txt'),
+    orderNumber: 'CRBCMEWHN',
+    expectedItems: 13,
+    expectedTotal: 648.66,
+  },
+  {
     label: 'Curieux FA072952 (colonne « Prix de base » ajoutée, réfs coupées hors tiret)',
     parser: require('../src/parsers/curieuxParser'),
     text: fixture('curieux-FA072952.txt'),
@@ -309,6 +317,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['cigaccess-FA122879.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cigaccess-FA128317.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cigaccess-FA129179.txt', 'cigaccessParser', 'prestashopInvoice'],
+    ['cigaccess-FA129523.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cloudvapor-INV-2025-04126.txt', 'cloudvaporParser', 'odooInvoice'],
     ['cloudvapor-INV-2026-02555.txt', 'cloudvaporParser', 'odooInvoice'],
     ['curieux-FA063171.txt', 'curieuxParser', 'prestashopInvoice'],

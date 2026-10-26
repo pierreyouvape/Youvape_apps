@@ -22,7 +22,7 @@ const parseDecimal = (str) => parseFloat(String(str).replace(/\s/g, '').replace(
  */
 function parseInvoice(text) {
   // Extraire ref commande et date : "#FA069087/2026 18/03/2026 ERWZBDFMZ 18/03/2026"
-  const orderMatch = text.match(/#FA[\w/]+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
+  const orderMatch = text.match(/#?FA[\w/]+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
   const orderNumber = orderMatch ? orderMatch[4] : null;
   const orderDate = orderMatch ? `${orderMatch[3]}-${orderMatch[2]}-${orderMatch[1]}` : null;
 
@@ -47,7 +47,7 @@ function parseInvoice(text) {
   // (ex. FA072725, NAT-VERT-10-6MG a 54,40 €). On retire ce mobilier de page.
   const scanText = text
     .slice(startIdx, footerIdx >= 0 ? footerIdx : text.length)
-    .replace(/FACTURE\s*\n\s*\d{2}\/\d{2}\/\d{4}\s*\n\s*#FA[\w/]+/g, '\n')
+    .replace(/FACTURE\s*\n\s*\d{2}\/\d{2}\/\d{4}\s*\n\s*#?FA[\w/]+/g, '\n')
     .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
     .replace(/^[^\S\n]*\d+[^\S\n]*\/[^\S\n]*\d+[^\S\n]*$/gm, '');
 

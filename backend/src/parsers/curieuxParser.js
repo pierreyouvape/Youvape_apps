@@ -27,7 +27,7 @@ const REF_FRAGMENT = /^[A-Z0-9][A-Z0-9.-]*$/;
 module.exports = {
   parse: (text) => {
     // Extraire la ref de commande et date : "#FA067222 17/03/2026 QBIQTGUGF 17/03/2026 FR..."
-    const orderMatch = text.match(/#FA\d+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
+    const orderMatch = text.match(/#?FA\d+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
     const orderNumber = orderMatch ? orderMatch[4] : null;
     const orderDate = orderMatch ? `${orderMatch[3]}-${orderMatch[2]}-${orderMatch[1]}` : null;
 
@@ -60,7 +60,7 @@ module.exports = {
     productZone = productZone
       .replace(/\d+\s*\/\s*\d+\s*\n/g, '\n')       // "1 / 2"
       .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')   // "-- 1 of 2 --"
-      .replace(/FACTURE\n[\s\S]*?#FA\d+/g, '\n');    // header page 2 (date peut etre tronquee)
+      .replace(/FACTURE\n[\s\S]*?#?FA\d+/g, '\n');    // header page 2 (date peut etre tronquee)
 
     const lines = productZone.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 

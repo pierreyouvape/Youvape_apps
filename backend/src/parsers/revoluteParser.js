@@ -83,7 +83,7 @@ function parseConfirmation(text) {
  */
 function parseFacture(text) {
     // Extraire ref commande et date : "#FA019518 10/03/2026 DIYXUUZWF 10/03/2026"
-    const orderMatch = text.match(/#FA\d+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
+    const orderMatch = text.match(/#?FA\d+\s+(\d{2})\/(\d{2})\/(\d{4})\s+(\S+)\s+\d{2}\/\d{2}\/\d{4}/);
     const orderNumber = orderMatch ? orderMatch[4] : null;
     const orderDate = orderMatch ? `${orderMatch[3]}-${orderMatch[2]}-${orderMatch[1]}` : null;
 
@@ -106,7 +106,7 @@ function parseFacture(text) {
     productZone = productZone
       .replace(/\d+\s*\/\s*\d+\s*\n/g, '\n')
       .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
-      .replace(/FACTURE\n[\s\S]*?#FA\d+/g, '\n')
+      .replace(/FACTURE\n[\s\S]*?#?FA\d+/g, '\n')
       .replace(/Laboratoire cosmer[^\n]*/g, '\n')
       // Reste du pied de page, repete a chaque page. Sans ce nettoyage ces lignes
       // se collent devant le PREMIER article de la page suivante, dont la ref

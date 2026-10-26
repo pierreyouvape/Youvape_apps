@@ -1,0 +1,111 @@
+youvape_apps-backend
+FACTURE
+26/10/2026
+FA129523
+Adresse de livraison
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Adresse de facturation
+Maxime coglitore
+YOUVAPE Site-web
+0000
+580 avenue de l aube rouge
+34170 castelnau le lez
+France
+0695975267
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande Numéro de TVA
+FA129523 26/10/2026 CRBCMEWHN 26/10/2026 0000
+Référence Produit Taux de
+taxe
+Prix de
+base
+(HT)
+Prix
+unitaire
+(HT)
+Quantité Total
+(HT)
+005518 PGVG Labs - Don Cristo XO 50ML 20 % 7,90 € 5,80 € 6 34,80 €
+007502 Diy Hard - Bouteilles Graduées 100ml
+x10
+20 % 5,90 € 5,31 € 10 53,10 €
+009130-1-0.6
+0
+Dotmod - Résistance DotCoils pour
+DotAIO V2 X5 (oHm : 0.60)
+20 % 9,80 € 8,15 € 10 81,50 €
+011265 Abyss by Full Moon - Nautica Concentré
+30 ML
+20 % 5,90 € 4,50 € 5 22,50 €
+011270 Abyss by Full Moon - Odyssée
+Concentré 30 ML
+20 % 5,90 € 4,50 € 10 45,00 €
+011497 Dotmod Juice - Menthol Ice 50/50 50ml 20 % 5,90 € 4,50 € 10 45,00 €
+012294 CE'GOOD - El Crema Peanetto -
+Concentré 30ml
+20 % 5,90 € 4,00 € 5 20,00 €
+012587-0-Tra
+n
+Dotmod - Réservoir de remplacement
+DotAio V4 (Couleur : Transparent)
+20 % 7,50 € 6,38 € 3 19,13 €
+012861-2-G
+unm
+Dotmod - DotAIO V3 (Couleur :
+Gunmetal)
+20 % 87,90 € 74,90 € 2 149,80 €
+012861-4-Silv
+Dotmod - DotAIO V3 (Couleur : Silver) 20 % 87,90 € 74,90 € 1 74,90 €
+012880 CEDRIC GROSCAKE - Le Gros Citron
+50ML
+20 % 5,90 € 4,90 € 6 29,40 €
+013021-0-Bla
+c
+Hellvape - Dead Rabbit 4 RDA (New
+Color) (Couleur : Black Purple)
+20 % 17,90 € 16,11 € 1 16,11 €
+013098-0-Bla
+Steam Crave - Aromamizer Supreme V4
+RDTA 7.5/9mL (Couleur : Black)
+20 % 31,90 € 28,71 € 2 57,42 €
+1 / 2
+
+-- 1 of 2 --
+
+FACTURE
+26/10/2026
+FA129523
+c
+Détail des
+taxes
+Taux de taxe Prix de base Taxe totale
+Produits 20.000 % 648,66 € 129,72 €
+Total produits 648,66 €
+Frais de livraison Livraison gratuite
+Total (HT) 648,66 €
+Taxe totale 129,73 €
+Total 778,39 €
+Moyen de paiement Paiement VISA 778,39 €
+Date de paiement : Immédiat
+Escompte pour paiement anticipé : néant
+Loi LME du 04-08-2008, les pénalités de retard seront calculées sur la base de
+3 fois le taux d'intéret légal.
+Indemnité forfaitaire pour frais de recouvrement : 40 euros.
+Powered by TCPDF (www.tcpdf.org)
+Cig access pro - SARL ALAV, 148 Rue de Lenche - 13400 Aubagne - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 04 42 98 11 08
+SARL ALAV - TVA intracommunautaire : FR94792912818 - Siret: 792 912 818 00038 - RCS MARSEILLE - FRANCE
+Une version électronique est conservée sur votre compte. Pour y accéder, identifiez-vous sur le site CigAcess avec vos identifiants (Créés lors de votre première commande). BANQUE PALATINE
+MARS.PRO. IBAN : FR76 4097 8000 2321 3957 4221 407 BIC-ADRESSE SWIFT : BSPFFRPPXXX | BANQUE DELUBAC & CIE. IBAN : FR76 1287 9000 0111 2280 1700 126 BIC-ADRESSE SWIFT
+:DELUFR22XXX
+
+-- 2 of 2 --
+

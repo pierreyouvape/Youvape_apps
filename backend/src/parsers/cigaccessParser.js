@@ -106,8 +106,9 @@ function parseConfirmation(text) {
  */
 function parseFacture(text) {
   // Ref de commande : ligne "#FA125169 03/03/2026 DNOGOEJPX 03/03/2026 0000"
-  // (ou "#FA129179/2026 06/10/2026 XKVGXPIDD ..." depuis octobre 2026)
-  const orderMatch = text.match(/#FA\d+(?:\/\d{4})?\s+\d{2}\/\d{2}\/\d{4}\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})/);
+  // (ou "#FA129179/2026 06/10/2026 XKVGXPIDD ..." depuis octobre 2026, et
+  // "FA129523 26/10/2026 CRBCMEWHN ..." SANS le « # » depuis le 26/10/2026)
+  const orderMatch = text.match(/#?FA\d+(?:\/\d{4})?\s+\d{2}\/\d{2}\/\d{4}\s+(\S+)\s+(\d{2})\/(\d{2})\/(\d{4})/);
   const orderNumber = orderMatch ? orderMatch[1] : null;
   const orderDate = orderMatch ? `${orderMatch[4]}-${orderMatch[3]}-${orderMatch[2]}` : null;
 
@@ -129,7 +130,7 @@ function parseFacture(text) {
   const cleaned = productZone
     .replace(/cig access pro[\s\S]*?(?=\n\d{6}|\nDétail|$)/g, '\n')
     .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '\n')
-    .replace(/FACTURE\n\d{2}\/\d{2}\/\d{4}\n#FA\d+(?:\/\d{4})?/g, '\n')
+    .replace(/FACTURE\n\d{2}\/\d{2}\/\d{4}\n#?FA\d+(?:\/\d{4})?/g, '\n')
     .replace(/^\s*\d+\s*\/\s*\d+\s*$/gm, '\n') // pagination "1 / 3"
     .replace(/SARL ALAV[^\n]*/g, '\n');
 
