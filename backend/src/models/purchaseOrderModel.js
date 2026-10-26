@@ -31,10 +31,23 @@ const purchaseOrderModel = {
   // Drapeaux de renvoi si l'erreur est « décidable », sinon null
   bmsRetryFlags: (error) => BMS_DECIDABLE_ERRORS[error?.code] || null,
 
-  // Générer un numéro de commande
+  // Générer un numéro de commande. On compte aussi les références BMS : un bon
+  // créé directement dans BMS avec un numéro PO-AAAA-NNNN est stocké chez nous
+  // sous « BMS-<id> », et generate_po_number() (qui ne lit que order_number)
+  // reproposait ce numéro → BMS 400 « La référence existe déjà » (PO-2026-0012
+  // Cloud Vapor, 26/10/2026).
   generateOrderNumber: async () => {
-    const result = await pool.query('SELECT generate_po_number() as order_number');
-    return result.rows[0].order_number;
+    const year = String(new Date().getFullYear());
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(n), 0) + 1 AS next
+         FROM (
+           SELECT SUBSTRING(order_number FROM '^PO-' || $1 || '-(\\d+)')::int AS n FROM purchase_orders
+           UNION ALL
+           SELECT SUBSTRING(bms_reference FROM '^PO-' || $1 || '-(\\d+)')::int FROM purchase_orders
+         ) t`,
+      [year]
+    );
+    return `PO-${year}-${String(result.rows[0].next).padStart(4, '0')}`;
   },
 
   // Récupérer toutes les commandes
