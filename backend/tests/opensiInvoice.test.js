@@ -188,6 +188,21 @@ test('la référence de commande imprimée est remontée même si elle ne matche
   assert.strictEqual(gfc.orderRefOnDoc, '530456');
 });
 
+const gfc2 = parseInvoice(fixture('gfc-F2610429600.txt'));
+
+test('une désignation finissant par un nombre isolé garde sa ligne (F2610429600)', () => {
+  // « Ciseaux multi-usages 1433 80000000121 3 1.10 3.30 » : cinq nombres, la
+  // ligne se collait au Coton Doctor Coil suivant et 3,30 € manquaient.
+  const ciseaux = byRef(gfc2, 'GFC15774');
+  assert.strictEqual(ciseaux.qty, 3);
+  assert.ok(close(ciseaux.lineTotalHt, 3.30));
+  const coton = byRef(gfc2, 'GFC6604');
+  assert.strictEqual(coton.qty, 5);
+  assert.ok(close(coton.lineTotalHt, 17.50));
+  assert.ok(close(gfc2.lines.reduce((a, l) => a + l.lineTotalHt, 0), 1210.50, 0.02));
+  assert.strictEqual(gfc2.warnings.length, 0);
+});
+
 /* ─── Avoirs OpenSi — LCA A2609409187 et GFC A2607412564 ─────────────────── */
 
 const lcaAvoir = parseInvoice(fixture('lca-avoir-A2609409187.txt'));

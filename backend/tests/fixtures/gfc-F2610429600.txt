@@ -1,0 +1,94 @@
+[dotenv@17.2.3] injecting env (0) from ../.env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+FjUN OpenSi v10.1.0 | 23/10/2026 - 23:01:04
+GFC Provap
+2 route de l'Ouest
+94380 Bonneuil Sur Marne
+Tél : 01 80 91 50 70
+E-Mail : contact@gfc-provap.com
+www.gfc-provap.com
+Facture N° F2610429600 Date : 23/10/2026
+Client N° 1-008518 - YOUVAPE SITE
+Interlocuteur : M. COGLITORE Maxime
+Page 1 / 2
+YOUVAPE SITE
+580 avenue de l'aube rouge
+YOUVAPE
+34170 castelnau le lez
+FRANCE
+F A C T U R E
+Réf. Affaire : AC26104007
+N° Commande : CC26104006
+Réf. Commande : 599995
+Réf. BL : BL26104210
+Référence Désignation Code barre Quantité PU HT Montant HT
+GFC35749 [Goodies] Casquette (1pc) - Dotmod 35749 1 0.00 0.00
+GFC36467 Woodsman 0mg 50ml - Dilligaf 5407007435326 12 6.70 80.40
+GFC15280 Fused Clapton 0.22 NI 90 2X26 NI 90/1X38 NI 80 - Crazy
+Fab Coils 15280 10 3.30 33.00
+GFC21783 Sith Coils Alien Ni80 (2pcs) - Vaperz Cloud 21783 4 4.50 18.00
+GFC23286 Kraken Time 0mg 50ml - Dilligaf 3760375110038 6 6.50 39.00
+GFC15774 Ciseaux multi-usages 1433 80000000121 3 1.10 3.30
+GFC6604 Coton pré découpé - Doctor Coil 6970323070421 5 3.50 17.50
+GFC35862 5 Coton Cloud 9 Achetés, 2 Coton Cloud 9 Offert - Cloud 9 1 17.50 17.50
+GFC9995 Hiphop Coton - Vivismoke 6971395750174 10 1.85 18.50
+GFC29577 Batterie E-cigare 500mAh (1pc) - XO Havana 3010000877974 10 4.43 44.30
+GFC34677-63075 Gold Nic Salt 10ml - Eminence by Xo Havana - Nicotine :
+20mg 3760366394027 10 2.20 22.00
+GFC34677-63074 Gold Nic Salt 10ml - Eminence by Xo Havana - Nicotine :
+10mg Hybride 3760366394034 20 2.20 44.00
+GFC5322 Bouteille graduée avec bouchon doseur 230ml 5322 10 0.80 8.00
+GFC9685-26027 Flacon unicorn Long 30ML V3 - Chubby Gorilla - Couleur :
+Transparent 968526027 30 0.30 9.00
+GFC5807-27552 Flacon unicorn 10ML V3 - Chubby Gorilla - Couleur :
+Transparent 580727552 50 0.20 10.00
+GFC31669-58348 Cartouche Pré-remplie 20mg (1pc) - XO Havana - Saveur :
+Venecia 3010000877912 50 3.40 170.00
+GFC31669-58347 Cartouche Pré-remplie 20mg (1pc) - XO Havana - Saveur :
+Cubana 3010000877905 100 3.40 340.00
+GFC33904 Bonza Pro RTA Black Pink Limited Edition 4/6ml 26.5mm -
+Thunder Cloud x Vaping Bogan 1394337200523 10 28.00 280.00
+GFC15283 Aliens 0.40 NI 80 3X29 NI 80/1X38 NI 80 - Crazy Fab
+Coils 15283 10 5.60 56.00
+Sous-total HT : 1 210.50
+GFC Provap - SAS au capital de 1 640 000 Euros - immatriculée au RCS Créteil 808 496 095 - N° TVA : FR96808496095 - Code NAF : 4690Z
+
+-- 1 of 2 --
+
+FjUN OpenSi v10.1.0 | 23/10/2026 - 23:01:04
+GFC Provap
+2 route de l'Ouest
+94380 Bonneuil Sur Marne
+Tél : 01 80 91 50 70
+E-Mail : contact@gfc-provap.com
+www.gfc-provap.com
+Facture N° F2610429600 Date : 23/10/2026
+Client N° 1-008518 - YOUVAPE SITE
+Interlocuteur : M. COGLITORE Maxime
+Page 2 / 2
+YOUVAPE SITE
+580 avenue de l'aube rouge
+YOUVAPE
+34170 castelnau le lez
+FRANCE
+F A C T U R E
+Référence Désignation Code barre Quantité PU HT Montant HT
+Sous-total HT 1 210.50
+Base HT Taux TVA Montant TVA
+1 210.50 20.00 % 242.10
+Facture constituée exclusivement de livraisons de biens
+Date d'échéance : 23/10/2026
+Mode de règlement : Paiement 100% Sécurisé pa
+Total HT : 1 210.50 €
+Total TVA : 242.10 €
+Total TTC : 1 452.60 €
+Facture acquittée
+RESERVE DE PROPRIETE : loi du 12/05/1980 N°80335 - Le matériel livré reste l'entière propriété de GFC Provap jusqu'au paiement intégral du prix fixé
+ci-dessus.
+Retard de paiement : En cas de retard de paiement, conformément aux articles L. 441-10 et D. 441-5 du Code de commerce, des pénalités de retard
+égales à 5 fois le taux d'intérêt légal en vigueur, ainsi qu'une indemnité forfaitaire de 40 € pour frais de recouvrement, seront exigibles de plein droit, sans
+qu'un rappel ou une mise en demeure ne soit nécessaire, dès le lendemain de la date d'échéance de règlement figurant sur la facture.
+GFC Provap - SAS au capital de 1 640 000 Euros - immatriculée au RCS Créteil 808 496 095 - N° TVA : FR96808496095 - Code NAF : 4690Z
+
+-- 2 of 2 --
+
+

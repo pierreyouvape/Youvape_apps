@@ -111,6 +111,14 @@ function readNumbers(nums) {
     const viaDiscount = check(nums[0], net, nums[2]);
     if (viaDiscount) return { ...viaDiscount, unitPriceNet: nums[3] };
   }
+  // GFC dont la désignation finit par un nombre isolé : « Ciseaux multi-usages
+  // 1433 80000000121 3 1.10 3.30 » (F2610429600) fait 5 nombres, la lecture LCA
+  // échouait, et la ligne se collait à l'article suivant (3,30 € perdus). Le
+  // code-barres en 4e position avant la fin dit où commence le tableau.
+  if (n >= 5 && String(Math.trunc(nums[n - 4])).length >= 8) {
+    const r = check(nums[n - 3], nums[n - 2]);
+    if (r) return r;
+  }
   if (n === 4) {
     // LCA sans remise : le PU est répété (PU HT puis PU Net HT)
     if (near(nums[1], nums[2])) {
