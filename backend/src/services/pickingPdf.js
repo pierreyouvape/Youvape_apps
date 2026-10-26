@@ -483,4 +483,52 @@ const buildPrintLines = (rawItems, remainingBySku = null) => {
   return lines;
 };
 
-module.exports = { buildWavePdf, buildWavesPdf, buildPrintLines, withPackRefunds };
+/**
+ * Détail des articles d'une commande, pour le dépliage de la liste du picking :
+ * les mêmes règles que buildPrintLines, mais TOUTES les lignes sont rendues —
+ * packs, articles remboursés en entier, déjà expédiés — pour vérifier ce que le
+ * picking a retenu.
+ *
+ * @returns {{name, variant, sku, qty, refunded, refundedViaPack, isPack, packName, toPrepare, shipped}[]}
+ *   `toPrepare` est null sur une ligne de pack (on prélève ses composants).
+ */
+const buildDetailLines = (rawItems, remainingBySku = null) => {
+  const items = withPackRefunds(rawItems);
+  const packs = items.filter(i => i.type === 'woosb');
+  const remaining = remainingBySku ? new Map(remainingBySku) : null;
+
+  return items.map((i, idx) => {
+    const qty = Number(i.qty) || 0;
+    const refunded = Math.min(qty, Number(i.refunded) || 0);
+    const line = {
+      name: String(i.name || '').replace(/\s+dans le pack\s*:.*$/i, '').trim(),
+      variant: i.type === 'variation' ? variantText(i.attrs) : null,
+      sku: i.sku || null,
+      qty,
+      refunded,
+      refundedViaPack: refunded > (Number(rawItems[idx].refunded) || 0),
+      isPack: i.type === 'woosb',
+      packName: null,
+      toPrepare: null,
+      shipped: 0
+    };
+    if (line.isPack) return line;
+
+    const ordered = qty - refunded;
+    let toPrepare = ordered;
+    if (remaining && i.sku) {
+      const left = remaining.get(i.sku) || 0;
+      toPrepare = Math.min(ordered, left);
+      remaining.set(i.sku, left - toPrepare);
+    }
+    const pack = findPack(i, packs);
+    return {
+      ...line,
+      packName: pack ? String(pack.name).trim() : (Number(i.line_total) === 0 ? packNameInLine(i) : null),
+      toPrepare,
+      shipped: ordered - toPrepare
+    };
+  });
+};
+
+module.exports = { buildWavePdf, buildWavesPdf, buildPrintLines, buildDetailLines, withPackRefunds };

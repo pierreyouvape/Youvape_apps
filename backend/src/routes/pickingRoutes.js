@@ -13,6 +13,7 @@ const canRead = checkPermission('picking', 'read');
 const canWrite = checkPermission('picking', 'write');
 
 router.get('/orders', canRead, pickingController.listOrders);
+router.get('/orders/:orderNumber/items', canRead, pickingController.orderItems);
 router.post('/refresh', canRead, pickingController.refresh);
 router.post('/orders/:orderNumber/block', canWrite, pickingController.block);
 router.delete('/orders/:orderNumber/block', canWrite, pickingController.unblock);

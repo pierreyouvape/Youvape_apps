@@ -43,6 +43,10 @@ const refresh = handle(async (req, res) => {
   res.json(result);
 });
 
+const orderItems = handle(async (req, res) => {
+  res.json(await pickingModel.getOrderItems(req.params.orderNumber));
+});
+
 const block = handle(async (req, res) => {
   await pickingModel.block(req.params.orderNumber, req.body?.reason, req.user?.id);
   res.json({ success: true });
@@ -278,6 +282,7 @@ module.exports = {
   pdaDebugLog,
   releaseWave,
   listOrders,
+  orderItems,
   refresh,
   block,
   unblock,

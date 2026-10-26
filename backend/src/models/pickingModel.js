@@ -10,7 +10,7 @@ const pool = require('../config/database');
 const shippingMethodMapModel = require('./shippingMethodMapModel');
 const { expectedNetwork } = require('../services/carriers/relayPoints');
 const { BUCKETS, allocateStock, physicalFromBms, planWaves, waveNumber } = require('../services/pickingPlanner');
-const { buildPrintLines, withPackRefunds } = require('../services/pickingPdf');
+const { buildDetailLines, buildPrintLines, withPackRefunds } = require('../services/pickingPdf');
 const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 const { partialReplacementOrders } = require('../services/returnPartialService');
 const orderDuplicateModel = require('./orderDuplicateModel');
@@ -222,6 +222,8 @@ const getOrdersView = async () => {
       bmsWaveId: o.bms_wave_id,
       savPartial: savPartial.has(String(o.order_number)),
       duplicates: duplicates.get(String(o.order_number)) || [],
+      // Couverture par le stock, SKU par SKU : le dépliage de la ligne la montre.
+      stock: alloc.lines.map(l => ({ sku: l.sku, qty: l.qty, allocated: l.allocated })),
       items: alloc.lines.reduce((s, l) => s + l.qty, 0),
       missing: alloc.lines.reduce((s, l) => s + (l.qty - l.allocated), 0),
       selectable: !o.block_reason && tags.length === 0 && !o.bms_wave_id
@@ -230,6 +232,43 @@ const getOrdersView = async () => {
   }
   view.sort((a, b) => new Date(a.paidAt) - new Date(b.paidAt));
   return view;
+};
+
+/**
+ * Articles d'une commande pour le dépliage de la liste : lignes WooCommerce
+ * (commandé, remboursé, à préparer d'après le relevé BMS) et lignes que BMS
+ * garde à expédier sans qu'aucune ligne WC ne porte leur SKU — un remboursement
+ * qui n'y trouverait pas sa ligne ne serait pas déduit.
+ */
+const getOrderItems = async (orderNumber) => {
+  if (!/^\d+$/.test(String(orderNumber))) throw httpError(400, 'Numéro de commande invalide.');
+  const [{ rows: items }, { rows: bms }] = await Promise.all([
+    pool.query(
+      `SELECT oi.order_item_name AS name, oi.qty, oi.line_total, oi.product_id,
+              p.sku, p.product_type AS type, p.woosb_ids, p.product_attributes AS attrs,
+              ${REFUNDED_QTY_SQL} AS refunded
+         FROM order_items oi
+         LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
+        WHERE oi.wp_order_id = $1 AND oi.order_item_type = 'line_item'
+        ORDER BY oi.id`,
+      [orderNumber]
+    ),
+    pool.query(
+      'SELECT sku, product_name, qty_to_ship FROM picking_bms_lines WHERE order_number = $1 ORDER BY sku',
+      [String(orderNumber)]
+    )
+  ]);
+
+  const remaining = bms.length ? new Map() : null;
+  for (const l of bms) remaining.set(l.sku, (remaining.get(l.sku) || 0) + Number(l.qty_to_ship));
+  const wcSkus = new Set(items.map(i => i.sku).filter(Boolean));
+
+  return {
+    lines: buildDetailLines(items, remaining),
+    bmsOnly: bms
+      .filter(l => !wcSkus.has(l.sku))
+      .map(l => ({ sku: l.sku, name: l.product_name, qty: Number(l.qty_to_ship) }))
+  };
 };
 
 const countByBucket = (view) => {
@@ -729,6 +768,7 @@ module.exports = {
   BLOCKED,
   correctionTags,
   getOrdersView,
+  getOrderItems,
   countByBucket,
   block,
   unblock,

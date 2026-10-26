@@ -112,6 +112,100 @@ const Banner = ({ kind, children, onClose }) => (
 
 // ── Onglet Commandes ────────────────────────────────────────────────────────
 
+const sub = { fontSize: 12, color: C.greyT };
+
+/**
+ * Articles d'une commande, sous sa ligne : commandé, remboursé, à préparer
+ * (d'après le relevé BMS) et couverture par le stock. Sert à vérifier qu'un
+ * remboursement a bien été déduit.
+ */
+function OrderItemsDetail({ order, detail }) {
+  if (!detail) return <span style={{ color: C.greyT }}>Chargement des articles…</span>;
+  if (detail.error) return <span style={{ color: C.red }}>{detail.error}</span>;
+  if (detail.lines.length === 0 && detail.bmsOnly.length === 0) {
+    return <span style={{ color: C.greyT }}>Aucun article dans notre base pour cette commande.</span>;
+  }
+
+  // Manquants de stock par SKU, imputés aux lignes dans l'ordre.
+  const missing = new Map();
+  for (const l of order.stock || []) missing.set(l.sku, (missing.get(l.sku) || 0) + l.qty - l.allocated);
+
+  const dth = { ...th, padding: '6px 10px', fontSize: 11, background: 'transparent' };
+  const dtd = { ...td, padding: '7px 10px', fontSize: 13 };
+  const num = { ...dtd, textAlign: 'right', whiteSpace: 'nowrap', width: 90 };
+
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', background: C.white, borderRadius: 8 }}>
+      <thead>
+        <tr>
+          <th style={dth}>Article</th>
+          <th style={dth}>SKU</th>
+          <th style={{ ...dth, textAlign: 'right' }}>Commandé</th>
+          <th style={{ ...dth, textAlign: 'right' }}>Remboursé</th>
+          <th style={{ ...dth, textAlign: 'right' }}>À préparer</th>
+          <th style={dth}>Stock</th>
+        </tr>
+      </thead>
+      <tbody>
+        {detail.lines.map((l, i) => {
+          const off = !l.isPack && l.toPrepare === 0;
+          let stock = null;
+          if (!l.isPack && l.toPrepare > 0 && l.sku) {
+            const m = Math.min(missing.get(l.sku) || 0, l.toPrepare);
+            if (m > 0) missing.set(l.sku, missing.get(l.sku) - m);
+            stock = m > 0
+              ? <Chip color={C.red} bg={C.redL}>Manque {m}</Chip>
+              : <Chip color={C.green} bg={C.greenL}>OK</Chip>;
+          }
+          return (
+            <tr key={i} style={{ opacity: off ? 0.55 : 1 }}>
+              <td style={{ ...dtd, paddingLeft: l.packName ? 28 : 10 }}>
+                <span style={{ textDecoration: off && l.refunded > 0 ? 'line-through' : 'none', fontWeight: l.isPack ? 700 : 500 }}>
+                  {l.name}
+                </span>
+                {l.variant && <span style={sub}> — {l.variant}</span>}
+                {l.isPack && <div style={sub}>Pack : on prélève ses composants ci-dessous</div>}
+                {l.packName && <div style={sub}>Dans le pack : {l.packName}</div>}
+              </td>
+              <td style={{ ...dtd, fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{l.sku || '—'}</td>
+              <td style={num}>{l.qty}</td>
+              <td style={num}>
+                {l.refunded > 0
+                  ? (
+                    <Chip color={C.red} bg={C.redL} title={l.refundedViaPack ? 'Remboursement du pack reporté sur ce composant' : ''}>
+                      −{l.refunded}{l.refundedViaPack ? ' (pack)' : ''}
+                    </Chip>
+                  )
+                  : <span style={{ color: C.greyM }}>—</span>}
+              </td>
+              <td style={{ ...num, fontWeight: 700 }}>
+                {l.isPack ? <span style={{ color: C.greyM, fontWeight: 400 }}>—</span> : l.toPrepare}
+                {l.shipped > 0 && <div style={{ ...sub, fontWeight: 400 }}>{l.shipped} déjà expédié(s)</div>}
+              </td>
+              <td style={dtd}>{stock}</td>
+            </tr>
+          );
+        })}
+        {detail.bmsOnly.map(l => (
+          <tr key={`bms-${l.sku}`} style={{ background: C.amberL }}>
+            <td style={dtd}>
+              {l.name || '—'}
+              <div style={{ ...sub, color: C.amber }}>
+                À expédier dans BMS, mais aucun article de la commande WooCommerce ne porte ce SKU : un remboursement n'y serait pas déduit.
+              </div>
+            </td>
+            <td style={{ ...dtd, fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{l.sku}</td>
+            <td style={num}>—</td>
+            <td style={num}>—</td>
+            <td style={{ ...num, fontWeight: 700 }}>{l.qty}</td>
+            <td style={dtd} />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -126,6 +220,8 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
   const [blockReason, setBlockReason] = useState('');
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(new Set());
+  const [details, setDetails] = useState({});
 
   const load = useCallback(async () => {
     try {
@@ -187,6 +283,24 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
     setCountry('');
     setCarrier('');
     setSelected(new Set());
+  };
+
+  // Un clic sur la ligne la déplie, sauf sur ce qui a déjà son action
+  // (case, lien, bouton). Le détail est relu à chaque ouverture.
+  const toggleExpand = async (e, n) => {
+    if (e.target.closest('a, button, input, label')) return;
+    if (expanded.has(n)) {
+      setExpanded(prev => { const next = new Set(prev); next.delete(n); return next; });
+      return;
+    }
+    setExpanded(prev => new Set(prev).add(n));
+    setDetails(prev => ({ ...prev, [n]: null }));
+    try {
+      const { data: d } = await axios.get(`${API_URL}/picking/orders/${n}/items`, authHeaders(token));
+      setDetails(prev => ({ ...prev, [n]: d }));
+    } catch (err) {
+      setDetails(prev => ({ ...prev, [n]: { error: err.response?.data?.error || err.message } }));
+    }
   };
 
   const toggle = (n) => setSelected(prev => {
@@ -370,8 +484,14 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
             )}
             {shown.map((o, i) => {
               const checked = selected.has(o.orderNumber);
+              const isOpen = expanded.has(o.orderNumber);
               return (
-                <tr key={o.orderNumber} style={{ background: checked ? C.rowSel : i % 2 ? C.zebra : C.white }}>
+                <Fragment key={o.orderNumber}>
+                <tr
+                  onClick={e => toggleExpand(e, o.orderNumber)}
+                  title={isOpen ? 'Replier' : 'Voir les articles'}
+                  style={{ background: checked || isOpen ? C.rowSel : i % 2 ? C.zebra : C.white, cursor: 'pointer' }}
+                >
                   <td style={td}>
                     {canWrite && (
                       <input
@@ -381,7 +501,8 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                       />
                     )}
                   </td>
-                  <td style={{ ...td, fontWeight: 600 }}>
+                  <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-block', width: 14, color: C.greyM }}>{isOpen ? '▾' : '▸'}</span>
                     <Link to={`/orders/${o.orderNumber}`} style={{ color: C.primary, textDecoration: 'none' }}>{o.orderNumber}</Link>
                   </td>
                   <td style={td}>{o.name || <span style={{ color: C.greyM }}>—</span>}</td>
@@ -459,6 +580,14 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                     </td>
                   )}
                 </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={canWrite ? 9 : 8} style={{ ...td, background: C.grey, padding: '8px 16px 14px 48px' }}>
+                      <OrderItemsDetail order={o} detail={details[o.orderNumber]} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
