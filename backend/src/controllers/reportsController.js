@@ -1,13 +1,18 @@
 const pool = require('../config/database');
 const { computeDashboard } = require('./financierController');
 
+// Granularité des tableaux/graphes datés (jour, semaine ISO commençant le lundi, mois).
+// Valeur injectée dans DATE_TRUNC : liste blanche obligatoire.
+const granularityOf = (g) => (g === 'week' || g === 'month' ? g : 'day');
+
 /**
  * Rapport Chiffre d'affaires (Revenue)
  * POST /api/reports/revenue
  */
 exports.getRevenueReport = async (req, res) => {
   try {
-    const { dateFrom, dateTo, statuses } = req.body;
+    const { dateFrom, dateTo, statuses, granularity } = req.body;
+    const gran = granularityOf(granularity);
 
     // Conditions de base
     let conditions = [];
@@ -46,7 +51,7 @@ exports.getRevenueReport = async (req, res) => {
     // 2. Breakdown jour par jour
     const breakdownQuery = `
       WITH filtered_orders AS (
-        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, DATE_TRUNC('day', (o.post_date))::date as date
+        SELECT DISTINCT o.wp_order_id, o.order_total, o.order_tax, o.order_shipping, DATE_TRUNC('${gran}', (o.post_date))::date as date
         FROM orders o
         ${whereClause}
       )
@@ -265,7 +270,8 @@ exports.getByTaxReport = async (req, res) => {
  */
 exports.getProfitReport = async (req, res) => {
   try {
-    const { dateFrom, dateTo } = req.body;
+    const { dateFrom, dateTo, granularity } = req.body;
+    const gran = granularityOf(granularity);
 
     let conditions = [`o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')`];
     let params = [];
@@ -325,14 +331,14 @@ exports.getProfitReport = async (req, res) => {
     // Breakdown jour par jour
     const breakdownQuery = `
       SELECT
-        DATE_TRUNC('day', (o.post_date))::date as date,
+        DATE_TRUNC('${gran}', (o.post_date))::date as date,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
         COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
         COALESCE(SUM(o.shipping_cost_calculated), 0)::numeric as shipping_cost
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (o.post_date))::date
+      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
@@ -340,14 +346,14 @@ exports.getProfitReport = async (req, res) => {
     // Coût produits (PMP FIFO) par jour
     const productCostByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (o.post_date))::date as date,
+        DATE_TRUNC('${gran}', (o.post_date))::date as date,
         COALESCE(SUM(oi.qty * CASE WHEN p.product_type = 'woosb' THEN 0 ELSE COALESCE(p.computed_cost, NULLIF(p.wc_cog_cost,0), par.computed_cost, NULLIF(par.wc_cog_cost,0), 0) END), 0)::numeric as product_cost
       FROM order_items oi
       JOIN orders o ON oi.wp_order_id = o.wp_order_id
       LEFT JOIN products p ON p.wp_product_id = COALESCE(NULLIF(oi.variation_id, 0), oi.product_id)
       LEFT JOIN products par ON par.wp_product_id = p.wp_parent_id
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (o.post_date))::date
+      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date
     `;
     const productCostByDayResult = await pool.query(productCostByDayQuery, params);
     const productCostByDay = {};
@@ -358,13 +364,13 @@ exports.getProfitReport = async (req, res) => {
     // Frais de transaction par jour et par moyen de paiement
     const transactionCostByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (o.post_date))::date as date,
+        DATE_TRUNC('${gran}', (o.post_date))::date as date,
         COALESCE(payment_method_title, 'default') as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as total_amount
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (o.post_date))::date, payment_method_title
+      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date, payment_method_title
     `;
     const transactionCostByDayResult = await pool.query(transactionCostByDayQuery, params);
     const transactionCostByDay = {};
@@ -381,11 +387,11 @@ exports.getProfitReport = async (req, res) => {
     // Calculer les refunds par jour
     const refundsByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (r.refund_date))::date as date,
+        DATE_TRUNC('${gran}', (r.refund_date))::date as date,
         COALESCE(SUM(r.refund_amount), 0)::numeric as refunds
       FROM refunds r
       ${refundsWhereClause}
-      GROUP BY DATE_TRUNC('day', (r.refund_date))::date
+      GROUP BY DATE_TRUNC('${gran}', (r.refund_date))::date
     `;
     const refundsByDayResult = await pool.query(refundsByDayQuery, refundsParams);
     const refundsByDay = {};
@@ -535,7 +541,8 @@ exports.getTransactionCosts = async (req, res) => {
  */
 exports.getOrdersReport = async (req, res) => {
   try {
-    const { dateFrom, dateTo } = req.body;
+    const { dateFrom, dateTo, granularity } = req.body;
+    const gran = granularityOf(granularity);
 
     let conditions = [];
     let params = [];
@@ -610,14 +617,14 @@ exports.getOrdersReport = async (req, res) => {
     // 3. Breakdown jour par jour
     const breakdownQuery = `
       SELECT
-        DATE_TRUNC('day', (o.post_date))::date as date,
+        DATE_TRUNC('${gran}', (o.post_date))::date as date,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales,
         COALESCE(SUM(o.order_tax), 0)::numeric as taxes,
         COALESCE(SUM(o.order_shipping), 0)::numeric as shipping
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (o.post_date))::date
+      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);
@@ -843,12 +850,12 @@ exports.getOrdersReport = async (req, res) => {
     // 11. Average order gross by day
     const avgOrderByDayQuery = `
       SELECT
-        DATE_TRUNC('day', (o.post_date))::date as date,
+        DATE_TRUNC('${gran}', (o.post_date))::date as date,
         AVG(o.order_total)::numeric as avg_gross,
         AVG((SELECT COUNT(*) FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id))::numeric as avg_items
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('day', (o.post_date))::date
+      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date
       ORDER BY date ASC
     `;
     const avgOrderByDayResult = await pool.query(avgOrderByDayQuery, params);
@@ -1035,7 +1042,8 @@ exports.getOrdersReport = async (req, res) => {
  */
 exports.getRefundsReport = async (req, res) => {
   try {
-    const { dateFrom, dateTo } = req.body;
+    const { dateFrom, dateTo, granularity } = req.body;
+    const gran = granularityOf(granularity);
 
     // Conditions pour les remboursements
     let refundConditions = [];
@@ -1108,12 +1116,12 @@ exports.getRefundsReport = async (req, res) => {
     // 3. Breakdown par jour
     const breakdownQuery = `
       SELECT
-        DATE((r.refund_date)) as date,
+        DATE_TRUNC('${gran}', (r.refund_date))::date as date,
         COUNT(*)::int as refunds_count,
         COALESCE(SUM(r.refund_amount), 0)::numeric as refund_amount
       FROM refunds r
       ${refundWhereClause}
-      GROUP BY DATE((r.refund_date))
+      GROUP BY DATE_TRUNC('${gran}', (r.refund_date))::date
       ORDER BY date ASC
     `;
     const breakdownResult = await pool.query(breakdownQuery, params);

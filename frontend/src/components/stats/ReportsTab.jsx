@@ -43,6 +43,9 @@ const ReportsTab = () => {
   const [selectedPreset, setSelectedPreset] = useState('this_month');
   const [dateFrom, setDateFrom] = useState(fmtDate(firstDayOfMonth));
   const [dateTo, setDateTo] = useState(fmtDate(today));
+  // Regroupement des tableaux/graphes datés : jour, semaine (lundi) ou mois
+  const [granularity, setGranularity] = useState('day');
+  const periodLabel = { day: 'jour', week: 'semaine', month: 'mois' }[granularity];
 
   const getPresetDates = (preset) => {
     const now = new Date();
@@ -100,8 +103,20 @@ const ReportsTab = () => {
   const handleDateFromChange = (val) => { setSelectedPreset('custom'); setDateFrom(val); };
   const handleDateToChange = (val) => { setSelectedPreset('custom'); setDateTo(val); };
 
-  const renderDateControls = () => (
-    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+  const renderDateControls = (showGranularity = true) => (
+    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+      {showGranularity && (
+        <select
+          value={granularity}
+          onChange={(e) => setGranularity(e.target.value)}
+          title="Regroupement des graphiques et tableaux"
+          style={{ padding: '8px 12px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer' }}
+        >
+          <option value="day">Par jour</option>
+          <option value="week">Par semaine</option>
+          <option value="month">Par mois</option>
+        </select>
+      )}
       <select
         value={selectedPreset}
         onChange={(e) => handlePresetChange(e.target.value)}
@@ -148,14 +163,15 @@ const ReportsTab = () => {
     } else if (activeSection === 'stock-value') {
       fetchStockValueReport();
     }
-  }, [activeSection, dateFrom, dateTo]);
+  }, [activeSection, dateFrom, dateTo, granularity]);
 
   const fetchRevenueReport = async () => {
     setLoading(true);
     try {
       const response = await axios.post(`${API_BASE_URL}/reports/revenue`, {
         dateFrom,
-        dateTo
+        dateTo,
+        granularity
       });
       if (response.data.success) {
         setData(response.data.data);
@@ -171,7 +187,7 @@ const ReportsTab = () => {
     setLoading(true);
     try {
       const [profitRes, transactionRes, shippingRes] = await Promise.all([
-        axios.post(`${API_BASE_URL}/reports/profit`, { dateFrom, dateTo }),
+        axios.post(`${API_BASE_URL}/reports/profit`, { dateFrom, dateTo, granularity }),
         axios.post(`${API_BASE_URL}/reports/profit/transaction-costs`, { dateFrom, dateTo }),
         axios.post(`${API_BASE_URL}/reports/profit/shipping-costs`, { dateFrom, dateTo })
       ]);
@@ -197,7 +213,8 @@ const ReportsTab = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/reports/orders`, {
         dateFrom,
-        dateTo
+        dateTo,
+        granularity
       });
       if (response.data.success) {
         setOrdersData(response.data.data);
@@ -214,7 +231,8 @@ const ReportsTab = () => {
     try {
       const response = await axios.post(`${API_BASE_URL}/reports/refunds`, {
         dateFrom,
-        dateTo
+        dateTo,
+        granularity
       });
       if (response.data.success) {
         setRefundsData(response.data.data);
@@ -302,18 +320,36 @@ const ReportsTab = () => {
     return date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
   };
 
+  // Libellés des périodes regroupées (date = début de la période renvoyée par le serveur)
+  const formatPeriod = (dateStr) => {
+    const date = new Date(dateStr);
+    if (granularity === 'month') return date.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+    if (granularity === 'week') return `S. ${date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}`;
+    return formatDate(dateStr);
+  };
+
+  const formatFullPeriod = (dateStr) => {
+    const date = new Date(dateStr);
+    if (granularity === 'month') {
+      const label = date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+      return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+    if (granularity === 'week') return `Semaine du ${formatFullDate(dateStr)}`;
+    return formatFullDate(dateStr);
+  };
+
   // Préparer les données pour le graphique Revenue
   const chartData = data?.breakdown?.map(item => ({
-    date: formatDate(item.date),
-    fullDate: formatFullDate(item.date),
+    date: formatPeriod(item.date),
+    fullDate: formatFullPeriod(item.date),
     ca: parseFloat(item.gross_sales),
     net: parseFloat(item.net)
   })) || [];
 
   // Préparer les données pour le graphique Profit
   const profitChartData = profitData?.breakdown?.map(item => ({
-    date: formatDate(item.date),
-    fullDate: formatFullDate(item.date),
+    date: formatPeriod(item.date),
+    fullDate: formatFullPeriod(item.date),
     netRevenue: parseFloat(item.net_revenue),
     cost: parseFloat(item.cost),
     profit: parseFloat(item.profit)
@@ -456,7 +492,7 @@ const ReportsTab = () => {
             border: '1px solid #e9ecef'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Détail par jour</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Détail par {periodLabel}</h3>
             </div>
             <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -472,7 +508,7 @@ const ReportsTab = () => {
                 <tbody>
                   {data.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullPeriod(row.date)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
@@ -637,7 +673,7 @@ const ReportsTab = () => {
             marginBottom: '30px'
           }}>
             <div style={{ padding: '15px 20px', borderBottom: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Profit by Date</h3>
+              <h3 style={{ margin: 0, color: '#2a2e38', fontSize: '16px' }}>Profit par {periodLabel}</h3>
             </div>
             <div style={{ overflowX: 'auto', maxHeight: '400px', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -657,7 +693,7 @@ const ReportsTab = () => {
                 <tbody>
                   {profitData.breakdown.map((row, idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #e9ecef' }}>
-                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullDate(row.date)}</td>
+                      <td style={{ padding: '12px 15px', color: '#2a2e38', fontSize: '13px' }}>{formatFullPeriod(row.date)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#135E84', fontSize: '13px', fontWeight: '600' }}>{(row.orders_count || 0).toLocaleString('fr-FR')}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#2a2e38', fontSize: '13px' }}>{formatPrice(row.gross_sales)}</td>
                       <td style={{ padding: '12px 15px', textAlign: 'right', color: '#666', fontSize: '13px' }}>{formatPrice(row.taxes)}</td>
@@ -767,15 +803,15 @@ const ReportsTab = () => {
 
   // Préparer les données pour les graphiques Commandes
   const ordersChartData = ordersData?.breakdown?.map(item => ({
-    date: formatDate(item.date),
-    fullDate: formatFullDate(item.date),
+    date: formatPeriod(item.date),
+    fullDate: formatFullPeriod(item.date),
     orders: item.orders_count,
     netSales: parseFloat(item.net_sales)
   })) || [];
 
   const avgOrderChartData = ordersData?.avgOrderByDay?.map(item => ({
-    date: formatDate(item.date),
-    fullDate: formatFullDate(item.date),
+    date: formatPeriod(item.date),
+    fullDate: formatFullPeriod(item.date),
     avgGross: parseFloat(item.avg_gross),
     avgItems: parseFloat(item.avg_items)
   })) || [];
@@ -1078,7 +1114,7 @@ const ReportsTab = () => {
           {/* Panier moyen et articles moyens par jour */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '20px', marginBottom: '30px' }}>
             <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef' }}>
-              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Panier moyen TTC par jour</h3>
+              <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Panier moyen TTC par {periodLabel}</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={avgOrderChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e9ecef" />
@@ -1202,11 +1238,13 @@ const ReportsTab = () => {
 
           {/* Graphique par jour */}
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '20px', border: '1px solid #e9ecef', marginBottom: '30px' }}>
-            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Remboursements par jour</h3>
+            <h3 style={{ margin: '0 0 15px', color: '#2a2e38', fontSize: '16px' }}>Remboursements par {periodLabel}</h3>
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={refundsData.breakdown.map(d => ({
-                date: new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }),
-                fullDate: new Date(d.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
+                date: formatPeriod(d.date),
+                fullDate: granularity === 'day'
+                  ? new Date(d.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+                  : formatFullPeriod(d.date),
                 refunds: d.refunds_count,
                 amount: parseFloat(d.refund_amount)
               }))}>
@@ -1338,7 +1376,7 @@ const ReportsTab = () => {
             Du {formatFullDate(dateFrom)} au {formatFullDate(dateTo)}
           </p>
         </div>
-        {renderDateControls()}
+        {renderDateControls(false)}
       </div>
 
       {loading ? (
