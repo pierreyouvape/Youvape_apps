@@ -380,11 +380,13 @@ const generate = async (req, res) => {
  * redemande.
  *
  * GET /api/bordereaux/history?limit=50
+ * GET /api/bordereaux/history?day=AAAA-MM-JJ — tous les bordereaux de ce jour
  */
 const listHistory = async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-    const rows = await bordereauModel.listHistory({ limit });
+    const day = req.query.day ? lireDate(req.query.day) : null;
+    const rows = await bordereauModel.listHistory({ limit: day ? 200 : limit, day });
     res.json(rows.map(r => ({ ...r, fileName: depositSlipFileName(r.bordereau_number) })));
   } catch (error) {
     console.error(`[${LOG_TAG}] Erreur listHistory :`, error.message);

@@ -166,6 +166,10 @@ const BordereauApp = () => {
   const [enCours, setEnCours] = useState(null);        // code transporteur en génération
   const [confirmation, setConfirmation] = useState(null);
   const [historique, setHistorique] = useState([]);
+  // Jour cherché dans l'historique ('' = les derniers émis). Sans lui, un
+  // bordereau de plus de ~8 jours sortait de la liste et devenait introuvable.
+  const [jourHistorique, setJourHistorique] = useState('');
+  const [chargementHistorique, setChargementHistorique] = useState(false);
   const [colisOuverts, setColisOuverts] = useState({}); // id bordereau -> colis
   const [reimpression, setReimpression] = useState(null);
 
@@ -197,19 +201,23 @@ const BordereauApp = () => {
   }, [token]);
 
   const chargerHistorique = useCallback(async () => {
+    setChargementHistorique(true);
     try {
       const res = await axios.get(`${API_URL}/bordereaux/history`, {
-        ...authHeaders(token), params: { limit: 30 },
+        ...authHeaders(token), params: jourHistorique ? { day: jourHistorique } : { limit: 30 },
       });
       setHistorique(res.data || []);
     } catch {
       // L'historique n'est pas vital : son absence ne doit pas masquer la liste
       // des colis à déposer, qui est le travail du jour.
       setHistorique([]);
+    } finally {
+      setChargementHistorique(false);
     }
-  }, [token]);
+  }, [token, jourHistorique]);
 
-  useEffect(() => { chargerPending(since); chargerHistorique(); }, [chargerPending, chargerHistorique, since]);
+  useEffect(() => { chargerPending(since); }, [chargerPending, since]);
+  useEffect(() => { chargerHistorique(); }, [chargerHistorique]);
 
   const changerTransporteur = (valeur) => {
     if (String(valeur).startsWith('planned:')) return;
@@ -252,14 +260,17 @@ const BordereauApp = () => {
       setResultat(res.data);
       if (res.data.created?.length) await telechargerBordereaux(res.data.created);
       await chargerPending(since);
-      await chargerHistorique();
+      // Le bordereau neuf doit se voir : on quitte un jour passé pour les
+      // derniers émis (le changement de jour recharge l'historique).
+      if (jourHistorique) setJourHistorique('');
+      else await chargerHistorique();
     } catch (err) {
       setErreur(err.response?.data?.userMessage || err.response?.data?.details
         || err.response?.data?.error || 'Erreur lors de la génération');
     } finally {
       setEnCours(null);
     }
-  }, [since, token, telechargerBordereaux, chargerPending, chargerHistorique]);
+  }, [since, token, telechargerBordereaux, chargerPending, chargerHistorique, jourHistorique]);
 
   const voirColis = useCallback(async (bordereau) => {
     if (colisOuverts[bordereau.id]) {
@@ -492,11 +503,45 @@ const BordereauApp = () => {
             celui que le chauffeur redemande.
           </p>
 
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12,
+          }}>
+            <label style={{ fontSize: 13.5, fontWeight: 600, color: C.dark }}>
+              Bordereaux du
+            </label>
+            <input
+              type="date"
+              value={jourHistorique}
+              max={aujourdhuiParis()}
+              onChange={e => setJourHistorique(e.target.value)}
+              style={{
+                padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.greyB}`,
+                fontSize: 14, fontFamily: 'inherit', color: C.dark,
+              }}
+            />
+            {jourHistorique && (
+              <Btn variant="ghost" small onClick={() => setJourHistorique('')}>
+                Derniers émis
+              </Btn>
+            )}
+            <span style={{ marginLeft: 'auto', fontSize: 13, color: C.greyT }}>
+              {chargementHistorique
+                ? 'Chargement…'
+                : jourHistorique
+                  ? `${historique.length} bordereau${historique.length > 1 ? 'x' : ''} le ${fmtJour(jourHistorique)}`
+                  : `Les ${historique.length} derniers`}
+            </span>
+          </div>
+
           {historique.length === 0 ? (
             <div style={{
               background: C.white, border: `1px dashed ${C.greyB}`, borderRadius: 12,
               padding: '22px 18px', color: C.greyT, fontSize: 13.5,
-            }}>Aucun bordereau émis pour l'instant.</div>
+            }}>
+              {jourHistorique
+                ? `Aucun bordereau émis le ${fmtJour(jourHistorique)}.`
+                : "Aucun bordereau émis pour l'instant."}
+            </div>
           ) : (
             <div style={{
               background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflow: 'hidden',

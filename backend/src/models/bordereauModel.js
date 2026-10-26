@@ -167,12 +167,18 @@ const insertBordereau = async (client, {
  * signé par le chauffeur porte un nombre de colis qui ne bouge plus, même si
  * une étiquette est annulée après coup.
  *
- * @param {{limit?: number, carrierCodes?: string[]}} [options]
+ * `day` (AAAA-MM-JJ, jour de Paris) ramène TOUS les bordereaux de ce jour-là :
+ * sans lui, seuls les `limit` derniers sont visibles, et un bordereau d'il y a
+ * deux semaines devenait introuvable à l'écran (~4 par jour).
+ *
+ * @param {{limit?: number, carrierCodes?: string[], day?: string}} [options]
  * @returns {Promise<object[]>}
  */
-const listHistory = async ({ limit = 50, carrierCodes = null } = {}) => {
+const listHistory = async ({ limit = 50, carrierCodes = null, day = null } = {}) => {
   await assertSchemaReady();
 
+  // created_at est en UTC (timestamp sans fuseau) : on compare au jour de Paris,
+  // comme listPending, sinon un bordereau émis après 22h/23h tomberait le lendemain.
   const { rows } = await pool.query(
     `SELECT b.id, b.carrier_code, b.account_code, b.bordereau_number,
             b.published_at, b.parcel_count, b.created_at,
@@ -181,9 +187,11 @@ const listHistory = async ({ limit = 50, carrierCodes = null } = {}) => {
        FROM shipment_bordereaux b
        LEFT JOIN users u ON u.id = b.created_by
       WHERE ($2::text[] IS NULL OR b.carrier_code = ANY($2))
+        AND ($3::date IS NULL
+             OR ((b.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Paris')::date = $3::date)
       ORDER BY b.created_at DESC
       LIMIT $1`,
-    [limit, carrierCodes]
+    [limit, carrierCodes, day]
   );
   return rows;
 };
