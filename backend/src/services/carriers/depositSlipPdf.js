@@ -184,11 +184,6 @@ const buildDepositSlipPdf = async ({ carrierLabel, number, accountLabel, setting
       page.drawText('Colis remis', { x: xDroite, y, size: 9, font: gras, color: GRIS });
       page.drawText(`${lignes.length} colis`, { x: xDroite, y: y - 14, size: 11, font: gras, color: NOIR });
       page.drawText(`Contrat ${accountLabel}`, { x: xDroite, y: y - 28, size: 10, font: normal, color: GRIS });
-      // Dire ce qu'est ce papier, pour qu'on ne le prenne pas pour une pièce du
-      // transporteur : c'est nous qui l'émettons.
-      page.drawText(`Document émis par YouVape Apps — ${carrierLabel} ne fournit pas de bordereau.`, {
-        x: x0, y: y - 56, size: 8.5, font: normal, color: GRIS
-      });
 
       y -= 76;
     } else {
