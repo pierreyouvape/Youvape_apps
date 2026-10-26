@@ -37,6 +37,7 @@ router.post('/analyse', canWrite, upload.single('file'), controller.analyseDocum
 
 // Déclarées avant '/:id' : sans ça, « orders » serait pris pour un identifiant.
 // Factures rangées sans lecture (AliExpress) : numéro, date et montant saisis.
+router.post('/manual/read', canWrite, upload.single('file'), controller.readManualDocument);
 router.post('/manual', canWrite, upload.single('file'), controller.uploadManualDocument);
 router.post('/apply-tariffs', canWrite, controller.applyTariffs);
 

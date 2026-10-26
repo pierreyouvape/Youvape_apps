@@ -37,6 +37,8 @@ const { resolveCompleteRefs } = require('../utils/refResolution');
 const { detachVouchers } = require('../utils/invoiceVouchers');
 const supplierVoucherModel = require('../models/supplierVoucherModel');
 const { piecesSoldeesSql } = require('../models/orderLifecycleModel');
+const { isImage, imageToText } = require('../utils/imageOcr');
+const { parseAliexpressReceipt } = require('../parsers/invoices/aliexpressReceipt');
 
 /** Extrait le texte d'un PDF (ou lit un fichier texte), puis le nettoie. */
 async function extractText(buffer) {
@@ -322,7 +324,28 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
   };
 }
 
+/**
+ * Pré-remplir le dépôt manuel (AliExpress) depuis le document : PDF lu en
+ * texte, image passée à l'OCR. Ne lève jamais — un document illisible donne
+ * des champs vides, que l'acheteur saisit à la main.
+ */
+async function readManualInvoice(buffer) {
+  try {
+    let text = '';
+    if (isPdf(buffer)) text = await extractText(buffer);
+    else if (isImage(buffer)) text = await imageToText(buffer);
+    else return { fields: null, warning: 'Format non lu : saisis les montants à la main' };
+    const fields = parseAliexpressReceipt(text);
+    const vide = Object.values(fields).every((v) => v === null);
+    return { fields, warning: vide ? 'Rien de reconnaissable dans ce document : saisis les montants à la main' : null };
+  } catch (error) {
+    console.error('[supplier-invoices] lecture manuelle :', error.message);
+    return { fields: null, warning: 'Lecture impossible : saisis les montants à la main' };
+  }
+}
+
 module.exports = {
+  readManualInvoice,
   analyseInvoice,
   findOrderByRef,
   findRefProducts,

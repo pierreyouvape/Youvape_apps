@@ -326,6 +326,17 @@ async function uploadManualDocument(req, res) {
   }
 }
 
+/**
+ * POST /api/supplier-invoices/manual/read — pré-remplissage du dépôt manuel.
+ * Rien n'est écrit ni conservé ; les champs lus restent à vérifier à l'écran.
+ */
+async function readManualDocument(req, res) {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({ error: 'Aucun fichier reçu' });
+  }
+  return res.json(await supplierInvoiceService.readManualInvoice(req.file.buffer));
+}
+
 /** GET /api/supplier-invoices — liste filtrable. */
 async function listDocuments(req, res) {
   try {
@@ -906,6 +917,7 @@ module.exports = {
   analyseDocument,
   uploadDocument,
   uploadManualDocument,
+  readManualDocument,
   listDocuments,
   getDocument,
   downloadDocument,

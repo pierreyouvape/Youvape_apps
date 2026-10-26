@@ -1044,10 +1044,33 @@ function ManualInvoiceForm({ supplierId, mobile, onSaved }) {
   const [deposees, setDeposees] = useState([]);
   const fileInput = useRef(null);
 
-  const choisir = (f) => {
+  // Lecture du document (texte du PDF, OCR d'une capture) pour pré-remplir
+  // numéro, date et montants : une suggestion, toujours à vérifier avant
+  // d'enregistrer. Le jeton écarte la réponse d'un fichier déjà remplacé.
+  const [lecture, setLecture] = useState(null); // null | 'en cours' | 'lu' | message
+  const jeton = useRef(0);
+  const choisir = async (f) => {
     setFile(f || null);
-    // Le nom du fichier porte souvent le numéro : une suggestion, à corriger.
-    if (f && !number) setNumber(f.name.replace(/\.[^.]+$/, ''));
+    setLecture(null);
+    if (!f) return;
+    const moi = ++jeton.current;
+    setLecture('en cours');
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      const { data } = await axios.post(`${BASE}/manual/read`, form);
+      if (moi !== jeton.current) return;
+      const l = data.fields || {};
+      setNumber(l.number || f.name.replace(/\.[^.]+$/, ''));
+      if (l.date) setDocDate(l.date);
+      setTtc(l.totalTtc != null ? String(l.totalTtc).replace('.', ',') : '');
+      setTva(l.totalTva != null ? String(l.totalTva).replace('.', ',') : '');
+      setLecture(data.warning || 'lu');
+    } catch {
+      if (moi !== jeton.current) return;
+      setNumber((n) => n || f.name.replace(/\.[^.]+$/, ''));
+      setLecture('Lecture impossible : saisis les montants à la main');
+    }
   };
 
   const save = async () => {
@@ -1063,7 +1086,7 @@ function ManualInvoiceForm({ supplierId, mobile, onSaved }) {
       if (order) form.append('order_id', order.id);
       const { data } = await axios.post(`${BASE}/manual`, form);
       setDeposees((l) => [...l, data.document]);
-      setFile(null); setNumber(''); setTtc(''); setTva('');
+      setFile(null); setNumber(''); setTtc(''); setTva(''); setLecture(null);
       if (fileInput.current) fileInput.current.value = '';
       onSaved();
     } catch (e) {
@@ -1073,7 +1096,7 @@ function ManualInvoiceForm({ supplierId, mobile, onSaved }) {
   };
 
   const totalDepose = deposees.reduce((t, d) => t + Number(d.total_ttc || 0), 0);
-  const pret = file && number.trim() && docDate && ttc !== '' && !busy;
+  const pret = file && number.trim() && docDate && ttc !== '' && !busy && lecture !== 'en cours';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1112,6 +1135,11 @@ function ManualInvoiceForm({ supplierId, mobile, onSaved }) {
           onChange={(e) => choisir(e.target.files[0])} />
         <div style={{ fontWeight: 600, color: file ? C.main : C.greyT, fontSize: 14 }}>
           {file ? file.name : 'Déposer la facture ici, ou cliquer pour choisir'}
+        </div>
+        <div style={{ fontSize: 12, color: lecture && !['en cours', 'lu'].includes(lecture) ? C.orange : C.greyM, marginTop: 5 }}>
+          {lecture === 'en cours' ? 'Lecture du document…'
+            : lecture === 'lu' ? 'Champs remplis depuis le document : vérifie-les avant d’enregistrer.'
+              : lecture || 'PDF ou capture d’écran : numéro, date et montant sont lus automatiquement.'}
         </div>
       </div>
 
