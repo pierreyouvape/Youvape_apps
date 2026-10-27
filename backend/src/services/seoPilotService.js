@@ -397,7 +397,7 @@ const inspectPage = async (url) => {
     location: res.headers?.location || null,
     title: pick(/<title[^>]*>([\s\S]*?)<\/title>/i),
     h1: pick(/<h1[^>]*>([\s\S]*?)<\/h1>/i),
-    meta: pick(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i),
+    meta: pick(/<meta\s+name=["']description["']\s+content="([^"]*)"/i) || pick(/<meta\s+name=["']description["']\s+content='([^']*)'/i),
     robots,
     noindex: /noindex/i.test(robots || ''),
     canonical: pick(/<link\s+rel=["']canonical["']\s+href=["']([^"']*)["']/i),

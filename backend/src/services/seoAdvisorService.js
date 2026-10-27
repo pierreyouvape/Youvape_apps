@@ -186,7 +186,7 @@ const auditUrl = async (url) => {
       location: res.headers.location || null,
       title: pick(html, /<title[^>]*>([\s\S]*?)<\/title>/i),
       h1: pick(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i)?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || null,
-      meta_description: pick(html, /<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i),
+      meta_description: pick(html, /<meta\s+name=["']description["']\s+content="([^"]*)"/i) || pick(html, /<meta\s+name=["']description["']\s+content='([^']*)'/i),
       robots: pick(html, /<meta\s+name=["']robots["']\s+content=["']([^"']*)["']/i),
       canonical: pick(html, /<link\s+rel=["']canonical["']\s+href=["']([^"']*)["']/i),
       word_count: res.status === 200 ? body.split(/\s+/).filter(Boolean).length : null,
