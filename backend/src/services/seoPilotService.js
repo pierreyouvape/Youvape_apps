@@ -490,8 +490,14 @@ const getPage = async (rawUrl) => {
   // Requête principale : celle de la cible décidée ; à défaut, la requête libre
   // (non attribuée à une autre page) qui apporte le plus de clics, si elle pèse.
   const isTarget = ownTargets.length > 0;
-  const free = queries.filter((q) => (!q.target || q.target.isThis) && q.impressions >= 50)
-    .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions);
+  // Sujet de la page = les mots de son adresse (kit-pod-kiwi-2-kiwi-vapor →
+  // kiwi, 2, vapor…) : la requête retenue doit en reprendre, sinon « vaporette »
+  // ou « clope electronique » passaient pour le sujet de la page.
+  const GENERIQUES = new Set(['produit', 'categorie', 'kits', 'kit', 'format', 'ecigarettes', 'cigarettes', 'cigarette', 'electronique', 'electroniques', 'composants', 'eliquides', 'marque', 'blog', 'guides', 'conseils', 'vape', 'les', 'des', 'pour', 'avec']);
+  const slugWords = new Set(norm(pathOf(url).split('/').pop()).split(/[^a-z0-9]+/).filter((w) => w && !GENERIQUES.has(w)));
+  const overlap = (q) => norm(q).split(/[^a-z0-9]+/).filter((w) => slugWords.has(w) || slugWords.has(w.replace(/s$/, ''))).length;
+  const free = queries.filter((q) => (!q.target || q.target.isThis) && q.impressions >= 30 && overlap(q.query) > 0)
+    .sort((a, b) => overlap(b.query) - overlap(a.query) || b.clicks - a.clicks || b.impressions - a.impressions);
   const main = ownTargets[0]?.label.split(',')[0].trim() || free[0]?.query || null;
   // Sur une page qui n'est cible de rien, title et H1 ne sont que des suggestions.
   const sev = isTarget ? 'ko' : 'warn';
@@ -551,9 +557,18 @@ const getPage = async (rawUrl) => {
   add('Liens reçus avec la bonne ancre', !main || anchorOk.length >= 3,
     `${incoming.length} lien(s) relevé(s) dans le contenu, dont ${anchorOk.length} avec l'ancre « ${main || '—'} »`,
     `Ajouter des liens vers cette page avec l'ancre « ${main} » depuis les pages qui portent la requête à sa place${misplaced.length ? '' : ' ou depuis les pages proches'}.`, 'warn');
-  for (const q of misplaced.slice(0, 8)) {
-    add(`Cannibalisation « ${q.query} »`, false, `${q.share} % des impressions de la requête arrivent ici (position ${q.position ?? '—'})`,
-      `La cible décidée est ${q.target.path} : retirer « ${q.target.label.split(',')[0].trim()} » du title, du H1 et des intertitres de cette page, et ajouter un lien vers ${q.target.path} avec cette ancre.`, 'ko');
+  // Une ligne par page cible concurrencée, toutes variantes de la requête réunies.
+  const byTarget = new Map();
+  for (const q of misplaced) {
+    if (!byTarget.has(q.target.id)) byTarget.set(q.target.id, { target: q.target, list: [] });
+    byTarget.get(q.target.id).list.push(q);
+  }
+  for (const { target, list } of byTarget.values()) {
+    const head = target.label.split(',')[0].trim();
+    const impr = list.reduce((sum, q) => sum + q.impressions, 0);
+    add(`Cannibalisation « ${head} »`, false,
+      `Cette page capte ${list.map((q) => `« ${q.query} » (${q.share} %, pos. ${q.position ?? '—'})`).slice(0, 5).join(', ')} : ${impr} impressions en 28 jours`,
+      `La cible décidée est ${target.path} : retirer « ${head} » du title, du H1 et des intertitres de cette page, et ajouter un lien vers ${target.path} avec l'ancre « ${head} ».`, 'ko');
   }
 
   const last = changes.get(url) || null;
