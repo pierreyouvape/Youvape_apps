@@ -5,6 +5,11 @@ const { computeDashboard } = require('./financierController');
 // Valeur injectée dans DATE_TRUNC : liste blanche obligatoire.
 const granularityOf = (g) => (g === 'week' || g === 'month' ? g : 'day');
 
+// Toutes les variantes PayPal (« PayPal (email) », Pay Later, « Payer plus tard avec PayPal »)
+// regroupées sous un seul libellé, qui est aussi la clé des frais dans payment_methods
+const paymentLabel = (fallback) =>
+  `CASE WHEN o.payment_method_title ILIKE '%paypal%' THEN 'PayPal' ELSE COALESCE(o.payment_method_title, '${fallback}') END`;
+
 /**
  * Rapport Chiffre d'affaires (Revenue)
  * POST /api/reports/revenue
@@ -365,12 +370,12 @@ exports.getProfitReport = async (req, res) => {
     const transactionCostByDayQuery = `
       SELECT
         DATE_TRUNC('${gran}', (o.post_date))::date as date,
-        COALESCE(payment_method_title, 'default') as payment_method,
+        ${paymentLabel('default')} as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as total_amount
       FROM orders o
       ${whereClause}
-      GROUP BY DATE_TRUNC('${gran}', (o.post_date))::date, payment_method_title
+      GROUP BY 1, 2
     `;
     const transactionCostByDayResult = await pool.query(transactionCostByDayQuery, params);
     const transactionCostByDay = {};
@@ -480,12 +485,12 @@ exports.getTransactionCosts = async (req, res) => {
     // Pour l'instant, on n'a pas les frais de transaction stockés, on affiche juste les stats
     const query = `
       SELECT
-        COALESCE(payment_method_title, 'Non défini') as payment_method,
+        ${paymentLabel('Non défini')} as payment_method,
         COUNT(DISTINCT wp_order_id)::int as orders_count,
         COALESCE(SUM(order_total), 0)::numeric as total_amount
       FROM orders o
       ${whereClause}
-      GROUP BY payment_method_title
+      GROUP BY 1
       ORDER BY orders_count DESC
     `;
     const result = await pool.query(query, params);
@@ -729,7 +734,7 @@ exports.getOrdersReport = async (req, res) => {
     // 6. Grouped by Payment Method
     const byPaymentQuery = `
       SELECT
-        COALESCE(o.payment_method_title, 'Non défini') as payment_method,
+        ${paymentLabel('Non défini')} as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders,
         COALESCE(SUM(
           (SELECT COUNT(*) FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id)
@@ -739,7 +744,7 @@ exports.getOrdersReport = async (req, res) => {
         COALESCE(SUM(o.order_total), 0)::numeric as gross_sales
       FROM orders o
       ${whereClause}
-      GROUP BY o.payment_method_title
+      GROUP BY 1
       ORDER BY orders DESC
     `;
     const byPaymentResult = await pool.query(byPaymentQuery, params);
@@ -1507,12 +1512,12 @@ exports.getByCountryReport = async (req, res) => {
       // Top 3 Moyens de paiement
       const topPaymentQuery = `
         SELECT
-          COALESCE(o.payment_method_title, 'Non défini') as payment_method,
+          ${paymentLabel('Non défini')} as payment_method,
           COUNT(DISTINCT o.wp_order_id)::int as orders_count,
           ROUND(COUNT(DISTINCT o.wp_order_id)::numeric * 100.0 / NULLIF(SUM(COUNT(DISTINCT o.wp_order_id)) OVER(), 0), 1) as percentage
         FROM orders o
         ${countryWhereClause}
-        GROUP BY o.payment_method_title
+        GROUP BY 1
         ORDER BY orders_count DESC
         LIMIT 3
       `;
