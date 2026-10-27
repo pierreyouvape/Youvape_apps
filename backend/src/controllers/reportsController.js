@@ -5,10 +5,18 @@ const { computeDashboard } = require('./financierController');
 // Valeur injectée dans DATE_TRUNC : liste blanche obligatoire.
 const granularityOf = (g) => (g === 'week' || g === 'month' ? g : 'day');
 
-// Toutes les variantes PayPal (« PayPal (email) », Pay Later, « Payer plus tard avec PayPal »)
-// regroupées sous un seul libellé, qui est aussi la clé des frais dans payment_methods
-const paymentLabel = (fallback) =>
-  `CASE WHEN o.payment_method_title ILIKE '%paypal%' THEN 'PayPal' ELSE COALESCE(o.payment_method_title, '${fallback}') END`;
+// Libellé de paiement des rapports :
+// - toutes les variantes PayPal (« PayPal (email) », Pay Later…) en une seule ligne,
+//   qui est aussi la clé des frais dans payment_methods ;
+// - sans libellé et à 0 € = commande SAV (renvoi gratuit saisi à la main) ;
+// - sans libellé et payante = commande manuelle ou historique 2022-2024 importé sans
+//   moyen de paiement (WooCommerce ne l'a pas non plus, vérifié le 27/10/2026).
+const paymentLabel = () => `CASE
+    WHEN o.payment_method_title ILIKE '%paypal%' THEN 'PayPal'
+    WHEN COALESCE(o.payment_method_title, '') <> '' THEN o.payment_method_title
+    WHEN o.order_total = 0 THEN 'SAV (commande à 0 €)'
+    ELSE 'Non renseigné'
+  END`;
 
 /**
  * Rapport Chiffre d'affaires (Revenue)
@@ -370,7 +378,7 @@ exports.getProfitReport = async (req, res) => {
     const transactionCostByDayQuery = `
       SELECT
         DATE_TRUNC('${gran}', (o.post_date))::date as date,
-        ${paymentLabel('default')} as payment_method,
+        ${paymentLabel()} as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders_count,
         COALESCE(SUM(o.order_total), 0)::numeric as total_amount
       FROM orders o
@@ -485,7 +493,7 @@ exports.getTransactionCosts = async (req, res) => {
     // Pour l'instant, on n'a pas les frais de transaction stockés, on affiche juste les stats
     const query = `
       SELECT
-        ${paymentLabel('Non défini')} as payment_method,
+        ${paymentLabel()} as payment_method,
         COUNT(DISTINCT wp_order_id)::int as orders_count,
         COALESCE(SUM(order_total), 0)::numeric as total_amount
       FROM orders o
@@ -734,7 +742,7 @@ exports.getOrdersReport = async (req, res) => {
     // 6. Grouped by Payment Method
     const byPaymentQuery = `
       SELECT
-        ${paymentLabel('Non défini')} as payment_method,
+        ${paymentLabel()} as payment_method,
         COUNT(DISTINCT o.wp_order_id)::int as orders,
         COALESCE(SUM(
           (SELECT COUNT(*) FROM order_items oi WHERE oi.wp_order_id = o.wp_order_id)
@@ -1512,7 +1520,7 @@ exports.getByCountryReport = async (req, res) => {
       // Top 3 Moyens de paiement
       const topPaymentQuery = `
         SELECT
-          ${paymentLabel('Non défini')} as payment_method,
+          ${paymentLabel()} as payment_method,
           COUNT(DISTINCT o.wp_order_id)::int as orders_count,
           ROUND(COUNT(DISTINCT o.wp_order_id)::numeric * 100.0 / NULLIF(SUM(COUNT(DISTINCT o.wp_order_id)) OVER(), 0), 1) as percentage
         FROM orders o

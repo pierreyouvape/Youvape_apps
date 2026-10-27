@@ -11,6 +11,18 @@ const refundLinesService = require('./refundLinesService');
 const { sendAlert } = require('./alertService');
 const { decodeWpText } = require('../utils/wpText');
 
+// Code passerelle WooCommerce → libellé tel que le site l'écrit d'habitude
+// (relevé sur les commandes du 27/10/2026), pour les commandes reçues sans libellé
+const GATEWAY_LABELS = {
+  mollie_wc_gateway_creditcard: 'Carte Bancaire',
+  mollie_wc_gateway_bancontact: 'Bancontact',
+  mollie_wc_gateway_alma: 'En 3 ou 4x sans frais',
+  alma_in_page: 'En 3 ou 4x sans frais',
+  mollie_wc_gateway_paybybank: 'Virement saisie automatique',
+  'ppcp-gateway': 'PayPal',
+  systempaystd: 'Paiement par carte bancaire'
+};
+
 // Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
@@ -427,6 +439,13 @@ const wcSyncService = {
       await pool.query('DELETE FROM orders WHERE wp_order_id = $1', [wpId]);
       console.log(`🔄 WC Sync: Order #${wpId} supprimé`);
       return;
+    }
+
+    // Mollie laisse parfois le libellé vide alors que le code de la passerelle est bien là
+    // (1267806 : Bancontact payé, titre ''). Sans repli, la commande sortait sans moyen
+    // de paiement dans les rapports et ses frais étaient calculés au taux par défaut.
+    if (!data.payment_method_title && GATEWAY_LABELS[data.payment_method]) {
+      data.payment_method_title = GATEWAY_LABELS[data.payment_method];
     }
 
     // Upsert order
