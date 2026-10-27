@@ -978,7 +978,7 @@ function WavesView({ token, canWrite, reloadKey, setMessage }) {
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export default function PickingApp() {
-  const { token, permissions, isSuperAdmin } = useContext(AuthContext);
+  const { token, permissions, isAdmin, isSuperAdmin } = useContext(AuthContext);
   const canWrite = isSuperAdmin || permissions?.picking?.write === true;
   const [main, setMain] = useState(() => readPref(MAIN_KEY, 'orders'));
   const [message, setMessage] = useState(null);
@@ -1000,6 +1000,13 @@ export default function PickingApp() {
             <h1 style={{ margin: 0, fontFamily: "'Tilt Warp', cursive", fontSize: 26, fontWeight: 900, color: C.primary }}>
               Picking
             </h1>
+            {/* Réglages de l'expédition : seuls les admins peuvent les enregistrer. */}
+            {(isAdmin || isSuperAdmin) && (
+              <Link to="/picking/reglages" style={{
+                marginLeft: 'auto', padding: '7px 14px', borderRadius: 8, border: `1px solid ${C.greyB}`,
+                background: C.white, color: C.dark, fontSize: 13.5, fontWeight: 600, textDecoration: 'none',
+              }}>Réglages</Link>
+            )}
           </div>
 
           {message && <Banner kind={message.kind} onClose={() => setMessage(null)}>{message.text}</Banner>}

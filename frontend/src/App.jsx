@@ -43,6 +43,7 @@ const ShipmentHistoryApp = page('expeditions', () => import('./pages/ShipmentHis
 const ShipmentStatsApp = page('stats-expedition', () => import('./pages/ShipmentStatsApp'));
 const PickingApp = page('picking', () => import('./pages/PickingApp'));
 const PickingSettings = page('picking', () => import('./pages/PickingSettings'));
+const PickingReglages = page('picking', () => import('./pages/PickingReglages'));
 const PdaHome = page('pda', () => import('./pages/PdaHome'));
 const PdaPicking = page('pda', () => import('./pages/PdaPicking'));
 const PdaProduit = page('pda', () => import('./pages/PdaProduit'));
@@ -94,6 +95,7 @@ const PAGE_TITLES = {
   '/stats-expedition': "Stats d'expédition",
   '/picking': 'Picking',
   '/picking/settings': 'Picking — Règles des vagues',
+  '/picking/reglages': 'Picking — Réglages',
   '/pda': 'Youvape PDA',
   '/pda/picking': 'Picking PDA',
   '/pda/produit': 'Produit PDA',
@@ -452,6 +454,16 @@ function App() {
             element={
               <PrivateRoute>
                 <PickingSettings />
+              </PrivateRoute>
+            }
+          />
+          {/* Réglages de l'expédition (plugin youvape-logistique). Lecture : droit
+              picking ; enregistrement : admins (le backend l'exige). */}
+          <Route
+            path="/picking/reglages"
+            element={
+              <PrivateRoute>
+                <PickingReglages />
               </PrivateRoute>
             }
           />

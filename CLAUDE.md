@@ -340,6 +340,24 @@ L'API WPLoyalty d'origine range tout sous « REST API » et ignore tout motif.
   juger un appel sur son seul statut HTTP (avant le 15/10, un retrait refusé passait pour fait).
 - Un retrait est plafonné au solde : la réponse donne `points` réellement retirés.
 
+### Plugin `youvape-logistique` : ses réglages depuis l'app (27/10/2026)
+
+Le plugin (racine du dépôt, **pas encore installé**, activé le jour de la sortie de BMS) garde ses
+réglages dans WordPress. L'app les lit et les modifie depuis **`/picking/reglages`** (« Réglages »,
+bouton de l'en-tête du Picking — distinct des règles des vagues `/picking/settings`).
+
+- Client : `services/logistiqueService.js`, clés de `rewards_config` comme loyalty. Le site visé
+  est tout entier dans `connection()` : c'est là qu'on pointera la copie de test (choix `.env` ou
+  `app_config` pas encore fait).
+- Routes : `GET /api/picking/plugin-logistique` (droit picking lecture), `POST …/settings`
+  (picking lecture **+ `checkAdmin`** : ces réglages décident quels statuts changent sans mail).
+- **Seuls les réglages de l'expédition** sont modifiables (`EDITABLE_SETTINGS`) :
+  `restock_refunded_items_default` n'a rien à faire dans cet écran, voulu.
+- Plugin absent = 404 `rest_no_route` → `installed: false`, affiché comme normal. Un 200 dont le
+  corps n'a pas la forme attendue est une erreur ; un 401 du site devient un 502 chez nous (un 401
+  déconnecterait l'utilisateur).
+- Lire `youvape-logistique/AVANT-DE-MODIFIER.md` §7-8 avant d'ajouter un réglage à l'écran.
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :
