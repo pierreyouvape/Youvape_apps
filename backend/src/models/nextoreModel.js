@@ -675,58 +675,9 @@ async function getNeeds(warehouseId, opts = {}) {
   };
 }
 
-const NEEDS_WINDOW_DAYS = 125;
-
-/**
- * Jours HORS RAYON par produit (Map product_id → ['YYYY-MM-DD', …]) sur la
- * fenêtre des besoins : stock à 0 en début de journée (heure de Paris), ou
- * produit pas encore créé dans Nextore. Reconstitué depuis nextore_stock_history,
- * qui ne note que les changements. Les ventes se divisent par les seuls jours en
- * rayon : sinon une rupture ou une arrivée récente fait passer un produit pour lent.
- * - stock NÉGATIF = vendu au-delà de ce que Nextore connaissait : le produit
- *   était là, le jour compte en rayon ;
- * - avant le début du journal, on ne sait pas : compté en rayon.
- */
-async function getOffShelfDays(warehouseId) {
-  const { rows } = await pool.query(
-    `WITH h AS (
-       SELECT product_id, stock, captured_at AT TIME ZONE 'Europe/Paris' AS t,
-              LEAD(captured_at AT TIME ZONE 'Europe/Paris')
-                OVER (PARTITION BY product_id ORDER BY captured_at, id) AS t_next
-       FROM nextore_stock_history
-       WHERE warehouse_id = $1
-     ),
-     known AS (
-       SELECT (MIN(captured_at AT TIME ZONE 'Europe/Paris'))::date + 1 AS since
-       FROM nextore_stock_history WHERE warehouse_id = $1
-     ),
-     days AS (
-       SELECT d::date AS d
-       FROM known, generate_series(
-         GREATEST(known.since, (NOW() AT TIME ZONE 'Europe/Paris')::date - $2::int),
-         (NOW() AT TIME ZONE 'Europe/Paris')::date, '1 day') d
-     ),
-     off AS (
-       -- stock à 0 au dernier relevé avant minuit
-       SELECT h.product_id, dy.d
-       FROM h JOIN days dy ON h.t < dy.d AND (h.t_next IS NULL OR h.t_next >= dy.d)
-       WHERE h.stock = 0
-       UNION
-       -- produit apparu dans Nextore après ce jour
-       SELECT f.product_id, dy.d
-       FROM (SELECT product_id, MIN(t) AS t_first FROM h GROUP BY product_id) f
-       JOIN days dy ON dy.d <= f.t_first
-     )
-     SELECT product_id, array_agg(d::text ORDER BY d) AS days
-     FROM off GROUP BY product_id`,
-    [warehouseId, NEEDS_WINDOW_DAYS]
-  );
-  return new Map(rows.map((r) => [r.product_id, r.days]));
-}
-
 /**
  * Données BRUTES pour l'écran Besoins style V2 (calcul côté client) :
- * par produit → stock, fournisseur(s), réf(s), + ventes journalières (125 j) et jours hors rayon,
+ * par produit → stock, fournisseur(s), réf(s), + ventes journalières (90 j),
  * et la liste des fournisseurs du filtre (comptée sur ces mêmes produits).
  * On ne garde que les produits en stock (<>0) OU ayant vendu récemment.
  */
@@ -788,22 +739,20 @@ async function getNeedsData(warehouseId) {
   );
   const supName = new Map(supRows.map((r) => [r.id, r.company]));
 
-  // Ventes journalières sur 125 j : couvre « Les 3 derniers mois », qui part du
-  // 1er du mois, trois mois plus tôt (jusqu'à 123 jours).
+  // Ventes journalières sur 90 j (fenêtre max des périodes d'analyse)
   const { rows: sales } = await pool.query(
     `SELECT product_id, sold_at::date::text AS date, SUM(quantity)::float AS total_qty
      FROM nextore_sales
      WHERE warehouse_id = $1
-       AND sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => $2::int)
+       AND sold_at >= (NOW() AT TIME ZONE 'Europe/Paris') - make_interval(days => 90)
      GROUP BY product_id, sold_at::date`,
-    [warehouseId, NEEDS_WINDOW_DAYS]
+    [warehouseId]
   );
   const salesByProduct = new Map();
   for (const s of sales) {
     if (!salesByProduct.has(s.product_id)) salesByProduct.set(s.product_id, []);
     salesByProduct.get(s.product_id).push({ date: s.date, total_qty: s.total_qty });
   }
-  const offShelf = await getOffShelfDays(warehouseId);
 
   // On ne renvoie que les produits pertinents : en stock OU avec ventes récentes
   const products = [];
@@ -811,9 +760,6 @@ async function getNeedsData(warehouseId) {
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
     if (p.stock === 0 && daily.length === 0) continue;
-    // Un jour de vente compte toujours comme un jour en rayon
-    const soldDays = new Set(daily.filter((d) => d.total_qty > 0).map((d) => d.date));
-    const offShelfDays = (offShelf.get(p.product_id) || []).filter((d) => !soldDays.has(d));
     const ficheId = p.fiche_supplier_id === '0' ? null : p.fiche_supplier_id; // '0' = aucun chez Nextore
     const supplierId = p.bought_supplier_id || ficheId;
     // Filtre fournisseur : seulement ceux chez qui on a réellement acheté
@@ -836,7 +782,6 @@ async function getNeedsData(warehouseId) {
       supplier_ids: supplierIds,
       supplier_refs: p.supplier_refs || {},
       daily_sales: daily,
-      off_shelf_days: offShelfDays,
     });
   }
   const suppliers = [...supCount.entries()]
