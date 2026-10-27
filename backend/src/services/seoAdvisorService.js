@@ -137,6 +137,7 @@ const ensureTables = async () => {
     );
     ALTER TABLE seo_recommendations ADD COLUMN IF NOT EXISTS delay text;
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS availability text;
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS brand text;
   `);
 };
 
@@ -168,6 +169,34 @@ const extractLinks = (html) => {
   return [...out.entries()].map(([href, text]) => ({ href, text }));
 };
 
+// Marque déclarée dans les données structurées d'une fiche (Product.brand).
+// L'adresse ne la donne pas toujours : puff-elfa-pro-0mg finit par le taux,
+// kit-elfx-mega-elbar par une faute de frappe.
+const brandFromJsonLd = (html) => {
+  for (const m of (html || '').matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let found = null;
+    const walk = (x) => {
+      if (found || !x || typeof x !== 'object') return;
+      if (Array.isArray(x)) { x.forEach(walk); return; }
+      if (/Product/.test([].concat(x['@type'] || '').join(',')) && x.brand) {
+        const b = [].concat(x.brand)[0];
+        found = (typeof b === 'string' ? b : b?.name) || null;
+        return;
+      }
+      if (x['@graph']) walk(x['@graph']);
+    };
+    try {
+      walk(JSON.parse(m[1]));
+    } catch {
+      // Bloc illisible (retour à la ligne brut dans une description) : la marque
+      // se lit quand même.
+      found = (m[1].match(/"brand"\s*:\s*\{[^}]*?"name"\s*:\s*"([^"]+)"/) || m[1].match(/"brand"\s*:\s*"([^"]+)"/) || [])[1] || null;
+    }
+    if (found) return String(found).trim();
+  }
+  return null;
+};
+
 const auditUrl = async (url) => {
   try {
     const res = await axios.get(url, {
@@ -193,6 +222,7 @@ const auditUrl = async (url) => {
       links: res.status === 200 ? extractLinks(html) : null,
       // Disponibilité déclarée dans les données structurées (fiches produit).
       availability: (html.match(/"availability"\s*:\s*"(?:https?:\/\/schema\.org\/)?([A-Za-z]+)"/) || [])[1] || null,
+      brand: brandFromJsonLd(html),
       error: null,
     };
   } catch (error) {
@@ -202,13 +232,13 @@ const auditUrl = async (url) => {
 
 const saveAudit = async (a) => {
   await pool.query(
-    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability)
-     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability, brand)
+     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (url) DO UPDATE SET fetched_at = now(), http_status = $2, location = $3, title = $4, h1 = $5,
-       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12`,
+       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12, brand = $13`,
     [a.url, a.http_status, a.location || null, a.title || null, a.h1 || null, a.meta_description || null,
       a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null,
-      a.availability || null]
+      a.availability || null, a.brand || null]
   );
 };
 
@@ -305,9 +335,9 @@ const pageKind = (u) => {
   if (p.startsWith('/etiquette-produit/')) return 'étiquette';
   if (p.startsWith('/marque/')) return 'page marque';
   if (p.startsWith('/categorie-produit/')) return 'catégorie';
-  if (p.startsWith('/blog/')) return 'article';
+  if (p.startsWith('/blog/') || p.startsWith('/avis-tests/')) return 'article';
   if (p === '/') return 'accueil';
-  return 'page';
+  return 'landing page';
 };
 
 // Mots génériques : ne comptent pas pour dire que deux requêtes parlent du même sujet.
@@ -341,16 +371,21 @@ const placementFor = (u) => {
 };
 
 // Pages qui se classent sur des requêtes proches : les meilleures sources de liens.
-const relatedSources = ({ byQuery }, query, exclude) => {
+const relatedSources = ({ byQuery }, query, exclude, audits) => {
   const core = coreTokens(query);
   const minShared = Math.min(2, core.length);
   if (!minShared) return [];
+  // Un seul mot de sujet (« menthol ») : la page source doit en parler elle-même,
+  // dans son adresse ou son title. Sinon toute page vue sur « elfbar menthol »
+  // devenait source d'un lien vers l'article sur les cigarettes mentholées.
+  const onTopic = (u) => core.length > 1
+    || compact(`${pathOf(u)} ${audits?.get(normUrl(u))?.title || ''}`).includes(singular(core[0]));
   const score = new Map();
   for (const [q2, rows] of byQuery) {
     const tk = tokens(q2);
     if (core.filter((t) => tk.includes(t)).length < minShared) continue;
     for (const r of rows) {
-      if (isParamUrl(r.page) || pathOf(r.page) === '/' || normUrl(r.page) === normUrl(exclude)) continue;
+      if (isParamUrl(r.page) || pathOf(r.page) === '/' || normUrl(r.page) === normUrl(exclude) || !onTopic(r.page)) continue;
       score.set(r.page, (score.get(r.page) || 0) + r.i);
     }
   }
@@ -362,16 +397,214 @@ const relatedSources = ({ byQuery }, query, exclude) => {
  * l'endroit où la placer, ou « déjà fait » si le lien existe (relevé du
  * contenu de la page, menus exclus).
  */
-// Marque d'une fiche produit : dernier mot de son adresse (pod-vprime-2-oxva → oxva).
-const brandOf = (u) => (pageKind(u) === 'fiche produit' ? (pathOf(u).split('/').pop().split('-').pop() || null) : null);
+// Marque d'une fiche produit, sous la forme de son adresse /marque/… : celle des
+// données structurées (relevé de la page), à défaut le dernier mot de l'adresse
+// (pod-vprime-2-oxva → oxva) s'il n'est pas un taux ou un format
+// (puff-elfa-pro-0mg ne dit pas sa marque).
+const brandSlug = (name) => norm(name).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const brandOf = (u, audits) => {
+  if (pageKind(u) !== 'fiche produit') return null;
+  const a = audits?.get(normUrl(u));
+  if (a?.brand) return brandSlug(a.brand);
+  const last = pathOf(u).split('/').pop().split('-').pop() || '';
+  return last && !/\d/.test(last) ? last : null;
+};
+
+// Mots qui, accolés à une marque, ne désignent encore que la marque :
+// « puff elfbar », « elfbar rechargeable », « recharge elfbar », « elfbar france ».
+const BRAND_LEVEL_RE = /^(puffs?|pods?|kits?|vapes?|vapoteuses?|cigarettes?|electroniques?|e|recharges?|rechargeables?|cartouches?|france|officiel|site|marque)$/;
+const isBrandQuery = (query, slug) => {
+  const words = tokens(canon(query)).filter((t) => !BRAND_LEVEL_RE.test(t));
+  return words.length > 0 && !!slug && compact(words.join(' ')) === compact(slug);
+};
+
+// Une requête faite des mots qu'une fiche produit porte EN PROPRE : sa marque,
+// son nom de modèle, son type de produit (« puff elfbar » sur la Puff 4in1
+// Elfbar, « elfa pro » sur la Puff Elfa Pro 20mg). C'est le sujet même de la
+// fiche : on ne demande jamais de les retirer de son title, la cannibalisation
+// se règle par la page de référence et un lien.
+const TYPE_WORD_RE = /^(puffs?|pods?|kits?|packs?|cartouches?|recharges?|rechargeables?|batteries?|batterie|box|clearomiseurs?|resistances?|e?liquides?|boosters?)$/;
+// Mots de sujet d'une requête : sans les génériques ni les lettres isolées, mais
+// avec les chiffres (« 4 in 1 », « gen 3 » : le numéro fait le modèle).
+const subjectWords = (query) => coreTokens(canon(query)).filter((t) => t.length > 1 || /\d/.test(t));
+const ownsQuery = (query, a) => {
+  if (!a?.url || pageKind(a.url) !== 'fiche produit') return false;
+  const core = subjectWords(query);
+  if (!core.length) return false;
+  const name = `${a.h1 || ''} ${(a.title || '').replace(/\s*[-–|]\s*YouVape.*$/i, '')}`;
+  const types = tokens(name).filter((t) => TYPE_WORD_RE.test(t));
+  // « recharge » et « cartouche » désignent la même chose : un pack de cartouches
+  // porte « recharge elfbar 4 in 1 ».
+  const refill = types.some((t) => /^(cartouches?|recharges?)$/.test(t)) ? 'recharge cartouche' : '';
+  const own = compact(`${a.brand || brandOf(a.url) || ''} ${modelLabel(a)} ${types.join(' ')} ${refill}`);
+  return core.every((t) => own.includes(t));
+};
+
+/* ─── Rôle de chaque type de page ──────────────────────── */
+// Chaque type de page porte en propre un type de recherche :
+//   fiche produit → son modèle (« elfbar 4 in 1 », « elfa pro ») ;
+//   page marque   → la marque, seule ou avec puff, pod, recharge (« puff elfbar ») ;
+//   catégorie     → un type de produit (« puff », « pod », « e-liquide ») ;
+//   landing page  → le thème de son adresse (« puff sans nicotine ») ;
+//   lexique       → la définition (« qu'est-ce qu'une puff ») ;
+//   article       → une question ; étiquette → une famille (souvent en noindex) ;
+//   accueil       → la boutique, jamais touchée par une carte automatique.
+// Quand une page en gêne une autre, son title ne change que s'il ne parle QUE
+// de la recherche (« Cigarette électronique - YouVape » sur le lexique), et
+// jamais celui d'une fiche, d'une page marque ou de l'accueil : c'est leur nom.
+// Sinon, seul le lien vers la page de référence compte.
+const isLexique = (a) => /lexique|d[ée]finition/i.test(`${a?.title || ''} ${a?.h1 || ''}`) || /^qu.est[- ]ce/.test(norm(a?.h1 || ''));
+const roleOf = (u, a) => (pageKind(u) === 'landing page' && isLexique(a) ? 'lexique' : pageKind(u));
+const auditOf = (u, audits) => ({ ...(audits?.get(normUrl(u)) || {}), url: u });
+const marqueSlug = (u) => (pageKind(u) === 'page marque' ? pathOf(u).split('/')[2] || null : null);
+
+// Mots de sujet d'un title ou d'une recherche, au singulier, sans « YouVape »
+// ni mots de remplissage.
+const TITLE_FILLER = new Set([...STOPWORDS, ...NOISE, 'youvape', 'toutes', 'tous', 'toute', 'tout', 'nos', 'notre', 'votre', 'vos',
+  'decouvrez', 'selection', 'marque', 'gamme', 'chez', 'boutique', 'ligne', 'par', 'pour', 'avec']);
+const subjectSet = (txt) => new Set(tokens(canon(String(txt || '').replace(/\s*[-–|]\s*YouVape.*$/i, '')))
+  .filter((t) => !TITLE_FILLER.has(t)).map(singular));
+// Le title ne parle que de la recherche : mêmes mots de sujet, ni plus ni moins.
+const centeredOn = (title, query) => {
+  const s = subjectSet(title);
+  const w = subjectSet(query);
+  return s.size > 0 && s.size === w.size && [...s].every((x) => w.has(x));
+};
+// L'adresse d'une page reprend exactement la recherche (/puff-sans-nicotine).
+const slugIs = (u, query) => centeredOn((pathOf(u).split('/').filter(Boolean).pop() || '').replace(/-/g, ' '), query);
+
+// Intention d'une recherche : quel type de page doit la porter.
+const TYPE_ONLY_RE = /^(rechargeables?|electroniques?|cigarettes?|vapoteuses?|vapes?|liquides?|eliquides?)$/;
+const isTypeQuery = (query) => {
+  const w = tokens(canon(query));
+  return w.length > 0 && w.every((t) => GENERIC.has(t) || TYPE_WORD_RE.test(t) || TYPE_ONLY_RE.test(t));
+};
+const intentOf = (query, pages, audits) => {
+  if (QUESTION_RE.test(norm(query))) return 'question';
+  const brands = pages.map((u) => marqueSlug(u) || brandOf(u, audits)).filter(Boolean);
+  if (brands.some((b) => isBrandQuery(query, b))) return 'marque';
+  if (pages.some((u) => ownsQuery(query, auditOf(u, audits)))) return 'modele';
+  if (isTypeQuery(query)) return 'type';
+  return 'theme';
+};
+// Types de page préférés selon l'intention, du premier au dernier.
+const PREFERENCE = {
+  question: ['lexique', 'article', 'landing page', 'catégorie', 'étiquette', 'page marque', 'fiche produit'],
+  marque: ['page marque', 'landing page', 'fiche produit', 'catégorie', 'étiquette', 'lexique', 'article'],
+  modele: ['fiche produit', 'étiquette', 'page marque', 'landing page', 'catégorie', 'lexique', 'article'],
+  type: ['catégorie', 'landing page', 'étiquette', 'lexique', 'page marque', 'fiche produit', 'article'],
+};
+// Pourquoi cette page fait référence : elle porte la recherche en propre…
+const WHY_OWN = {
+  marque: (q) => `« ${q} » ne désigne que la marque`,
+  modele: (q) => `« ${q} » nomme ce produit`,
+  theme: (q) => `son adresse reprend « ${q} »`,
+};
+// … ou son type de page est celui qui convient à l'intention.
+const WHY_ROLE = {
+  question: 'les questions reviennent au lexique ou à l’article',
+  marque: 'les recherches de marque reviennent à la page marque',
+  modele: 'les recherches de modèle reviennent à la fiche produit',
+  type: 'les types de produit reviennent à la catégorie',
+};
+
+// Page de référence d'une recherche partagée entre plusieurs de nos pages :
+// celle qui la porte en propre (la marque, le modèle, l'adresse), puis le type
+// de page qui convient à l'intention, puis celle dont le title reprend le plus
+// de mots de la recherche, enfin l'ordre reçu (le plus de clics d'abord).
+const chooseReference = (query, pages, audits) => {
+  const intent = intentOf(query, pages, audits);
+  const words = subjectWords(query);
+  const owns = (u) => {
+    const a = auditOf(u, audits);
+    if (intent === 'marque') return isBrandQuery(query, marqueSlug(u));
+    if (intent === 'modele') return ownsQuery(query, a);
+    if (intent === 'theme') return slugIs(u, query);
+    return false;
+  };
+  const pref = PREFERENCE[intent] || [];
+  const ranked = pages.map((u, i) => {
+    const a = auditOf(u, audits);
+    const at = pref.indexOf(roleOf(u, a));
+    const text = compact(`${a.title || ''} ${a.h1 || ''}`);
+    return { u, i, own: owns(u), rank: at < 0 ? pref.length : at, cover: words.filter((w) => text.includes(w)).length };
+  }).sort((x, y) => (y.own - x.own) || (x.rank - y.rank) || (y.cover - x.cover) || (x.i - y.i));
+  const [best, next] = ranked;
+  let why = 'celle qui reçoit le plus de clics';
+  if (next && best.own !== next.own) why = WHY_OWN[intent](query);
+  else if (next && best.rank !== next.rank) why = WHY_ROLE[intent];
+  else if (next && best.cover !== next.cover) why = `son title reprend le plus de mots de « ${query} »`;
+  return { main: best.u, intent, why };
+};
+
+// Ancre d'un lien : la recherche telle quelle, marque en capitale.
+const anchorFor = (query, pages, audits) => {
+  const brands = new Set(pages.map((u) => marqueSlug(u) || brandOf(u, audits)).filter(Boolean).map(compact));
+  return query.split(/\s+/).map((w) => (brands.has(compact(w)) ? cap(w) : w)).join(' ');
+};
+// Phrase à coller, avec son lien relatif, selon le type de la page visée.
+const linkSentence = (main, anchor, role) => {
+  const a = `<a href="${pathOf(main)}">${anchor}</a>`;
+  switch (role) {
+    case 'catégorie': return `<p>Tous les modèles sont regroupés dans notre rayon ${a}.</p>`;
+    case 'lexique': return `<p>Définition : ${a}.</p>`;
+    case 'article': return `<p>À lire : ${a}.</p>`;
+    default: return `<p>Voir aussi : ${a}.</p>`;
+  }
+};
+// Où coller cette phrase, selon le type de la page qui la reçoit.
+const LINK_WHERE = {
+  'fiche produit': 'à la fin de la description du produit',
+  'page marque': 'à la fin du texte de présentation',
+  'catégorie': 'à la fin du texte d’introduction',
+  'étiquette': 'à la fin du texte d’introduction',
+  'article': 'à la fin du paragraphe qui traite du sujet',
+  'lexique': 'à la fin du premier paragraphe',
+  'accueil': 'dans le bloc de texte du bas de l’accueil',
+};
+// Le lien existant nomme-t-il le sujet de la recherche ?
+const anchorNames = (text, query) => {
+  const words = subjectWords(query).length ? subjectWords(query) : tokens(canon(query));
+  return words.some((w) => compact(text || '').includes(singular(w)));
+};
+
+// Ce que doit faire une page qui gêne la page de référence sur une recherche :
+// des consignes complètes, prêtes à appliquer, et rien quand il n'y a rien à
+// faire. Une page cible décidée (protectedUrls) n'est jamais modifiée.
+const rivalSteps = ({ query, main, page, audits, protectedUrls }) => {
+  if (protectedUrls?.has(normUrl(page))) return [];
+  const a = auditOf(page, audits);
+  const role = roleOf(page, a);
+  const mainRole = roleOf(main, auditOf(main, audits));
+  const steps = [];
+  if (a.title && centeredOn(a.title, query) && !['fiche produit', 'page marque', 'accueil'].includes(role)) {
+    if (role === 'étiquette') {
+      // Une étiquette fermée n'a pas besoin de lien.
+      return [`Yoast > réglages de l'étiquette ${pathOf(page)} : passer en noindex, follow. Son title, « ${a.title} », ne parle que de « ${query} », que porte ${pathOf(main)}.`];
+    }
+    if (role === 'lexique' && /\?\s*$/.test(a.h1 || '')) {
+      steps.push(`Title de ${pathOf(page)} : remplacer « ${a.title} » par « ${a.h1.trim()} Définition - Lexique YouVape ».`);
+    } else {
+      steps.push(`Title de ${pathOf(page)} : « ${a.title} » ne parle que de « ${query} », que porte ${pathOf(main)}. Le réécrire dans l'onglet Rédaction SEO, sur ${role === 'lexique' ? 'la définition' : role === 'article' ? 'la question que traite l’article' : role === 'catégorie' ? 'son rayon' : 'le thème de son adresse'}.`);
+    }
+  }
+  const anchor = anchorFor(query, [main, page], audits);
+  const existing = (a.links || []).find((l) => normUrl(l.href) === normUrl(main));
+  if (existing && !anchorNames(existing.text, query)) {
+    steps.push(`Sur ${pathOf(page)} : remplacer l'ancre du lien vers ${pathOf(main)} (« ${existing.text || 'image sans texte'} ») par « ${anchor} ».`);
+  } else if (!existing) {
+    steps.push(`Sur ${pathOf(page)}, ${LINK_WHERE[role] || 'à la fin du premier paragraphe'}, ajouter : ${linkSentence(main, anchor, mainRole)}`);
+  }
+  return steps;
+};
 
 const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => {
   const t = normUrl(target);
   // Vers une fiche produit, on ne propose que des pages de la même marque (et la
   // page marque) : un lien vers une Aspire depuis une fiche Vaporesso n'a pas de sens.
-  const brand = brandOf(t);
+  const brand = brandOf(t, audits);
   if (brand) {
-    sources = [`${SITE}/marque/${brand}`, ...sources.filter((u) => pageKind(u) !== 'fiche produit' || brandOf(u) === brand)];
+    sources = [`${SITE}/marque/${brand}`, ...sources.filter((u) => pageKind(u) !== 'fiche produit' || brandOf(u, audits) === brand)];
   }
   const clean = anchors.filter((a) => a && !tokens(a).some((x) => SENSITIVE.has(x)));
   if (!clean.length) return { lines: [], checked: 0 };
@@ -420,7 +653,8 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
 // 1. Cannibalisation : deux de nos pages se partagent une même requête.
 // skipRes : requêtes déjà couvertes par une page cible décidée (seoPilotService),
 // traitées par les cartes « cible » et jamais par la règle « plus de clics ».
-const detectCannibalisation = ({ q, byQuery }, audits, skipRes = []) => {
+// protectedUrls : pages cibles décidées, jamais modifiées par une carte automatique.
+const detectCannibalisation = ({ q, byQuery }, audits, skipRes = [], protectedUrls = new Set()) => {
   const pairs = new Map();
   for (const [query, rows] of byQuery) {
     if (skipRes.some((re) => re.test(query))) continue;
@@ -440,20 +674,20 @@ const detectCannibalisation = ({ q, byQuery }, audits, skipRes = []) => {
   for (const [key, v] of pairs) {
     const totals = new Map(v.pages.map((pg) => [pg, { c: 0, i: 0 }]));
     for (const qq of v.queries) for (const sp of qq.split) { const t = totals.get(sp.page); if (t) { t.c += sp.c; t.i += sp.i; } }
-    const [main, second] = [...totals.entries()].sort((x, y) => y[1].c - x[1].c || y[1].i - x[1].i).map(([pg]) => pg);
+    const byClicks = [...totals.entries()].sort((x, y) => y[1].c - x[1].c || y[1].i - x[1].i).map(([pg]) => pg);
     const est = v.queries.reduce((sum, qq) => sum + 0.5 * gainTo(qq.i, qq.c, qq.p, Math.max(1, qq.p - 1.5)), 0);
     const top = v.queries.sort((x, y) => y.i - x.i);
     const head = top[0];
-    const secAudit = audits.get(normUrl(second));
-    const secTitle = secAudit?.title || null;
-    const targetsIt = secTitle && tokens(head.query).every((t) => compact(secTitle).includes(t));
-    const steps = [
-      `Page de référence : ${pathOf(main)} (${pageKind(main)}, celle qui reçoit le plus de clics sur ${top.length > 1 ? 'ces requêtes' : 'cette requête'}).`,
-      targetsIt
-        ? `${pathOf(second)} (${pageKind(second)}) vise aussi « ${head.query} » dans son title (« ${secTitle} ») : retirer ces mots de son title et de son H1${['étiquette', 'catégorie', 'page'].includes(pageKind(second)) ? ', ou la passer en noindex, follow si elle n’a pas d’autre rôle' : ''}.`
-        : `${pathOf(second)} (${pageKind(second)}) ne vise pas « ${head.query} » dans son title${secTitle ? ` (« ${secTitle} »)` : ''} : ne rien retirer.`,
-      `Sur ${pathOf(second)} : ajouter un lien vers ${pathOf(main)} avec l'ancre « ${cap(head.query)} », ${placementFor(second)}. C'est ce lien qui indique à Google quelle page fait référence.`,
-    ];
+    // La référence se choisit sur le rôle de chaque page (voir chooseReference),
+    // pas sur les clics : « puff elfbar » → page marque, « elfbar 4 in 1 » → fiche.
+    const { main, why } = chooseReference(head.query, byClicks, audits);
+    const second = byClicks.find((u) => u !== main);
+    // Jamais de lien vers une page en noindex.
+    if (/noindex/i.test(audits.get(normUrl(main))?.robots || '')) continue;
+    const steps = rivalSteps({ query: head.query, main, page: second, audits, protectedUrls });
+    // Rien à faire (fiche qui garde son nom, lien déjà en place…) : pas de carte.
+    if (!steps.length) continue;
+    steps.unshift(`Page de référence : ${pathOf(main)} (${roleOf(main, audits.get(normUrl(main)))}, ${why}).`);
     recs.push({
       rec_key: `cannibalisation:${key}`,
       type: 'cannibalisation',
@@ -519,25 +753,31 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       blocks.push(`Title et H1 : ils ne contiennent pas tous les mots de « ${head.query} ». Title actuel : « ${titleNow} ». Le commencer par « ${cap(head.query)} », 60 caractères maximum.`);
     } else if (missing.length) {
       blocks.push(`Title : il couvre déjà « ${head.query} » (« ${titleNow} »). Variante à ajouter si la place le permet : ${missing.slice(0, 3).map((m) => `« ${m.t} » (requête « ${m.from.query} », ${fmtInt(m.from.i)} impressions)`).join(', ')}.`);
-    } else {
-      blocks.push(`Title : ne pas le modifier, il couvre déjà « ${head.query} » (« ${titleNow} »).`);
     }
     // 2. Texte
     // Intertitre utile = une variante qui apporte un vrai mot en plus (pas une
-    // simple permutation : « vprime 2 oxva » n'ajoute rien à « oxva vprime 2 »).
-    const h2 = variants.filter((v) => !hasSensitive(v.query)
-      && canonTokens(v.query).some((t) => !headTk.includes(t) && !GENERIC.has(t) && t.length > 2)).slice(0, 3);
+    // simple permutation : « vprime 2 oxva » n'ajoute rien à « oxva vprime 2 »),
+    // et un seul intertitre par mot apporté (« elfbar recharge » et « recharge
+    // elfbar » sont le même H2).
+    const h2Seen = new Set();
+    const h2 = variants.filter((v) => {
+      if (hasSensitive(v.query)) return false;
+      const extra = canonTokens(v.query).filter((t) => !headTk.includes(t) && !GENERIC.has(t) && t.length > 2);
+      const key = [...new Set(extra.map(singular))].sort().join(' ');
+      if (!key || h2Seen.has(key)) return false;
+      h2Seen.add(key);
+      return true;
+    }).slice(0, 3);
     const words = audit?.word_count || 0;
     blocks.push(`Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
     // 3. Liens internes
     const links = await linkPlan({
       target: page,
       anchors: [head.query, ...h2.map((v) => v.query)],
-      sources: relatedSources(data, head.query, page).slice(0, 10),
+      sources: relatedSources(data, head.query, page, audits).slice(0, 10),
       data, audits,
     });
     if (links.lines.length) blocks.push(`Liens internes :\n${links.lines.join('\n')}`);
-    else if (!links.checked) blocks.push('Liens internes : aucune page proche relevée qui pourrait en faire.');
     // 4. Ce qu'il ne faut pas viser ici
     if (elsewhere.length) {
       const byTarget = new Map();
@@ -857,13 +1097,13 @@ const detectIndexDecisions = async (data, audits, sitePages) => {
         title: `Passer en index : ${pathOf(child.url)}`,
         reason: `Page en noindex alors qu'elle liste ${products.length} produits et que ses recherches font ${fmtInt(demand)} impressions en 28 jours (« ${head.query} » en tête)${topOwner ? `, servies aujourd'hui par ${pathOf(topOwner)}` : ''}.`,
         action: [
-          `1. Yoast > réglages de l'étiquette : passer ${pathOf(child.url)} en index, follow.`,
+          `Yoast > réglages de l'étiquette : passer ${pathOf(child.url)} en index, follow.`,
           tokens(head.query).every((t) => compact(a.title || '').includes(t))
-            ? `2. Title : garder « ${(a.title || '').replace(/\s*[-–|]\s*YouVape.*$/i, '')} », il contient déjà « ${head.query} ». Ajouter un court texte factuel au-dessus de la grille.`
-            : `2. Title et H1 : reprendre « ${cap(head.query)} » (title actuel : « ${a.title || '—'} »). Ajouter un court texte factuel au-dessus de la grille.`,
-          links.lines.length ? `3. Liens internes :\n${links.lines.join('\n')}` : '3. Liens internes : la page mère et les fiches font déjà le lien avec la bonne ancre.',
-          '4. Search Console > Inspection de l’URL > Demander l’indexation.',
-        ].join('\n\n'),
+            ? 'Ajouter un court texte factuel au-dessus de la grille.'
+            : `Title et H1 : reprendre « ${cap(head.query)} » (title actuel : « ${a.title || '—'} »). Ajouter un court texte factuel au-dessus de la grille.`,
+          ...(links.lines.length ? [`Liens internes :\n${links.lines.join('\n')}`] : []),
+          'Search Console > Inspection de l’URL > Demander l’indexation.',
+        ].map((t, n) => `${n + 1}. ${t}`).join('\n\n'),
         urls: [child.url, parent.url],
         queries: qRows,
       });
@@ -1100,12 +1340,13 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const metaHead = h1Keep ? curH1.replace(/\s+-\s+/g, ' ') : nice(titleHead.query);
     // Ce que le nom de la page dit déjà ne se répète pas (« JNR Falcon X 28K : 28k Falcon X »).
     const metaFacets = facets.filter((f) => !coveredBy(metaHead, f));
+    // Un title ou un H1 déjà bon n'apparaît pas dans le plan.
     const plan = [
       curTitle
-        ? (same(curTitle, proposedTitle) ? `Title : garder « ${curTitle} »` : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »${marketing.length ? ` (retirer ${marketing.map((m) => `« ${m} »`).join(', ')} : formule promotionnelle, litige DNF)` : ''}`)
+        ? (same(curTitle, proposedTitle) ? null : `Title : remplacer « ${curTitle} » par « ${proposedTitle} »${marketing.length ? ` (retirer ${marketing.map((m) => `« ${m} »`).join(', ')} : formule promotionnelle, litige DNF)` : ''}`)
         : `Title : « ${proposedTitle} »`,
       curH1
-        ? (h1Keep ? `H1 : garder « ${curH1} »` : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
+        ? (h1Keep ? null : `H1 : remplacer « ${curH1} » par « ${nice(titleHead.query)} »`)
         : `H1 : « ${nice(titleHead.query)} »`,
       `Meta description : « ${metaHead}${metaFacets.length ? ` : ${metaFacets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${metaFacets.length ? ` (${metaFacets.join(', ')})` : ''}.`,
@@ -1119,7 +1360,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       `Requêtes à employer dans le texte : ${employ.map((x) => x.query).join(', ')}`,
       ...(routed.length ? [`Requêtes à NE PAS viser ici (elles relèvent ${rechargeUrl ? `de ${pathOf(rechargeUrl)}` : 'des e-liquides'}) : ${routed.slice(0, 6).map((x) => x.query).join(', ')}`] : []),
       LEGAL_NOTE,
-    ];
+    ].filter(Boolean);
     const routedPath = rechargeUrl ? pathOf(rechargeUrl) : 'les e-liquides';
     const queriesOut = [
       ...employ.map((x) => qRow(x, x === titleHead ? 'Requête du title' : 'À employer dans le texte')),
@@ -1153,7 +1394,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
       const links = await linkPlan({
         target: slugMatch[0],
         anchors: [titleHead.query, head.query, ...list.slice(1, 3).map((x) => x.query)],
-        sources: [topPage, ...fiches, ...relatedSources(data, titleHead.query, slugMatch[0])].filter(Boolean),
+        sources: [topPage, ...fiches, ...relatedSources(data, titleHead.query, slugMatch[0], audits)].filter(Boolean),
         data, audits, max: 6,
       });
       recs.push({
@@ -1164,12 +1405,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         title: `Modifier la page existante ${pathOf(slugMatch[0])} pour qu'elle porte « ${titleHead.query} »`,
         reason: `Le groupe fait ${fmtInt(impr)} impressions en 28 jours en position ${fmt1(pos)}. Google montre surtout ${pathOf(topPage)} (${pageKind(topPage)}), alors que la page dédiée existe${slugMatch[1] ? '' : ' et n’a encore aucune impression : elle manque de liens'}.`,
         action: [
-          `1. Modifier ${pathOf(slugMatch[0])}, qui existe déjà (ne pas créer d'autre page : ce serait de la cannibalisation). Title, H1 et texte selon le plan ci-dessous${dedAudit?.word_count ? ` ; la page fait aujourd'hui environ ${dedAudit.word_count} mots hors menus` : ''}.`,
-          links.lines.length
-            ? `2. Liens internes vers ${pathOf(slugMatch[0])} :\n${links.lines.join('\n')}`
-            : (links.checked ? '2. Liens internes : les pages proches font déjà le lien avec la bonne ancre.' : '2. Liens internes : aucune page source relevée.'),
-          `3. Ne pas modifier le title de ${pathOf(topPage)} pour ces requêtes : c'est la page dédiée qui doit les porter.`,
-        ].join('\n\n'),
+          `Modifier ${pathOf(slugMatch[0])}, qui existe déjà (ne pas créer d'autre page : ce serait de la cannibalisation). Title, H1 et texte selon le plan ci-dessous${dedAudit?.word_count ? ` ; la page fait aujourd'hui environ ${dedAudit.word_count} mots hors menus` : ''}.`,
+          ...(links.lines.length ? [`Liens internes vers ${pathOf(slugMatch[0])} :\n${links.lines.join('\n')}`] : []),
+        ].map((t, n) => `${n + 1}. ${t}`).join('\n\n'),
         proposal: plan.join('\n\n'),
         urls: [slugMatch[0], topPage],
         queries: queriesOut,
@@ -1196,7 +1434,7 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
 // cause donne ses actions : demande en baisse (le marché, pas la page), places
 // perdues (contenu, liens), clics repris par une autre de nos pages
 // (cannibalisation), rupture de stock, effet lancement qui retombe.
-const detectBaisse = async (data, audits) => {
+const detectBaisse = async (data, audits, protectedUrls = new Set()) => {
   const { pageStats, byQuery, q, qPrev, byQueryPrev, pageFirstSeen, period } = data;
   const recs = [];
   for (const [url, st] of pageStats) {
@@ -1240,10 +1478,20 @@ const detectBaisse = async (data, audits) => {
       causes.push('la page est déclarée en rupture de stock (données structurées)');
       steps.push('Rupture de stock : Google fait reculer les fiches indisponibles. Remettre en stock, ou indiquer une date de retour et proposer le modèle de remplacement en lien depuis la fiche.');
     }
-    if (shifted.length) {
-      const g = shifted[0].gain;
-      causes.push(`une autre de nos pages reprend les clics (${pathOf(g.page)})`);
-      steps.push(`Cannibalisation : ${pathOf(g.page)} prend désormais « ${shifted[0].query} ». Choisir laquelle des deux doit porter cette requête, retirer les mots du title de l'autre, et lier l'autre vers elle avec l'ancre « ${cap(shifted[0].query)} ».`);
+    // Même règle que la cannibalisation (chooseReference) : une requête partie
+    // vers la page qui doit la porter n'est pas une perte (« elfbar 4 in 1
+    // recharge » quitte la fiche du kit pour le pack de cartouches).
+    const better = shifted.filter((r) => normUrl(chooseReference(r.query, [url, r.gain.page], audits).main) !== normUrl(url));
+    const stolen = shifted.filter((r) => !better.includes(r));
+    if (stolen.length) {
+      const g = stolen[0].gain;
+      causes.push(`une autre de nos pages reprend les clics (${pathOf(g.page)} sur « ${stolen[0].query} »)`);
+      steps.push(...rivalSteps({ query: stolen[0].query, main: url, page: g.page, audits, protectedUrls }));
+    }
+    if (better.length) {
+      const g = better[0].gain;
+      causes.push(`des recherches passent à la page qui leur correspond (${pathOf(g.page)} sur « ${better[0].query} »)`);
+      steps.push(...rivalSteps({ query: better[0].query, main: g.page, page: url, audits, protectedUrls }));
     }
     if (demand <= -0.25) {
       causes.push(`la demande baisse (${Math.round(demand * 100)} % d'impressions sur ces requêtes, toutes pages confondues)`);
@@ -1251,7 +1499,7 @@ const detectBaisse = async (data, audits) => {
     if (posDelta >= 8) {
       causes.push(`chute brutale de ${fmt1(posDelta)} places en moyenne : ce n'est pas une question de contenu`);
       steps.push(`Search Console > Inspection de l'URL sur ${pathOf(url)} : vérifier que la page est indexée et que Google ne retient pas une autre adresse comme page canonique.`);
-      const prevModel = [...(byQuery.get(top[0].query) || [])].find((x) => x.page !== url && pageKind(x.page) === 'fiche produit' && brandOf(x.page) === brandOf(url));
+      const prevModel = [...(byQuery.get(top[0].query) || [])].find((x) => x.page !== url && pageKind(x.page) === 'fiche produit' && brandOf(x.page, audits) === brandOf(url, audits));
       if (prevModel) steps.push(`Google affiche aussi ${pathOf(prevModel.page)} sur « ${top[0].query} » : s'il alterne entre les deux fiches, différencier leurs titles (numéro de version) et lier l'ancienne vers la nouvelle avec l'ancre « ${cap(top[0].query)} ».`);
     }
     if (posDelta >= 1) {
@@ -1272,7 +1520,7 @@ const detectBaisse = async (data, audits) => {
       const links = await linkPlan({
         target: url,
         anchors: top.filter((r) => !hasSensitive(r.query)).slice(0, 3).map((r) => r.query),
-        sources: relatedSources(data, head.query, url).slice(0, 8),
+        sources: relatedSources(data, head.query, url, audits).slice(0, 8),
         data, audits, max: 4,
       });
       if (links.lines.length) steps.push(`Liens internes :\n${links.lines.join('\n')}`);
@@ -1281,13 +1529,14 @@ const detectBaisse = async (data, audits) => {
       causes.push(`le produit est récent (premières impressions le ${first.split('-').reverse().join('/')}) : l'intérêt du lancement retombe`);
     }
     if (!steps.length) {
-      steps.push(demand <= -0.25
-        ? 'Aucune action SEO prioritaire : la page garde sa place, ce sont les recherches qui baissent. La surveiller sans y consacrer de temps.'
-        : 'Regarder la page de résultats Google sur ces requêtes (mobile, navigation privée) : un concurrent ou un bloc nouveau au-dessus de nous peut expliquer la baisse de clics.');
+      // Baisse expliquée par la demande ou par une requête partie vers la bonne
+      // page : rien à faire, donc pas de carte.
+      if (demand <= -0.25 || (better.length && !stolen.length)) continue;
+      steps.push('Regarder la page de résultats Google sur ces requêtes (mobile, navigation privée) : un concurrent ou un bloc nouveau au-dessus de nous peut expliquer la baisse de clics.');
     }
     // Une baisse due seulement à la demande ne se récupère pas par le SEO.
     const recoverable = st.pc - st.c;
-    const est = demand <= -0.25 && posDelta < 1 && !shifted.length && !outOfStock ? recoverable * 0.1 : recoverable * 0.6;
+    const est = demand <= -0.25 && posDelta < 1 && !stolen.length && !outOfStock ? recoverable * 0.1 : recoverable * 0.6;
     recs.push({
       rec_key: `baisse:${url}`,
       type: 'baisse',
@@ -1365,21 +1614,24 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     } catch (error) {
       console.error('[SEO] Pages cibles :', error.message);
     }
-    const skipRes = (await pool.query('SELECT pattern FROM seo_targets WHERE active').catch(() => ({ rows: [] }))).rows
+    const decided = (await pool.query('SELECT pattern, target_url FROM seo_targets WHERE active').catch(() => ({ rows: [] }))).rows;
+    const skipRes = decided
       .map((r) => { try { return new RegExp(r.pattern, 'i'); } catch { return null; } }).filter(Boolean);
+    // Pages cibles décidées : une carte automatique ne les modifie jamais.
+    const protectedUrls = new Set(decided.map((r) => normUrl(r.target_url)));
     const indexRecs = await detectIndexDecisions(data, audits, sitePages);
     const claimed = new Map();
     const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
       ...targetRecs.map(({ targetRe, ...r }) => r),
-      ...detectCannibalisation(data, audits, skipRes).filter((r) => r.est_clicks >= 10),
+      ...detectCannibalisation(data, audits, skipRes, protectedUrls).filter((r) => r.est_clicks >= 10),
       ...(await detectTexte(data, audits, claimed)),
       ...detectSnippet(data, audits),
       ...detectFaq(data),
       ...detectIndexation(data, audits),
       ...creation,
       ...indexRecs,
-      ...(await detectBaisse(data, audits)),
+      ...(await detectBaisse(data, audits, protectedUrls)),
     ].map((r) => ({
       ...r,
       delay: delayFor(r, data.pageStats),
@@ -1476,4 +1728,8 @@ module.exports = {
   ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt, getIndexDecisions,
   // Vocabulaire partagé avec la rédaction SEO (seoWriterService).
   BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks,
+  // Partagés avec les pages cibles (seoPilotService).
+  brandFromJsonLd, rivalSteps,
+  // Banc d'essai (tests/seoAdvisor.test.js) : détecteurs sans réseau ni base.
+  ownsQuery, isBrandQuery, brandOf, roleOf, centeredOn, chooseReference, relatedSources, detectCannibalisation, detectTexte,
 };

@@ -657,7 +657,7 @@ RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage 
 - JAMAIS : arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
 - Les mots « goût » et « saveur » sont génériques et très recherchés (« gout jnr », « double gout », « puff 4 saveurs ») : ils sont permis, mais SEULEMENT de façon neutre — « double goût », « 4 saveurs » pour un modèle à plusieurs cartouches, nombre de goûts disponibles tiré des fiches, renvoi à la liste de la fiche. Ne jamais décrire un goût ni une saveur (fruit, fraîcheur, recette). Signale chaque emploi dans "points_a_verifier" pour l'avocat.
 - Le shortcode [annee] affiche l'année en cours : à utiliser plutôt qu'une année écrite en dur.
-- Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. N'écris jamais « interchangeable » pour une cartouche (les cartouches ne passent pas d'un modèle à l'autre).
+- Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. « Cartouches interchangeables » est permis pour dire qu'on change la cartouche sur le même appareil (le mot aide les clients à comprendre) ; ne laisse jamais entendre qu'une cartouche passe d'un modèle à l'autre.
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
 - Liens : n'écris un href QUE vers une page de la section « Pages que tu peux lier » du brief (indexables, vérifiées) ; pour toute autre page, cite-la sans lien et signale-la dans "points_a_verifier".
 - JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
@@ -770,7 +770,6 @@ const lintDraft = async (draft, page, data = null) => {
   const banned = [...BANNED].filter((w) => words.has(w) && !NEUTRAL_OK.has(w));
   if (banned.length) add('error', `Mots interdits (DNF) : ${banned.join(', ')}.`);
   if ([...NEUTRAL_OK].some((w) => words.has(w))) add('warn', '« goût » ou « saveur » employé : vérifier qu’il reste neutre (double goût, 4 saveurs, nombre de goûts) et le faire valider par l’avocat.');
-  if (/\binterchangeables?\b/.test(plain)) add('warn', '« interchangeable » : les cartouches ne passent pas d’un modèle à l’autre, préférer « remplaçable » et seulement si la fiche le dit.');
   if (HEALTH_RE.test(plain)) add('error', 'Vocabulaire santé détecté.');
   const mk = plain.match(new RegExp(MARKETING_RE.source, 'gi'));
   if (mk) add('warn', `Vocabulaire marketing : ${[...new Set(mk)].join(', ')}.`);

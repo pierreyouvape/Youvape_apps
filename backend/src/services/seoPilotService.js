@@ -406,6 +406,7 @@ const inspectPage = async (url) => {
     words: strip(body).split(' ').filter(Boolean).length,
     faq: (html.match(/class="faq-question"/g) || []).length,
     jsonld,
+    brand: advisor.brandFromJsonLd(html),
     links: advisor.extractLinks(html),
     error: res.error || null,
   };
@@ -426,6 +427,31 @@ const containsQuery = (text, query) => {
   const t = norm(text);
   return norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 2).every((w) => t.includes(w.replace(/s$/, '')));
 };
+
+// Ce que doit faire une page qui prend une requête décidée pour une autre :
+// les mêmes règles par type de page que les cartes automatiques
+// (seoAdvisorService.rivalSteps). Une page cible décidée n'est jamais
+// modifiée ; liste vide = rien à faire.
+const loadAudits = async (urls) => {
+  const forms = [...new Set(urls.filter(Boolean).flatMap(gscForms))];
+  if (!forms.length) return new Map();
+  const r = await pool.query('SELECT url, title, h1, brand, links, robots FROM seo_page_audit WHERE url = ANY($1)', [forms]);
+  return new Map(r.rows.map((a) => [normUrl(a.url), a]));
+};
+// Le title commence-t-il par la requête ? Mots dans l'ordre, sans les articles
+// ni le pluriel (« Magasin de cigarette électronique… » commence par « magasin
+// cigarette électronique »).
+const leadWords = (s) => norm(s).split(/[^a-z0-9]+/)
+  .filter((w) => w && !['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'un', 'une', 'en', 'a', 'au', 'aux', 'pour', 'et'].includes(w))
+  .map((w) => w.replace(/s$/, ''));
+const titleLeadsWith = (title, query) => {
+  const t = leadWords(title);
+  return leadWords(query).every((w, i) => t[i] === w);
+};
+const rivalSteps = (head, targetUrl, page, audits, targets) => advisor.rivalSteps({
+  query: head, main: normUrl(targetUrl), page: normUrl(page), audits,
+  protectedUrls: new Set(targets.map((t) => normUrl(t.target_url))),
+});
 
 const BANNED_WORDS = [...advisor.BANNED].filter((w) => !['code', 'livraison', 'avis', 'cbd'].includes(w));
 const bannedIn = (text) => {
@@ -564,12 +590,16 @@ const getPage = async (rawUrl) => {
     if (!byTarget.has(q.target.id)) byTarget.set(q.target.id, { target: q.target, list: [] });
     byTarget.get(q.target.id).list.push(q);
   }
+  // Relevé de cette page (en ligne, à l'instant) et des pages cibles concurrencées.
+  const audits = await loadAudits([...byTarget.values()].map(({ target }) => target.path));
+  audits.set(url, { url, title: page.title, h1: page.h1, brand: page.brand, links: page.links, robots: page.robots });
   for (const { target, list } of byTarget.values()) {
     const head = target.label.split(',')[0].trim();
     const impr = list.reduce((sum, q) => sum + q.impressions, 0);
-    add(`Cannibalisation « ${head} »`, false,
+    const steps = rivalSteps(head, target.path, url, audits, targetsRes.rows);
+    add(`Cannibalisation « ${head} »`, !steps.length,
       `Cette page capte ${list.map((q) => `« ${q.query} » (${q.share} %, pos. ${q.position ?? '—'})`).slice(0, 5).join(', ')} : ${impr} impressions en 28 jours`,
-      `La cible décidée est ${target.path} : retirer « ${head} » du title, du H1 et des intertitres de cette page, et ajouter un lien vers ${target.path} avec l'ancre « ${head} ».`, 'ko');
+      `La cible décidée est ${target.path}. ${steps.join(' ')}`, steps.some((s) => /^(Title de|Yoast)/.test(s)) ? 'ko' : 'warn');
   }
 
   const last = changes.get(url) || null;
@@ -596,6 +626,8 @@ const getPage = async (rawUrl) => {
 const targetRecommendations = async () => {
   await ensureTables();
   const { targets } = await listTargets();
+  // Relevé des cibles et des pages concurrentes (title, H1, marque, liens), fait au début du calcul.
+  const audits = await loadAudits(targets.flatMap((t) => [t.target_url, ...(t.stats?.last28?.pages || []).map((p) => p.page)]));
   const recs = [];
   for (const t of targets) {
     const s = t.stats?.last28;
@@ -603,10 +635,22 @@ const targetRecommendations = async () => {
     const rivals = s.pages.filter((p) => p.page !== normUrl(t.target_url) && p.share >= 10);
     if (!rivals.length) continue;
     const head = t.label.split(',')[0].trim();
+    const work = [];
+    for (const p of rivals) {
+      const steps = rivalSteps(head, t.target_url, p.page, audits, targets);
+      if (steps.length) work.push(`${pathOf(p.page)} reçoit ${p.share} % des impressions (position ${p.position ?? '—'}). ${steps.join(' ')}`);
+    }
+    // La cible elle-même : la requête en tête du title et dans le H1 (l'accueil
+    // commence par « YouVape », décidé dans le plan).
+    const ta = audits.get(normUrl(t.target_url));
+    if (ta?.title && t.target_path !== '/' && !titleLeadsWith(ta.title, head)) {
+      work.push(`Title de ${t.target_path} : le commencer par « ${head.charAt(0).toUpperCase()}${head.slice(1)} » (aujourd'hui « ${ta.title} »)${ta.h1 && !containsQuery(ta.h1, head) ? `, et mettre « ${head} » dans le H1 (aujourd'hui « ${ta.h1} »)` : ''}. Les réécrire dans l'onglet Rédaction SEO.`);
+    }
+    // Rien à faire : pas de carte.
+    if (!work.length) continue;
     const steps = [
       `Page cible décidée le ${t.decided_at.split('-').reverse().join('/')} : ${t.target_path}. Elle reçoit ${s.target_share} % des impressions (position ${s.target_position ?? '—'}).`,
-      ...rivals.map((p) => `${pathOf(p.page)} reçoit ${p.share} % (position ${p.position ?? '—'}) : retirer « ${head} » de son title, de son H1 et de ses intertitres, puis y ajouter un lien vers ${t.target_path} avec l'ancre « ${head} ».`),
-      `Enfin, sur ${t.target_path} : « ${head} » en tête du title et dans le H1, une fois dans l'intro. Ouvrir sa fiche page pour le reste des contrôles.`,
+      ...work,
     ];
     recs.push({
       rec_key: `cible:${t.id}`,
