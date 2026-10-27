@@ -29,6 +29,7 @@ const NEEDS_COLUMNS = [
   { key: 'on_order', label: 'En commande' },
   { key: 'sales_in_period', label: 'Ventes période' },
   { key: 'avg_monthly_sales', label: 'Ventes/mois' },
+  { key: 'shelf_days', label: 'Jours en rayon' },
   { key: 'tendance', label: 'Tendance' },
   { key: 'stock_will_last', label: 'Stock j.' },
   { key: 'theoretical_need', label: 'Besoin théo.' },
@@ -76,28 +77,40 @@ const trendCoef = (weekly) => {
 };
 
 // Besoin d'un produit : mêmes formules que NeedsTabV2, sans délai (boutique)
+// Date locale → 'YYYY-MM-DD' (les jours hors rayon arrivent en heure de Paris)
+const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+const LOW_HINDSIGHT_DAYS = 14; // en rayon depuis moins que ça : rythme peu fiable
+
 function computeProductNeeds(product, periodDays, coverageMonths, isCustom, startDate, endDate, unit, alertMonths) {
-  const { daily_sales = [], stock = 0, on_order = 0 } = product;
+  const { daily_sales = [], off_shelf_days = [], stock = 0, on_order = 0 } = product;
   const safeAlert = alertMonths != null ? alertMonths : coverageMonths;
   const effCoverage = Math.max(coverageMonths, safeAlert);
 
-  let sales; let actualDays = periodDays;
+  let sales; let actualDays = periodDays; let from; let to; // [from, to] en 'YYYY-MM-DD'
   const now = new Date();
   if (isCustom && startDate && endDate) {
     const s = new Date(startDate + 'T00:00:00'), e = new Date(endDate + 'T23:59:59');
     sales = daily_sales.filter((m) => { const d = new Date(m.date); return d >= s && d <= e; });
     actualDays = Math.max(Math.ceil((e - s) / 86400000), 1);
+    from = startDate; to = endDate;
   } else if (unit === 'months') {
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const start = new Date(now.getFullYear(), now.getMonth() - Math.round(periodDays / 30), 1);
     sales = daily_sales.filter((m) => { const d = new Date(m.date); return d >= start && d < tomorrow; });
     actualDays = Math.max(Math.ceil((tomorrow - start) / 86400000), 1);
+    from = ymd(start); to = ymd(now);
   } else {
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - periodDays);
     sales = daily_sales.filter((m) => { const d = new Date(m.date); return d >= start && d < tomorrow; });
     actualDays = periodDays;
+    from = ymd(start); to = ymd(now);
   }
+
+  // Ventes ÷ jours EN RAYON, pas ÷ toute la période : une rupture ou une
+  // arrivée récente ne fait plus passer le produit pour lent.
+  const offInPeriod = off_shelf_days.filter((d) => d >= from && d <= to).length;
+  const shelfDays = Math.min(Math.max(actualDays - offInPeriod, 1), actualDays);
 
   const salesInPeriod = sales.reduce((a, m) => a + (parseInt(m.total_qty, 10) || 0), 0);
 
@@ -113,7 +126,7 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
   const coef = trendCoef(weekly);
 
   const leadTimeDays = 0; // boutiques : pas de délai
-  const dailyRate = actualDays > 0 ? salesInPeriod / actualDays : 0;
+  const dailyRate = shelfDays > 0 ? salesInPeriod / shelfDays : 0;
   const avgMonthly = dailyRate * 30;
   const effectiveStock = stock + on_order; // comme la V2 : le stock en commande compte
   const stockWillLast = dailyRate > 0 ? effectiveStock / dailyRate : Infinity;
@@ -128,6 +141,9 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
 
   return {
     sales_in_period: salesInPeriod,
+    shelf_days: shelfDays,
+    period_days: actualDays,
+    low_hindsight: salesInPeriod > 0 && shelfDays < LOW_HINDSIGHT_DAYS,
     avg_monthly_sales: Math.round(avgMonthly * 100) / 100,
     trend_coefficient: Math.round(coef * 100) / 100,
     trend_direction: coef > 1.1 ? 'up' : coef < 0.9 ? 'down' : 'stable',
@@ -452,6 +468,7 @@ export default function BesoinsTab({ shop, token }) {
                   {isVisible('on_order') && <SortTh column="on_order" label="En commande" />}
                   {isVisible('sales_in_period') && <SortTh column="sales_in_period" label="Ventes période" />}
                   {isVisible('avg_monthly_sales') && <SortTh column="avg_monthly_sales" label="Ventes/mois" />}
+                  {isVisible('shelf_days') && <SortTh column="shelf_days" label="Jours en rayon" />}
                   {isVisible('tendance') && <th className="text-center">Tendance</th>}
                   {isVisible('stock_will_last') && <SortTh column="stock_will_last" label="Stock j." />}
                   {isVisible('theoretical_need') && <SortTh column="theoretical_need" label="Besoin théo." />}
@@ -479,6 +496,13 @@ export default function BesoinsTab({ shop, token }) {
                     {isVisible('on_order') && <td className="text-right">{row.on_order > 0 ? fmtInt(row.on_order) : '-'}</td>}
                     {isVisible('sales_in_period') && <td className="text-right">{fmtInt(row.sales_in_period)}</td>}
                     {isVisible('avg_monthly_sales') && <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>}
+                    {isVisible('shelf_days') && (
+                      <td className="text-right" title={`Ventes/mois calculées sur ${row.shelf_days} jours en rayon (stock > 0 ou vente) sur ${row.period_days}`}>
+                        <span style={{ color: row.shelf_days < row.period_days ? '#d97706' : undefined }}>{fmtInt(row.shelf_days)}</span>
+                        <span style={{ color: '#9ca3af' }}> / {fmtInt(row.period_days)}</span>
+                        {row.low_hindsight && <div style={{ fontSize: 11, color: '#d97706' }}>peu de recul</div>}
+                      </td>
+                    )}
                     {isVisible('tendance') && <td className="text-center">{renderTrend(row.trend_direction, row.trend_coefficient)}</td>}
                     {isVisible('stock_will_last') && <td className="text-right">{row.stock_will_last == null ? '∞' : fmtInt(row.stock_will_last)}</td>}
                     {isVisible('theoretical_need') && <td className="text-right">{fmtInt(row.theoretical_need)}</td>}
