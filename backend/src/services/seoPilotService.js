@@ -501,7 +501,8 @@ const getPage = async (rawUrl) => {
   const main = ownTargets[0]?.label.split(',')[0].trim() || free[0]?.query || null;
   // Sur une page qui n'est cible de rien, title et H1 ne sont que des suggestions.
   const sev = isTarget ? 'ko' : 'warn';
-  const misplaced = queries.filter((q) => q.target && !q.target.isThis && q.impressions >= 20);
+  // Seulement quand la page prend une part réelle (≥ 10 %) d'une requête attribuée ailleurs.
+  const misplaced = queries.filter((q) => q.target && !q.target.isThis && q.impressions >= 20 && (q.share ?? 0) >= 10);
 
   const incoming = [];
   for (const a of inbound.rows) {
