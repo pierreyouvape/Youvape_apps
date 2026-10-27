@@ -81,6 +81,7 @@ const REC_TYPES = {
   faq: { label: 'FAQ', color: '#059669' },
   indexation: { label: 'Indexation / crawl', color: '#475569' },
   baisse: { label: 'En baisse', color: '#BE123C' },
+  liens: { label: 'Liens à corriger', color: '#0369A1' },
 };
 const REC_STATUSES = [
   { value: 'todo', label: 'À faire' },

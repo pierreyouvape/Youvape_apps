@@ -407,6 +407,7 @@ const inspectPage = async (url) => {
     faq: (html.match(/class="faq-question"/g) || []).length,
     jsonld,
     brand: advisor.brandFromJsonLd(html),
+    product_tables: advisor.countProductTables(html),
     links: advisor.extractLinks(html),
     error: res.error || null,
   };
@@ -600,6 +601,35 @@ const getPage = async (rawUrl) => {
     add(`Cannibalisation « ${head} »`, !steps.length,
       `Cette page capte ${list.map((q) => `« ${q.query} » (${q.share} %, pos. ${q.position ?? '—'})`).slice(0, 5).join(', ')} : ${impr} impressions en 28 jours`,
       `La cible décidée est ${target.path}. ${steps.join(' ')}`, steps.some((s) => /^(Title de|Yoast)/.test(s)) ? 'ko' : 'warn');
+  }
+
+  // Liens existants dont l'ancre nomme un produit ou une marque mais pointe ailleurs.
+  if (page.http_status === 200) {
+    const known = (await pool.query(
+      `SELECT url, title, h1, brand, robots, http_status FROM seo_page_audit
+       WHERE url LIKE '%/produit/%' OR url LIKE '%/marque/%'`
+    )).rows;
+    for (const k of known) if (!audits.has(normUrl(k.url))) audits.set(normUrl(k.url), k);
+    const stats = to ? new Map((await pool.query(
+      `SELECT page, SUM(impressions)::int AS i FROM gsc_search_daily
+       WHERE country = $1 AND date BETWEEN $2 AND $3 AND page = ANY($4) GROUP BY page`,
+      [COUNTRY, from, to, known.flatMap((k) => gscForms(k.url))]
+    )).rows.map((r) => [normUrl(r.page), { i: r.i }])) : new Map();
+    const decidedTargets = targetsRes.rows.map((t) => ({ re: compileRe(t.pattern), url: normUrl(t.target_url) })).filter((t) => t.re);
+    const fixes = advisor.linkFixes(url, audits, decidedTargets, stats);
+    add('Liens à corriger', !fixes.length,
+      fixes.length ? `${fixes.length} lien(s) dont l'ancre nomme un produit ou une marque mais pointe vers une autre page` : 'aucun',
+      fixes.map((f) => advisor.linkFixLine(f)).join(' '), 'warn');
+
+    // Tableaux [product_table] : si la page liste des produits et n'en a encore aucun.
+    if (['marque', 'catégorie', 'étiquette', 'page'].includes(kind) && advisor.roleOf(url, page) !== 'lexique' && page.product_tables === 0) {
+      const productUrls = (page.links || []).map((l) => l.href).filter((h) => /\/produit\//.test(h));
+      const groups = productUrls.length ? await advisor.productTables(url, productUrls, audits) : [];
+      if (groups.length) {
+        add('Tableaux de produits', false, 'aucun [product_table] dans la page',
+          `Coller dans le texte du bas de page${groups.length > 1 ? ' (une section par marque et catégorie)' : ''} :\n${advisor.tableBlock(groups)}`, 'warn');
+      }
+    }
   }
 
   const last = changes.get(url) || null;

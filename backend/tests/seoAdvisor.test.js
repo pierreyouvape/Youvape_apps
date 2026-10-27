@@ -289,33 +289,120 @@ test('pas de lien depuis /marque/elfbar vers l\'article « menthol » : la page 
   assert.deepStrictEqual(relatedSources(data, 'menthol cigarette', ARTICLE_MENTHOL, auditsOf(audit(MARQUE))), [BOSTON]);
 });
 
-const h2Test = detectTexte({
-  q: new Map([
-    ['elfbar', { c: 45, i: 3500, p: 7.2 }],
-    ['elfbar recharge', { c: 13, i: 633, p: 10.1 }],
-    ['recharge elfbar', { c: 7, i: 304, p: 11.3 }],
-    ['puff elfbar', { c: 7, i: 476, p: 7.1 }],
-  ]),
-  byQuery: new Map([
-    ['elfbar', [{ page: MARQUE, c: 45, i: 3500, p: 7.2 }]],
-    ['elfbar recharge', [{ page: MARQUE, c: 13, i: 633, p: 10.1 }]],
-    ['recharge elfbar', [{ page: MARQUE, c: 7, i: 304, p: 11.3 }]],
-    ['puff elfbar', [{ page: MARQUE, c: 7, i: 476, p: 7.1 }]],
-  ]),
-  pageStats: new Map(),
-}, auditsOf(audit(MARQUE)), new Map()).then(
-  (recs) => {
+console.log('Liens et ancres existants');
+
+const { extractLinks, linkFixes, detectLiens, productTables, countProductTables } = advisor;
+const ELFA_PACK_0MG = `${SITE}/produit/eliquides/cartouches-pre-remplies/pack-x2-cartouches-puff-elfa-pro-0mg`;
+const ELFX_CART = `${SITE}/produit/e-cigarettes/composants/cartouches-pods/cartouche-elfx-mega-elfbar`;
+const TAG_JNR = `${SITE}/etiquette-produit/puff-jnr`;
+// /marque/elfbar le 27/10/2026 : la catégorie puffs liée 5 fois dans le bas de page.
+const GAMMES = { href: CAT_PUFFS, text: 'puff', texts: ['puff', 'Elfbar ELFA / ELFA Pro', 'Elfbar 4 en 1', 'Elfbar grande capacité', 'puffs'], count: 5 };
+const elfbarAudits = (marqueExtra = {}) => auditsOf(
+  audit(MARQUE, { http_status: 200, links: [GAMMES], ...marqueExtra }),
+  audit(KIT_4IN1, { http_status: 200 }), audit(PACK_4IN1, { http_status: 200 }),
+  audit(ELFA_0MG, { http_status: 200 }), audit(ELFA_20MG, { http_status: 200 }), audit(CAT_PUFFS, { http_status: 200 }),
+);
+const STATS = new Map([[KIT_4IN1, { i: 3053 }], [PACK_4IN1, { i: 156 }], [ELFA_0MG, { i: 900 }], [ELFA_20MG, { i: 500 }]]);
+
+test('relevé des liens : une entrée par adresse, avec le nombre de liens et toutes les ancres', () => {
+  const html = '<p><a href="/categorie-produit/e-cigarettes/kits-ecigarettes/puffs">puff</a> <a href="https://www.youvape.fr/categorie-produit/e-cigarettes/kits-ecigarettes/puffs/"><img src="x.png"></a>'
+    + ' <a href="/categorie-produit/e-cigarettes/kits-ecigarettes/puffs">Elfbar 4 en 1</a> <a href="/categorie-produit/e-cigarettes/kits-ecigarettes/puffs">puff</a></p>';
+  assert.deepStrictEqual(extractLinks(html), [{ href: CAT_PUFFS, text: 'puff', texts: ['puff', 'Elfbar 4 en 1'], count: 4 }]);
+});
+
+test('tableau « Gammes Elfbar » : chaque ancre qui nomme un modèle vers sa fiche, rien pour « puff » ni « grande capacité »', () => {
+  const fixes = linkFixes(MARQUE, elfbarAudits(), [], STATS);
+  assert.deepStrictEqual(fixes.map((f) => [f.text, f.to]), [
+    ['Elfbar ELFA / ELFA Pro', ELFA_0MG], // la fiche Elfa Pro la plus vue
+    ['Elfbar 4 en 1', KIT_4IN1], // le kit, pas le pack de recharges
+  ]);
+});
+
+test('une page cible décidée l\'emporte sur la fiche la plus vue', () => {
+  const decided = [{ re: /elfa \/ elfa pro/i, url: ELFA_20MG }];
+  const fix = linkFixes(MARQUE, elfbarAudits(), decided, STATS).find((f) => f.text === 'Elfbar ELFA / ELFA Pro');
+  assert.deepStrictEqual([fix.to, fix.decided], [ELFA_20MG, true]);
+});
+
+test('lien vers la page consacrée à son ancre (« Puffs JNR » → /etiquette-produit/puff-jnr) : jamais signalé', () => {
+  const audits = auditsOf(
+    audit(MARQUE, { http_status: 200, links: [{ href: TAG_JNR, text: 'Puffs JNR', texts: ['Puffs JNR'], count: 1 }] }),
+    { url: `${SITE}/marque/jnr`, title: 'JNR - YouVape', http_status: 200 },
+    { url: `${SITE}/produit/e-cigarettes/kits-ecigarettes/puffs/puff-jnr-falcon-x-jnr`, title: 'Puff JNR Falcon X - YouVape', h1: 'Puff JNR Falcon X - JNR', brand: 'JNR', http_status: 200 },
+  );
+  assert.deepStrictEqual(linkFixes(MARQUE, audits, [], new Map()), []);
+});
+
+test('carte « Liens à corriger » : chaque lien écrit mot pour mot, sans texte inutile', () => {
+  const recs = detectLiens({ q: new Map([['elfbar 4 en 1', { i: 145 }]]), pageStats: STATS }, elfbarAudits(), []);
+  assert.strictEqual(recs.length, 1);
+  assert.strictEqual(recs[0].action, [
+    '1. Lien « Elfbar ELFA / ELFA Pro » : remplacer /categorie-produit/e-cigarettes/kits-ecigarettes/puffs par /produit/e-cigarettes/kits-ecigarettes/puffs/puff-elfa-pro-0mg (la fiche du produit) ; la page a 5 liens vers /categorie-produit/e-cigarettes/kits-ecigarettes/puffs, Google ne retient que le premier.',
+    '2. Lien « Elfbar 4 en 1 » : remplacer /categorie-produit/e-cigarettes/kits-ecigarettes/puffs par /produit/e-cigarettes/kits-ecigarettes/puffs/puff-4in1-elfbar (la fiche du produit) ; la page a 5 liens vers /categorie-produit/e-cigarettes/kits-ecigarettes/puffs, Google ne retient que le premier.',
+  ].join('\n\n'));
+  noFiller(recs[0].action);
+});
+
+test('tableau déjà en place : le thème rend chaque [product_table] en .yv-product-table__grid', () => {
+  assert.strictEqual(countProductTables('<div class="yv-product-table"><table class="yv-product-table__grid"></table></div><table class="yv-product-table__grid">'), 2);
+  assert.strictEqual(countProductTables('<table style="width: 100%">'), 0);
+});
+
+// Tests asynchrones : lancés à la suite, puis le bilan.
+const asyncTests = [
+  ['tableaux de /marque/elfbar : une section par catégorie, la marque de la page, les plus vendus en tête', async () => {
+    const audits = elfbarAudits();
+    const groups = await productTables(MARQUE, [KIT_4IN1, ELFA_0MG, ELFA_20MG, PACK_4IN1, ELFA_PACK_0MG, ELFX_CART], audits);
+    assert.deepStrictEqual(groups.map((g) => g.h3), ['Puffs rechargeables Elfbar', 'Cartouches préremplies Elfbar', 'Cartouches pods Elfbar']);
+    assert.strictEqual(groups[0].shortcode, '[product_table brand="elfbar" category="puffs" columns="name,autonomie,contenance,taux-de-nicotine" headers="Modèle,Batterie,Réservoir,Nicotine" orderby="popularity"]');
+    assert.strictEqual(groups[1].shortcode, '[product_table brand="elfbar" category="cartouches-pre-remplies" columns="name,contenance,taux-de-nicotine,compatibilite" headers="Référence,Contenance,Nicotine,Compatible avec" orderby="popularity"]');
+  }],
+  ['carte « Texte » : les tableaux à coller quand la page n\'en a aucun ; rien quand elle en a déjà', async () => {
+    const data = {
+      q: new Map([['elfbar', { c: 45, i: 3500, p: 7.2 }], ['elfbar recharge', { c: 13, i: 633, p: 10.1 }]]),
+      byQuery: new Map([['elfbar', [{ page: MARQUE, c: 45, i: 3500, p: 7.2 }]], ['elfbar recharge', [{ page: MARQUE, c: 13, i: 633, p: 10.1 }]]]),
+      pageStats: new Map(),
+    };
+    const products = [KIT_4IN1, ELFA_0MG].map((href) => ({ href, text: '', texts: [], count: 1 }));
+    const [sans] = await detectTexte(data, elfbarAudits({ links: products, product_tables: 0 }), new Map());
+    assert.match(sans.action, /Tableaux des produits : coller ce bloc dans le texte du bas de page :\n<h3>Puffs rechargeables Elfbar<\/h3>\n\[product_table brand="elfbar" category="puffs" /);
+    const [avec] = await detectTexte(data, elfbarAudits({ links: products, product_tables: 2 }), new Map());
+    assert.doesNotMatch(avec.action, /product_table/);
+  }],
+  ['« elfbar recharge » et « recharge elfbar » : un seul H2, et pas de « title à garder »', async () => {
+    const recs = await detectTexte({
+      q: new Map([
+        ['elfbar', { c: 45, i: 3500, p: 7.2 }],
+        ['elfbar recharge', { c: 13, i: 633, p: 10.1 }],
+        ['recharge elfbar', { c: 7, i: 304, p: 11.3 }],
+        ['puff elfbar', { c: 7, i: 476, p: 7.1 }],
+      ]),
+      byQuery: new Map([
+        ['elfbar', [{ page: MARQUE, c: 45, i: 3500, p: 7.2 }]],
+        ['elfbar recharge', [{ page: MARQUE, c: 13, i: 633, p: 10.1 }]],
+        ['recharge elfbar', [{ page: MARQUE, c: 7, i: 304, p: 11.3 }]],
+        ['puff elfbar', [{ page: MARQUE, c: 7, i: 476, p: 7.1 }]],
+      ]),
+      pageStats: new Map(),
+    }, auditsOf(audit(MARQUE)), new Map());
     const rec = recs.find((r) => r.rec_key === `texte:${MARQUE}`);
     assert.ok(rec, 'carte « texte » de /marque/elfbar attendue');
     assert.match(rec.action, /intertitres \(H2\) sur : « Elfbar recharge »\./);
     assert.doesNotMatch(rec.action, /« Recharge elfbar »/);
     noFiller(rec.action);
-    console.log('  ok   « elfbar recharge » et « recharge elfbar » : un seul H2, et pas de « title à garder »');
-  },
-  (err) => { failures++; console.error(`  FAIL intertitres\n       ${err.message}`); }
-);
+  }],
+];
 
-h2Test.then(() => {
+(async () => {
+  for (const [name, fn] of asyncTests) {
+    try {
+      await fn();
+      console.log(`  ok   ${name}`);
+    } catch (err) {
+      failures++;
+      console.error(`  FAIL ${name}\n       ${err.message}`);
+    }
+  }
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
   process.exit(failures === 0 ? 0 : 1);
-});
+})();

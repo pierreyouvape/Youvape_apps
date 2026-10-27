@@ -20,7 +20,7 @@
 
 const axios = require('axios');
 const pool = require('../config/database');
-const { BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks } = require('./seoAdvisorService');
+const { BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks, TABLE_MAX, presetFor } = require('./seoAdvisorService');
 
 const SITE = 'https://www.youvape.fr';
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
@@ -395,20 +395,11 @@ const getProgress = (id, kind = 'analyze') => {
 
 // Le shortcode du thème (class-product-table.php) exige une marque (pwb-brand)
 // et une catégorie (product_cat), et n'affiche que 10 produits au plus.
-const TABLE_MAX = 10;
+// Colonnes par catégorie : TABLE_PRESETS, partagé avec les cartes (seoAdvisorService).
 const slugify = (s) => norm(s).replace(/&/g, ' ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 const keyName = (s) => norm(decode(s)).replace(/[^a-z0-9]+/g, '');
-// Colonnes proposées selon la catégorie (alias du thème ou slug d'attribut sans pa_).
-const TABLE_PRESETS = [
-  { re: /^puffs?$/, columns: 'name,autonomie,contenance,taux-de-nicotine', headers: 'Modèle,Batterie,Réservoir,Nicotine' },
-  { re: /^kits-format-pod$|^kits-format-box$|^kits-ecigarettes$/, columns: 'name,autonomie,capacite,charge', headers: 'Référence,Autonomie,Capacité,Charge' },
-  { re: /^cartouches-pre-remplies$/, columns: 'name,contenance,taux-de-nicotine,compatibilite', headers: 'Référence,Contenance,Nicotine,Compatible avec' },
-  { re: /^cartouches-pods$|^cartouches/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
-  { re: /^eliquides|^boosters|^bases/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
-];
 // Colonnes à ne jamais afficher (description de goût, promesse de performance).
 const TABLE_BANNED_COLUMNS = /(^|,)\s*(pa_)?(gout|saveur[a-z-]*|saveurs[a-z-]*|fruits|boissons|classics|gourmandises|plantes|types-de-e-liquides|nombre-de-puffs|production-de-vapeur)\s*(,|$)/;
-const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,autonomie,contenance,charge', headers: 'Référence,Autonomie,Contenance,Charge' };
 
 let brandCache = null;
 const loadBrandIndex = async () => {

@@ -138,6 +138,7 @@ const ensureTables = async () => {
     ALTER TABLE seo_recommendations ADD COLUMN IF NOT EXISTS delay text;
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS availability text;
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS brand text;
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS product_tables integer;
   `);
 };
 
@@ -152,7 +153,9 @@ const CHROME_RE = /<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<header[\s\
 const normUrl = (u) => (u || '').split(/[?#]/)[0].replace(/\/$/, '');
 
 // Liens internes du CONTENU de la page (en-tête, menus et pied de page retirés) :
-// c'est là qu'un lien ajouté par l'équipe se trouvera.
+// c'est là qu'un lien ajouté par l'équipe se trouvera. Une entrée par adresse :
+// `text` = la première ancre non vide, `texts` = toutes les ancres distinctes,
+// `count` = le nombre de liens vers cette adresse (Google ne retient que le premier).
 const extractLinks = (html) => {
   const body = html.replace(CHROME_RE, ' ');
   const out = new Map();
@@ -164,9 +167,13 @@ const extractLinks = (html) => {
     if (!href.startsWith(SITE)) continue;
     href = normUrl(href);
     const text = m[2].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim().slice(0, 120);
-    if (!out.has(href) || (!out.get(href) && text)) out.set(href, text);
+    const l = out.get(href) || { href, text: '', texts: [], count: 0 };
+    l.count += 1;
+    if (text && !l.text) l.text = text;
+    if (text && !l.texts.includes(text)) l.texts.push(text);
+    out.set(href, l);
   }
-  return [...out.entries()].map(([href, text]) => ({ href, text }));
+  return [...out.values()];
 };
 
 // Marque déclarée dans les données structurées d'une fiche (Product.brand).
@@ -197,6 +204,9 @@ const brandFromJsonLd = (html) => {
   return null;
 };
 
+// Le thème rend chaque [product_table] en <table class="yv-product-table__grid">.
+const countProductTables = (html) => ((html || '').match(/class="yv-product-table__grid"/g) || []).length;
+
 const auditUrl = async (url) => {
   try {
     const res = await axios.get(url, {
@@ -223,6 +233,8 @@ const auditUrl = async (url) => {
       // Disponibilité déclarée dans les données structurées (fiches produit).
       availability: (html.match(/"availability"\s*:\s*"(?:https?:\/\/schema\.org\/)?([A-Za-z]+)"/) || [])[1] || null,
       brand: brandFromJsonLd(html),
+      // Tableaux [product_table] déjà en place (le thème les rend en .yv-product-table).
+      product_tables: res.status === 200 ? countProductTables(html) : null,
       error: null,
     };
   } catch (error) {
@@ -232,13 +244,14 @@ const auditUrl = async (url) => {
 
 const saveAudit = async (a) => {
   await pool.query(
-    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability, brand)
-     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability, brand, product_tables)
+     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      ON CONFLICT (url) DO UPDATE SET fetched_at = now(), http_status = $2, location = $3, title = $4, h1 = $5,
-       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12, brand = $13`,
+       meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12, brand = $13,
+       product_tables = $14`,
     [a.url, a.http_status, a.location || null, a.title || null, a.h1 || null, a.meta_description || null,
       a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null,
-      a.availability || null, a.brand || null]
+      a.availability || null, a.brand || null, a.product_tables ?? null]
   );
 };
 
@@ -598,6 +611,148 @@ const rivalSteps = ({ query, main, page, audits, protectedUrls }) => {
   return steps;
 };
 
+/* ─── Tableaux automatiques [product_table] ────────────── */
+// Le shortcode du thème (class-product-table.php) : une marque (pwb-brand) ×
+// une catégorie (product_cat), 10 produits au plus. Il se remplit depuis les
+// fiches : chaque produit renvoie vers sa fiche, un produit désactivé disparaît.
+// Plusieurs marques ou catégories = plusieurs sections (un H3 + un shortcode).
+const TABLE_MAX = 10;
+// Colonnes selon la catégorie (alias du thème ou slug d'attribut sans pa_).
+const TABLE_PRESETS = [
+  { re: /^puffs?$/, columns: 'name,autonomie,contenance,taux-de-nicotine', headers: 'Modèle,Batterie,Réservoir,Nicotine' },
+  { re: /^kits-format-pod$|^kits-format-box$|^kits-ecigarettes$/, columns: 'name,autonomie,capacite,charge', headers: 'Référence,Autonomie,Capacité,Charge' },
+  { re: /^cartouches-pre-remplies$/, columns: 'name,contenance,taux-de-nicotine,compatibilite', headers: 'Référence,Contenance,Nicotine,Compatible avec' },
+  { re: /^cartouches-pods$|^cartouches/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
+  { re: /^eliquides|^boosters|^bases/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
+  { re: /^box-batteries/, columns: 'name,autonomie,charge,compatibilite', headers: 'Référence,Autonomie,Charge,Compatible avec' },
+];
+const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,autonomie,contenance,charge', headers: 'Référence,Autonomie,Contenance,Charge' };
+// Intitulé d'une section de tableau : « Cartouches préremplies Elfbar ».
+const CATEGORY_LABEL = {
+  puffs: 'Puffs rechargeables', 'kits-format-pod': 'Pods', 'kits-format-box': 'Kits box', 'kits-ecigarettes': 'Kits',
+  'cartouches-pre-remplies': 'Cartouches préremplies', 'cartouches-pods': 'Cartouches pods',
+  'box-batteries-electroniques': 'Box et batteries', clearomiseurs: 'Clearomiseurs', resistances: 'Résistances',
+  'eliquides-10ml': 'E-liquides 10 ml', 'eliquides-grands-formats': 'E-liquides grands formats',
+  'boosters-de-nicotine': 'Boosters de nicotine', 'eliquides-sels-de-nicotine': 'E-liquides aux sels de nicotine',
+};
+const categoryLabel = (slug) => CATEGORY_LABEL[slug] || cap(String(slug || '').replace(/-/g, ' '));
+
+// Tableaux possibles pour une page : ses produits regroupés par marque ×
+// catégorie, les plus gros groupes d'abord, et seulement pour une marque qui a
+// sa page /marque/… (sinon le slug est faux, kit-elfx-mega-elbar, et le tableau
+// resterait vide). Sur une page marque, tous ses produits sont de la marque, et
+// chacune de ses catégories a sa section ; ailleurs, les 3 plus gros groupes.
+const productTables = async (page, productUrls, audits, max = marqueSlug(page) ? 6 : 3) => {
+  const own = marqueSlug(page);
+  const groups = new Map();
+  for (const u of [...new Set(productUrls.map(normUrl))]) {
+    if (pageKind(u) !== 'fiche produit') continue;
+    const segs = pathOf(u).split('/').filter(Boolean);
+    const category = segs.length >= 3 ? segs[segs.length - 2] : null;
+    const brand = own || brandOf(u, audits);
+    if (!brand || !category) continue;
+    const key = `${brand}|${category}`;
+    const g = groups.get(key) || { brand, category, products: [], brandName: null };
+    g.products.push(u);
+    g.brandName = g.brandName || audits.get(u)?.brand || null;
+    groups.set(key, g);
+  }
+  const out = [];
+  for (const g of [...groups.values()].sort((a, b) => b.products.length - a.products.length)) {
+    if (out.length >= max) break;
+    const mUrl = `${SITE}/marque/${g.brand}`;
+    let m = audits.get(mUrl);
+    if (!m) {
+      m = await auditUrl(mUrl);
+      if (m.http_status) { await saveAudit(m); audits.set(mUrl, m); }
+    }
+    const exists = m?.http_status === 200 || (m?.http_status >= 300 && m?.http_status < 400 && /\/marque\//.test(m.location || ''));
+    if (!exists) continue;
+    const preset = presetFor(g.category);
+    const name = g.brandName || (m.h1 || '').split(/[,:–-]/)[0].trim() || cap(g.brand.replace(/-/g, ' '));
+    out.push({
+      ...g,
+      count: g.products.length,
+      h3: `${categoryLabel(g.category)} ${name}`,
+      shortcode: `[product_table brand="${g.brand}" category="${g.category}" columns="${preset.columns}" headers="${preset.headers}" orderby="popularity"]`,
+    });
+  }
+  return out;
+};
+const tableBlock = (groups) => groups.map((g) => `<h3>${g.h3}</h3>\n${g.shortcode}`).join('\n');
+
+/* ─── Liens et ancres existants ────────────────────────── */
+// Un lien dont l'ancre nomme un produit ou une marque mais pointe vers une
+// autre page (« Elfbar 4 en 1 » vers la catégorie puffs) dit à Google que
+// cette autre page en parle. On propose la bonne cible : la page cible décidée
+// si l'ancre en relève, sinon la page qui porte l'ancre en propre (fiche du
+// modèle, page marque), la plus vue d'abord.
+// decided : [{ re, url }] (seo_targets) ; pageStats : impressions par page.
+// Marques connues et leurs pages : fiches dont la marque est relevée, pages marque.
+const brandIndex = (audits) => {
+  const byBrand = new Map();
+  for (const x of audits.values()) {
+    const u = normUrl(x.url);
+    const b = pageKind(u) === 'page marque' ? marqueSlug(u) : (x.brand ? brandSlug(x.brand) : null);
+    if (!b || compact(b).length < 3 || /noindex/i.test(x.robots || '') || (x.http_status && x.http_status !== 200)) continue;
+    if (!byBrand.has(b)) byBrand.set(b, []);
+    byBrand.get(b).push(u);
+  }
+  return byBrand;
+};
+const linkFixes = (page, audits, decided = [], pageStats = new Map(), byBrand = brandIndex(audits)) => {
+  const a = audits.get(normUrl(page));
+  if (!a || !Array.isArray(a.links)) return [];
+  const impr = (u) => pageStats.get(u)?.i || pageStats.get(`${u}/`)?.i || 0;
+  const fixes = [];
+  for (const l of a.links) {
+    const href = normUrl(l.href);
+    if (!href || href === normUrl(page) || isParamUrl(href)) continue;
+    for (const text of (l.texts?.length ? l.texts : [l.text]).filter(Boolean)) {
+      // La page visée est consacrée à l'ancre (« Puffs JNR » → /etiquette-produit/puff-jnr) : bon lien.
+      if (slugIs(href, text) || centeredOn(audits.get(href)?.title, text)) continue;
+      const flat = compact(text);
+      const brand = [...byBrand.keys()].find((b) => flat.includes(compact(b)));
+      if (!brand) continue;
+      const decidedTo = decided.find((d) => d.re?.test(norm(text)))?.url || null;
+      const owners = byBrand.get(brand).filter((u) => (pageKind(u) === 'page marque'
+        ? isBrandQuery(text, marqueSlug(u))
+        : ownsQuery(text, auditOf(u, audits))));
+      const to = decidedTo || (owners.length
+        ? chooseReference(text, owners.sort((x, y) => impr(y) - impr(x)), audits).main
+        : null);
+      if (!to || normUrl(to) === href || normUrl(to) === normUrl(page)) continue;
+      fixes.push({ text, from: href, to: normUrl(to), count: l.count || 1, decided: !!decidedTo });
+    }
+  }
+  return fixes;
+};
+const linkFixLine = (f) => `Lien « ${f.text} » : remplacer ${pathOf(f.from)} par ${pathOf(f.to)} (${f.decided ? 'la page cible décidée pour cette recherche' : `${pageKind(f.to) === 'page marque' ? 'la page de la marque' : 'la fiche du produit'}`})${f.count > 1 ? ` ; la page a ${f.count} liens vers ${pathOf(f.from)}, Google ne retient que le premier` : ''}.`;
+
+// 7. Liens à corriger : une carte par page, avec chaque lien à modifier.
+const detectLiens = (data, audits, decided = []) => {
+  const recs = [];
+  const byBrand = brandIndex(audits);
+  for (const [u, a] of audits) {
+    if (a.http_status !== 200 || /noindex/i.test(a.robots || '') || isParamUrl(u)) continue;
+    const fixes = linkFixes(u, audits, decided, data.pageStats, byBrand);
+    if (!fixes.length) continue;
+    const demand = fixes.reduce((s, f) => s + (data.q.get(norm(f.text))?.i || 0), 0);
+    recs.push({
+      rec_key: `liens:${u}`,
+      type: 'liens',
+      effort: 'faible',
+      est_clicks: Math.max(1, monthly(demand * 0.02)),
+      title: `Liens à corriger sur ${pathOf(u)}`,
+      reason: `${fixes.length} lien${fixes.length > 1 ? 's nomment' : ' nomme'} un produit ou une marque mais ${fixes.length > 1 ? 'pointent' : 'pointe'} vers une autre page : Google comprend que c'est cette autre page qui en parle.`,
+      action: fixes.map((f, n) => `${n + 1}. ${linkFixLine(f)}`).join('\n\n'),
+      urls: [u, ...new Set(fixes.map((f) => f.to))],
+      queries: [],
+    });
+  }
+  return recs;
+};
+
 const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => {
   const t = normUrl(target);
   // Vers une fiche produit, on ne propose que des pages de la même marque (et la
@@ -778,7 +933,15 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
       data, audits,
     });
     if (links.lines.length) blocks.push(`Liens internes :\n${links.lines.join('\n')}`);
-    // 4. Ce qu'il ne faut pas viser ici
+    // 4. Tableaux de produits : le shortcode du thème, si la page liste des
+    // produits et n'en a encore aucun (product_tables inconnu : on ne propose rien).
+    if (['page marque', 'catégorie', 'étiquette', 'landing page'].includes(roleOf(page, audit)) && audit?.product_tables === 0) {
+      const groups = await productTables(page, productLinks(audit), audits);
+      if (groups.length) {
+        blocks.push(`Tableaux des produits : coller ce bloc dans le texte du bas de page${groups.length > 1 ? ' (une section par marque et catégorie)' : ''} :\n${tableBlock(groups)}`);
+      }
+    }
+    // 5. Ce qu'il ne faut pas viser ici
     if (elsewhere.length) {
       const byTarget = new Map();
       for (const x of elsewhere.slice(0, 6)) {
@@ -1340,6 +1503,10 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
     const metaHead = h1Keep ? curH1.replace(/\s+-\s+/g, ' ') : nice(titleHead.query);
     // Ce que le nom de la page dit déjà ne se répète pas (« JNR Falcon X 28K : 28k Falcon X »).
     const metaFacets = facets.filter((f) => !coveredBy(metaHead, f));
+    // Tableaux : le shortcode du thème pour les produits de la page (ou du groupe),
+    // sauf si la page en a déjà.
+    const tableGroups = dedAudit?.product_tables > 0 ? []
+      : await productTables(target, [...(dedAudit ? productLinks(dedAudit) : []), ...fiches], audits);
     // Un title ou un H1 déjà bon n'apparaît pas dans le plan.
     const plan = [
       curTitle
@@ -1350,7 +1517,9 @@ const detectCreation = async (data, audits, sitePages, claimed) => {
         : `H1 : « ${nice(titleHead.query)} »`,
       `Meta description : « ${metaHead}${metaFacets.length ? ` : ${metaFacets.slice(0, 4).join(', ')}` : ''}. ${profile.meta} »`,
       `Introduction : 2 à 3 phrases factuelles sur ce que regroupe la page${metaFacets.length ? ` (${metaFacets.join(', ')})` : ''}.`,
-      `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
+      tableGroups.length
+        ? `Tableaux des produits, à coller dans le texte du bas de page :\n${tableBlock(tableGroups)}`
+        : `Grille des produits, puis un tableau comparatif : ${profile.comparatif}.`,
       ...labels.slice(0, 5).map((l) => `H2 : ${profile === PROFILES.liquide ? (l.title || l.label) : l.label} : ${profile.h2} ; lien vers ${pathOf(l.url)}${l.note || ''}`),
       ...cartouches.slice(0, 2).map((c) => `H2 : ${c.title} : compatibilité, contenance, résistance ; lien vers ${pathOf(c.url)}`),
       ...(rechargeUrl && !isProductType ? [`H2 : Recharger : e-liquides compatibles ; lien vers ${pathOf(rechargeUrl)}${recharge.note}`] : []),
@@ -1562,7 +1731,7 @@ const detectBaisse = async (data, audits, protectedUrls = new Set()) => {
 const DELAYS = {
   snippet: [1, 3, 'semaines'], redirection: [1, 3, 'semaines'], texte: [3, 6, 'semaines'],
   faq: [3, 6, 'semaines'], indexation: [2, 6, 'semaines'], cannibalisation: [4, 8, 'semaines'],
-  modification: [4, 8, 'semaines'], creation: [2, 4, 'mois'],
+  modification: [4, 8, 'semaines'], creation: [2, 4, 'mois'], liens: [2, 6, 'semaines'],
 };
 const delayFor = (r, pageStats) => {
   if (r.type === 'baisse') return 'à analyser d\u2019abord';
@@ -1573,7 +1742,7 @@ const delayFor = (r, pageStats) => {
   return `${lo} à ${d[1]} ${d[2]}`;
 };
 
-const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, modification: 1, texte: 1, snippet: 1, faq: 0.9, baisse: 0.8, indexation: 0.8 };
+const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, modification: 1, texte: 1, snippet: 1, faq: 0.9, baisse: 0.8, indexation: 0.8, liens: 0.8 };
 
 let running = false;
 
@@ -1619,6 +1788,9 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       .map((r) => { try { return new RegExp(r.pattern, 'i'); } catch { return null; } }).filter(Boolean);
     // Pages cibles décidées : une carte automatique ne les modifie jamais.
     const protectedUrls = new Set(decided.map((r) => normUrl(r.target_url)));
+    const decidedTargets = decided
+      .map((r) => { try { return { re: new RegExp(r.pattern, 'i'), url: normUrl(r.target_url) }; } catch { return null; } })
+      .filter(Boolean);
     const indexRecs = await detectIndexDecisions(data, audits, sitePages);
     const claimed = new Map();
     const creation = await detectCreation(data, audits, sitePages, claimed);
@@ -1632,6 +1804,7 @@ const computeRecommendations = async ({ audit = true } = {}) => {
       ...creation,
       ...indexRecs,
       ...(await detectBaisse(data, audits, protectedUrls)),
+      ...detectLiens(data, audits, decidedTargets),
     ].map((r) => ({
       ...r,
       delay: delayFor(r, data.pageStats),
@@ -1728,8 +1901,10 @@ module.exports = {
   ensureTables, computeRecommendations, listRecommendations, updateRecommendation, ctrAt, getIndexDecisions,
   // Vocabulaire partagé avec la rédaction SEO (seoWriterService).
   BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks,
+  // Tableaux [product_table] : partagés avec la rédaction SEO et les pages cibles.
+  TABLE_MAX, presetFor, productTables, tableBlock, countProductTables,
   // Partagés avec les pages cibles (seoPilotService).
-  brandFromJsonLd, rivalSteps,
+  brandFromJsonLd, rivalSteps, brandIndex, linkFixes, linkFixLine,
   // Banc d'essai (tests/seoAdvisor.test.js) : détecteurs sans réseau ni base.
-  ownsQuery, isBrandQuery, brandOf, roleOf, centeredOn, chooseReference, relatedSources, detectCannibalisation, detectTexte,
+  ownsQuery, isBrandQuery, brandOf, roleOf, centeredOn, chooseReference, relatedSources, detectCannibalisation, detectTexte, detectLiens,
 };
