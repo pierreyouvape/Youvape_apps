@@ -265,7 +265,9 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
         invoice.totalHt,
         invoice.totalTva,
         invoice.totalTtc,
-        invoice.statedPaymentMethod,
+        // Libellé indicatif (VARCHAR(40)) : un libellé long, comme le
+        // « Paiement 100% Sécurisé par … » d'e.tasty, bloquait tout le dépôt.
+        invoice.statedPaymentMethod ? String(invoice.statedPaymentMethod).slice(0, 40) : null,
         invoice.orderRefOnDoc,
         status,
         filePath,
