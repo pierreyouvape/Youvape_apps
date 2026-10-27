@@ -426,6 +426,15 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
     // Conforme une fois le solde déduit : on le dit, comme pour une ligne soldée
     // en entier, plutôt que de taire les pièces qui manquent au bon.
     if (verdict === 'ok' && qtySoldee > 0) verdict = 'closed';
+    // COMMANDÉ, LIVRÉ ET FACTURÉ À 0 € : un cadeau du fournisseur, pas une
+    // baisse de tarif. e.tasty FA084852/2026 : 5 Numbers 8 et 5 Numbers 10
+    // commandés à 5 €, offerts sur la facture. La ligne ressortait en « Tarif »
+    // à −25 €, et « Inscrire le bon tarif » refusait le 0 €. Le geste est de
+    // passer CETTE ligne de commande à 0 € (le lot entre en stock à ce qu'il a
+    // coûté) sans toucher au tarif de la réf., que la prochaine commande reprend.
+    if (!isPackaging && !unitMismatch && inv.qty > 0 && invoicedTotal === 0 && expectedTotal > 0) {
+      verdict = 'offered';
+    }
 
     results.push({
       ref: ord.ref || inv.ref,
@@ -892,6 +901,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       otherInvoicesGap += r.gap;   // l'écart éventuel se traite sur l'autre facture
       continue;
     }
+    if (r.verdict === 'offered') {
+      inOurFavour += r.gap;   // tout l'écart est à notre avantage : la ligne passe à 0 €
+      continue;
+    }
     if (r.verdict === 'packaging') {
       packagingGap += r.gap;   // résidu d'arrondi d'un simple changement d'unité
       continue;
@@ -1006,6 +1019,7 @@ const DIFFERENCE_KINDS = {
   discount:           { rank: 7,  label: 'Remise de pied',        action: 'Répartie sur le coût réel de chaque ligne' },
   voucher:            { rank: 7,  label: 'Bon à valoir',          action: "Bon d'une facture précédente : ne baisse pas le coût de cette commande" },
   free:               { rank: 8,  label: 'Offert',                action: 'Geste commercial, rien à faire' },
+  offered:            { rank: 4,  label: 'Offert',                action: 'Commandé mais offert : passer la ligne de commande à 0 €' },
   credit:             { rank: 8,  label: 'Avoir',                 action: 'Vient en déduction, rien à réclamer' },
   packaging:          { rank: 9,  label: 'Conditionnement',       action: 'Unités contre packs : même marchandise, même montant' },
   rounding:           { rank: 10, label: 'Arrondi de remise',     action: 'Calcul non arrondi du fournisseur, pas une erreur de tarif' },

@@ -112,7 +112,8 @@ async function loadBase() {
     WHERE poi.units_received > 0
       AND po.status NOT IN (${PO_EXCLUDED_STATUSES.map((_, i) => `$${i + 1}`).join(', ')})
       AND poi.unit_price IS NOT NULL
-      AND poi.unit_price > 0
+      -- 0 € = article offert : même règle que computedCostModel.
+      AND poi.unit_price >= 0
     ORDER BY poi.product_id, lot_date ASC, poi.id ASC
   `, PO_EXCLUDED_STATUSES);
 
@@ -139,7 +140,7 @@ async function loadBase() {
     const pid = l.product_id;
     const qty = parseInt(l.qty);
     const price = parseFloat(l.price);
-    if (!qty || qty <= 0 || isNaN(price) || price <= 0) continue;
+    if (!qty || qty <= 0 || isNaN(price) || price < 0) continue;
     if (!lotsByProduct.has(pid)) lotsByProduct.set(pid, []);
     lotsByProduct.get(pid).push({ qty, price, lotDate: l.lot_date });
   }

@@ -28,7 +28,10 @@ const computedCostModel = {
       WHERE poi.units_received > 0
         AND po.status NOT IN ('draft', 'cancelled')
         AND poi.unit_price IS NOT NULL
-        AND poi.unit_price > 0
+        -- 0 € = article offert par le fournisseur (verdict « offered » du
+        -- contrôle de facture) : un vrai lot, gratuit, qui baisse le PMP.
+        -- Seul NULL veut dire « prix inconnu ».
+        AND poi.unit_price >= 0
       ORDER BY poi.product_id, lot_date ASC, poi.id ASC
     `);
 
@@ -58,7 +61,7 @@ const computedCostModel = {
       if (!lotsByProduct[lot.product_id]) lotsByProduct[lot.product_id] = [];
       const qty = parseInt(lot.qty_received);
       const price = parseFloat(lot.unit_price);
-      if (!qty || qty <= 0 || isNaN(price) || price <= 0) continue;
+      if (!qty || qty <= 0 || isNaN(price) || price < 0) continue;
       lotsByProduct[lot.product_id].push({ qty, price });
     }
 

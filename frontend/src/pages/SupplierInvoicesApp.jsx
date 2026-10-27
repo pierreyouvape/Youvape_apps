@@ -154,6 +154,7 @@ const VERDICTS = {
   missing_in_invoice: { rank: 2, label: 'Commandé, non facturé', tone: 'orange', action: 'Reliquat ou manquant : vérifier la livraison' },
   qty: { rank: 3, label: 'Quantité', tone: 'orange', action: 'Ajuster la quantité de la commande' },
   price: { rank: 4, label: 'Tarif', tone: 'red', action: 'Réclamer un avoir, ou aligner si le prix a changé' },
+  offered: { rank: 4, label: 'Offert', tone: 'green', action: 'Commandé mais offert : passer la ligne de commande à 0 €' },
   not_ordered: { rank: 5, label: 'Facturé, non commandé', tone: 'red', action: 'Article ajouté : accepter ou contester' },
   shipping: { rank: 6, label: 'Frais de port', tone: 'blue', action: 'Non prévus à la commande' },
   discount: { rank: 7, label: 'Remise de pied', tone: 'green', action: 'Répartie sur le coût réel de chaque ligne' },
@@ -278,7 +279,7 @@ const ecartTarifDe = (l) => {
   if (packFactorStored(l) && l.net_gap != null) return Number(l.net_gap) || 0;
   return Number(l.residual_gap_price != null ? l.residual_gap_price : l.gap_price) || 0;
 };
-const lignesEcartTarif = (lines) => (lines || []).filter((l) => ['price', 'qty_price'].includes(l.verdict)
+const lignesEcartTarif = (lines) => (lines || []).filter((l) => ['price', 'qty_price', 'offered'].includes(l.verdict)
   && l.material && Math.abs(ecartTarifDe(l)) >= SEUIL_TARIF);
 
 const Kpi = ({ label, value, tone, hint, title }) => (

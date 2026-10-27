@@ -1383,6 +1383,23 @@ test('un escompte en cascade porte sur le montant déjà remisé et se répartit
   assert.strictEqual(r.summary.claimable, 0);
 });
 
+test('commandé puis facturé à 0 € : offert, avec la ligne de commande à passer à 0 €', () => {
+  // e.tasty FA084852/2026 : 5 Numbers 8 commandés à 5 €, offerts. La ligne
+  // ressortait en « Tarif » −25 €, sans geste possible.
+  const r = compareInvoiceToOrder({
+    invoice: { totalHt: 0, lines: [{ ref: 'NUMHU10000', qty: 5, lineTotalHt: 0 }] },
+    order: { lines: [{ ref: 'NUMHU10000', qty: 5, price: 5 }] },
+  });
+  const l = byRef(r, 'NUMHU10000');
+  assert.strictEqual(l.verdict, 'offered');
+  assert.strictEqual(r.summary.claimable, 0);
+  assert.ok(close(r.summary.inOurFavour, -25), `en notre faveur ${r.summary.inOurFavour}`);
+  assert.ok(close(r.summary.roundingGap, 0), `arrondi ${r.summary.roundingGap}`);
+  const t = listTariffUpdates(r).find((x) => x.ref === 'NUMHU10000');
+  assert.ok(t, 'aucun tarif proposé');
+  assert.strictEqual(t.realPrice, 0);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

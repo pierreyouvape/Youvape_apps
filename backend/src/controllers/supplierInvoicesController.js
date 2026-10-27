@@ -572,7 +572,7 @@ async function applyDocumentTariffs(req, res) {
     // ou un conditionnement ne se « corrige » pas d'ici.
     const cle = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const enEcart = new Set((analysis.comparison?.lines || [])
-      .filter((l) => ['price', 'qty_price'].includes(l.verdict))
+      .filter((l) => ['price', 'qty_price', 'offered'].includes(l.verdict))
       .map((l) => cle(l.ref)));
     const tarifs = (analysis.tariffs || []).filter((t) => enEcart.has(cle(t.ref)));
     if (tarifs.length === 0) {

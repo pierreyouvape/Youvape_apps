@@ -747,6 +747,21 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
     const refPack = Number(ref.pack_qty) || 1;
     const prixPack = (Number(t.realPrice) || 0) * (refPack / bmsPack);
 
+    // Un article OFFERT (verdict « offered ») coûte 0 € sur CE lot, pas pour
+    // toujours : le tarif de la réf. reste celui que la prochaine commande
+    // reprendra. Seule la ligne de commande passe à 0 € (cf. applyTariffs).
+    if (Number(t.realPrice) === 0) {
+      applied.push({
+        ref: ref.supplier_sku,
+        requested: t,
+        packQty: ref.pack_qty,
+        packPrice: ref.pack_price == null ? null : Number(ref.pack_price),
+        previous: ref.pack_price == null ? null : Number(ref.pack_price),
+        offered: true,
+      });
+      continue;
+    }
+
     if (!Number.isFinite(prixPack) || prixPack <= 0) {
       skipped.push({ ref: t.ref, reason: 'prix inexploitable' });
       continue;
@@ -875,7 +890,8 @@ async function applyTariffs(supplierId, orderId, tariffs, db = pool) {
       const prixLigne = (Number(t.realPrice) || 0) * (lignePack / bmsPack);
       const arrondi = Math.round(prixLigne * 10000) / 10000;
 
-      if (!Number.isFinite(arrondi) || arrondi <= 0) {
+      // 0 € est un prix légitime ici : l'article a été offert.
+      if (!Number.isFinite(arrondi) || arrondi < 0) {
         retenu.orderLine = { skipped: 'prix inexploitable' };
         continue;
       }

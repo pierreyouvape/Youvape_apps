@@ -209,6 +209,22 @@ console.log('\nAppliquer un tarif à la commande');
     assert.ok(/illisibles/.test(r.applied[0].bmsLine.skipped), `message : ${r.applied[0].bmsLine.skipped}`);
   });
 
+  await test('un article offert passe la ligne de commande à 0 €, sans toucher au tarif de la réf.', async () => {
+    // e.tasty FA084852/2026 : Numbers 8 commandé à 5 €, offert sur la facture.
+    const db = fakeDb({
+      order: commande,
+      refs: [{ id: 11, supplier_sku: 'NUMHU10000', pack_qty: 1, pack_price: 5.9 }],
+      items: [{ id: 222204, supplier_sku: 'NUMHU10000', unit_price: 5, units_per_qty: 1, discount_percent: 0 }],
+    });
+    const r = await supplierDocumentModel.applyTariffs(
+      7, 9342, [{ ref: 'NUMHU10000', realPrice: 0, packQty: 1 }], db,
+    );
+    assert.strictEqual(db.ecrites.filter((e) => e.table === 'supplier_refs').length, 0, 'tarif de la réf. modifié');
+    assert.strictEqual(db.ecrites.find((e) => e.table === 'purchase_order_items').unitPrice, 0);
+    assert.strictEqual(r.applied[0].offered, true);
+    assert.strictEqual(r.skipped.length, 0);
+  });
+
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
   process.exit(failures === 0 ? 0 : 1);
 })();
