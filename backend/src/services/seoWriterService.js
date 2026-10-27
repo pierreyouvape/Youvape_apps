@@ -659,9 +659,10 @@ RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage 
 - Le shortcode [annee] affiche l'année en cours : à utiliser plutôt qu'une année écrite en dur.
 - Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. N'écris jamais « interchangeable » pour une cartouche (les cartouches ne passent pas d'un modèle à l'autre).
 - Les puffs jetables sont interdites en France : décris les produits comme rechargeables à cartouche ou réservoir quand c'est le cas, et ne cible jamais un modèle jetable ou non vendu.
+- Liens : n'écris un href QUE vers une page de la section « Pages que tu peux lier » du brief (indexables, vérifiées) ; pour toute autre page, cite-la sans lien et signale-la dans "points_a_verifier".
 - JAMAIS de lien vers une page en noindex, même « pour la navigation » : une étiquette en noindex reste sans lien (le thème la masque, c'est voulu ; elle n'a pas de demande de recherche). Si une seule fiche produit la remplace, lier la fiche ; sinon citer les produits sans lien. Les pages marquées NOINDEX dans le brief ne doivent figurer dans aucun href.`;
 
-const RESPONSE_FORMAT = `Réponds UNIQUEMENT par un objet JSON valide (sans texte autour, sans bloc de code), de cette forme :
+const RESPONSE_FORMAT = `Réponds par UN SEUL bloc de code \`\`\`json contenant un objet JSON valide, sans texte avant ni après (la réponse est recollée telle quelle dans l'app). Dans les valeurs, chaque guillemet droit (") du HTML et des shortcodes est échappé en \\" ; les retours à la ligne en \\n. Forme attendue :
 {
   "analyse": "constat en français, 5 à 10 lignes : quelle page Google affiche aujourd'hui, requêtes visées, requêtes laissées à d'autres pages et pourquoi, requêtes écartées",
   "indexation": { "decision": "index" | "noindex" | "inchangé", "raison": "…" },
@@ -685,7 +686,9 @@ const mdTable = (head, rows) => [
 const buildBrief = async (row) => {
   if (!row.page || !row.data) throw new Error('Lancez d’abord l’analyse de la page');
   const p = row.page;
-  const d = row.data;
+  const d = { ...row.data };
+  // Analyse faite avant les tableaux automatiques : on les calcule à la volée.
+  if (!d.tables) d.tables = await productTableGroups(p.products);
   const ads = await adsWithGsc(row.ads, d.range);
   const parts = [];
   parts.push(`# Brief SEO — ${p.path}`);
@@ -727,6 +730,17 @@ ${mdTable(['Marque', 'Catégorie', 'Produits', 'Shortcode proposé'], d.tables.m
     g.shortcode || 'impossible (marque ou catégorie inconnue) : tableau HTML',
   ]))}`);
   }
+  // Pages qu'on peut lier sans risque : vérifiées indexables (ou fiches listées).
+  const linkable = new Map();
+  const addLink = (url, why) => { if (url && !linkable.has(url)) linkable.set(url, why); };
+  for (const x of p.products || []) addLink(x.url, 'produit listé sur la page');
+  for (const l of d.links || []) if (l.robots && !/noindex/.test(l.robots)) addLink(l.url, 'déjà lié par le texte actuel');
+  for (const c of d.competitors || []) if (c.robots && !/noindex/.test(c.robots)) addLink(c.url, 'capte des requêtes du sujet');
+  for (const g of d.tables || []) if (g.brand_ok) addLink(`${SITE}/marque/${g.brand}`, 'page marque');
+  linkable.delete(p.url);
+  parts.push(`## Pages que tu peux lier (indexables ; aucune autre page en href)
+${[...linkable.entries()].map(([u, why]) => `- ${pathOf(u)} — ${why}`).join('\n') || '(aucune)'}
+Pages en NOINDEX à ne jamais lier : ${(d.links || []).filter((l) => /noindex/.test(l.robots || '')).map((l) => pathOf(l.url)).join(', ') || 'aucune relevée'}.`);
   parts.push(`## Caractéristiques des fiches produits (seule source des faits)
 ${d.facts.map((f) => `### ${f.title || pathOf(f.url)} — ${pathOf(f.url)}
 ${f.error ? `(non lue : ${f.error})` : [f.points_cles, f.caracteristiques, f.contenu].filter(Boolean).join('\n')}`).join('\n\n') || 'Aucune fiche.'}`);
@@ -1228,6 +1242,6 @@ module.exports = {
   ensureTables, listPages, getPage, createPage, updatePage, analyze, startAnalyze, startVerify, getProgress, saveAds, clearAds, getBrief,
   startGeneration, importDraft, verifyLive, getPositions, addEvent, deleteEvent, deletePage, aiConfigured,
   // Tests
-  parseAdsCsv, parseTerms, matchTerms, normalizeUrl, parsePage, dataRange, loadPageQueries, loadTopicQueries,
+  parseAdsCsv, parseTerms, matchTerms, normalizeUrl, parsePage, dataRange, loadPageQueries, loadTopicQueries, parseJsonReply,
   defaultTerms, productFacts, sampleProducts, buildBrief, lintDraft, fetchHtml, productTableGroups,
 };

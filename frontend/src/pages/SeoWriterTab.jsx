@@ -446,7 +446,7 @@ function DraftPanel({ page, onSaved, setMsg }) {
     try {
       const { data } = await axios.get(`${API_URL}/seo/writer/${page.id}/brief`);
       await navigator.clipboard.writeText(data.text);
-      setMsg(`Brief copié (${fmtInt(data.text.length)} caractères) : collez-le à Claude, puis collez sa réponse JSON ci-dessous.`);
+      setMsg(`Brief copié (${fmtInt(data.text.length)} caractères). Ouvrez une NOUVELLE conversation sur claude.ai, collez-le tel quel, puis copiez le bloc json de sa réponse (bouton « Copier » du bloc) et collez-le ci-dessous.`);
       setShowPaste(true);
     } catch (e) {
       setMsg(errMsg(e));
@@ -461,7 +461,7 @@ function DraftPanel({ page, onSaved, setMsg }) {
       setShowPaste(false);
       setMsg('Réponse importée.');
     } catch (e) {
-      setMsg(`Réponse illisible : ${errMsg(e)}`);
+      setMsg(`Réponse illisible (${errMsg(e)}) : recopiez uniquement le bloc json de la réponse, en entier. Si l’erreur persiste, demandez à Claude « Redonne uniquement l’objet JSON valide, guillemets échappés ».`);
     }
   };
 
