@@ -487,8 +487,14 @@ const getPage = async (rawUrl) => {
   });
 
   const ownTargets = targets.filter((t) => t.url === url);
-  const main = ownTargets[0]?.label.split(',')[0].trim()
-    || queries.find((q) => !q.target || q.target.isThis)?.query || null;
+  // Requête principale : celle de la cible décidée ; à défaut, la requête libre
+  // (non attribuée à une autre page) qui apporte le plus de clics, si elle pèse.
+  const isTarget = ownTargets.length > 0;
+  const free = queries.filter((q) => (!q.target || q.target.isThis) && q.impressions >= 50)
+    .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions);
+  const main = ownTargets[0]?.label.split(',')[0].trim() || free[0]?.query || null;
+  // Sur une page qui n'est cible de rien, title et H1 ne sont que des suggestions.
+  const sev = isTarget ? 'ko' : 'warn';
   const misplaced = queries.filter((q) => q.target && !q.target.isThis && q.impressions >= 20);
 
   const incoming = [];
@@ -502,7 +508,8 @@ const getPage = async (rawUrl) => {
   // Contrôles : un statut, ce qu'on voit, ce qu'il faut faire.
   const kind = pageKind(url);
   const checks = [];
-  const add = (element, ok, actuel, action, level = ok ? 'ok' : 'ko') => checks.push({ element, status: level, actuel, action: ok ? '' : action });
+  // level = gravité quand le contrôle échoue (« ko » à corriger, « warn » à revoir).
+  const add = (element, ok, actuel, action, level = 'ko') => checks.push({ element, status: ok ? 'ok' : level, actuel, action: ok ? '' : action });
   add('Réponse du serveur', page.http_status === 200, page.http_status ? `HTTP ${page.http_status}${page.location ? ` vers ${page.location}` : ''}` : (page.error || 'injoignable'),
     'La page doit répondre 200. Une redirection se met sur l\'ancienne adresse, pas sur une page à garder.');
   if (page.http_status === 200) {
@@ -512,9 +519,9 @@ const getPage = async (rawUrl) => {
     add('Title', !!page.title && page.title.length <= 70 && (!main || containsQuery(page.title, main)),
       page.title ? `« ${page.title} » (${page.title.length} car.)` : 'absent',
       main ? `Mettre « ${main} » en tête du title, 60 à 70 caractères en tout.` : 'Rédiger un title de 60 à 70 caractères.',
-      page.title && (!main || containsQuery(page.title, main)) ? 'warn' : 'ko');
+      page.title && (!main || containsQuery(page.title, main)) ? 'warn' : sev);
     add('H1', !!page.h1 && (!main || containsQuery(page.h1, main)), page.h1 ? `« ${page.h1} »` : 'absent',
-      main ? `Le H1 doit contenir « ${main} ».` : 'Ajouter un H1.');
+      main ? `Le H1 doit contenir « ${main} ».` : 'Ajouter un H1.', page.h1 ? sev : 'ko');
     const metaOk = !!page.meta && page.meta.length >= 70 && page.meta.length <= 160;
     add('Méta description', metaOk && (!main || containsQuery(page.meta, main)), page.meta ? `« ${page.meta} » (${page.meta.length} car.)` : 'absente',
       `Méta de 120 à 160 caractères${main ? `, qui commence par « ${main} »` : ''}.`, metaOk ? 'warn' : 'ko');
