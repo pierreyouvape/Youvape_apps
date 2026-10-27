@@ -80,6 +80,8 @@ const trendCoef = (weekly) => {
 // Date locale → 'YYYY-MM-DD' (les jours hors rayon arrivent en heure de Paris)
 const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 const LOW_HINDSIGHT_DAYS = 14; // en rayon depuis moins que ça : rythme peu fiable
+const MIN_SHELF_DAYS = 30;     // jours en rayon minimum pour juger d'un rythme
+const LOADED_DAYS = 124;       // ventes et jours hors rayon chargés (125 j côté serveur)
 
 function computeProductNeeds(product, periodDays, coverageMonths, isCustom, startDate, endDate, unit, alertMonths) {
   const { daily_sales = [], off_shelf_days = [], stock = 0, on_order = 0 } = product;
@@ -110,9 +112,32 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
   // Ventes ÷ jours EN RAYON, pas ÷ toute la période : une rupture ou une
   // arrivée récente ne fait plus passer le produit pour lent.
   const offInPeriod = off_shelf_days.filter((d) => d >= from && d <= to).length;
-  const shelfDays = Math.min(Math.max(actualDays - offInPeriod, 1), actualDays);
-
   const salesInPeriod = sales.reduce((a, m) => a + (parseInt(m.total_qty, 10) || 0), 0);
+
+  // Trop peu de jours en rayon pour juger (longue rupture) : on remonte AVANT la
+  // période jusqu'à MIN_SHELF_DAYS jours en rayon. Sinon 2 ventes les 2 derniers
+  // jours avant une rupture de 2 mois font « 30 par mois » (Z Nano 3 Black).
+  // Faute d'historique suffisant, on divise quand même par ce minimum.
+  // Absent TOUTE la période : on ne remonte pas, la période ne dit rien de lui
+  // (on irait chercher une vente en gros d'avant, ou un produit arrêté).
+  const minShelf = Math.min(MIN_SHELF_DAYS, actualDays);
+  const periodShelfDays = Math.min(Math.max(actualDays - offInPeriod, 0), actualDays);
+  let shelfDays = periodShelfDays; // + les jours repris avant la période
+  let rateSales = salesInPeriod; let extendedFrom = null;
+  if (periodShelfDays > 0 && shelfDays < minShelf) {
+    const off = new Set(off_shelf_days);
+    const qtyByDay = new Map(daily_sales.map((m) => [m.date, parseInt(m.total_qty, 10) || 0]));
+    const oldest = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - LOADED_DAYS));
+    const d = new Date(from + 'T00:00:00');
+    while (shelfDays < minShelf) {
+      d.setDate(d.getDate() - 1);
+      const k = ymd(d);
+      if (k < oldest) break;
+      if (off.has(k)) continue;
+      shelfDays += 1; rateSales += qtyByDay.get(k) || 0; extendedFrom = k;
+    }
+  }
+  const rateDays = Math.max(shelfDays, minShelf, 1);
 
   const weeklyMap = new Map();
   for (const d of sales) {
@@ -126,7 +151,7 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
   const coef = trendCoef(weekly);
 
   const leadTimeDays = 0; // boutiques : pas de délai
-  const dailyRate = shelfDays > 0 ? salesInPeriod / shelfDays : 0;
+  const dailyRate = rateSales / rateDays;
   const avgMonthly = dailyRate * 30;
   const effectiveStock = stock + on_order; // comme la V2 : le stock en commande compte
   const stockWillLast = dailyRate > 0 ? effectiveStock / dailyRate : Infinity;
@@ -141,9 +166,12 @@ function computeProductNeeds(product, periodDays, coverageMonths, isCustom, star
 
   return {
     sales_in_period: salesInPeriod,
-    shelf_days: shelfDays,
+    shelf_days: periodShelfDays,
     period_days: actualDays,
-    low_hindsight: salesInPeriod > 0 && shelfDays < LOW_HINDSIGHT_DAYS,
+    rate_sales: rateSales,
+    rate_days: rateDays,
+    extended_from: extendedFrom,
+    low_hindsight: rateSales > 0 && shelfDays < Math.min(LOW_HINDSIGHT_DAYS, actualDays),
     avg_monthly_sales: Math.round(avgMonthly * 100) / 100,
     trend_coefficient: Math.round(coef * 100) / 100,
     trend_direction: coef > 1.1 ? 'up' : coef < 0.9 ? 'down' : 'stable',
@@ -497,9 +525,12 @@ export default function BesoinsTab({ shop, token }) {
                     {isVisible('sales_in_period') && <td className="text-right">{fmtInt(row.sales_in_period)}</td>}
                     {isVisible('avg_monthly_sales') && <td className="text-right">{fmtNum(row.avg_monthly_sales)}</td>}
                     {isVisible('shelf_days') && (
-                      <td className="text-right" title={`Ventes/mois calculées sur ${row.shelf_days} jours en rayon (stock > 0 ou vente) sur ${row.period_days}`}>
+                      <td className="text-right" title={row.extended_from
+                        ? `Trop peu de jours en rayon sur la période : Ventes/mois calculées sur ${row.rate_sales} vente(s) en ${row.rate_days} jours en rayon depuis le ${fmtDay(row.extended_from)}`
+                        : `Ventes/mois calculées sur ${row.rate_sales} vente(s) en ${row.rate_days} jours en rayon (stock > 0 ou vente) sur ${row.period_days}`}>
                         <span style={{ color: row.shelf_days < row.period_days ? '#d97706' : undefined }}>{fmtInt(row.shelf_days)}</span>
                         <span style={{ color: '#9ca3af' }}> / {fmtInt(row.period_days)}</span>
+                        {row.extended_from && <div style={{ fontSize: 11, color: '#d97706' }}>rythme sur {fmtInt(row.rate_days)} j depuis le {fmtDay(row.extended_from)}</div>}
                         {row.low_hindsight && <div style={{ fontSize: 11, color: '#d97706' }}>peu de recul</div>}
                       </td>
                     )}
