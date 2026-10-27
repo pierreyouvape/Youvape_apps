@@ -66,6 +66,7 @@ const TOTAL_TOLERANCE = 0.02;
 // Les assiettes de remise connues par fournisseur. Module de données pur : le
 // moteur reste sans base ni réseau.
 const { scopesFor } = require('./discountScopes');
+const { kitNoteOf } = require('./invoiceKits');
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -102,9 +103,15 @@ function groupByRef(lines) {
   for (const line of lines) {
     const key = matchKeyOf(line);
     if (!map.has(key)) {
-      map.set(key, { ref: line.ref, label: line.label || null, productId: line.productId || null, qty: 0, total: 0, parts: 0, ownParts: 0, ownQty: 0, ownTotal: 0, otherDocs: [] });
+      map.set(key, { ref: line.ref, label: line.label || null, productId: line.productId || null, qty: 0, total: 0, parts: 0, ownParts: 0, ownQty: 0, ownTotal: 0, otherDocs: [], kits: [] });
     }
     const g = map.get(key);
+    // Pièces arrivées par un pack découpé (cf. invoiceKits) : à dire sur la ligne.
+    if (line.kit) {
+      const k = g.kits.find((x) => x.ref === line.kit.ref);
+      if (k) k.pieces += Number(line.qty) || 0;
+      else g.kits.push({ ...line.kit, pieces: Number(line.qty) || 0 });
+    }
     g.qty += Number(line.qty) || 0;
     g.total += Number(line.lineTotalHt) || 0;
     g.parts += 1;
@@ -309,6 +316,8 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
         // Déjà porté par une autre facture de la commande : c'est elle qui le traite.
         verdict: ailleurs ? 'other_invoice' : (invoicedTotal === 0 ? 'free' : 'not_ordered'),
         material: !ailleurs && Math.abs(invoicedTotal) >= threshold,
+        fromKit: inv.kits.length > 0 || undefined,
+        kitNote: kitNoteOf(inv.kits) || undefined,
         otherDocuments: inv.otherDocs.length > 0 ? inv.otherDocs : undefined,
         ownQty: inv.otherDocs.length > 0 ? inv.ownQty : undefined,
         ownTotal: inv.otherDocs.length > 0 ? round2(inv.ownTotal) : undefined,
@@ -487,6 +496,10 @@ function compareInvoiceToOrder({ invoice, order, options = {} }) {
       otherDocuments: inv.otherDocs.length > 0 ? inv.otherDocs : undefined,
       ownQty: inv.otherDocs.length > 0 ? inv.ownQty : undefined,
       ownTotal: inv.otherDocs.length > 0 ? round2(inv.ownTotal) : undefined,
+      // Tout ou partie facturé dans un PACK du fournisseur (cf. invoiceKits) :
+      // le prix payé est celui de l'offre, pas le tarif de l'article seul.
+      fromKit: inv.kits.length > 0 || undefined,
+      kitNote: kitNoteOf(inv.kits) || undefined,
     });
     // ENTIÈREMENT sur une autre facture : rien à traiter ici, c'est l'autre
     // document qui porte la ligne (et son éventuel écart de tarif).
@@ -1043,6 +1056,14 @@ const DIFFERENCE_KINDS = {
  * somme plus l'écart global — et un tableau dont les lignes ne font pas le
  * total ne sert plus à rien.
  */
+/**
+ * Un article payé au prix d'un PACK n'a pas changé de tarif : c'est l'offre qui
+ * coûte moins (ou plus) que ses articles commandés un par un. Le geste est de
+ * corriger le prix de CETTE commande — le stock entre à ce qu'il a coûté — sans
+ * toucher au tarif de la réf., que la prochaine commande à l'unité reprendra.
+ */
+const KIT_PRICE_ACTION = 'Prix du pack fournisseur : corriger le prix de cette commande, le tarif de la réf. ne bouge pas';
+
 /** Un prix à la pièce, au millième quand le centime ne suffit pas (5,192 €). */
 function prixPiece(n) {
   const v = Number(n);
@@ -1062,6 +1083,8 @@ function listDifferences(comparison) {
       kindLabel: (DIFFERENCE_KINDS[l.verdict] || {}).label || l.verdict,
       action: l.verdict === 'discount' && l.scope && l.scope.unallocated
         ? "Périmètre inconnu : non imputée au coût des lignes"
+        : (l.fromKit && (l.verdict === 'price' || l.verdict === 'qty_price')
+        ? KIT_PRICE_ACTION
         // Un carton contre des pièces, PLUS une hausse de tarif : dire à quelle
         // unité l'écart se lit, sinon « 4,50 € commandé » en face de
         // « 25,96 € facturé » reste illisible. Le bouton de tarif, lui, écrit le
@@ -1074,7 +1097,7 @@ function listDifferences(comparison) {
           : (l.unitMismatch
           ? `Vendu par ${l.packFactor} : ${prixPiece(l.piecePriceInvoiced)} la pièce facturée `
             + `contre ${prixPiece(l.piecePriceExpected)} commandée — réclamer l'écart, ou aligner le tarif s'il a changé`
-          : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null))),
+          : ((DIFFERENCE_KINDS[l.verdict] || {}).action || null)))),
     }))
     .sort((a, b) => {
       const ra = (DIFFERENCE_KINDS[a.verdict] || {}).rank || 99;
@@ -1153,6 +1176,9 @@ function listTariffUpdates(comparison, options = {}) {
         realPrice: Math.round(cout * 10000) / 10000,
         discountShare: l.discountShare || 0,
         delta: Math.round((cout - l.expectedUnitPrice) * 10000) / 10000,
+        // Payé au prix d'un pack (cf. invoiceKits) : ce coût vaut pour CE lot,
+        // jamais comme tarif de la réf. vendue seule.
+        orderLineOnly: l.fromKit ? true : undefined,
       };
     })
     .sort((a, b) => Math.abs(b.delta * b.qty) - Math.abs(a.delta * a.qty));
@@ -1195,9 +1221,13 @@ function listControlRows(comparison) {
       label: t.label,
       verdict: 'price',
       kindLabel: DIFFERENCE_KINDS.price.label,
-      action: netGap > 0
-        ? DIFFERENCE_KINDS.price.action
-        : 'Tarif à retenir : cette ligne a coûté moins que la commande',
+      action: l.fromKit
+        ? KIT_PRICE_ACTION
+        : (netGap > 0
+          ? DIFFERENCE_KINDS.price.action
+          : 'Tarif à retenir : cette ligne a coûté moins que la commande'),
+      fromKit: l.fromKit,
+      kitNote: l.kitNote,
       material: false,
       qtyOrdered: t.qty,
       qtyInvoiced: t.qty,

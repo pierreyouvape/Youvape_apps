@@ -225,6 +225,23 @@ console.log('\nAppliquer un tarif à la commande');
     assert.strictEqual(r.skipped.length, 0);
   });
 
+  await test('un article payé dans un pack corrige la commande, jamais le tarif de la réf.', async () => {
+    // JoshNoa V3/2026/41269 : Crunchy Sesame à 3,725 € dans l'« OCT - Pack Offre
+    // Gourmand », 4,90 € vendu seul — l'offre n'est pas un tarif.
+    const db = fakeDb({
+      order: commande,
+      refs: [{ id: 12, supplier_sku: 'josh00013021', pack_qty: 1, pack_price: 4.9 }],
+      items: [{ id: 301, supplier_sku: 'josh00013021', unit_price: 4.9, units_per_qty: 1, discount_percent: 0 }],
+    });
+    const r = await supplierDocumentModel.applyTariffs(
+      7, 9342, [{ ref: 'josh00013021', realPrice: 3.7253, packQty: 1, orderLineOnly: true }], db,
+    );
+    assert.strictEqual(db.ecrites.filter((e) => e.table === 'supplier_refs').length, 0, 'tarif de la réf. modifié');
+    assert.strictEqual(db.ecrites.find((e) => e.table === 'purchase_order_items').unitPrice, 3.7253);
+    assert.strictEqual(r.applied[0].orderLineOnly, true);
+    assert.strictEqual(r.applied[0].offered, undefined);
+  });
+
   console.log(failures === 0 ? '\nTous les tests passent.' : `\n${failures} test(s) en échec.`);
   process.exit(failures === 0 ? 0 : 1);
 })();

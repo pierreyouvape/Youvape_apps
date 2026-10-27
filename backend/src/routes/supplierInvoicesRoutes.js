@@ -44,6 +44,9 @@ router.post('/apply-tariffs', canWrite, controller.applyTariffs);
 router.get('/orders', canRead, controller.listCandidateOrders);
 // Bons de réduction à valoir sur une prochaine commande.
 router.get('/vouchers', canRead, controller.listVouchers);
+router.get('/kits', canRead, controller.listKits);
+router.post('/kits', canWrite, controller.saveKit);
+router.delete('/kits', canWrite, controller.deleteKit);
 router.put('/vouchers/:voucherId', canWrite, controller.updateVoucher);
 router.delete('/vouchers/:voucherId', canWrite, controller.deleteVoucher);
 router.post('/vouchers/:voucherId/apply-prices', canWrite, controller.applyVoucherPrices);

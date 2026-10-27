@@ -16,6 +16,7 @@
 const supplierInvoiceService = require('../services/supplierInvoiceService');
 const supplierDocumentModel = require('../models/supplierDocumentModel');
 const supplierVoucherModel = require('../models/supplierVoucherModel');
+const supplierKitModel = require('../models/supplierKitModel');
 const fs = require('fs');
 const path = require('path');
 const JSZip = require('jszip');
@@ -584,6 +585,7 @@ async function applyDocumentTariffs(req, res) {
       orderId,
       tarifs.map((t) => ({
         ref: t.ref, invoiceRef: t.invoiceRef, productId: t.productId, realPrice: t.realPrice, packQty: t.packQty,
+        orderLineOnly: t.orderLineOnly,
       })),
     );
 
@@ -908,7 +910,63 @@ async function getParsers(req, res) {
   }
 }
 
+/**
+ * Packs du fournisseur (cf. supplierKitModel) : une réf. facturée qui contient
+ * plusieurs articles. Déclarés depuis la ligne « Facturé, non commandé » qu'ils
+ * expliquent, puis la facture se re-contrôle.
+ *
+ * GET    /api/supplier-invoices/kits?supplier_id=
+ * POST   /api/supplier-invoices/kits   { supplier_id, kit_ref, label, components: [{ ref, qty }] }
+ * DELETE /api/supplier-invoices/kits?supplier_id=&kit_ref=
+ */
+async function listKits(req, res) {
+  try {
+    const supplierId = parseInt(req.query.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) return res.status(400).json({ error: 'Fournisseur manquant' });
+    return res.json({ kits: await supplierKitModel.listKits(supplierId) });
+  } catch (error) {
+    console.error('[supplier-invoices] packs :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+async function saveKit(req, res) {
+  try {
+    const supplierId = parseInt(req.body.supplier_id, 10);
+    if (!Number.isFinite(supplierId)) return res.status(400).json({ error: 'Fournisseur manquant' });
+    const kit = await supplierKitModel.saveKit({
+      supplierId,
+      kitRef: req.body.kit_ref,
+      label: req.body.label,
+      components: req.body.components,
+      userId: req.user && req.user.id,
+    });
+    return res.json({ kit });
+  } catch (error) {
+    console.error('[supplier-invoices] déclaration de pack :', error.message);
+    return res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
+async function deleteKit(req, res) {
+  try {
+    const supplierId = parseInt(req.query.supplier_id, 10);
+    if (!Number.isFinite(supplierId) || !req.query.kit_ref) {
+      return res.status(400).json({ error: 'Fournisseur ou référence manquant' });
+    }
+    const removed = await supplierKitModel.deleteKit(supplierId, req.query.kit_ref);
+    if (!removed) return res.status(404).json({ error: 'Pack introuvable' });
+    return res.json({ removed });
+  } catch (error) {
+    console.error('[supplier-invoices] suppression de pack :', error.message);
+    return res.status(500).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 module.exports = {
+  listKits,
+  saveKit,
+  deleteKit,
   getOrderLifecycle,
   recheckDocument,
   applyDocumentTariffs,

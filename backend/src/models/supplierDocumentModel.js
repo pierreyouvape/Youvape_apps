@@ -203,8 +203,8 @@ async function insertLines(client, documentId, lines) {
          document_id, line_no, supplier_sku, label, kind, qty, line_total_ht,
          product_id, expected_qty, expected_unit_price, verdict, material,
          gap_qty, gap_price, gap, effective_unit_cost,
-         discount_share, net_gap, residual_gap_price
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+         discount_share, net_gap, residual_gap_price, kit_note
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         documentId,
         lineNo,
@@ -230,6 +230,9 @@ async function insertLines(client, documentId, lines) {
         l.discountShare || 0,
         l.netGap != null ? l.netGap : (l.gap || 0),
         l.residualGapPrice != null ? l.residualGapPrice : (l.gapPrice || 0),
+        // Ce que la ligne doit à un pack découpé (cf. invoiceKits) : sans ça, la
+        // facture rouverte montre un parfum que le PDF n'imprime nulle part.
+        l.kitNote || null,
       ],
     );
   }
@@ -750,14 +753,20 @@ async function alignTariffs(supplierId, tariffs, db = pool) {
     // Un article OFFERT (verdict « offered ») coûte 0 € sur CE lot, pas pour
     // toujours : le tarif de la réf. reste celui que la prochaine commande
     // reprendra. Seule la ligne de commande passe à 0 € (cf. applyTariffs).
-    if (Number(t.realPrice) === 0) {
+    // Même chose pour un article payé dans un PACK du fournisseur (JoshNoa
+    // « OCT - Pack Offre Gourmand », cf. invoiceKits) : 3,725 € la pièce dans
+    // l'offre, 4,90 € seul — inscrire l'offre comme tarif ferait ressortir un
+    // écart sur la prochaine commande à l'unité.
+    const ceLotSeulement = t.orderLineOnly === true || t.orderLineOnly === 'true';
+    if (Number(t.realPrice) === 0 || ceLotSeulement) {
       applied.push({
         ref: ref.supplier_sku,
         requested: t,
         packQty: ref.pack_qty,
         packPrice: ref.pack_price == null ? null : Number(ref.pack_price),
         previous: ref.pack_price == null ? null : Number(ref.pack_price),
-        offered: true,
+        offered: Number(t.realPrice) === 0 || undefined,
+        orderLineOnly: ceLotSeulement || undefined,
       });
       continue;
     }

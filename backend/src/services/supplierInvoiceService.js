@@ -39,6 +39,40 @@ const supplierVoucherModel = require('../models/supplierVoucherModel');
 const { piecesSoldeesSql } = require('../models/orderLifecycleModel');
 const { isImage, imageToText } = require('../utils/imageOcr');
 const { parseAliexpressReceipt } = require('../parsers/invoices/aliexpressReceipt');
+const supplierKitModel = require('../models/supplierKitModel');
+const { explodeKits } = require('../utils/invoiceKits');
+
+const normRef = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * Remplace chaque pack du fournisseur par ses composants (cf. utils/invoiceKits).
+ *
+ * Le montant du pack se répartit au prorata du prix de chaque composant : celui
+ * de la commande quand elle le porte, à défaut le tarif de la réf. Le prix de la
+ * commande est ramené à la pièce (`units_per_qty`), l'unité dans laquelle le
+ * pack compte ses composants.
+ */
+async function decouperPacks(supplierId, kits, lines, orderLines = [], db = pool) {
+  if (!kits || kits.size === 0 || !lines.some((l) => kits.has(normRef(l.ref)))) return lines;
+
+  const prixCommande = new Map();
+  for (const o of orderLines) {
+    const cle = normRef(o.ref);
+    if (cle && o.price > 0 && !prixCommande.has(cle)) prixCommande.set(cle, o.price / (o.packQty || 1));
+  }
+  const composants = [...kits.values()].flatMap((k) => k.components.map((c) => normRef(c.ref)));
+  const { rows } = await db.query(
+    `SELECT ${supplierRefModel.normalizedSql('supplier_sku')} AS norm,
+            pack_price / NULLIF(pack_qty, 0) AS prix
+       FROM supplier_refs
+      WHERE supplier_id = $1
+        AND ${supplierRefModel.normalizedSql('supplier_sku')} = ANY($2)`,
+    [supplierId, composants],
+  );
+  const prixRef = new Map(rows.filter((r) => r.prix != null).map((r) => [r.norm, Number(r.prix)]));
+
+  return explodeKits(lines, kits, (ref) => prixCommande.get(normRef(ref)) ?? prixRef.get(normRef(ref)) ?? null);
+}
 
 /** Extrait le texte d'un PDF (ou lit un fichier texte), puis le nettoie. */
 async function extractText(buffer) {
@@ -183,7 +217,10 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
     'SELECT supplier_sku FROM supplier_refs WHERE supplier_id = $1',
     [supplierId],
   );
-  resolveCompleteRefs(invoice.lines, knownRefs.map((r) => r.supplier_sku));
+  // Les packs déclarés (cf. supplierKitModel) n'ont pas de réf. à eux dans
+  // supplier_refs : leur réf. compte aussi pour la reconstitution.
+  const kits = await supplierKitModel.kitMap(supplierId, db);
+  resolveCompleteRefs(invoice.lines, [...knownRefs.map((r) => r.supplier_sku), ...[...kits.values()].map((k) => k.ref)]);
 
   // Un bon émis sur une facture précédente et déduit ici n'est pas une remise
   // de cette commande : on le sort de la remise de pied avant toute analyse,
@@ -225,6 +262,7 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
 
   if (!order) {
     // Facture lue, commande introuvable : l'écran propose de la désigner.
+    invoice.lines = await decouperPacks(supplierId, kits, invoice.lines, [], db);
     return {
       supplier,
       invoice,
@@ -239,6 +277,11 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
   }
 
   const bmsOrder = await loadOrderLines(order, db);
+
+  // UN PACK DU FOURNISSEUR SE COMPARE PAR SES COMPOSANTS, que la commande porte
+  // un par un (JoshNoa V3/2026/41269 : josh00045997 contre quatre parfums de
+  // la S316563). À faire avant le rapprochement, qui ne sait rien des packs.
+  invoice.lines = await decouperPacks(supplierId, kits, invoice.lines, bmsOrder.lines, db);
 
   // PLUSIEURS FACTURES POUR UNE COMMANDE : c'est leur somme qui se compare à
   // la commande. LCA a facturé la 361704 en deux (F2610418141, 120,00 € et

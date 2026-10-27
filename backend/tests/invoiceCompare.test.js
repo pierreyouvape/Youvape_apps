@@ -1400,6 +1400,95 @@ test('commandé puis facturé à 0 € : offert, avec la ligne de commande à pa
   assert.strictEqual(t.realPrice, 0);
 });
 
+// ─── Un pack du fournisseur se compare par ses composants ───────────────────
+// JoshNoa V3/2026/41269 / commande S316563 : « OCT - Pack Offre Gourmand Biggy
+// Bear 200ml » (josh00045997), 15 × 14,90 €, contient un de chacun de quatre
+// parfums commandés à 4,90 €. Smooth Vanilla est AUSSI facturé seul (10).
+const { explodeKits } = require('../src/utils/invoiceKits');
+const PACK_GOURMAND = new Map([['josh00045997', {
+  ref: 'josh00045997',
+  label: 'OCT - Pack Offre Gourmand Biggy Bear 200ml',
+  components: [
+    { ref: 'josh00013021', label: 'Crunchy Sesame Biscuit 200ml', qty: 1 },
+    { ref: 'josh00013020', label: 'Caramel Frosted Flakes 200ml', qty: 1 },
+    { ref: 'josh00014503', label: 'Creamy Vanilla Caramel 200ml', qty: 1 },
+    { ref: 'josh00014497', label: 'Smooth Vanilla Custard 200ml', qty: 1 },
+  ],
+}]]);
+const commandeS316563 = {
+  reference: 'S316563',
+  lines: [
+    { ref: 'josh00013021', productName: 'Crunchy Sesame Biscuit 200ml', qty: 15, price: 4.9 },
+    { ref: 'josh00013020', productName: 'Caramel Frosted Flakes 200ml', qty: 15, price: 4.9 },
+    { ref: 'josh00014503', productName: 'Creamy Vanilla Caramel 200ml', qty: 15, price: 4.9 },
+    { ref: 'josh00014497', productName: 'Smooth Vanilla Custard 200ml', qty: 25, price: 4.9 },
+    { ref: 'josh00013339', productName: 'Fruits Rouges Givrés 200ml', qty: 10, price: 4.9 },
+  ],
+};
+const lignesV3_41269 = [
+  { ref: 'josh00045997', label: 'OCT - Pack Offre Gourmand Biggy Bear 200ml', qty: 15, lineTotalHt: 223.50 },
+  { ref: 'josh00014497', label: 'Smooth Vanilla Custard 200ml - Biggy Bear', qty: 10, lineTotalHt: 49.00 },
+  { ref: 'josh00013339', label: 'Fruits Rouges Givrés 200ml - Biggy Bear', qty: 10, lineTotalHt: 49.00 },
+];
+const prix490 = () => 4.9;
+
+test('pack JoshNoa : découpé au centime, la somme reste celle du pack', () => {
+  const lignes = explodeKits(lignesV3_41269, PACK_GOURMAND, prix490);
+  const dupack = lignes.filter((l) => l.kit);
+  assert.strictEqual(dupack.length, 4);
+  assert.ok(dupack.every((l) => l.qty === 15));
+  assert.ok(close(dupack.reduce((s, l) => s + l.lineTotalHt, 0), 223.50, 0.001));
+  assert.ok(dupack.every((l) => Math.abs(l.lineTotalHt * 100 - Math.round(l.lineTotalHt * 100)) < 1e-6), 'pas au centime');
+  assert.ok(!lignes.some((l) => l.ref === 'josh00045997'), 'le pack est resté');
+});
+
+test('pack JoshNoa : ni « non commandé » ni « non facturé », 70,50 € en notre faveur', () => {
+  const r = compareInvoiceToOrder({
+    invoice: { lines: explodeKits(lignesV3_41269, PACK_GOURMAND, prix490), totalHt: 321.50 },
+    order: commandeS316563,
+  });
+  assert.ok(!r.lines.some((l) => ['not_ordered', 'missing_in_invoice'].includes(l.verdict)),
+    `verdicts : ${r.lines.map((l) => `${l.ref}=${l.verdict}`).join(', ')}`);
+  assert.strictEqual(r.totals.reconciles, true);
+  assert.ok(close(r.totals.gap, -70.50), `écart ${r.totals.gap}`);
+  assert.ok(close(r.summary.inOurFavour, -70.50), `en notre faveur ${r.summary.inOurFavour}`);
+  assert.strictEqual(r.summary.claimable, 0);
+  // Smooth Vanilla : 10 seuls + 15 du pack = les 25 commandés.
+  const sv = byRef(r, 'josh00014497');
+  assert.strictEqual(sv.qtyInvoiced, 25);
+  assert.strictEqual(sv.qtyOrdered, 25);
+  assert.strictEqual(sv.fromKit, true);
+  assert.ok(/15 via le pack josh00045997/.test(sv.kitNote), sv.kitNote);
+  assert.strictEqual(byRef(r, 'josh00013339').verdict, 'ok');
+  assert.strictEqual(byRef(r, 'josh00013339').fromKit, undefined);
+});
+
+test('pack JoshNoa : le tarif ne corrige que la commande, pas la réf.', () => {
+  const r = compareInvoiceToOrder({
+    invoice: { lines: explodeKits(lignesV3_41269, PACK_GOURMAND, prix490) },
+    order: commandeS316563,
+  });
+  const tarifs = listTariffUpdates(r);
+  assert.strictEqual(tarifs.length, 4);
+  assert.ok(tarifs.every((t) => t.orderLineOnly === true));
+  const crunchy = tarifs.find((t) => t.ref === 'josh00013021');
+  assert.ok(close(crunchy.realPrice, 3.725, 0.001), `prix ${crunchy.realPrice}`);
+  // 10 × 4,90 + 15 × 3,725 sur 25 pièces.
+  assert.ok(close(tarifs.find((t) => t.ref === 'josh00014497').realPrice, 4.195, 0.001));
+  const rows = listControlRows(r);
+  assert.ok(rows.filter((x) => x.fromKit).every((x) => /pack fournisseur/.test(x.action)));
+});
+
+test('pack : montant réparti au prorata des prix quand ils diffèrent', () => {
+  const kits = new Map([['pk', { ref: 'PK', components: [{ ref: 'A', qty: 1 }, { ref: 'B', qty: 2 }] }]]);
+  const prix = { A: 10, B: 5 };
+  const lignes = explodeKits([{ ref: 'PK', qty: 3, lineTotalHt: 30 }], kits, (ref) => prix[ref]);
+  assert.deepStrictEqual(lignes.map((l) => [l.ref, l.qty, l.lineTotalHt]), [['A', 3, 15], ['B', 6, 15]]);
+  // Sans prix connu : à parts égales par pièce.
+  const sansPrix = explodeKits([{ ref: 'PK', qty: 1, lineTotalHt: 10 }], kits, () => null);
+  assert.ok(close(sansPrix[0].lineTotalHt, 3.33) && close(sansPrix[1].lineTotalHt, 6.67));
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

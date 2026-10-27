@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useSearchParams } from 'react-router-dom';
 import AppShell from '../components/AppShell';
@@ -359,7 +359,89 @@ const NoteEcart = ({ l, align }) => {
   return null;
 };
 
-function DifferencesTable({ lines, mobile }) {
+/** Ce qu'une ligne doit à un pack du fournisseur découpé au contrôle. */
+const KitNote = ({ l }) => (l.kitNote
+  ? <div style={{ fontSize: 10.5, color: C.blue, whiteSpace: 'normal', marginTop: 2 }}>{l.kitNote}</div>
+  : null);
+
+/**
+ * « Une réf. par ligne », « réf1, réf2 », « 2 × réf » : ce qu'on colle depuis la
+ * fiche de l'offre. Les espaces ne séparent pas — des réfs en contiennent (LCA).
+ */
+const lireComposants = (texte) => String(texte || '')
+  .split(/[\n,;]+/)
+  .map((t) => t.trim())
+  .filter(Boolean)
+  .map((t) => {
+    const m = t.match(/^(\d+(?:[.,]\d+)?)\s*[x×*]\s*(.+)$/i);
+    return m ? { ref: m[2].trim(), qty: Number(m[1].replace(',', '.')) } : { ref: t, qty: 1 };
+  });
+
+/**
+ * Déclarer qu'une réf. « facturée non commandée » est un PACK du fournisseur.
+ *
+ * JoshNoa V3/2026/41269 : « OCT - Pack Offre Gourmand » (josh00045997) contient
+ * un de chacun de quatre parfums que la commande porte séparément. Une fois
+ * déclaré, le contrôle le découpe en ses composants — pour cette facture
+ * re-contrôlée comme pour les suivantes.
+ */
+function KitForm({ supplierId, kitRef, label, onSaved, onCancel }) {
+  const [texte, setTexte] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const composants = lireComposants(texte);
+
+  const enregistrer = async () => {
+    setBusy(true); setError(null);
+    try {
+      await axios.post(`${BASE}/kits`, {
+        supplier_id: supplierId, kit_ref: kitRef, label, components: composants,
+      });
+      await onSaved();
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ background: C.blueL, border: `1px solid ${C.blue}55`, borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12.5, color: C.dark }}>
+        <strong>{kitRef}</strong> contient, pour <strong>un</strong> pack, les réfs suivantes de ce fournisseur
+        (une par ligne ou séparées par des virgules, « 2 × réf » pour plusieurs pièces) :
+      </div>
+      <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3} autoFocus
+        aria-label={`Composants du pack ${kitRef}`}
+        placeholder="josh00013021, josh00013020, josh00014503, josh00014497"
+        style={{ ...inputStyle, width: '100%', fontFamily: 'inherit', resize: 'vertical' }} />
+      {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Btn small onClick={enregistrer} disabled={busy || composants.length < 2}>
+          {busy ? 'Re-contrôle…' : `Enregistrer le pack (${composants.length} réf${composants.length > 1 ? 's' : ''}) et re-contrôler`}
+        </Btn>
+        <Btn small variant="ghost" onClick={onCancel} disabled={busy}>Annuler</Btn>
+        <span style={{ fontSize: 11.5, color: C.greyT }}>
+          Le montant du pack est réparti sur ses composants au prorata du prix commandé.
+          Leur tarif se corrige sur cette commande seulement : celui des réfs ne bouge pas.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Le bouton qui ouvre `KitForm`, sur une ligne « Facturé, non commandé ». */
+const peutEtrePack = (l) => l.verdict === 'not_ordered' && !!l.ref;
+
+function DifferencesTable({ lines, mobile, supplierId, onKitSaved }) {
+  const [packOuvert, setPackOuvert] = useState(null);
+  const formPack = (l) => (
+    <KitForm supplierId={supplierId} kitRef={l.ref} label={l.label}
+      onCancel={() => setPackOuvert(null)}
+      onSaved={async () => { setPackOuvert(null); await onKitSaved(); }} />
+  );
+  const boutonPack = (l) => (onKitSaved && peutEtrePack(l) && packOuvert !== l.ref
+    ? <div style={{ marginTop: 6 }}><Btn small variant="ghost" onClick={() => setPackOuvert(l.ref)}>C'est un pack…</Btn></div>
+    : null);
   const rows = useMemo(() => avecEcartReel(lignesAffichables(lines))
     .map((l) => ({ ...l, meta: VERDICTS[l.verdict] || VERDICTS.other }))
     .sort((a, b) => (a.meta.rank - b.meta.rank) || (Math.abs(b.ecart) - Math.abs(a.ecart))), [lines]);
@@ -395,7 +477,7 @@ function DifferencesTable({ lines, mobile }) {
               <div style={{ fontWeight: 700, fontSize: 13 }}>{l.ref || '—'}</div>
               <Badge tone={l.meta.tone}>{l.meta.label}</Badge>
             </div>
-            <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{l.label || ''}</div>
+            <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{l.label || ''}<KitNote l={l} /></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
               <span>cmd / fact {qteCmdFact(l.qtyOrdered, l.qtyInvoiced, l.packFactor)}</span>
               <span style={{ color: C.greyT }}>{eur(l.lineTotalHt)} HT</span>
@@ -407,6 +489,8 @@ function DifferencesTable({ lines, mobile }) {
             {(notePiece(l) || l.meta.action) && (
               <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{notePiece(l) || l.meta.action}</div>
             )}
+            {boutonPack(l)}
+            {packOuvert === l.ref && peutEtrePack(l) && <div style={{ marginTop: 8 }}>{formPack(l)}</div>}
           </div>
         ))}
       </div>
@@ -433,11 +517,12 @@ function DifferencesTable({ lines, mobile }) {
         </thead>
         <tbody>
           {rows.map((l, i) => (
-            // Une ligne conforme se lit en gris : elle est là pour être vue, pas
-            // pour disputer l'attention à ce qui cloche.
-            <tr key={i} style={{ color: l.verdict === 'ok' ? C.greyT : C.dark }}>
+            <Fragment key={i}>
+            {/* Une ligne conforme se lit en gris : elle est là pour être vue, pas
+                pour disputer l'attention à ce qui cloche. */}
+            <tr style={{ color: l.verdict === 'ok' ? C.greyT : C.dark }}>
               <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap', color: 'inherit' }}>{l.ref || '—'}</td>
-              <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label || ''}</td>
+              <td style={{ ...td, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit' }}>{l.label || ''}<KitNote l={l} /></td>
               <td style={td}><Badge tone={l.meta.tone}>{l.meta.label}</Badge></td>
               <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', color: 'inherit' }}>{qteCmdFact(l.qtyOrdered, l.qtyInvoiced, l.packFactor)}</td>
               <td style={{ ...td, textAlign: 'right', color: 'inherit' }}>{l.expectedUnitPrice == null ? '—' : eur(l.expectedUnitPrice)}</td>
@@ -470,8 +555,13 @@ function DifferencesTable({ lines, mobile }) {
                     : (l.verdict === 'qty' && !l.packFactor && Number(l.qtyInvoiced) > Number(l.qtyOrdered)
                       ? `Facturé ${num(l.qtyInvoiced)}, attendu ${num(l.qtyOrdered)} : réclamer un avoir pour ${num(Number(l.qtyInvoiced) - Number(l.qtyOrdered))}`
                       : (notePiece(l) || l.meta.action || '')))}
+                {boutonPack(l)}
               </td>
             </tr>
+            {packOuvert === l.ref && peutEtrePack(l) && (
+              <tr><td colSpan={9} style={{ ...td, background: C.grey }}>{formPack(l)}</td></tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -643,6 +733,7 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
   packFactor: packFactorStored(l),
   // Le ou les avoirs qui ont rendu l'écart de cette ligne.
   creditedBy: l.credited_by || null,
+  kitNote: l.kit_note || null,
 }));
 
 /* ═══════════════════════════════════════════════════════════
@@ -676,8 +767,10 @@ const fromStoredLines = (lines) => (lines || []).map((l) => ({
  * « Réclamer un avoir ». Chaque ligne porte maintenant son MOTIF : le prix a
  * bougé, la quantité ne correspond pas, ou les deux.
  */
-function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onApplied }) {
+function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onApplied, onKitSaved }) {
   const [applying, setApplying] = useState(false);
+  // La ligne « facturée non commandée » dont on déclare qu'elle est un pack.
+  const [packOuvert, setPackOuvert] = useState(null);
   const [perLine, setPerLine] = useState({});
   // Tarif NÉGOCIÉ saisi à la main, par réf. : le prix de la commande BMS était
   // faux (Dojo LCA convenues à 3,00 €, portées à 2,50 € / 2,80 € dans BMS,
@@ -719,6 +812,8 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
       order_id: orderId,
       tariffs: liste.map((t) => ({
         ref: t.ref, invoiceRef: t.invoiceRef, productId: t.productId, realPrice: t.realPrice, packQty: t.packQty,
+        // Payé dans un pack du fournisseur : la commande seule, pas le tarif de la réf.
+        orderLineOnly: t.orderLineOnly,
       })),
     });
     setPerLine((p) => {
@@ -787,8 +882,18 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
     finally { setApplying(false); }
   };
 
+  const formPack = (r) => (
+    <KitForm supplierId={supplierId} kitRef={r.ref} label={r.label}
+      onCancel={() => setPackOuvert(null)}
+      onSaved={async () => { setPackOuvert(null); await onKitSaved(); }} />
+  );
+
   const bouton = (r) => {
-    if (!r.tariff) return null;
+    if (!r.tariff) {
+      return onKitSaved && peutEtrePack(r) && packOuvert !== r.ref
+        ? <Btn small variant="ghost" onClick={() => setPackOuvert(r.ref)}>C'est un pack…</Btn>
+        : null;
+    }
     const etat = perLine[r.ref];
     if (etat === 'applied') return <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>Appliqué</span>;
     if (etat === 'negotiated') {
@@ -858,7 +963,7 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{r.ref || '—'}</div>
                   <Badge tone={meta.tone}>{r.kindLabel || meta.label}</Badge>
                 </div>
-                <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{r.label || ''}</div>
+                <div style={{ fontSize: 12, color: C.greyT, margin: '4px 0 8px' }}>{r.label || ''}<KitNote l={r} /></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
                   <span>cmd / fact {qteCmdFact(r.qtyOrdered, r.qtyInvoiced, r.packFactor)}</span>
                   <strong style={{ color: ecartDe(r) > 0 ? C.red : C.green }}>{signedEur(ecartDe(r))}</strong>
@@ -883,6 +988,8 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                 {!r.tariff && meta.action && (
                   <div style={{ fontSize: 11.5, color: C.greyM, marginTop: 6 }}>{r.action || meta.action}</div>
                 )}
+                {!r.tariff && <div style={{ marginTop: 6 }}>{bouton(r)}</div>}
+                {packOuvert === r.ref && peutEtrePack(r) && <div style={{ marginTop: 8 }}>{formPack(r)}</div>}
               </div>
             );
           })}
@@ -915,9 +1022,10 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
               const meta = VERDICTS[r.verdict] || VERDICTS.other;
               const t = r.tariff;
               return (
-                <tr key={i}>
+                <Fragment key={i}>
+                <tr>
                   <td style={{ ...td, fontWeight: 600 }}>{r.ref || '—'}</td>
-                  <td style={{ ...td, color: C.greyT }}>{(r.label || '').slice(0, 52)}</td>
+                  <td style={{ ...td, color: C.greyT }}>{(r.label || '').slice(0, 52)}<KitNote l={r} /></td>
                   <td style={td}><Badge tone={meta.tone}>{r.kindLabel || meta.label}</Badge></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {qteCmdFact(r.qtyOrdered, r.qtyInvoiced, r.packFactor)}
@@ -948,6 +1056,10 @@ function ControlTable({ rows, supplierId, orderId, orderReceived, mobile, onAppl
                   <td style={{ ...td, fontSize: 11.5, color: C.greyM }}>{r.action || meta.action || ''}</td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{bouton(r)}</td>
                 </tr>
+                {packOuvert === r.ref && peutEtrePack(r) && (
+                  <tr><td colSpan={10} style={{ ...td, background: C.grey }}>{formPack(r)}</td></tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -1535,6 +1647,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                 orderReceived={Number(lifecycle?.order?.units_received) > 0}
                 mobile={mobile}
                 onApplied={result.order?.id ? () => analyse(result.order.id) : null}
+                onKitSaved={() => analyse(result.order?.id || null)}
               />
             : <ReadLinesTable lines={result.invoice.lines} mobile={mobile} />}
 
@@ -2290,7 +2403,13 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
             : ', aucune différence à traiter'}
           {conformes > 0 && ` · ${conformes} conforme${conformes > 1 ? 's' : ''} à la commande`}
         </div>
-        <DifferencesTable lines={lignes} mobile={mobile} />
+        <DifferencesTable lines={lignes} mobile={mobile} supplierId={detail.supplier_id}
+          // Le pack déclaré, la facture se re-contrôle aussitôt : c'est ce qui
+          // remplace la ligne « non commandée » par ses composants.
+          onKitSaved={onChanged ? async () => {
+            await axios.post(`${BASE}/${detail.id}/recheck`);
+            await onChanged();
+          } : null} />
 
         {Math.abs(reste) > 0.009 && onSettle && (
           <div style={{

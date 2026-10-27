@@ -166,6 +166,15 @@ Trois chiffres par ligne, et il ne faut jamais les confondre (`utils/invoiceComp
   s'affiche : on ne sait pas à quelle unité le `pack_qty` de la réf se rapporte.
 - Le message se copie depuis l'écran de contrôle **et** depuis la facture rouverte
   (`DocumentPanel`) : une facture se contrôle un jour et s'écrit le lendemain.
+- **Un PACK du fournisseur se contrôle par ses composants** (27/10/2026). JoshNoa facture
+  « OCT - Pack Offre Gourmand » (`josh00045997`, 15 × 14,90 €) quand la commande porte ses
+  quatre parfums à 4,90 € : sans découpage, 1 « non commandé » + 4 « non facturé ». Le pack se
+  déclare dans `supplier_ref_kits` (bouton « C'est un pack… » sur la ligne « Facturé, non
+  commandé »), et `utils/invoiceKits` le remplace AVANT le rapprochement par ses composants,
+  montant réparti au prorata du prix commandé, au centime. Ces lignes portent `fromKit` /
+  `kitNote` (`supplier_document_lines.kit_note`) et leur tarif est **`orderLineOnly`** : on
+  corrige la ligne de commande (FIFO), **jamais `supplier_refs.pack_price`** — le prix de
+  l'offre n'est pas celui de l'article vendu seul.
 
 ### Commandes d'achat : la sémantique BMS (vérifiée le 29/09/2026)
 
