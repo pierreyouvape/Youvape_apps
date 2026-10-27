@@ -751,6 +751,7 @@ const setupSeoCrons = () => {
   if (seoReportJob) { seoReportJob.stop(); seoReportJob = null; }
   gscService.ensureTables()
     .then(() => seoAdvisorService.ensureTables())
+    .then(() => require("./seoPilotService").ensureTables())
     .catch((error) => console.error("Erreur init tables suivi SEO:", error.message));
   // Tous les jours a 6h20 (Europe/Paris)
   seoSyncJob = cron.schedule("20 6 * * *", runSeoSync, { timezone: "Europe/Paris" });

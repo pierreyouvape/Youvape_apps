@@ -6,6 +6,7 @@ import {
 import AppShell from '../components/AppShell';
 import { Seo as SeoIcon } from '../components/AppIcons';
 import SeoWriterTab from './SeoWriterTab';
+import { TargetsTab, PageTab } from './SeoPilotTab';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -128,7 +129,7 @@ function RichText({ text, boxed }) {
   );
 }
 
-function RecCard({ rec, rank, onStatus }) {
+function RecCard({ rec, rank, onStatus, onOpenPage }) {
   const [open, setOpen] = useState(false);
   const t = REC_TYPES[rec.type] || { label: rec.type, color: C.grisM };
   const queries = Array.isArray(rec.queries) ? rec.queries : [];
@@ -143,6 +144,12 @@ function RecCard({ rec, rank, onStatus }) {
           <b style={{ color: C.vert }}>≈ +{fmtInt(rec.est_clicks)} clics/mois</b>
           {rec.delay ? ` · effet en ${rec.delay}` : ''} · effort {rec.effort}
         </span>
+        {rec.repos_until && (
+          <span title={`Page modifiée le ${longDate(rec.last_change)} : attendre la mesure`}
+            style={{ fontSize: 11, fontWeight: 700, color: C.orange, border: `1px solid ${C.orange}`, borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+            au repos jusqu&apos;au {longDate(rec.repos_until)}
+          </span>
+        )}
         {rec.status_by && rec.status !== 'todo' && (
           <span style={{ fontSize: 11, color: C.grisM, whiteSpace: 'nowrap' }}
             title={`Statut posé le ${new Date(rec.status_at).toLocaleString('fr-FR')}`}>
@@ -178,9 +185,17 @@ function RecCard({ rec, rank, onStatus }) {
             <div style={{ margin: '0 0 8px' }}>
               <b>Pages :</b>{' '}
               {rec.urls.map((u) => (
-                <a key={u} href={u} target="_blank" rel="noreferrer" style={{ color: C.bleu, marginRight: 12, textDecoration: 'none' }}>
-                  {u.replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/'}
-                </a>
+                <span key={u} style={{ marginRight: 14, whiteSpace: 'nowrap' }}>
+                  <a href={u} target="_blank" rel="noreferrer" style={{ color: C.bleu, textDecoration: 'none' }}>
+                    {u.replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/'}
+                  </a>
+                  {onOpenPage && (
+                    <button type="button" onClick={() => onOpenPage(u.replace(/^https?:\/\/(www\.)?youvape\.fr/, '') || '/')}
+                      style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 6, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.saphir, cursor: 'pointer' }}>
+                      fiche page
+                    </button>
+                  )}
+                </span>
               ))}
             </div>
           )}
@@ -217,12 +232,13 @@ function RecCard({ rec, rank, onStatus }) {
   );
 }
 
-function Recommendations() {
+function Recommendations({ onOpenPage }) {
   const [data, setData] = useState(null);
   const [statusFilter, setStatusFilter] = useState('todo');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [showRepos, setShowRepos] = useState(false);
   const [msg, setMsg] = useState(null);
 
   const load = useCallback(async () => {
@@ -266,8 +282,10 @@ function Recommendations() {
   };
 
   const needle = search.trim().toLowerCase();
-  const recs = (data?.recommendations || [])
-    .filter((r) => typeFilter === 'all' || r.type === typeFilter)
+  const all = (data?.recommendations || []).filter((r) => typeFilter === 'all' || r.type === typeFilter);
+  const enRepos = all.filter((r) => r.repos_until);
+  const recs = all
+    .filter((r) => showRepos || !r.repos_until)
     .filter((r) => !needle
       || r.title.toLowerCase().includes(needle)
       || (r.urls || []).some((u) => u.toLowerCase().includes(needle))
@@ -303,8 +321,17 @@ function Recommendations() {
         Cliquez sur une ligne pour voir le pourquoi, l&apos;action et les requêtes concernées. Le gain estimé suppose la remontée visée (quelques places) et un taux de clic moyen : c&apos;est un ordre de grandeur pour prioriser, pas une promesse.
         Tout texte proposé reste factuel et passe par l&apos;avocat avant mise en ligne.
       </div>
+      {enRepos.length > 0 && (
+        <div style={{ fontSize: 13, color: C.grisF, background: '#FFF8EC', border: `1px solid ${C.orange}`, borderRadius: 8, padding: '8px 12px', marginBottom: 10 }}>
+          {enRepos.length} recommandation(s) portent sur des pages modifiées depuis moins de 4 semaines : elles sont mises de côté le temps de mesurer l&apos;effet.{' '}
+          <button type="button" onClick={() => setShowRepos(!showRepos)}
+            style={{ border: 'none', background: 'none', color: C.bleu, cursor: 'pointer', fontSize: 13, padding: 0 }}>
+            {showRepos ? 'Les masquer' : 'Les afficher'}
+          </button>
+        </div>
+      )}
       {data && recs.length === 0 && <div style={{ fontSize: 13, color: C.grisM }}>Aucune recommandation pour ces filtres.</div>}
-      {shown.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} onStatus={setStatus} />)}
+      {shown.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} onStatus={setStatus} onOpenPage={onOpenPage} />)}
       {recs.length > shown.length && (
         <button type="button" onClick={() => setShowAll(true)}
           style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, cursor: 'pointer', fontSize: 13, color: C.saphir }}>
@@ -356,6 +383,15 @@ export default function SeoApp() {
   const chooseTab = (t) => {
     setTab(t);
     try { localStorage.setItem('seo-tab', t); } catch { /* navigation privée */ }
+  };
+  // Fiche page ouverte depuis une cible, une recommandation ou une requête.
+  const [pageUrl, setPageUrl] = useState(() => {
+    try { return localStorage.getItem('seo-page') || ''; } catch { return ''; }
+  });
+  const openPage = (u) => {
+    setPageUrl(u);
+    try { localStorage.setItem('seo-page', u); } catch { /* navigation privée */ }
+    chooseTab('page');
   };
 
   const loadStatus = useCallback(async () => {
@@ -454,7 +490,7 @@ export default function SeoApp() {
           </div>
 
           <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.grisCL}`, marginBottom: 16 }}>
-            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'reco', label: 'Recommandations' }, { key: 'redaction', label: 'Rédaction SEO' }].map((t) => (
+            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'cibles', label: 'Pages cibles' }, { key: 'page', label: 'Fiche page' }, { key: 'reco', label: 'Recommandations' }, { key: 'redaction', label: 'Rédaction SEO' }].map((t) => (
               <button key={t.key} type="button" onClick={() => chooseTab(t.key)}
                 style={{
                   padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14,
@@ -504,7 +540,11 @@ export default function SeoApp() {
             </Card>
           )}
 
-          {hasData && tab === 'reco' && <Recommendations />}
+          {hasData && tab === 'cibles' && <TargetsTab onOpenPage={openPage} />}
+
+          {hasData && tab === 'page' && <PageTab url={pageUrl} onOpenPage={openPage} />}
+
+          {hasData && tab === 'reco' && <Recommendations onOpenPage={openPage} />}
 
           {hasData && tab === 'redaction' && <SeoWriterTab />}
 

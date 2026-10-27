@@ -8,6 +8,7 @@ const { checkPermission } = require('../middleware/permissionMiddleware');
 const gsc = require('../services/gscService');
 const advisor = require('../services/seoAdvisorService');
 const writer = require('../services/seoWriterService');
+const pilot = require('../services/seoPilotService');
 
 // Export CSV du Planificateur de mots-clés Google Ads (quelques centaines de Ko).
 const adsUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -94,6 +95,18 @@ router.post('/writer/:id/verify', canWrite, handle((req) => writer.startVerify(p
 router.get('/writer/:id/positions', handle((req) => writer.getPositions(pageId(req), { weeks: req.query.weeks })));
 router.post('/writer/:id/events', canWrite, handle((req) => writer.addEvent(pageId(req), req.body || {}, req.user?.email)));
 router.delete('/writer/:id/events/:eventId', canWrite, handle((req) => writer.deleteEvent(pageId(req), Number(req.params.eventId))));
+
+/* ─── Pilotage : pages cibles, fiche page, journal ─── */
+router.get('/pilot/targets', handle(() => pilot.listTargets()));
+router.post('/pilot/targets', canWrite, handle((req) => pilot.saveTarget(null, req.body || {}, req.user?.email)));
+router.put('/pilot/targets/:id', canWrite, handle((req) => pilot.saveTarget(Number(req.params.id), req.body || {}, req.user?.email)));
+router.delete('/pilot/targets/:id', canWrite, handle((req) => pilot.deleteTarget(Number(req.params.id))));
+router.post('/pilot/targets/refresh', canWrite, handle(async () => { await pilot.computeTargets(); return pilot.listTargets(); }));
+// Fiche page : relève la page en ligne (quelques secondes).
+router.get('/pilot/page', handle((req) => pilot.getPage(req.query.url)));
+router.get('/pilot/journal', handle((req) => pilot.listJournal(req.query.url)));
+router.post('/pilot/journal', canWrite, handle((req) => pilot.addJournal(req.body || {}, req.user?.email)));
+router.delete('/pilot/journal/:id', canWrite, handle((req) => pilot.deleteJournal(Number(req.params.id))));
 
 router.post('/weekly-report', checkPermission('seo', 'write'), handle(() => gsc.sendWeeklyReport()));
 

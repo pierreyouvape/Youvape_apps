@@ -612,12 +612,38 @@ const sendWeeklyReport = async () => {
   const alertsHtml = report.alerts.length
     ? `<p style="color:#b91c1c"><b>À regarder :</b><br>${report.alerts.join('<br>')}</p>`
     : '<p>Aucun critère de retour arrière déclenché.</p>';
+  // Pages cibles (seoPilotService) : part des impressions donnée à la page
+  // décidée, et avant / après pour celles décidées depuis plus de 4 semaines.
+  let targetsHtml = '';
+  try {
+    const pilot = require('./seoPilotService');
+    const { targets, seuil } = await pilot.listTargets();
+    if (targets.length) {
+      const pct = (v) => (v === null || v === undefined ? '—' : `${String(v).replace('.', ',')} %`);
+      const rowsT = targets.map((t) => {
+        const s = t.stats || {};
+        const b = s.baseline || {};
+        const l = s.last28 || {};
+        return `<tr><td style="padding:4px 8px">${t.label}</td><td style="padding:4px 8px">${t.target_path}</td>`
+          + `<td style="padding:4px 8px;text-align:right">${pct(b.target_share)}</td><td style="padding:4px 8px;text-align:right">${pct(l.target_share)}</td>`
+          + `<td style="padding:4px 8px;text-align:right">${fmtPos(l.target_position)}</td><td style="padding:4px 8px">${t.verdict.label}</td></tr>`;
+      }).join('');
+      targetsHtml = `<p><b>Pages cibles</b> : part des impressions de la requête que Google donne à la page décidée (gagnée au-delà de ${seuil} %).</p>
+<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px" border="1">
+<tr style="background:#f2f6f8"><th style="padding:4px 8px">Requête</th><th style="padding:4px 8px">Page cible</th><th style="padding:4px 8px">Part au départ</th><th style="padding:4px 8px">Part 28 j</th><th style="padding:4px 8px">Position</th><th style="padding:4px 8px">Verdict</th></tr>
+${rowsT}
+</table>`;
+    }
+  } catch (error) {
+    console.error('[SEO] Rapport, pages cibles :', error.message);
+  }
   const html = `<p>Positions Google sur la semaine du ${report.lines[0]?.w0.weekStart} au ${report.dataTo} (France), comparées à la semaine précédente.</p>
 ${alertsHtml}
 <table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:13px" border="1">
 <tr style="background:#f2f6f8"><th style="padding:4px 8px">Groupe</th><th style="padding:4px 8px">Position</th><th style="padding:4px 8px">Évolution</th><th style="padding:4px 8px">Clics</th><th style="padding:4px 8px">Impressions</th></tr>
 ${rowsHtml}
 </table>
+${targetsHtml}
 <p>Détail dans l'app « Suivi SEO ».</p>`;
   const text = report.lines.map((l) => `${l.name} : position ${fmtPos(l.w0.position)} (${l.delta === null ? '—' : (l.delta > 0 ? '+' : '') + fmtPos(l.delta)}), ${l.w0.clicks} clics`).join('\n');
   const res = await sendMail({ to, subject: `Suivi SEO : semaine au ${report.dataTo}`, html, text: `${report.alerts.join('\n')}\n\n${text}` });

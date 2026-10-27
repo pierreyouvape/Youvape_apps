@@ -418,9 +418,12 @@ const linkPlan = async ({ target, anchors, sources, data, audits, max = 5 }) => 
 };
 
 // 1. Cannibalisation : deux de nos pages se partagent une même requête.
-const detectCannibalisation = ({ q, byQuery }, audits) => {
+// skipRes : requêtes déjà couvertes par une page cible décidée (seoPilotService),
+// traitées par les cartes « cible » et jamais par la règle « plus de clics ».
+const detectCannibalisation = ({ q, byQuery }, audits, skipRes = []) => {
   const pairs = new Map();
   for (const [query, rows] of byQuery) {
+    if (skipRes.some((re) => re.test(query))) continue;
     const qs = q.get(query);
     // Déjà dans le top 3 : le partage ne coûte rien, on n'y touche pas.
     if (!qs || qs.i < 150 || qs.p <= 3 || hasSensitive(query)) continue;
@@ -1352,11 +1355,24 @@ const computeRecommendations = async ({ audit = true } = {}) => {
     const audits = await loadAudits();
 
     const sitePages = await loadSitePages();
+    // Pages cibles décidées par l'équipe : mesurées, puis transformées en cartes.
+    // Chargé ici (et pas en tête) : seoPilotService dépend de ce module.
+    const pilot = require('./seoPilotService');
+    let targetRecs = [];
+    try {
+      await pilot.computeTargets();
+      targetRecs = await pilot.targetRecommendations();
+    } catch (error) {
+      console.error('[SEO] Pages cibles :', error.message);
+    }
+    const skipRes = (await pool.query('SELECT pattern FROM seo_targets WHERE active').catch(() => ({ rows: [] }))).rows
+      .map((r) => { try { return new RegExp(r.pattern, 'i'); } catch { return null; } }).filter(Boolean);
     const indexRecs = await detectIndexDecisions(data, audits, sitePages);
     const claimed = new Map();
     const creation = await detectCreation(data, audits, sitePages, claimed);
     const recs = [
-      ...detectCannibalisation(data, audits).filter((r) => r.est_clicks >= 10),
+      ...targetRecs.map(({ targetRe, ...r }) => r),
+      ...detectCannibalisation(data, audits, skipRes).filter((r) => r.est_clicks >= 10),
       ...(await detectTexte(data, audits, claimed)),
       ...detectSnippet(data, audits),
       ...detectFaq(data),
@@ -1417,11 +1433,23 @@ const listRecommendations = async ({ status } = {}) => {
     pool.query('SELECT * FROM seo_advisor_runs ORDER BY id DESC LIMIT 1'),
   ]);
   const counts = await pool.query('SELECT status, COUNT(*)::int AS n FROM seo_recommendations WHERE active GROUP BY status');
+  // Période de repos : une page modifiée depuis moins de 4 semaines ne reçoit
+  // pas de nouvelle carte (sauf erreur bloquante : redirection, indexation).
+  const pilot = require('./seoPilotService');
+  const changes = await pilot.loadLastChanges();
+  const BLOQUANT = new Set(['redirection', 'indexation']);
+  const recommendations = recs.rows.map((r) => {
+    if (BLOQUANT.has(r.type)) return r;
+    const reposts = (r.urls || []).map((u) => changes.get(pilot.normUrl(u))).filter((d) => pilot.enRepos(d));
+    if (!reposts.length) return r;
+    const last = reposts.sort().pop();
+    return { ...r, repos_until: pilot.reposJusquau(last), last_change: last };
+  });
   return {
     lastRun: run.rows[0] || null,
     running,
     counts: Object.fromEntries(counts.rows.map((r) => [r.status, r.n])),
-    recommendations: recs.rows,
+    recommendations,
   };
 };
 
