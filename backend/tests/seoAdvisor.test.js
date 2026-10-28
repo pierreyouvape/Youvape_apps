@@ -438,6 +438,9 @@ test('l\'intro emploie-t-elle la recherche : mots collés ou non, singulier, car
   assert.strictEqual(mentions('Les cartouches Elfbar de la Puff 4in1', 'recharge elfbar 4 in 1'), true);
   assert.strictEqual(mentions('Découvrez les Geek Vape Aegis', 'geekvape'), true);
   assert.strictEqual(mentions('Découvrez nos puffs rechargeables', 'elfbar'), false);
+  // « a » et « l » sont des mots vides : la recherche se lit telle quelle (carte du 28/10/2026).
+  assert.strictEqual(mentions('Découvrez notre sélection d’arômes et concentrés de la marque française A&L.', 'a&l'), true);
+  assert.strictEqual(mentions('Découvrez notre sélection d’arômes', 'a&l'), false);
 });
 
 test('title d\'une page cible : le type de produit et le conditionnement peuvent précéder la recherche', () => {

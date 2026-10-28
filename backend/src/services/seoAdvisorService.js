@@ -936,7 +936,11 @@ const mentions = (text, query) => {
   // Mots collés ou non : « geek vape » = « GeekVape », « elf bar » = « Elfbar ».
   const have = new Set([...words, ...words.slice(1).map((w, i) => words[i] + w)]);
   const want = (Array.isArray(query) ? query : canonTokens(glue(query))).map(wordKey);
-  if (!want.length) return false;
+  // Recherche faite de mots vides (« a&l ») : cherchée telle quelle, en mot entier.
+  if (!want.length) {
+    const q = norm(Array.isArray(query) ? '' : query).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return !!q && new RegExp(`(^|[^a-z0-9])${q}([^a-z0-9]|$)`).test(norm(text));
+  }
   for (let i = 0; i < want.length;) {
     let j = want.length;
     while (j > i && !have.has(want.slice(i, j).join(''))) j -= 1;
