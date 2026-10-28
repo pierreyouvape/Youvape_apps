@@ -533,7 +533,10 @@ const asyncTests = [
       { url: AJ, title: 'Atelier Just - YouVape', h1: 'E-liquides Atelier Just', http_status: 200 },
       { url: CONCENTRE, title: 'Concentré X - YouVape', brand: 'Maison Fuel', http_status: 200 }, // sous-marque
     );
-    assert.deepStrictEqual((await productTables(AJ, [CONCENTRE], audits)).map((g) => g.h3), ['Concentrés grands formats Atelier Just']);
+    const [concentres] = await productTables(AJ, [CONCENTRE], audits);
+    assert.strictEqual(concentres.h3, 'Concentrés grands formats Atelier Just');
+    // Un concentré n'a ni autonomie ni charge (colonnes de matériel, vues le 28/10/2026).
+    assert.strictEqual(concentres.shortcode, '[product_table brand="atelier-just" category="concentres-grands-formats" columns="name,contenance" headers="Référence,Contenance" orderby="popularity"]');
     const YV = `${SITE}/marque/youvape`;
     const PACK = `${SITE}/produit/e-cigarettes/kits-ecigarettes/packs-youvape/pack-decouverte`;
     const yv = auditsOf({ url: YV, title: 'YouVape', http_status: 200 }, { url: PACK, title: 'Pack découverte', brand: 'YouVape', http_status: 200 });

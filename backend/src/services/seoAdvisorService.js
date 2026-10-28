@@ -656,10 +656,18 @@ const TABLE_PRESETS = [
   { re: /^kits-format-pod$|^kits-format-box$|^kits-ecigarettes$/, columns: 'name,autonomie,capacite,charge', headers: 'Référence,Autonomie,Capacité,Charge' },
   { re: /^cartouches-pre-remplies$/, columns: 'name,contenance,taux-de-nicotine,compatibilite', headers: 'Référence,Contenance,Nicotine,Compatible avec' },
   { re: /^cartouches-pods$|^cartouches/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
-  { re: /^eliquides|^boosters|^bases/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
-  { re: /^box-batteries/, columns: 'name,autonomie,charge,compatibilite', headers: 'Référence,Autonomie,Charge,Compatible avec' },
+  { re: /^eliquides|^boosters|^bases|^packs-e-liquides$/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
+  // Arômes et concentrés : ni nicotine ni PG/VG, on les dilue.
+  { re: /^concentres|^aromes/, columns: 'name,contenance', headers: 'Référence,Contenance' },
+  { re: /^box-batteries|^box-mods/, columns: 'name,autonomie,charge,compatibilite', headers: 'Référence,Autonomie,Charge,Compatible avec' },
+  { re: /^clearomiseurs$|^tanks-|^atomiseurs/, columns: 'name,contenance,tirage,compatibilite', headers: 'Référence,Contenance,Tirage,Compatible avec' },
+  { re: /^resistances$/, columns: 'name,tirage,compatibilite', headers: 'Référence,Tirage,Compatible avec' },
+  { re: /^reservoirs/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
+  { re: /^accus$/, columns: 'name,capacite', headers: 'Référence,Capacité' },
 ];
-const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,autonomie,contenance,charge', headers: 'Référence,Autonomie,Contenance,Charge' };
+// Accessoires (drip tips, étuis, chargeurs…) : seulement ce qu'ils acceptent,
+// jamais l'autonomie ni la charge d'un appareil.
+const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,compatibilite', headers: 'Référence,Compatible avec' };
 // Intitulé d'une section de tableau : « Cartouches préremplies Elfbar ».
 const CATEGORY_LABEL = {
   puffs: 'Puffs rechargeables', 'kits-format-pod': 'Pods', 'kits-format-box': 'Kits box', 'kits-ecigarettes': 'Kits',
