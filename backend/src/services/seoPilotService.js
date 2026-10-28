@@ -424,9 +424,11 @@ const pageKind = (u) => {
   return 'page';
 };
 
+// « Cartouche » et « recharge » se valent (un pack de cartouches porte « recharge elfbar 4 in 1 »).
+const sameRefill = (s) => s.replace(/cartouche/g, 'recharge');
 const containsQuery = (text, query) => {
-  const t = norm(text);
-  return norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 2).every((w) => t.includes(w.replace(/s$/, '')));
+  const t = sameRefill(norm(text));
+  return norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 2).every((w) => t.includes(sameRefill(w.replace(/s$/, ''))));
 };
 
 // Ce que doit faire une page qui prend une requête décidée pour une autre :
@@ -442,12 +444,26 @@ const loadAudits = async (urls) => {
 // Le title commence-t-il par la requête ? Mots dans l'ordre, sans les articles
 // ni le pluriel (« Magasin de cigarette électronique… » commence par « magasin
 // cigarette électronique »).
-const leadWords = (s) => norm(s).split(/[^a-z0-9]+/)
+// Un title de fiche commence par le type de produit et le conditionnement
+// (« Puff Elfa Pro… », « Pack x2 Cartouches Elfa Pro… ») : la recherche peut
+// venir juste après. « Cartouche » = « recharge », « 4in1 » = « 4 in 1 ».
+const leadWords = (s) => norm(s).replace(/(\d) ?(in|en) ?(\d)/g, '$1in$3').split(/[^a-z0-9]+/)
   .filter((w) => w && !['de', 'du', 'des', 'la', 'le', 'les', 'l', 'd', 'un', 'une', 'en', 'a', 'au', 'aux', 'pour', 'et'].includes(w))
-  .map((w) => w.replace(/s$/, ''));
+  .map((w) => sameRefill(w.replace(/s$/, '')));
+const LEAD_SKIP_RE = /^(puff|pod|kit|pack|recharge|box|batterie|clearomiseur|resistance|e?liquide|booster|x\d+|\d+x)$/;
 const titleLeadsWith = (title, query) => {
-  const t = leadWords(title);
-  return leadWords(query).every((w, i) => t[i] === w);
+  const q = leadWords(query).join('');
+  for (let t = leadWords(title); t.length; t = t.slice(1)) {
+    // Les mots du title mis bout à bout retombent-ils exactement sur la recherche ?
+    let acc = '';
+    for (const w of t) {
+      acc += w;
+      if (acc === q) return true;
+      if (acc.length >= q.length) break;
+    }
+    if (!LEAD_SKIP_RE.test(t[0])) return false;
+  }
+  return false;
 };
 const rivalSteps = (head, targetUrl, page, audits, targets) => advisor.rivalSteps({
   query: head, main: normUrl(targetUrl), page: normUrl(page), audits,
@@ -674,7 +690,12 @@ const targetRecommendations = async () => {
     // commence par « YouVape », décidé dans le plan).
     const ta = audits.get(normUrl(t.target_url));
     if (ta?.title && t.target_path !== '/' && !titleLeadsWith(ta.title, head)) {
-      work.push(`Title de ${t.target_path} : le commencer par « ${head.charAt(0).toUpperCase()}${head.slice(1)} » (aujourd'hui « ${ta.title} »)${ta.h1 && !containsQuery(ta.h1, head) ? `, et mettre « ${head} » dans le H1 (aujourd'hui « ${ta.h1} »)` : ''}. Les réécrire dans l'onglet Rédaction SEO.`);
+      // La marque écrite comme sur la fiche (« Recharge Elfbar 4 in 1 »).
+      const brand = ta.brand && new RegExp(`\\b${norm(ta.brand).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+      const words = brand ? head.replace(brand, ta.brand) : head;
+      const label = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+      const h1Too = ta.h1 && !containsQuery(ta.h1, head);
+      work.push(`Title de ${t.target_path} : le commencer par « ${label} » (aujourd'hui « ${ta.title} »)${h1Too ? `, et mettre « ${label} » dans le H1 (aujourd'hui « ${ta.h1} »)` : ''}. ${h1Too ? 'Les' : 'Le'} réécrire dans l'onglet Rédaction SEO.`);
     }
     // Rien à faire : pas de carte.
     if (!work.length) continue;
@@ -702,4 +723,6 @@ module.exports = {
   ensureTables, normUrl, pathOf,
   listTargets, saveTarget, deleteTarget, computeTargets, targetRecommendations,
   getPage, listJournal, addJournal, deleteJournal, loadLastChanges, enRepos, reposJusquau, REPOS_JOURS, PART_GAGNEE,
+  // Banc d'essai (tests/seoAdvisor.test.js).
+  titleLeadsWith, containsQuery,
 };

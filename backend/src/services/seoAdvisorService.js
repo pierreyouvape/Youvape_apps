@@ -29,6 +29,8 @@ const PERIOD_DAYS = 28;
 const COUNTRY = 'fra';
 const AUDIT_MAX_PAGES = 150;
 const AUDIT_DELAY_MS = 400;
+// En plus des pages les plus vues : les relevés les plus anciens, à chaque calcul.
+const AUDIT_REFRESH_MAX = 100;
 const LEGAL_NOTE = 'Rédaction neutre et factuelle (caractéristiques, compatibilités, mode d’emploi) : pas de superlatif, de prix, de promotion ni de description de goût. Faire valider par l’avocat avant mise en ligne.';
 
 // Groupes du plan qui ne doivent pas produire de recommandation de création.
@@ -139,14 +141,19 @@ const ensureTables = async () => {
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS availability text;
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS brand text;
     ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS product_tables integer;
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS intro text;
+    ALTER TABLE seo_page_audit ADD COLUMN IF NOT EXISTS h2s jsonb;
   `);
 };
 
 /* ─── Relevé des pages ─────────────────────────────────── */
 
+// Entités HTML numériques (« Top 10 &#8211; Meilleure… ») : écrites en clair dans les cartes.
+const decodeNum = (s) => s.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)));
 const pick = (html, re) => {
   const m = html.match(re);
-  return m ? m[1].replace(/\s+/g, ' ').replace(/&amp;/g, '&').replace(/&#0?39;|&#8217;/g, '’').replace(/&nbsp;/g, ' ').trim() : null;
+  return m ? decodeNum(m[1].replace(/\s+/g, ' ').replace(/&amp;/g, '&').replace(/&#0?39;|&#8217;/g, '’').replace(/&nbsp;/g, ' ')).trim() : null;
 };
 
 const CHROME_RE = /<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<header[\s\S]*?<\/header>|<footer[\s\S]*?<\/footer>|<nav[\s\S]*?<\/nav>/gi;
@@ -207,6 +214,15 @@ const brandFromJsonLd = (html) => {
 // Le thème rend chaque [product_table] en <table class="yv-product-table__grid">.
 const countProductTables = (html) => ((html || '').match(/class="yv-product-table__grid"/g) || []).length;
 
+// Intro du thème (bloc .subtitle sous le H1, comme la fiche page la lit) et
+// intertitres du contenu : la carte « Texte » ne demande que ce qui manque.
+// '' et [] = relevé fait, rien trouvé.
+const textOf = (s) => decodeNum((s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&')
+  .replace(/&#0?39;|&#8217;|&rsquo;/g, '’').replace(/&quot;/g, '"')).replace(/\s+/g, ' ').trim();
+const introOf = (html) => textOf(((html || '').match(/<div[^>]+class="[^"]*subtitle[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || [])[1]);
+const h2sOf = (html) => [...(html || '').replace(CHROME_RE, ' ').matchAll(/<h2[^>]*>([\s\S]*?)<\/h2>/gi)]
+  .map((m) => textOf(m[1])).filter(Boolean).slice(0, 30);
+
 const auditUrl = async (url) => {
   try {
     const res = await axios.get(url, {
@@ -235,6 +251,8 @@ const auditUrl = async (url) => {
       brand: brandFromJsonLd(html),
       // Tableaux [product_table] déjà en place (le thème les rend en .yv-product-table).
       product_tables: res.status === 200 ? countProductTables(html) : null,
+      intro: res.status === 200 ? introOf(html) : null,
+      h2s: res.status === 200 ? h2sOf(html) : null,
       error: null,
     };
   } catch (error) {
@@ -244,14 +262,14 @@ const auditUrl = async (url) => {
 
 const saveAudit = async (a) => {
   await pool.query(
-    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability, brand, product_tables)
-     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `INSERT INTO seo_page_audit (url, fetched_at, http_status, location, title, h1, meta_description, robots, canonical, word_count, links, error, availability, brand, product_tables, intro, h2s)
+     VALUES ($1, now(), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      ON CONFLICT (url) DO UPDATE SET fetched_at = now(), http_status = $2, location = $3, title = $4, h1 = $5,
        meta_description = $6, robots = $7, canonical = $8, word_count = $9, links = $10, error = $11, availability = $12, brand = $13,
-       product_tables = $14`,
+       product_tables = $14, intro = $15, h2s = $16`,
     [a.url, a.http_status, a.location || null, a.title || null, a.h1 || null, a.meta_description || null,
       a.robots || null, a.canonical || null, a.word_count || null, a.links ? JSON.stringify(a.links) : null, a.error || null,
-      a.availability || null, a.brand || null, a.product_tables ?? null]
+      a.availability || null, a.brand || null, a.product_tables ?? null, a.intro ?? null, a.h2s ? JSON.stringify(a.h2s) : null]
   );
 };
 
@@ -426,9 +444,19 @@ const brandOf = (u, audits) => {
 // Mots qui, accolés à une marque, ne désignent encore que la marque :
 // « puff elfbar », « elfbar rechargeable », « recharge elfbar », « elfbar france ».
 const BRAND_LEVEL_RE = /^(puffs?|pods?|kits?|vapes?|vapoteuses?|cigarettes?|electroniques?|e|recharges?|rechargeables?|cartouches?|france|officiel|site|marque)$/;
+// La marque peut contenir un de ces mots (« Geek Vape », « Lost Vape ») : on la
+// cherche d'abord dans la requête, et tout le reste doit être de ces mots.
 const isBrandQuery = (query, slug) => {
-  const words = tokens(canon(query)).filter((t) => !BRAND_LEVEL_RE.test(t));
-  return words.length > 0 && !!slug && compact(words.join(' ')) === compact(slug);
+  if (!slug) return false;
+  const words = tokens(canon(query));
+  const target = compact(slug);
+  for (let i = 0; i < words.length; i += 1) {
+    for (let j = i + 1; j <= words.length; j += 1) {
+      if (compact(words.slice(i, j).join('')) === target
+        && [...words.slice(0, i), ...words.slice(j)].every((t) => BRAND_LEVEL_RE.test(t))) return true;
+    }
+  }
+  return false;
 };
 
 // Une requête faite des mots qu'une fiche produit porte EN PROPRE : sa marque,
@@ -469,7 +497,12 @@ const ownsQuery = (query, a) => {
 const isLexique = (a) => /lexique|d[ée]finition/i.test(`${a?.title || ''} ${a?.h1 || ''}`) || /^qu.est[- ]ce/.test(norm(a?.h1 || ''));
 const roleOf = (u, a) => (pageKind(u) === 'landing page' && isLexique(a) ? 'lexique' : pageKind(u));
 const auditOf = (u, audits) => ({ ...(audits?.get(normUrl(u)) || {}), url: u });
-const marqueSlug = (u) => (pageKind(u) === 'page marque' ? pathOf(u).split('/')[2] || null : null);
+// Une sous-marque a son adresse sous sa marque mère : /marque/white-rabbit-2/tornado → tornado.
+const marqueSlug = (u) => {
+  if (pageKind(u) !== 'page marque') return null;
+  const seg = pathOf(u).split('/').filter(Boolean);
+  return seg.length > 1 ? seg[seg.length - 1] : null;
+};
 
 // Mots de sujet d'un title ou d'une recherche, au singulier, sans « YouVape »
 // ni mots de remplissage.
@@ -634,8 +667,13 @@ const CATEGORY_LABEL = {
   'box-batteries-electroniques': 'Box et batteries', clearomiseurs: 'Clearomiseurs', resistances: 'Résistances',
   'eliquides-10ml': 'E-liquides 10 ml', 'eliquides-grands-formats': 'E-liquides grands formats',
   'boosters-de-nicotine': 'Boosters de nicotine', 'eliquides-sels-de-nicotine': 'E-liquides aux sels de nicotine',
+  'concentres-grands-formats': 'Concentrés grands formats', 'packs-e-liquides': 'Packs e-liquides', 'packs-youvape': 'Packs YouVape',
+  'reservoirs-de-rechange': 'Réservoirs de rechange', 'drip-tips': 'Drip tips', 'protections-transports': 'Étuis et protections',
+  accus: 'Accus', chargeurs: 'Chargeurs', 'tanks-rta': 'Tanks RTA', 'box-mods-bf': 'Box mods BF',
 };
 const categoryLabel = (slug) => CATEGORY_LABEL[slug] || cap(String(slug || '').replace(/-/g, ' '));
+// Nom affiché d'une marque d'après son adresse (white-rabbit-2 → White Rabbit).
+const brandLabel = (slug) => slug.replace(/-\d+$/, '').split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
 // Tableaux possibles pour une page : ses produits regroupés par marque ×
 // catégorie, les plus gros groupes d'abord, et seulement pour une marque qui a
@@ -654,7 +692,10 @@ const productTables = async (page, productUrls, audits, max = marqueSlug(page) ?
     const key = `${brand}|${category}`;
     const g = groups.get(key) || { brand, category, products: [], brandName: null };
     g.products.push(u);
-    g.brandName = g.brandName || audits.get(u)?.brand || null;
+    // Le nom écrit sur les fiches, s'il est bien celui de la marque du tableau
+    // (une sous-marque sur la page de sa marque mère : non).
+    const b = audits.get(u)?.brand;
+    g.brandName = g.brandName || (b && brandSlug(b) === brand ? b : null);
     groups.set(key, g);
   }
   const out = [];
@@ -669,11 +710,13 @@ const productTables = async (page, productUrls, audits, max = marqueSlug(page) ?
     const exists = m?.http_status === 200 || (m?.http_status >= 300 && m?.http_status < 400 && /\/marque\//.test(m.location || ''));
     if (!exists) continue;
     const preset = presetFor(g.category);
-    const name = g.brandName || (m.h1 || '').split(/[,:–-]/)[0].trim() || cap(g.brand.replace(/-/g, ' '));
+    // Jamais tiré du H1 : « E-liquides Atelier Just » donnait « E ».
+    const name = g.brandName || brandLabel(g.brand);
+    const label = categoryLabel(g.category);
     out.push({
       ...g,
       count: g.products.length,
-      h3: `${categoryLabel(g.category)} ${name}`,
+      h3: compact(label).includes(compact(name)) ? label : `${label} ${name}`,
       shortcode: `[product_table brand="${g.brand}" category="${g.category}" columns="${preset.columns}" headers="${preset.headers}" orderby="popularity"]`,
     });
   }
@@ -695,15 +738,32 @@ const brandIndex = (audits) => {
     const u = normUrl(x.url);
     const b = pageKind(u) === 'page marque' ? marqueSlug(u) : (x.brand ? brandSlug(x.brand) : null);
     if (!b || compact(b).length < 3 || /noindex/i.test(x.robots || '') || (x.http_status && x.http_status !== 200)) continue;
+    // Doublon d'une autre adresse (/marque/tornado → canonique /marque/white-rabbit-2/tornado) : jamais proposé.
+    if (x.canonical && normUrl(x.canonical.startsWith('/') ? SITE + x.canonical : x.canonical) !== u) continue;
     if (!byBrand.has(b)) byBrand.set(b, []);
     byBrand.get(b).push(u);
   }
   return byBrand;
 };
+// La page visée parle déjà de ce que nomme l'ancre : sa fiche, une autre version
+// du modèle, l'étiquette du modèle (« Puff JNR Gorilla X 43k » → la fiche avec
+// nicotine, « JNR Gorilla X » → /etiquette-produit/jnr-gorilla-x-43k). Choisir
+// entre deux versions est une décision (page cible), pas une erreur de lien.
+const coversAnchor = (href, text, audits) => {
+  const a = audits.get(href);
+  const want = subjectSet(text);
+  const have = new Set([
+    ...subjectSet((pathOf(href).split('/').filter(Boolean).pop() || '').replace(/-/g, ' ')),
+    ...subjectSet(a?.title), ...subjectSet(a?.h1),
+  ]);
+  return want.size > 0 && [...want].every((w) => have.has(w));
+};
 const linkFixes = (page, audits, decided = [], pageStats = new Map(), byBrand = brandIndex(audits)) => {
   const a = audits.get(normUrl(page));
   if (!a || !Array.isArray(a.links)) return [];
   const impr = (u) => pageStats.get(u)?.i || pageStats.get(`${u}/`)?.i || 0;
+  // La marque la plus longue d'abord : « Lost Vape » avant une marque « Vape ».
+  const brands = [...byBrand.keys()].sort((x, y) => compact(y).length - compact(x).length);
   const fixes = [];
   for (const l of a.links) {
     const href = normUrl(l.href);
@@ -712,15 +772,20 @@ const linkFixes = (page, audits, decided = [], pageStats = new Map(), byBrand = 
       // La page visée est consacrée à l'ancre (« Puffs JNR » → /etiquette-produit/puff-jnr) : bon lien.
       if (slugIs(href, text) || centeredOn(audits.get(href)?.title, text)) continue;
       const flat = compact(text);
-      const brand = [...byBrand.keys()].find((b) => flat.includes(compact(b)));
+      const brand = brands.find((b) => flat.includes(compact(b)));
       if (!brand) continue;
       const decidedTo = decided.find((d) => d.re?.test(norm(text)))?.url || null;
-      const owners = byBrand.get(brand).filter((u) => (pageKind(u) === 'page marque'
-        ? isBrandQuery(text, marqueSlug(u))
-        : ownsQuery(text, auditOf(u, audits))));
-      const to = decidedTo || (owners.length
-        ? chooseReference(text, owners.sort((x, y) => impr(y) - impr(x)), audits).main
-        : null);
+      let to = decidedTo;
+      if (!to && isBrandQuery(text, brand)) {
+        // Un nom de marque seul : sa page marque, jamais une fiche (et rien si
+        // la page marque n'est pas relevée).
+        to = byBrand.get(brand).find((u) => pageKind(u) === 'page marque') || null;
+      } else if (!to && audits.has(href) && !coversAnchor(href, text, audits)) {
+        // Un modèle : sa fiche, la plus vue d'abord. Une page visée jamais
+        // relevée reste telle quelle : on ne sait pas de quoi elle parle.
+        const owners = byBrand.get(brand).filter((u) => pageKind(u) !== 'page marque' && ownsQuery(text, auditOf(u, audits)));
+        to = owners.length ? chooseReference(text, owners.sort((x, y) => impr(y) - impr(x)), audits).main : null;
+      }
       if (!to || normUrl(to) === href || normUrl(to) === normUrl(page)) continue;
       fixes.push({ text, from: href, to: normUrl(to), count: l.count || 1, decided: !!decidedTo });
     }
@@ -862,6 +927,29 @@ const detectCannibalisation = ({ q, byQuery }, audits, skipRes = [], protectedUr
 // On juge le title sur la REQUÊTE PRINCIPALE et ses variantes directes (qui
 // en contiennent tous les mots) ; les requêtes d'une autre intention sont
 // listées à part, jamais transformées en mots à ajouter.
+// Le texte emploie-t-il ces mots (une requête, ou une liste de mots) ? Au
+// singulier, « cartouche » = « recharge », « 4 in 1 » = « 4in1 ».
+const glue = (s) => norm(s).replace(/(\d) ?(in|en) ?(\d)/g, '$1in$3');
+const wordKey = (t) => { const s = singular(t); return s === 'cartouche' ? 'recharge' : s; };
+const mentions = (text, query) => {
+  const words = canonTokens(glue(text)).map(wordKey);
+  // Mots collés ou non : « geek vape » = « GeekVape », « elf bar » = « Elfbar ».
+  const have = new Set([...words, ...words.slice(1).map((w, i) => words[i] + w)]);
+  const want = (Array.isArray(query) ? query : canonTokens(glue(query))).map(wordKey);
+  if (!want.length) return false;
+  for (let i = 0; i < want.length;) {
+    let j = want.length;
+    while (j > i && !have.has(want.slice(i, j).join(''))) j -= 1;
+    if (j === i) return false;
+    i = j;
+  }
+  return true;
+};
+const clip = (s, n) => (s.length > n ? `${s.slice(0, n).replace(/\s+\S*$/, '')}…` : s);
+// Mots de navigation (« kiwi vapor site officiel », « canapuff france ») : ni
+// dans un title ni en intertitre, YouVape n'est pas le site de la marque.
+const NAV_RE = /^(france|fr|officiel|officielle|site|marque|boutique|shop)$/;
+
 const detectTexte = async (data, audits, claimed = new Map()) => {
   const { q, byQuery } = data;
   const perPage = new Map();
@@ -885,20 +973,27 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     if (hasSensitive(head.query)) continue;
     const headTk = canonTokens(head.query);
     const variants = owned.filter((x) => x !== head && headTk.every((t) => canonTokens(x.query).includes(t)));
-    const audit = audits.get(normUrl(page));
-    const titleNow = audit?.title || '(title non relevé)';
-    const where = compact(`${audit?.title || ''} ${audit?.h1 || ''}`);
+    const scope = [head, ...variants];
+    const est = scope.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
+    if (monthly(est) < 15) continue;
+    // Page jamais relevée (hors des plus vues) : relevée maintenant.
+    let audit = audits.get(normUrl(page));
+    if (!audit) {
+      const a = await auditUrl(page);
+      if (a.http_status) { await saveAudit(a); audits.set(normUrl(page), a); audit = a; }
+    }
+    // Title jamais lu (page en erreur, redirigée) : rien à recommander à l'aveugle.
+    if (!audit?.title) continue;
+    const titleNow = audit.title;
+    const where = compact(`${audit.title} ${audit.h1 || ''}`);
     const headCovered = tokens(head.query).every((t) => where.includes(t));
     const missing = [];
     for (const v of variants.slice(0, 8)) {
       for (const t of canonTokens(v.query)) {
-        if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || GENERIC.has(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
+        if (headTk.includes(t) || t.length < 3 || SENSITIVE.has(t) || GENERIC.has(t) || NAV_RE.test(t) || where.includes(t) || missing.some((m) => m.t === t)) continue;
         missing.push({ t, from: v });
       }
     }
-    const scope = [head, ...variants];
-    const est = scope.reduce((s, x) => s + gainTo(x.i, x.c, x.p, Math.max(1, x.p - 2)), 0);
-    if (monthly(est) < 15) continue;
 
     const intro = [];
     const blocks = [];
@@ -915,16 +1010,23 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
     // et un seul intertitre par mot apporté (« elfbar recharge » et « recharge
     // elfbar » sont le même H2).
     const h2Seen = new Set();
+    const h2Extra = (v) => canonTokens(v.query).filter((t) => !headTk.includes(t) && !GENERIC.has(t) && !NAV_RE.test(t) && t.length > 2);
     const h2 = variants.filter((v) => {
       if (hasSensitive(v.query)) return false;
-      const extra = canonTokens(v.query).filter((t) => !headTk.includes(t) && !GENERIC.has(t) && t.length > 2);
-      const key = [...new Set(extra.map(singular))].sort().join(' ');
+      const key = [...new Set(h2Extra(v).map(singular))].sort().join(' ');
       if (!key || h2Seen.has(key)) return false;
       h2Seen.add(key);
       return true;
     }).slice(0, 3);
+    // Seulement ce qui manque, d'après le relevé : l'intro du thème et les H2
+    // (un relevé d'avant le 28/10/2026 ne les a pas : rien n'est demandé sur l'intro).
     const words = audit?.word_count || 0;
-    blocks.push(`Texte : ${words && words < 400 ? `la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »` : `vérifier que « ${head.query} » apparaît dans le premier paragraphe`}${h2.length ? `, et des intertitres (H2) sur : ${h2.map((v) => `« ${cap(v.query)} »`).join(', ')}` : ''}.`);
+    const h2Todo = Array.isArray(audit?.h2s) ? h2.filter((v) => !audit.h2s.some((t) => mentions(t, h2Extra(v)))) : h2;
+    const todo = [];
+    if (words && words < 400) todo.push(`la page est courte (environ ${words} mots hors menus) ; ajouter un paragraphe factuel qui emploie « ${head.query} »`);
+    else if (audit?.intro && !mentions(audit.intro, head.query)) todo.push(`mettre « ${head.query} » dans l'intro (aujourd'hui « ${clip(audit.intro, 160)} »)`);
+    if (h2Todo.length) todo.push(`ajouter des intertitres (H2) sur : ${h2Todo.map((v) => `« ${cap(v.query)} »`).join(', ')}`);
+    if (todo.length) blocks.push(`Texte : ${todo.join(', et ')}.`);
     // 3. Liens internes
     const links = await linkPlan({
       target: page,
@@ -941,6 +1043,8 @@ const detectTexte = async (data, audits, claimed = new Map()) => {
         blocks.push(`Tableaux des produits : coller ce bloc dans le texte du bas de page${groups.length > 1 ? ' (une section par marque et catégorie)' : ''} :\n${tableBlock(groups)}`);
       }
     }
+    // Rien à faire sur cette page : pas de carte.
+    if (!blocks.length) continue;
     // 5. Ce qu'il ne faut pas viser ici
     if (elsewhere.length) {
       const byTarget = new Map();
@@ -1746,7 +1850,7 @@ const TYPE_WEIGHT = { redirection: 1.5, cannibalisation: 1.1, creation: 1, modif
 
 let running = false;
 
-const computeRecommendations = async ({ audit = true } = {}) => {
+const computeRecommendations = async ({ audit = true, refreshMax = AUDIT_REFRESH_MAX } = {}) => {
   if (running) throw new Error('Calcul des recommandations déjà en cours');
   running = true;
   await ensureTables();
@@ -1764,8 +1868,18 @@ const computeRecommendations = async ({ audit = true } = {}) => {
         .sort((a, b) => b[1].i - a[1].i)
         .slice(0, AUDIT_MAX_PAGES)
         .map(([u]) => u);
-      for (const u of urls) {
-        await saveAudit(await auditUrl(u));
+      // Les autres pages relevées vieillissent (un lien corrigé, un tableau
+      // ajouté ne se verraient jamais) : les plus anciennes repassent à chaque
+      // calcul, celles relevées avant l'intro et les H2 en premier.
+      const top = new Set(urls.map(normUrl));
+      const older = (await pool.query(
+        'SELECT url FROM seo_page_audit ORDER BY COALESCE(http_status = 200 AND h2s IS NULL, false) DESC, fetched_at ASC LIMIT $1',
+        [refreshMax + urls.length],
+      )).rows.map((r) => r.url).filter((u) => !top.has(normUrl(u)) && !/[?#]/.test(u)).slice(0, refreshMax);
+      for (const u of [...urls, ...older]) {
+        // Lecture impossible (délai, coupure) : le relevé précédent reste.
+        const a = await auditUrl(u);
+        if (a.http_status) await saveAudit(a);
         audited += 1;
         await sleep(AUDIT_DELAY_MS);
       }
@@ -1907,4 +2021,5 @@ module.exports = {
   brandFromJsonLd, rivalSteps, brandIndex, linkFixes, linkFixLine,
   // Banc d'essai (tests/seoAdvisor.test.js) : détecteurs sans réseau ni base.
   ownsQuery, isBrandQuery, brandOf, roleOf, centeredOn, chooseReference, relatedSources, detectCannibalisation, detectTexte, detectLiens,
+  introOf, h2sOf, mentions,
 };

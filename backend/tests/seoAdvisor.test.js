@@ -18,6 +18,15 @@
  *   - la marque se lit dans les données structurées, pas dans l'adresse ;
  *   - pas de lien depuis /marque/elfbar vers l'article « menthol » ;
  *   - un seul H2 pour « elfbar recharge » et « recharge elfbar ».
+ *
+ * Cas réels du 28/10/2026 (cartes « Liens à corriger » fausses, masquées) :
+ *   - un lien vers une autre version du modèle (JNR avec / sans nicotine) ou vers
+ *     l'étiquette du modèle n'est jamais signalé ;
+ *   - un nom de marque seul va vers la page marque, jamais vers une fiche, même
+ *     quand la marque contient « vape » (Geek Vape, Lost Vape) ;
+ *   - la carte « Texte » ne demande que ce qui manque à l'intro et aux H2 ;
+ *   - le title d'une page cible peut commencer par le type de produit
+ *     (« Puff Elfa Pro… »), « cartouche » = « recharge », « 4in1 » = « 4 in 1 ».
  */
 
 const assert = require('assert');
@@ -260,6 +269,12 @@ test('requêtes « marque » : marque seule ou avec puff, recharge, rechargeable
   }
 });
 
+test('marque dont le nom contient « vape » : « Geek Vape », « puff Lost Vape » sont des requêtes marque', () => {
+  assert.strictEqual(isBrandQuery('Geek Vape', 'geekvape'), true);
+  assert.strictEqual(isBrandQuery('puff lost vape', 'lost-vape'), true);
+  assert.strictEqual(isBrandQuery('geek vape aegis solo 5', 'geekvape'), false);
+});
+
 test('la marque se lit dans les données structurées (Product.brand), même avec @graph ou un bloc illisible', () => {
   const ld = (o) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`;
   assert.strictEqual(brandFromJsonLd(ld({ '@type': 'Product', name: 'Puff 4in1', brand: { '@type': 'Brand', name: 'Elfbar' } })), 'Elfbar');
@@ -291,7 +306,8 @@ test('pas de lien depuis /marque/elfbar vers l\'article « menthol » : la page 
 
 console.log('Liens et ancres existants');
 
-const { extractLinks, linkFixes, detectLiens, productTables, countProductTables } = advisor;
+const { extractLinks, linkFixes, linkFixLine, detectLiens, productTables, countProductTables, introOf, h2sOf, mentions } = advisor;
+const { titleLeadsWith, containsQuery } = require('../src/services/seoPilotService');
 const ELFA_PACK_0MG = `${SITE}/produit/eliquides/cartouches-pre-remplies/pack-x2-cartouches-puff-elfa-pro-0mg`;
 const ELFX_CART = `${SITE}/produit/e-cigarettes/composants/cartouches-pods/cartouche-elfx-mega-elfbar`;
 const TAG_JNR = `${SITE}/etiquette-produit/puff-jnr`;
@@ -333,6 +349,108 @@ test('lien vers la page consacrée à son ancre (« Puffs JNR » → /etiquette-
   assert.deepStrictEqual(linkFixes(MARQUE, audits, [], new Map()), []);
 });
 
+// /marque/jnr le 28/10/2026 : liens vers la version avec nicotine et vers
+// l'étiquette du modèle (titles relevés en ligne ; la Meteorite sans marque relevée).
+const MARQUE_JNR = `${SITE}/marque/jnr`;
+const METEORITE = `${SITE}/produit/e-cigarettes/kits-ecigarettes/puffs/puff-jnr-meteorite`;
+const METEORITE_0 = `${SITE}/produit/e-cigarettes/kits-ecigarettes/puffs/puff-jnr-meteorite-sans-nicotine`;
+const GORILLA = `${SITE}/produit/e-cigarettes/kits-ecigarettes/puffs/puff-gorilla-x-jnr`;
+const GORILLA_0 = `${SITE}/produit/e-cigarettes/kits-ecigarettes/puffs/puff-jnr-gorilla-x-sans-nicotine`;
+const TAG_GORILLA = `${SITE}/etiquette-produit/jnr-gorilla-x-43k`;
+
+test('lien vers une autre version du modèle ou vers son étiquette : jamais signalé (JNR avec / sans nicotine)', () => {
+  const audits = auditsOf(
+    { url: MARQUE_JNR, title: 'JNR - YouVape', http_status: 200, links: [
+      { href: METEORITE, text: 'Puff JNR Meteorite 100k', texts: ['Puff JNR Meteorite 100k'], count: 1 },
+      { href: GORILLA, text: 'Puff JNR Gorilla X 43k', texts: ['Puff JNR Gorilla X 43k'], count: 2 },
+      { href: TAG_GORILLA, text: 'JNR Gorilla X', texts: ['JNR Gorilla X'], count: 1 },
+    ] },
+    { url: METEORITE, title: 'Puff JNR Meteorite 100k par JNR - Compacte et autonome - YouVape', http_status: 200 },
+    { url: METEORITE_0, title: 'Puff JNR Meteorite 100k Sans Nicotine par JNR - YouVape', brand: 'JNR', http_status: 200 },
+    { url: GORILLA, title: 'Puff JNR Gorilla X 43k JNR, la puff la plus durable - YouVape', brand: 'JNR', http_status: 200 },
+    { url: GORILLA_0, title: 'Puff JNR Gorilla X 43k sans Nicotine JNR - YouVape', brand: 'JNR', http_status: 200 },
+    { url: TAG_GORILLA, title: 'JNR Gorilla X 43K : Puff Rechargeable avec ou sans Nicotine', http_status: 200 },
+  );
+  const stats = new Map([[METEORITE_0, { i: 2000 }], [METEORITE, { i: 300 }], [GORILLA_0, { i: 1800 }], [GORILLA, { i: 400 }]]);
+  assert.deepStrictEqual(linkFixes(MARQUE_JNR, audits, [], stats), []);
+});
+
+test('nom de marque seul : la page marque, jamais une fiche (Geek Vape, Lost Vape, Starbuzz)', () => {
+  const TOP10 = `${SITE}/top-10-cigarette-electronique`;
+  const MARQUE_GEEK = `${SITE}/marque/geekvape`;
+  const MARQUE_STARBUZZ = `${SITE}/marque/starbuzz`;
+  const TAG_STARBUZZ = `${SITE}/etiquette-produit/puff-starbuzz`;
+  const Z_TANK = `${SITE}/produit/e-cigarettes/composants/clearomiseurs/z-subohm-5-tank-geekvape`;
+  const CENTAURUS = `${SITE}/produit/e-cigarettes/composants/box-batteries-electroniques/box-centaurus-bt200-lost-vape`;
+  const audits = auditsOf(
+    { url: TOP10, title: 'Top 10 cigarette électronique - YouVape', http_status: 200, links: [
+      { href: MARQUE_GEEK, text: 'Geek Vape', texts: ['Geek Vape'], count: 3 },
+      { href: `${SITE}/etiquette-produit/lost-vape-le-bar-40k`, text: 'Lost Vape', texts: ['Lost Vape'], count: 2 },
+      { href: TAG_STARBUZZ, text: 'Starbuzz', texts: ['Starbuzz'], count: 1 },
+    ] },
+    { url: MARQUE_GEEK, title: 'GeekVape : box, clearomiseurs et résistances - YouVape', http_status: 200 },
+    { url: Z_TANK, title: 'Clearomiseur Z Subohm 5 Tank par Geekvape - YouVape', brand: 'Geekvape', http_status: 200 },
+    // Pas de page marque Lost Vape relevée : on ne devine pas.
+    { url: CENTAURUS, title: 'Box Centaurus BT200 par Lost Vape - YouVape', brand: 'Lost Vape', http_status: 200 },
+    { url: MARQUE_STARBUZZ, title: 'Starbuzz - YouVape', http_status: 200 },
+  );
+  const stats = new Map([[Z_TANK, { i: 5000 }], [CENTAURUS, { i: 4000 }]]);
+  const fixes = linkFixes(TOP10, audits, [], stats);
+  assert.deepStrictEqual(fixes.map((f) => [f.text, f.to]), [['Starbuzz', MARQUE_STARBUZZ]]);
+  assert.strictEqual(linkFixLine(fixes[0]), 'Lien « Starbuzz » : remplacer /etiquette-produit/puff-starbuzz par /marque/starbuzz (la page de la marque).');
+});
+
+test('sous-marque : sa page sous la marque mère, jamais le doublon non canonique (/marque/tornado)', () => {
+  const SOUS_MARQUE = `${SITE}/marque/white-rabbit-2/tornado`;
+  const LANDING = `${SITE}/eliquides-tornado-white-rabbit`;
+  const audits = auditsOf(
+    { url: LANDING, title: 'E-liquides Tornado White Rabbit - YouVape', http_status: 200, links: [
+      { href: SOUS_MARQUE, text: 'Puffs Tornado', texts: ['Puffs Tornado'], count: 1 },
+      { href: `${SITE}/etiquette-produit/puff-tornado`, text: 'Tornado', texts: ['Tornado'], count: 1 },
+    ] },
+    { url: SOUS_MARQUE, title: 'Tornado - YouVape', http_status: 200, canonical: SOUS_MARQUE },
+    { url: `${SITE}/marque/tornado`, title: 'Tornado - YouVape', http_status: 200, canonical: SOUS_MARQUE },
+  );
+  assert.deepStrictEqual(linkFixes(LANDING, audits, [], new Map()).map((f) => [f.text, f.to]), [['Tornado', SOUS_MARQUE]]);
+});
+
+test('page cible décidée : l\'emporte aussi sur une autre version du modèle', () => {
+  const audits = elfbarAudits({ links: [{ href: ELFA_20MG, text: 'Elfbar Elfa Pro', texts: ['Elfbar Elfa Pro'], count: 1 }] });
+  const decided = [{ re: /elfa pro/, url: ELFA_0MG }];
+  assert.deepStrictEqual(linkFixes(MARQUE, audits, decided, STATS).map((f) => [f.text, f.to, f.decided]), [['Elfbar Elfa Pro', ELFA_0MG, true]]);
+  // Sans décision, la fiche 20 mg est un bon lien.
+  assert.deepStrictEqual(linkFixes(MARQUE, audits, [], STATS), []);
+});
+
+test('relevé de l\'intro (bloc .subtitle du thème) et des H2 du contenu, sans bandeau ni pied de page', () => {
+  const html = '<div class="age-gate"><p>En entrant sur ce site, je reconnais être majeur(e).</p></div>'
+    + '<script type="text/template"><p>Désolé, ce produit n’est pas disponible.</p><h2>Modèle</h2></script>'
+    + '<h1>Elfbar, le spécialiste de la puff</h1><div class="subtitle"><p>Découvrez les puffs de Elfbar, et leurs recharges.</p></div>'
+    + '<h2>La marque Elfbar</h2><h2>Gammes Elfbar <span>disponibles</span> chez YouVape</h2><h2>Top 10 &#8211; Puffs</h2><footer><h2>Newsletter</h2></footer>';
+  assert.strictEqual(introOf(html), 'Découvrez les puffs de Elfbar, et leurs recharges.');
+  assert.deepStrictEqual(h2sOf(html), ['La marque Elfbar', 'Gammes Elfbar disponibles chez YouVape', 'Top 10 – Puffs']);
+  assert.strictEqual(introOf('<h1>Puff</h1><p>Texte</p>'), '');
+});
+
+test('l\'intro emploie-t-elle la recherche : mots collés ou non, singulier, cartouche = recharge, 4in1 = 4 in 1', () => {
+  assert.strictEqual(mentions('Repérez la résistance dont vous avez besoin pour votre pod GeekVape.', 'resistance geek vape'), true);
+  assert.strictEqual(mentions('Les cartouches de la Puff 4in1', 'recharge elfbar 4 in 1'), false); // pas « elfbar »
+  assert.strictEqual(mentions('Les cartouches Elfbar de la Puff 4in1', 'recharge elfbar 4 in 1'), true);
+  assert.strictEqual(mentions('Découvrez les Geek Vape Aegis', 'geekvape'), true);
+  assert.strictEqual(mentions('Découvrez nos puffs rechargeables', 'elfbar'), false);
+});
+
+test('title d\'une page cible : le type de produit et le conditionnement peuvent précéder la recherche', () => {
+  assert.strictEqual(titleLeadsWith('Puff Elfa Pro sans Nicotine (2 cartouches, 4ml) par Elfbar - YouVape', 'elfa pro'), true);
+  assert.strictEqual(titleLeadsWith('Pack x2 Cartouches Elfa Pro 0mg Elfbar sans nicotine - YouVape', 'cartouche elfa'), true);
+  assert.strictEqual(titleLeadsWith('Pack 2x Cartouches 4in1 10mg/ml par Elfbar - YouVape', 'recharge elfbar 4 in 1'), false);
+  // Le title de la ligne 3.7 du plan, une fois en ligne : plus rien à demander.
+  assert.strictEqual(titleLeadsWith('Recharges Elfbar 4in1 10 mg/ml : pack de 2 cartouches - YouVape', 'recharge elfbar 4 in 1'), true);
+  assert.strictEqual(titleLeadsWith('Magasin de cigarette électronique à Montpellier - YouVape', 'magasin cigarette électronique'), true);
+  assert.strictEqual(titleLeadsWith('Cigarette électronique : pods, kits box et puffs - YouVape', 'puff'), false);
+  assert.strictEqual(containsQuery('Pack 2x Cartouches 4in1 10mg/ml - Elfbar', 'recharge elfbar 4 in 1'), true);
+});
+
 test('carte « Liens à corriger » : chaque lien écrit mot pour mot, sans texte inutile', () => {
   const recs = detectLiens({ q: new Map([['elfbar 4 en 1', { i: 145 }]]), pageStats: STATS }, elfbarAudits(), []);
   assert.strictEqual(recs.length, 1);
@@ -347,6 +465,13 @@ test('tableau déjà en place : le thème rend chaque [product_table] en .yv-pro
   assert.strictEqual(countProductTables('<div class="yv-product-table"><table class="yv-product-table__grid"></table></div><table class="yv-product-table__grid">'), 2);
   assert.strictEqual(countProductTables('<table style="width: 100%">'), 0);
 });
+
+// « elfbar » et sa variante « elfbar recharge » sur /marque/elfbar.
+const TEXTE_ELFBAR = {
+  q: new Map([['elfbar', { c: 45, i: 3500, p: 7.2 }], ['elfbar recharge', { c: 13, i: 633, p: 10.1 }]]),
+  byQuery: new Map([['elfbar', [{ page: MARQUE, c: 45, i: 3500, p: 7.2 }]], ['elfbar recharge', [{ page: MARQUE, c: 13, i: 633, p: 10.1 }]]]),
+  pageStats: new Map(),
+};
 
 // Tests asynchrones : lancés à la suite, puis le bilan.
 const asyncTests = [
@@ -389,6 +514,55 @@ const asyncTests = [
     assert.ok(rec, 'carte « texte » de /marque/elfbar attendue');
     assert.match(rec.action, /intertitres \(H2\) sur : « Elfbar recharge »\./);
     assert.doesNotMatch(rec.action, /« Recharge elfbar »/);
+    noFiller(rec.action);
+  }],
+  ['carte « Texte » : intro qui nomme déjà la marque, H2 « Recharges » et tableaux en place → pas de carte', async () => {
+    const audits = auditsOf(audit(MARQUE, {
+      intro: 'Découvrez les puffs de Elfbar, et leurs recharges Elbar.', h2s: ['La marque Elfbar', 'Recharges Elfbar et cartouches'], product_tables: 2,
+    }));
+    const recs = await detectTexte(TEXTE_ELFBAR, audits, new Map());
+    assert.strictEqual(recs.find((r) => r.rec_key === `texte:${MARQUE}`), undefined);
+  }],
+  ['intertitres des tableaux : la marque des fiches ou de l\'adresse, jamais du H1 (« E-liquides Atelier Just » donnait « E »)', async () => {
+    const AJ = `${SITE}/marque/atelier-just`;
+    const CONCENTRE = `${SITE}/produit/diy/concentres/concentres-grands-formats/concentre-x-maison-fuel`;
+    const audits = auditsOf(
+      { url: AJ, title: 'Atelier Just - YouVape', h1: 'E-liquides Atelier Just', http_status: 200 },
+      { url: CONCENTRE, title: 'Concentré X - YouVape', brand: 'Maison Fuel', http_status: 200 }, // sous-marque
+    );
+    assert.deepStrictEqual((await productTables(AJ, [CONCENTRE], audits)).map((g) => g.h3), ['Concentrés grands formats Atelier Just']);
+    const YV = `${SITE}/marque/youvape`;
+    const PACK = `${SITE}/produit/e-cigarettes/kits-ecigarettes/packs-youvape/pack-decouverte`;
+    const yv = auditsOf({ url: YV, title: 'YouVape', http_status: 200 }, { url: PACK, title: 'Pack découverte', brand: 'YouVape', http_status: 200 });
+    assert.deepStrictEqual((await productTables(YV, [PACK], yv)).map((g) => g.h3), ['Packs YouVape']); // pas « Packs YouVape YouVape »
+  }],
+  ['page dont le title n\'a jamais été lu (redirigée) : pas de carte « Texte » à l\'aveugle', async () => {
+    const recs = await detectTexte(TEXTE_ELFBAR, auditsOf({ url: MARQUE, http_status: 301, title: null, links: [] }), new Map());
+    assert.deepStrictEqual(recs, []);
+  }],
+  ['« canapuff france », « kiwi vapor site officiel » : ni variante de title ni intertitre (YouVape n\'est pas le site de la marque)', async () => {
+    const CANAPUFF = `${SITE}/marque/canapuff`;
+    const data = {
+      q: new Map([['canapuff', { c: 60, i: 2400, p: 6.1 }], ['canapuff france', { c: 9, i: 256, p: 7.4 }], ['canapuff site officiel', { c: 5, i: 180, p: 8 }]]),
+      byQuery: new Map([
+        ['canapuff', [{ page: CANAPUFF, c: 60, i: 2400, p: 6.1 }]],
+        ['canapuff france', [{ page: CANAPUFF, c: 9, i: 256, p: 7.4 }]],
+        ['canapuff site officiel', [{ page: CANAPUFF, c: 5, i: 180, p: 8 }]],
+      ]),
+      pageStats: new Map(),
+    };
+    const audits = auditsOf({
+      url: CANAPUFF, title: 'Canapuff - Puffs et cartouches de cannabinoïdes à vapoter - YouVape', h1: 'Canapuff', links: [], word_count: 800,
+      intro: 'Découvrez les puffs Canapuff.', h2s: ['La marque Canapuff'], product_tables: 1,
+    });
+    const recs = await detectTexte(data, audits, new Map());
+    for (const r of recs) assert.doesNotMatch(r.action, /france|officiel|« site »/i, r.action);
+  }],
+  ['carte « Texte » : l\'intro sans la recherche → ce qu\'il faut y mettre, avec la phrase actuelle', async () => {
+    const audits = auditsOf(audit(MARQUE, { intro: 'Découvrez nos puffs rechargeables et leurs recharges.', h2s: ['La marque'], product_tables: 2 }));
+    const [rec] = await detectTexte(TEXTE_ELFBAR, audits, new Map());
+    assert.match(rec.action, /Texte : mettre « elfbar » dans l'intro \(aujourd'hui « Découvrez nos puffs rechargeables et leurs recharges\. »\), et ajouter des intertitres \(H2\) sur : « Elfbar recharge »\./);
+    assert.doesNotMatch(rec.action, /vérifier/);
     noFiller(rec.action);
   }],
 ];
