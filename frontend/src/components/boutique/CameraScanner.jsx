@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
 
+// Sans demande explicite, iOS filme en 640×480 : un code-barres visé y fait ~230 px et
+// ZXing tombe à 0 lecture dès un léger flou (le détecteur natif d'Android s'en sort).
+const ZXING_VIDEO = { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } };
+
 // Gardé d'une ouverture à l'autre : le Comptage relance le scanner à chaque scan
 // (onDetect instable), et ZXing ne doit se charger qu'une fois.
 let zxingDetector = null;
@@ -53,6 +57,7 @@ export default function CameraScanner({ onDetect, onClose }) {
   const [error, setError] = useState(null);
   const [supported] = useState(() => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia);
   const [flash, setFlash] = useState(false);
+  const [diag, setDiag] = useState(null);
 
   const beep = () => {
     try {
@@ -69,6 +74,7 @@ export default function CameraScanner({ onDetect, onClose }) {
   useEffect(() => {
     if (!supported) return undefined;
     let cancelled = false;
+    const usesZxing = !('BarcodeDetector' in window);
 
     (async () => {
       let detector;
@@ -80,17 +86,29 @@ export default function CameraScanner({ onDetect, onClose }) {
       }
       if (cancelled) return;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: usesZxing ? ZXING_VIDEO : { facingMode: 'environment' },
+        });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
+        if (usesZxing) {
+          // Zoom ×2 si dispo : on vise de plus loin, à une distance où l'iPhone fait le point.
+          const track = stream.getVideoTracks()[0];
+          if (track.getCapabilities?.().zoom?.max >= 2) {
+            await track.applyConstraints({ advanced: [{ zoom: 2 }] }).catch(() => {});
+          }
+        }
+        if (cancelled) return;
         const v = videoRef.current;
         v.srcObject = stream;
         await v.play();
 
+        const stats = { images: 0, erreur: null, depuis: performance.now() };
         const tick = async () => {
           if (cancelled || !videoRef.current) return;
           try {
             const codes = await detector.detect(videoRef.current);
+            stats.images += 1;
             if (codes && codes.length) {
               const code = codes[0].rawValue;
               const now = Date.now();
@@ -102,7 +120,14 @@ export default function CameraScanner({ onDetect, onClose }) {
                 onDetect(code);
               }
             }
-          } catch { /* frame non prête */ }
+          } catch (e) { stats.erreur = e.name; /* frame non prête */ }
+          const ecoule = performance.now() - stats.depuis;
+          if (usesZxing && ecoule >= 1000 && videoRef.current) {
+            const { videoWidth: w, videoHeight: h } = videoRef.current;
+            const zoom = stream.getVideoTracks()[0].getSettings?.().zoom;
+            setDiag([`${w}×${h}`, `${Math.round(stats.images * 1000 / ecoule)} img/s`, zoom && `zoom ${zoom}`, stats.erreur].filter(Boolean).join(' · '));
+            Object.assign(stats, { images: 0, erreur: null, depuis: performance.now() });
+          }
           rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
@@ -143,6 +168,7 @@ export default function CameraScanner({ onDetect, onClose }) {
             }} />
             <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, textAlign: 'center', color: '#fff', fontSize: 14 }}>
               Vise un code-barres — bip à chaque scan
+              {diag && <div style={{ fontSize: 11, opacity: 0.6, marginTop: 4 }}>{diag}</div>}
             </div>
           </>
         )}
