@@ -10,6 +10,27 @@ defined('ABSPATH') || exit;
 class Data_Fetcher {
 
     /**
+     * Contenu d'un événement, lu au moment de la livraison.
+     *
+     * @param string $type order|product|customer|refund
+     * @param int $id
+     * @return array|null null si l'objet n'existe plus
+     */
+    public static function get($type, $id) {
+        switch ($type) {
+            case 'order':
+                return self::get_order($id);
+            case 'product':
+                return self::get_product($id);
+            case 'customer':
+                return self::get_customer($id);
+            case 'refund':
+                return self::get_refund($id);
+        }
+        return null;
+    }
+
+    /**
      * Get full order data
      *
      * @param int $order_id
@@ -17,7 +38,7 @@ class Data_Fetcher {
      */
     public static function get_order($order_id) {
         $order = wc_get_order($order_id);
-        if (!$order) {
+        if (!$order || $order->get_type() !== 'shop_order') {
             return null;
         }
 
@@ -65,9 +86,9 @@ class Data_Fetcher {
             }
         }
 
-        // Get BMS shipping data (carrier and tracking)
-        $shipping_carrier = $order->get_meta('bms_carrier');
-        $tracking_number = $order->get_meta('bms_tracking_number');
+        // Dernier envoi : métas de youvape-logistique, sinon celles de BMS. Le repli se
+        // fait par paire : un retrait entrepôt (sans suivi) ne garde pas un vieux suivi.
+        $shipment = self::get_shipment($order);
 
         // Point relais choisi par le client (voir get_relay_point)
         $relay_point = self::get_relay_point($order);
@@ -125,7 +146,6 @@ class Data_Fetcher {
             'utm_content'        => $order->get_meta('_wc_order_attribution_utm_content') ?: null,
             'utm_term'           => $order->get_meta('_wc_order_attribution_utm_term') ?: null,
             'device_type'        => $order->get_meta('_wc_order_attribution_device_type') ?: null,
-            'user_agent'         => $order->get_meta('_wc_order_attribution_user_agent') ?: null,
             'session_entry'      => $order->get_meta('_wc_order_attribution_session_entry') ?: null,
             'session_start_time' => $order->get_meta('_wc_order_attribution_session_start_time') ?: null,
             'session_pages'      => intval($order->get_meta('_wc_order_attribution_session_pages')) ?: null,
@@ -138,8 +158,6 @@ class Data_Fetcher {
             'mollie_payment_id'           => $order->get_meta('_mollie_payment_id') ?: null,
             'mollie_order_id'             => $order->get_meta('_mollie_order_id') ?: null,
             'mollie_payment_mode'         => $order->get_meta('_mollie_payment_mode') ?: null,
-            'mollie_customer_id'          => $order->get_meta('_mollie_customer_id') ?: null,
-            'mollie_payment_instructions' => $order->get_meta('_mollie_payment_instructions') ?: null,
             'mollie_paid_and_processed'   => (bool) $order->get_meta('_mollie_paid_and_processed'),
         ];
 
@@ -159,7 +177,6 @@ class Data_Fetcher {
             'customer_email' => $order->get_billing_email(),
             'billing_first_name' => $order->get_billing_first_name(),
             'billing_last_name' => $order->get_billing_last_name(),
-            'billing_company' => $order->get_billing_company(),
             'billing_address_1' => $order->get_billing_address_1(),
             'billing_address_2' => $order->get_billing_address_2(),
             'billing_city' => $order->get_billing_city(),
@@ -173,7 +190,6 @@ class Data_Fetcher {
             'shipping_city' => $order->get_shipping_city(),
             'shipping_postcode' => $order->get_shipping_postcode(),
             'shipping_country' => $order->get_shipping_country(),
-            'customer_note' => $order->get_customer_note(),
             'date_created' => $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null,
             'date_modified' => $order->get_date_modified() ? $order->get_date_modified()->format('Y-m-d H:i:s') : null,
             'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->format('Y-m-d H:i:s') : null,
@@ -181,8 +197,8 @@ class Data_Fetcher {
             'items' => $items,
             'shipping' => $shipping_items,
             'shipping_method' => $shipping_method,
-            'shipping_carrier' => $shipping_carrier ?: null,
-            'tracking_number' => $tracking_number ?: null,
+            'shipping_carrier' => $shipment['carrier'] ?: null,
+            'tracking_number' => $shipment['tracking_number'] ?: null,
             'relay_point' => $relay_point,
             'coupons' => $coupons,
             'coupon_items' => $coupon_items,
@@ -191,6 +207,24 @@ class Data_Fetcher {
             'attribution' => $attribution,
             'payment_meta' => $payment_meta
         ];
+    }
+
+    /**
+     * Transporteur et suivi du dernier envoi.
+     *
+     * Noms des métas : réglage `meta_keys` de youvape-logistique, valeurs par défaut.
+     * S'il change, changer aussi `shipmentOf` dans wcOrderImportService côté serveur.
+     *
+     * @param WC_Order $order
+     * @return array ['carrier' => string, 'tracking_number' => string]
+     */
+    private static function get_shipment($order) {
+        $carrier = $order->get_meta('_yv_carrier_label');
+        if (!empty($carrier)) {
+            return ['carrier' => $carrier, 'tracking_number' => $order->get_meta('_yv_tracking_number')];
+        }
+
+        return ['carrier' => $order->get_meta('bms_carrier'), 'tracking_number' => $order->get_meta('bms_tracking_number')];
     }
 
     /**
@@ -289,8 +323,6 @@ class Data_Fetcher {
             'slug' => $product->get_slug(),
             'sku' => $product->get_sku(),
             'status' => $product->get_status(),
-            'description' => $product->get_description(),
-            'short_description' => $product->get_short_description(),
             'price' => floatval($product->get_price()),
             'regular_price' => floatval($product->get_regular_price()),
             'sale_price' => $product->get_sale_price() ? floatval($product->get_sale_price()) : null,
@@ -308,8 +340,7 @@ class Data_Fetcher {
             'date_modified' => $product->get_date_modified() ? $product->get_date_modified()->format('Y-m-d H:i:s') : null,
             'image_url' => wp_get_attachment_url($product->get_image_id()) ?: (
                 $product->get_parent_id() ? wp_get_attachment_url(get_post_thumbnail_id($product->get_parent_id())) ?: null : null
-            ),
-            'permalink' => get_permalink($product->get_id())
+            )
         ];
 
         // Get brand -- NE PAS REVENIR A $brands[0] (voir yousync/AVANT-DE-MODIFIER.md).
@@ -317,8 +348,6 @@ class Data_Fetcher {
         // (ex. Eliquid France + Fruizee Max). $brands[0] renvoie le parent, donc
         // sub_brand part vide et ecrase la sous-marque en base a chaque edition.
         // On retient le terme qui a un parent : resultat independant de l'ordre.
-        // La prod tourne encore en 1.4.0 avec l'ancien code ; le backend
-        // (brandMapService) neutralise le bug en attendant.
         $brands = wp_get_post_terms($product->get_id(), 'pwb-brand', ['fields' => 'all']);
         if (!is_wp_error($brands) && !empty($brands)) {
             $child = null;
@@ -377,42 +406,21 @@ class Data_Fetcher {
      * @return array|null
      */
     public static function get_customer($customer_id) {
-        $customer = new \WC_Customer($customer_id);
-        if (!$customer->get_id()) {
+        // new WC_Customer() lève une exception sur un compte supprimé.
+        if (!get_user_by('id', $customer_id)) {
             return null;
         }
 
-        $user = get_user_by('id', $customer_id);
+        $customer = new \WC_Customer($customer_id);
 
+        // Seul ce que le serveur lit : pas d'adresse, ni de téléphone, ni d'identifiant.
         return [
             'wp_customer_id' => $customer->get_id(),
             'email' => $customer->get_email(),
             'first_name' => $customer->get_first_name(),
             'last_name' => $customer->get_last_name(),
-            'display_name' => $customer->get_display_name(),
-            'username' => $user ? $user->user_login : null,
-            'billing_first_name' => $customer->get_billing_first_name(),
-            'billing_last_name' => $customer->get_billing_last_name(),
-            'billing_company' => $customer->get_billing_company(),
-            'billing_address_1' => $customer->get_billing_address_1(),
-            'billing_address_2' => $customer->get_billing_address_2(),
-            'billing_city' => $customer->get_billing_city(),
-            'billing_postcode' => $customer->get_billing_postcode(),
-            'billing_country' => $customer->get_billing_country(),
-            'billing_phone' => $customer->get_billing_phone(),
-            'billing_email' => $customer->get_billing_email(),
-            'shipping_first_name' => $customer->get_shipping_first_name(),
-            'shipping_last_name' => $customer->get_shipping_last_name(),
-            'shipping_company' => $customer->get_shipping_company(),
-            'shipping_address_1' => $customer->get_shipping_address_1(),
-            'shipping_address_2' => $customer->get_shipping_address_2(),
-            'shipping_city' => $customer->get_shipping_city(),
-            'shipping_postcode' => $customer->get_shipping_postcode(),
-            'shipping_country' => $customer->get_shipping_country(),
             'date_created' => $customer->get_date_created() ? $customer->get_date_created()->format('Y-m-d H:i:s') : null,
             'date_modified' => $customer->get_date_modified() ? $customer->get_date_modified()->format('Y-m-d H:i:s') : null,
-            'orders_count' => $customer->get_order_count(),
-            'total_spent' => floatval($customer->get_total_spent())
         ];
     }
 
