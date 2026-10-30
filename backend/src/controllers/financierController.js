@@ -118,10 +118,9 @@ function buildDateConditions(dateFrom, dateTo, startIndex = 1, alias = 'o') {
  *     export (0 %) ne retire plus de TVA à tort, contrairement à l'ancien calcul qui
  *     appliquait le taux MOYEN de la période à tous les remboursements.
  *
- * Le cas 2) est aujourd'hui majoritaire : depuis le 17/06/2026 les remboursements
- * arrivent par le webhook temps réel (webhookController.insertRefund), qui n'écrit
- * ni order_total ni order_tax → colonnes NULL. Corriger cette ingestion rendra le
- * cas 1) à nouveau dominant sans rien changer ici.
+ * Le cas 2) reste celui des remboursements antérieurs au 30/10/2026 : l'ingestion
+ * n'écrivait ni order_total ni order_tax (colonnes NULL). Elle les écrit désormais
+ * (`wcSyncService.processRefund`), le cas 1) redevient donc dominant pour la suite.
  *
  * Alias attendus : r = refunds, o = orders, tc = TVA de la commande remboursée.
  */

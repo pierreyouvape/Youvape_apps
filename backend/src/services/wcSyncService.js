@@ -662,16 +662,22 @@ const wcSyncService = {
     }
 
     await pool.query(`
-      INSERT INTO refunds (wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO refunds (wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date, order_total, order_tax)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (wp_refund_id)
       DO UPDATE SET
         refund_amount = EXCLUDED.refund_amount,
         refund_reason = EXCLUDED.refund_reason,
+        -- TVA exacte de l'avoir (négative côté WooCommerce). Le plugin l'envoie
+        -- depuis la 1.4.2 mais elle n'était pas écrite : 32 remboursements sur 32
+        -- sans TVA au 30/10/2026, donc estimée dans les rapports.
+        order_total = COALESCE(EXCLUDED.order_total, refunds.order_total),
+        order_tax = COALESCE(EXCLUDED.order_tax, refunds.order_tax),
         updated_at = NOW()
     `, [
       data.wp_refund_id, data.wp_order_id, data.refund_amount,
-      data.refund_reason, data.refund_date
+      data.refund_reason, data.refund_date,
+      data.order_total ?? null, data.order_tax ?? null
     ]);
 
     // Articles remboursés : lus chez WC pour le picking, le packing et la fiche.
