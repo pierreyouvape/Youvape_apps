@@ -52,7 +52,8 @@ const missingForOrder = async (waveId, orderNumber) => {
     [waveId]
   );
   if (rows.length === 0) return [];
-  const data = await pickingModel.getWavePrintData(waveId);
+  // Une commande retirée garde sa part : les lignes figées la comptent encore.
+  const data = await pickingModel.getWavePrintData(waveId, { withRemoved: true });
   const byOrder = allocateMissing(data.orders, new Map(rows.map(r => [r.line_key, r.qty_missing])));
   return byOrder.get(String(orderNumber)) || [];
 };
@@ -71,8 +72,9 @@ const ticketsForOrder = async (orderNumber) => {
 
 /** Ce que le packing affiche au scan d'une commande. */
 const getPackingInfo = async (orderNumber) => {
-  const [wave, tickets, duplicates] = await Promise.all([
-    findWave(orderNumber), ticketsForOrder(orderNumber), orderDuplicateModel.activeFor([orderNumber])
+  const [wave, tickets, duplicates, blocked] = await Promise.all([
+    findWave(orderNumber), ticketsForOrder(orderNumber), orderDuplicateModel.activeFor([orderNumber]),
+    pickingModel.getBlock(orderNumber)
   ]);
   const missing = wave ? await missingForOrder(wave.id, orderNumber) : [];
   const { rows: incidents } = wave
@@ -83,6 +85,7 @@ const getPackingInfo = async (orderNumber) => {
     : { rows: [] };
   return {
     wave: wave ? { id: wave.id, waveNumber: wave.wave_number, status: wave.status, setAside: !!wave.removed_at } : null,
+    blocked,
     missing,
     tickets,
     duplicates: duplicates.get(String(orderNumber)) || [],

@@ -2,6 +2,7 @@ const orderModel = require('../models/orderModel');
 const savModel = require('../models/savModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
+const pickingModel = require('../models/pickingModel');
 const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../services/carriers/relayPoints');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
@@ -91,6 +92,15 @@ exports.getById = async (req, res) => {
     } catch (relayError) {
       console.error('Error getting relay point options for order:', relayError.message);
       order.relay_point_options = { expected: null, networks: [] };
+    }
+
+    // Blocage Picking et vague en cours : la fiche est le seul endroit d'où
+    // bloquer une commande déjà en vague. Même règle qu'au-dessus.
+    try {
+      order.picking = await pickingModel.getOrderState(order.wp_order_id);
+    } catch (pickingError) {
+      console.error('Error getting picking state for order:', pickingError.message);
+      order.picking = null;
     }
 
     res.json({ success: true, data: order });

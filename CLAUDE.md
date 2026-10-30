@@ -377,6 +377,19 @@ Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_item
 
 **Règle :** pour toute question sur les volumes d'un produit, toujours vérifier d'abord si ce produit est composant d'un bundle avec une requête sur un cas concret avant de conclure.
 
+### Bloquer une commande (Picking, fiche commande — 30/10/2026)
+
+- Une commande en vague n'est plus dans les listes du Picking : on la bloque depuis
+  **`/orders/:id`** (droit écriture `picking`), bouton affiché si `wc-processing` sans étiquette active.
+- **`pickingModel.block` la sort de sa vague** (`removed_at`, `active = false`), avant elle restait
+  préparée et expédiée malgré le blocage. Débloquée, elle revient dans « En cours » : nouvelle vague.
+- **Le packing refuse l'étiquette** (409 `order_blocked`, `generateForOrder`) : le bon papier peut
+  déjà circuler. L'expédition manuelle n'est pas contrôlée, et BMS n'est pas prévenu.
+- Les lignes figées du PDA ne bougent pas : ce qui a été prélevé est à remettre en rayon.
+- ⚠️ **Commande retirée d'une vague = `removed_at IS NOT NULL`, jamais `NOT active`** : la clôture
+  passe toutes les commandes à `active = false`. `getWavePrintData` les écarte, sauf `withRemoved`
+  pour les manquants (les lignes figées comptent encore leur part).
+
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 

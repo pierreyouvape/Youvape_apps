@@ -48,13 +48,22 @@ const orderItems = handle(async (req, res) => {
 });
 
 const block = handle(async (req, res) => {
-  await pickingModel.block(req.params.orderNumber, req.body?.reason, req.user?.id);
-  res.json({ success: true });
+  const { orderNumber } = req.params;
+  // Fiche restée ouverte pendant l'emballage : le colis est parti, le dire.
+  const { rows: [label] } = await pool.query(
+    `SELECT tracking_number FROM shipment_labels WHERE order_number = $1 AND status = 'active' LIMIT 1`,
+    [orderNumber]
+  );
+  if (label) {
+    return res.status(409).json({ error: `Trop tard : l'étiquette est déjà créée (suivi ${label.tracking_number}).` });
+  }
+  await pickingModel.block(orderNumber, req.body?.reason, req.user?.id);
+  res.json({ success: true, picking: await pickingModel.getOrderState(orderNumber) });
 });
 
 const unblock = handle(async (req, res) => {
   await pickingModel.unblock(req.params.orderNumber);
-  res.json({ success: true });
+  res.json({ success: true, picking: await pickingModel.getOrderState(req.params.orderNumber) });
 });
 
 /** Ce qu'il faut pour la fenêtre « Corriger » : adresse, point relais, réseau attendu. */

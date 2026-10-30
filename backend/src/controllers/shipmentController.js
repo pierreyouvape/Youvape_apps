@@ -18,6 +18,7 @@
 const pool = require('../config/database');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
+const pickingModel = require('../models/pickingModel');
 const bmsShipmentConfirmService = require('../services/bmsShipmentConfirmService');
 const { getAdapter } = require('../services/carriers');
 const { getAccount } = require('../services/carriers/accounts');
@@ -202,6 +203,18 @@ const generateForOrder = async (req, res) => {
     const order = await loadOrderForLabel(orderNumber);
     if (!order) {
       return res.status(404).json({ error: 'Commande introuvable' });
+    }
+
+    // Commande bloquée : rien ne part tant qu'elle n'est pas débloquée, même si
+    // son bon de préparation papier a continué son chemin jusqu'au poste.
+    const blocked = await pickingModel.getBlock(orderNumber);
+    if (blocked) {
+      return res.status(409).json({
+        error: 'Commande bloquée',
+        reason: 'order_blocked',
+        orderNumber,
+        userMessage: `Commande bloquée : ${blocked.reason}. Pas d'étiquette tant qu'elle n'est pas débloquée (fiche commande ou Picking).`
+      });
     }
 
     const mapping = await shippingMethodMapModel.resolve(order.shipping_method);

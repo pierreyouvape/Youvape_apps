@@ -279,19 +279,55 @@ const countByBucket = (view) => {
 
 // ── Blocages ───────────────────────────────────────────────────────────────
 
+/**
+ * Bloque une commande. Si une vague la porte, elle en sort : sans ça elle
+ * resterait à préparer et à expédier, invisible dans l'onglet « Bloquée ».
+ * Les lignes figées du PDA ne bougent pas : ce qui a été prélevé pour elle est
+ * à remettre en rayon, et le packing refuse son étiquette (bon papier en circulation).
+ */
 const block = async (orderNumber, reason, userId) => {
   if (blank(reason)) throw httpError(400, 'Le motif du blocage est obligatoire.');
+  const motif = reason.trim();
   await pool.query(
-    `INSERT INTO picking_blocks (order_number, reason, blocked_by)
+    `WITH retiree AS (
+       UPDATE picking_wave_orders
+          SET active = false, removed_at = NOW(), removed_by = $3, removed_reason = $4
+        WHERE order_number = $1 AND active
+     )
+     INSERT INTO picking_blocks (order_number, reason, blocked_by)
      VALUES ($1, $2, $3)
      ON CONFLICT (order_number) DO UPDATE
        SET reason = EXCLUDED.reason, blocked_by = EXCLUDED.blocked_by, blocked_at = NOW()`,
-    [String(orderNumber), reason.trim(), userId || null]
+    [String(orderNumber), motif, userId || null, `Bloquée : ${motif}`]
   );
 };
 
 const unblock = async (orderNumber) => {
   await pool.query('DELETE FROM picking_blocks WHERE order_number = $1', [String(orderNumber)]);
+};
+
+const getBlock = async (orderNumber) => {
+  const { rows: [b] } = await pool.query(
+    `SELECT pb.reason, pb.blocked_at, u.name AS blocked_by
+       FROM picking_blocks pb LEFT JOIN users u ON u.id = pb.blocked_by
+      WHERE pb.order_number = $1`,
+    [String(orderNumber)]
+  );
+  return b ? { reason: b.reason, at: b.blocked_at, by: b.blocked_by } : null;
+};
+
+/** Pour la fiche commande : son blocage et la vague qui la porte. */
+const getOrderState = async (orderNumber) => {
+  const [blocked, { rows: [w] }] = await Promise.all([
+    getBlock(orderNumber),
+    pool.query(
+      `SELECT w.wave_number, w.status
+         FROM picking_wave_orders wo JOIN picking_waves w ON w.id = wo.wave_id
+        WHERE wo.order_number = $1 AND wo.active`,
+      [String(orderNumber)]
+    )
+  ]);
+  return { blocked, wave: w ? { number: w.wave_number, status: w.status } : null };
 };
 
 // ── Règles ─────────────────────────────────────────────────────────────────
@@ -528,7 +564,7 @@ const listWaves = async (tab) => {
        LEFT JOIN users au ON au.id = w.assigned_to
        LEFT JOIN users ku ON ku.id = w.picked_by
        LEFT JOIN picking_wave_rules r ON r.id = w.rule_id
-       LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id
+       LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id AND wo.removed_at IS NULL
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
       WHERE w.status = ANY($1)
@@ -593,7 +629,7 @@ const getWave = async (id) => {
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN picking_bms_orders b ON b.order_number = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
-      WHERE wo.wave_id = $1
+      WHERE wo.wave_id = $1 AND wo.removed_at IS NULL
       ORDER BY wo.position`,
     [id]
   );
@@ -650,8 +686,12 @@ const cancelWave = async (id, userId) => {
  * Tout ce qu'il faut pour le PDF d'une vague (pickingPdf.buildWavePdf) :
  * commandes dans l'ordre de la vague, adresse ou point relais, transporteur,
  * lignes à préparer (reste à expédier d'après le dernier relevé BMS).
+ *
+ * Une commande retirée (bloquée, mise de côté) n'y figure plus, sauf
+ * `withRemoved` : les lignes figées de la vague comptent encore sa part. On
+ * teste `removed_at` et jamais `active`, que la clôture passe à false partout.
  */
-const getWavePrintData = async (id) => {
+const getWavePrintData = async (id, { withRemoved = false } = {}) => {
   const { rows: [wave] } = await pool.query(
     `SELECT w.id, w.wave_number, w.status, w.created_at, r.name AS rule_name
        FROM picking_waves w LEFT JOIN picking_wave_rules r ON r.id = w.rule_id
@@ -685,9 +725,9 @@ const getWavePrintData = async (id) => {
        FROM picking_wave_orders wo
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
-      WHERE wo.wave_id = $1
+      WHERE wo.wave_id = $1 AND ($2 OR wo.removed_at IS NULL)
       ORDER BY wo.position`,
-    [id]
+    [id, withRemoved]
   );
 
   return {
@@ -772,6 +812,8 @@ module.exports = {
   countByBucket,
   block,
   unblock,
+  getBlock,
+  getOrderState,
   listRules,
   saveRule,
   deleteRule,

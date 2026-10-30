@@ -10,7 +10,7 @@ import CorrectionModal from '../components/picking/CorrectionModal';
 import { useVisibleRefresh } from '../components/picking/useVisibleRefresh';
 import {
   API_URL, authHeaders, C, CORRECTION_TAGS, carrierKey, carrierLabel,
-  CarrierLogo, CountryFlag, Chip, CountBadge,
+  CarrierLogo, CountryFlag, Chip, CountBadge, Modal,
 } from '../components/picking/pickingUi';
 
 /**
@@ -88,19 +88,7 @@ const Tabs = ({ tabs, active, counts, onChange, big }) => (
   </div>
 );
 
-const Modal = ({ children, onClose, wide }) => (
-  <div onClick={onClose} style={{
-    position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 1000,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-  }}>
-    <div onClick={e => e.stopPropagation()} style={{
-      background: C.white, borderRadius: 14, width: '100%', maxWidth: wide ? 760 : 480, padding: 22,
-      boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
-    }}>{children}</div>
-  </div>
-);
-
-const Banner = ({ kind, children, onClose }) => (
+const Banner =({ kind, children, onClose }) => (
   <div style={{
     display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: '10px 14px', borderRadius: 10, fontSize: 13.5,
     background: kind === 'error' ? C.redL : C.greenL, color: kind === 'error' ? C.red : C.green,

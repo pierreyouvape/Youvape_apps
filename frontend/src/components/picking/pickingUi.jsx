@@ -90,6 +90,18 @@ export const Chip = ({ children, color, bg, title, onClick }) => (
   >{children}</span>
 );
 
+export const Modal = ({ children, onClose, wide }) => (
+  <div onClick={onClose} style={{
+    position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 1000,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  }}>
+    <div onClick={e => e.stopPropagation()} style={{
+      background: C.white, borderRadius: 14, width: '100%', maxWidth: wide ? 760 : 480, padding: 22,
+      boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+    }}>{children}</div>
+  </div>
+);
+
 /** Pastille de compteur sur un onglet. */
 export const CountBadge = ({ n, active }) => (
   <span style={{

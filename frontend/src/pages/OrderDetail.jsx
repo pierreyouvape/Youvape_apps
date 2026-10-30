@@ -11,6 +11,8 @@ import { getTrackingUrl } from '../utils/trackingUtils';
 import { visuelTransporteur } from '../utils/carrierVisuals';
 import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
 import OrderReturnsBox from '../components/returns/OrderReturnsBox';
+import { Modal } from '../components/picking/pickingUi';
+import { usePermissions } from '../hooks/usePermissions';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -312,6 +314,113 @@ function PointRelais({ order, token, onChange }) {
   );
 }
 
+/* ─── BLOCAGE PICKING ────────────────────────────────────── */
+// Une commande entrée dans une vague ne figure plus dans les listes du Picking :
+// c'est d'ici qu'on la bloque. Le serveur la sort de sa vague, et le packing
+// refuse son étiquette tant qu'elle n'est pas débloquée.
+function BlocagePicking({ order, token, onChange }) {
+  const { canWrite } = usePermissions('picking');
+  const [fenetre, setFenetre] = useState(false);
+  const [motif, setMotif] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+
+  const blocage = order.picking?.blocked || null;
+  const vague = order.picking?.wave || null;
+  const aExpedier = order.post_status === 'wc-processing'
+    && !(order.shipment_labels || []).some(l => l.status === 'active');
+  if (!blocage && !(canWrite && aExpedier)) return null;
+
+  const url = `${API_URL}/picking/orders/${order.wp_order_id}/block`;
+  const auth = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+
+  const bloquer = async () => {
+    setEnvoi(true); setErreur('');
+    try {
+      const res = await axios.post(url, { reason: motif }, auth);
+      onChange(res.data.picking);
+      setFenetre(false);
+      setMotif('');
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Blocage impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const debloquer = async () => {
+    if (!window.confirm(`Débloquer la commande ${order.wp_order_id} ? Elle redeviendra à préparer dans le Picking.`)) return;
+    setEnvoi(true); setErreur('');
+    try {
+      const res = await axios.delete(url, auth);
+      onChange(res.data.picking);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Déblocage impossible');
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const bouton = {
+    padding: '5px 11px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+    fontFamily: 'inherit', cursor: envoi ? 'not-allowed' : 'pointer',
+    background: C.blanc, color: C.rouge, border: `1px solid ${C.rouge}`,
+  };
+
+  return (
+    <>
+      {blocage ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, maxWidth: 340, textAlign: 'right' }}>
+          <span style={{
+            background: `${C.rouge}14`, border: `1px solid ${C.rouge}40`, color: C.rouge,
+            padding: '5px 13px', borderRadius: 12, fontSize: 12.5, fontWeight: 700,
+          }}>
+            Bloquée : {blocage.reason}
+          </span>
+          <span style={{ fontSize: 12, color: C.grisM }}>
+            {blocage.by ? `Par ${blocage.by} le ` : 'Le '}{formatDateUTC(blocage.at)}
+          </span>
+          {canWrite && (
+            <button type="button" onClick={debloquer} disabled={envoi} style={bouton}>Débloquer</button>
+          )}
+        </div>
+      ) : (
+        <button type="button" onClick={() => { setErreur(''); setFenetre(true); }} style={bouton}>Bloquer</button>
+      )}
+      {erreur && !fenetre && <div style={{ fontSize: 12, color: C.rouge, fontWeight: 600 }}>{erreur}</div>}
+
+      {fenetre && (
+        <Modal onClose={() => setFenetre(false)}>
+          <h2 style={{ margin: '0 0 12px', fontSize: 18, color: C.saphir }}>Bloquer la commande {order.wp_order_id}</h2>
+          <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.5, color: C.grisF }}>
+            {vague
+              ? `Elle sortira de la vague ${vague.number} et le packing refusera son étiquette.`
+              : 'Elle ne pourra entrer dans aucune vague et le packing refusera son étiquette.'}
+            {vague && vague.status !== 'new' && ' Ce qui a été prélevé pour elle sera à remettre en rayon.'}
+          </p>
+          <label style={{ fontSize: 13, fontWeight: 600 }}>Motif (obligatoire)</label>
+          <textarea
+            value={motif} onChange={e => setMotif(e.target.value)} rows={3} autoFocus
+            style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, padding: 10, borderRadius: 8, border: `1px solid ${C.grisCL}`, fontSize: 14, fontFamily: 'inherit' }}
+          />
+          {erreur && <div style={{ fontSize: 12, color: C.rouge, marginTop: 6, fontWeight: 600 }}>{erreur}</div>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+            <button type="button" onClick={() => setFenetre(false)} style={{
+              padding: '8px 14px', borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+              fontFamily: 'inherit', background: C.blanc, color: C.grisTF, border: `1px solid ${C.grisCL}`,
+            }}>Annuler</button>
+            <button type="button" onClick={bloquer} disabled={envoi || !motif.trim()} style={{
+              padding: '8px 14px', borderRadius: 8, fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit',
+              cursor: envoi || !motif.trim() ? 'not-allowed' : 'pointer',
+              background: envoi || !motif.trim() ? C.grisM : C.rouge, color: C.blanc, border: 'none',
+            }}>{envoi ? 'Blocage…' : 'Bloquer'}</button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 /* ─── COMPOSANT PRINCIPAL ────────────────────────────────── */
 const OrderDetail = () => {
   const navigate = useNavigate();
@@ -401,6 +510,7 @@ const OrderDetail = () => {
 
   // Point relais saisi ou retiré : mise à jour sur place, sans recharger la fiche.
   const majPointSaisi = (point) => setOrder(o => ({ ...o, relay_point_manual: point }));
+  const majPicking = (picking) => setOrder(o => ({ ...o, picking }));
 
   /* ── États de chargement ── */
   if (loading) {
@@ -648,6 +758,7 @@ const OrderDetail = () => {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                 <StatusBadge status={order.post_status} />
+                <BlocagePicking order={order} token={token} onChange={majPicking} />
                 {/* Demandes SAV rattachées à la commande */}
                 <SavTicketChips tickets={order.sav_tickets} style={{ justifyContent: 'flex-end' }} />
                 <OrderReturnsBox wpOrderId={order.wp_order_id} withUnclaimed style={{ alignItems: 'flex-end' }} />

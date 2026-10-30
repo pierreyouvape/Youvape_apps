@@ -73,7 +73,7 @@ const listWaves = async (userId) => {
             (SELECT COALESCE(sum(qty_scanned + qty_manual + qty_missing), 0)::int FROM picking_wave_lines l WHERE l.wave_id = w.id) AS items_done
        FROM picking_waves w
        LEFT JOIN users u ON u.id = w.assigned_to
-       LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id
+       LEFT JOIN picking_wave_orders wo ON wo.wave_id = w.id AND wo.removed_at IS NULL
        LEFT JOIN orders o ON o.wp_order_id::text = wo.order_number
        LEFT JOIN shipping_method_carrier_map m ON lower(btrim(m.denomination)) = lower(btrim(o.shipping_method))
       WHERE w.status = ANY($1)
@@ -124,7 +124,7 @@ const computeLines = async (waveId) => {
 const getWave = async (waveId, userId) => {
   const { rows: [w] } = await pool.query(
     `SELECT w.*, u.name AS assigned_name, r.name AS rule_name,
-            (SELECT count(*)::int FROM picking_wave_orders wo WHERE wo.wave_id = w.id) AS orders
+            (SELECT count(*)::int FROM picking_wave_orders wo WHERE wo.wave_id = w.id AND wo.removed_at IS NULL) AS orders
        FROM picking_waves w
        LEFT JOIN users u ON u.id = w.assigned_to
        LEFT JOIN picking_wave_rules r ON r.id = w.rule_id

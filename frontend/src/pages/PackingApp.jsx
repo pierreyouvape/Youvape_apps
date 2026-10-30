@@ -265,6 +265,9 @@ const PackingApp = () => {
           orderNumber: err.response.data.orderNumber,
           denomination: err.response.data.denomination
         });
+      } else if (err.response?.data?.reason === 'order_blocked') {
+        setLabelData(null);
+        setLabelError({ message: err.response.data.userMessage });
       } else if (err.response?.status === 409) {
         const data = err.response.data;
         setLabelData(null);
@@ -351,7 +354,10 @@ const PackingApp = () => {
       partialRef.current = res.data.sav_partial || [];
       axios.get(`${API_URL}/packing/orders/${loadedOrder.wp_order_id}/picking`, {
         headers: { Authorization: `Bearer ${token}` }
-      }).then(r => setPickingInfo(r.data)).catch(() => { /* sans picking, le packing marche comme avant */ });
+      }).then(r => {
+        setPickingInfo(r.data);
+        if (r.data.blocked) playSound('error');
+      }).catch(() => { /* sans picking, le packing marche comme avant */ });
       setItems(res.data.items.map(item => ({
         ...item,
         scanned: 0
@@ -1231,7 +1237,20 @@ const PackingApp = () => {
               </div>
             )}
 
-            {/* Picking : vague, ticket SAV, manquants */}
+            {/* Picking : blocage, vague, ticket SAV, manquants */}
+            {pickingInfo?.blocked && (
+              <div style={{
+                backgroundColor: '#FEE2E2', borderLeft: '10px solid #DC2626', borderRadius: '12px',
+                padding: '16px 20px', marginTop: '15px', color: '#7f1d1d'
+              }}>
+                <div style={{ fontSize: '20px', fontWeight: 800 }}>Commande bloquée — ne pas emballer</div>
+                <div style={{ fontSize: '16px', marginTop: '6px' }}>{pickingInfo.blocked.reason}</div>
+                <div style={{ fontSize: '14px', marginTop: '6px' }}>
+                  {pickingInfo.blocked.by ? `Bloquée par ${pickingInfo.blocked.by}. ` : ''}
+                  Remettez ses articles en rayon. Aucune étiquette tant qu'elle n'est pas débloquée (fiche commande ou Picking).
+                </div>
+              </div>
+            )}
             {pickingInfo?.wave && (
               <div style={{ marginTop: '10px', fontSize: '14px', color: '#6b7280' }}>
                 Vague <strong style={{ fontFamily: 'monospace', color: '#7C3AED' }}>{pickingInfo.wave.waveNumber}</strong>
@@ -1290,7 +1309,7 @@ const PackingApp = () => {
                       {sent ? 'Envoyée incomplète' : 'Mise de côté'}
                       {(sent || aside).ticketId ? ` — ticket SAV #${(sent || aside).ticketId}` : ''}
                     </div>
-                  ) : (
+                  ) : !pickingInfo.blocked && (
                     <div style={{ display: 'flex', gap: '12px', marginTop: '12px', flexWrap: 'wrap' }}>
                       <button onClick={sendIncomplete} disabled={pickingBusy || labelLoading} style={{
                         padding: '10px 18px', borderRadius: '8px', border: 'none', backgroundColor: '#DC2626',
