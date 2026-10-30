@@ -153,8 +153,10 @@ JWT stocké côté client. Toutes les routes backend (sauf `/auth`) passent par 
 
 **Sync WooCommerce → BDD**
 ```
-YouSync Plugin (WP) → POST /api/sync/* → wcSyncService → transformers → BDD
-                    ou webhook → webhookController
+Hook WC → table du plugin yousync (site)
+Backend, toutes les 60 s : GET yousync/v2/queue → wcSyncService → BDD → POST queue/ack
+Backend, toutes les 15 min : orderReconcileService compare et réimporte (wcOrderImportService)
+Le site n'envoie rien : aucune route d'ingestion chez nous. Voir yousync/AVANT-DE-MODIFIER.md.
 ```
 
 **Commandes fournisseurs (BMS)**

@@ -216,7 +216,10 @@ JWT au montage (`server.js`) + droit applicatif `atb` en lecture (vérifié dans
 
 ## 🫀 Santé de la synchronisation WooCommerce
 
-- `GET /api/settings/sync-health` - Fraîcheur de la synchro YouSync (JWT)
+- `GET /api/settings` / `GET` et `PUT /api/settings/:key` - Admin. Liste fermée de clés
+  (`EXPOSED_SETTINGS`, aujourd'hui `wc_sync_interval`), toute autre clé répond 404.
+- `POST /api/settings/yousync/rotate-token` - Admin. Renouvelle le jeton de synchro.
+- `GET /api/settings/sync-health` - Admin. Fraîcheur de la synchro YouSync, file et dernier rattrapage
   - ⚠️ Déclarée **avant** `GET /api/settings/:key` dans `settingsRoutes.js`, qui
     capturerait sinon `sync-health` comme une clé de configuration.
   - Réponse : `{ status, healthy, stale, staleAfterSeconds, intervalSeconds,
@@ -234,7 +237,9 @@ jusqu'ici la seule trace (et qui ont fait échouer une enquête le 08/09/2026).
 | `wc_sync_last_poll_ok_at` | dernier poll **abouti**, même sans aucun événement |
 | `wc_sync_last_event_at` | dernier événement réellement traité |
 | `wc_sync_last_batch_size` | taille du dernier lot (un lot qui gonfle = file en retard) |
-| `wc_sync_last_error` | `{message, code, at}` du dernier échec, vidé au retour à la normale |
+| `wc_sync_last_error` | `{message, code, siteCode, at}` du dernier échec, vidé au retour à la normale |
+| `wc_sync_queue` | `{protocol, paused, pending, failed, oldest_pending_at, at}`, la file vue du site |
+| `wc_reconcile_last` | dernière passe de rattrapage : `{at, source, hours, scanned, gaps, imported, errors, truncated}` |
 
 Le poll abouti est enregistré **même quand la file est vide** : c'est le signal de vie.
 Ne l'écrire qu'en présence d'événements ferait passer une nuit calme pour une panne.

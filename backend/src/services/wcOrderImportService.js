@@ -10,7 +10,8 @@
  *
  * Le filet : toute commande que BMS donne à expédier et que notre base n'a pas
  * est relue dans WooCommerce (`importMissingBmsOrders`, appelé après chaque
- * photo du Picking, donc toutes les 2 min en journée).
+ * photo du Picking, donc toutes les 2 min en journée). Il tombera avec BMS :
+ * `orderReconcileService` fait le même travail en partant du site.
  *
  * L'écriture passe par `wcSyncService.processOrder`, le MÊME code que la synchro
  * normale : la commande arrive complète (méthode de livraison, point relais,

@@ -1,3 +1,6 @@
+⚠️ OBSOLÈTE : ce document décrit la 1.2 (file queue.json, envoi vers le VPS).
+Référence à jour : yousync/AVANT-DE-MODIFIER.md.
+
 ================================================================================
                          YOUSYNC - Documentation Technique
                                   Version 1.2.0

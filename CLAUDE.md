@@ -402,14 +402,22 @@ du site, géré côté agence. Toute modif déposée à la main y est effacée a
 déploiement suivant — c'est déjà arrivé (correctif posé le 03/08/2026, effacé
 le 05/08).
 
-Ce repo est en **1.4.1**, la prod en **1.4.0**. L'écart = le correctif marques
-parent/enfant dans `get_product()`. Une nouvelle version repartie de la 1.4.0
-réintroduirait le bug : le conserver, et faire passer la version par le repo
-du site.
+**Yousync 2.0.0 (dépôt) : polling seul, file dans une table du site, zéro perte.**
+La prod est en 1.4.2 tant que l'agence n'a pas posé la 2.0.0 : le backend parle les deux
+(`rest_no_route` en v2 = il reste en v1). Ne jamais réintroduire d'expiration, de lecture
+suivie d'une réécriture, ni d'ack par (type, id) : c'est ce qui perdait des commandes.
 
-Le bug est neutralisé côté backend en attendant
-(`backend/src/services/brandMapService.js`) — ne pas supprimer ce service en
-même temps qu'une mise à jour du plugin.
+Conserver le correctif marques parent/enfant de `get_product()`, et
+`backend/src/services/brandMapService.js`.
+
+### Rattrapage des commandes (`orderReconcileService`, 30/10/2026)
+
+Compare le site et notre base toutes les 15 min (3 h) et à 4h40 (5 jours), réimporte et alerte.
+Ne dépend pas de BMS, contrairement à `importMissingBmsOrders`, gardé tant que BMS tourne.
+Comparer le statut ET la date : une commande peut changer de statut à date identique.
+Repli sur `wc/v3/orders` si la route du plugin ne répond pas, **bridé** car elle charge chaque
+commande côté site. `orders.post_status` n'est écrit que par la synchro : ne pas changer ça sans
+revoir le rattrapage, qui le remettrait à la valeur du site.
 
 ### Frontend : un fichier par écran, bandeau de version par bloc (23/10/2026)
 
@@ -450,9 +458,6 @@ nouvel appel de lecture est authentifié sans effort. Les appels `fetch()`
 
 **Routeurs volontairement NON couverts par le JWT utilisateur** (ne pas casser) :
 - `/api/auth` (login public)
-- `/api/sync` + `/api/woo-sync` (ingestion YouSync depuis WordPress — **pas d'auth
-  aujourd'hui, à sécuriser via un secret partagé, pas un JWT utilisateur**)
-- `/api/webhook` (a son propre `verifyToken`)
 - `/api/client-sav` (a son propre middleware `CLIENT_SAV_SECRET`)
 - routeurs déjà auto-authentifiés (`reviews, rewards, emails, users, settings,
   purchases, packing, laposte, preferences, financier, sav`)
@@ -470,7 +475,43 @@ vers `/api/` reçoivent le jeton par l'intercepteur de `main.jsx`.
 `authMiddleware` dans `server.js`, sauf s'il est appelé par un système externe
 (alors : secret dédié).
 
+**Ingestion WooCommerce : polling seul, depuis le 30/10/2026.** `/api/sync`, `/api/woo-sync` et
+`/api/webhook` n'existent plus : notre serveur va chercher, le site n'envoie rien. Rien d'extérieur
+ne peut écrire dans `orders` ou `products`. Ne pas rouvrir de route d'ingestion.
+
+**Jeton yousync** : dans `app_config.wc_sync_wp_token`, renouvelable depuis `/settings` (admin),
+jamais renvoyé au front. Le site n'en garde qu'une empreinte. Voir `yousync/AVANT-DE-MODIFIER.md` §5.
+
+**`app_config` mélange réglages et secrets** (SMTP, Zendesk, La Poste, jetons) : aucune route ne
+le renvoie en entier. `/api/settings` est réservé aux admins et limité à une **liste fermée**
+(`EXPOSED_SETTINGS`). `/api/reviews/config` et `/api/rewards/config` ne rendent aucun secret
+(`api_key_set`, `consumer_secret_set`) ; un champ vide à l'enregistrement conserve la valeur.
+Avant le 30/10/2026, tout compte connecté lisait tout et pouvait réécrire `wc_sync_wp_url`.
+
+**Appels vers le site** : certificat toujours vérifié. Jamais `rejectUnauthorized: false`.
+Si le certificat pose problème, on diagnostique, on ne rouvre pas.
+
+**Un 200 n'est pas une preuve** : Cloudflare est devant le site, une page HTML de pare-feu répond
+200. Contrôler la forme de toute réponse, comme `yousyncClient`.
+
 ## Bugs corrigés — historique
+
+### 2026-10-30 — yousync 2.0.0 : polling seul, droits, zéro perte
+**Fichiers** : `yousync/`, `wcSyncService.js`, `yousyncClient.js`, `yousyncTokenService.js`,
+`orderReconcileService.js`, `utils/yousyncPayload.js`, `settingsRoutes.js`, `rewardsController.js`,
+`reviewsController.js`, `SettingsApp.jsx`, `tests/yousync*`, `tests/orderReconcile.test.js`
+
+- **Droits** : tout compte connecté lisait tout `app_config` et réécrivait n'importe quelle clé.
+  Même fuite par `GET /api/reviews/config`. Clés WooCommerce renvoyées par `/api/rewards/*`.
+- **Pertes** : `queue.json` lu puis réécrit sans verrou, ack par (type, id) qui effaçait une
+  modification arrivée entre-temps, `GET /queue` qui sautait un objet disparu. Mesuré sur 72 h :
+  0 commande manquante, 3 statuts faux sur 1059 (1272317 restée `processing` ici).
+- **Panne silencieuse** : un 200 sans `success` (page HTML du pare-feu) passait pour une file vide.
+- **Écritures à moitié** : `processOrder` en plusieurs requêtes sans transaction.
+- **TVA des remboursements** : `processRefund` ignorait `order_tax` envoyé par le plugin (32/32
+  NULL sur 30 jours). Écrite depuis ce jour, l'historique n'est pas repris.
+- **Non-régression** : `npm test` côté backend, `backend/tests/yousync-plugin/run.sh` pour la
+  file du plugin (conteneur PHP jetable, à la main : pas de PHP sur le Mac).
 
 ### 2026-09-29 — Commander et réceptionner sans ouvrir BMS (`eaba186` → `34cbef8`)
 **Fichiers** : `purchaseOrderModel.js`, `receptionSessionModel.js`, `receptionController.js`,
@@ -650,8 +691,8 @@ Voir `yousync/AVANT-DE-MODIFIER.md`.
   à toutes les requêtes (beaucoup d'appels de lecture ne le posaient pas) ; fix du
   `fetch()` de `CustomerAutocomplete` (SAV) qui ne l'envoyait pas.
 - **`permissionMiddleware`** : renvoyait 500 au lieu de 401 quand `req.user` absent.
-- **Reste à faire** : sécuriser `/api/sync` + `/api/woo-sync` (ingestion WordPress)
-  via un secret partagé — actuellement sans auth.
+- **Fait le 30/10/2026** : `/api/sync` + `/api/woo-sync` supprimés (polling seul), plutôt
+  que protégés par un secret partagé.
 
 
 ### 2026-07-29 — Stats : paniers abandonnés comptés comme ventes (`commits 9590b14, 5bd7a26`)
