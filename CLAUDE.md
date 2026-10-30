@@ -488,6 +488,9 @@ le renvoie en entier. `/api/settings` est réservé aux admins et limité à une
 (`api_key_set`, `consumer_secret_set`) ; un champ vide à l'enregistrement conserve la valeur.
 Avant le 30/10/2026, tout compte connecté lisait tout et pouvait réécrire `wc_sync_wp_url`.
 
+**Ports** : `3000` et `5432` sont liés à `127.0.0.1` dans `docker-compose.yml` depuis le 30/10/2026.
+Docker contourne ufw : un port publié sur `0.0.0.0` est ouvert à Internet, quoi que dise le pare-feu.
+
 **Appels vers le site** : certificat toujours vérifié. Jamais `rejectUnauthorized: false`.
 Si le certificat pose problème, on diagnostique, on ne rouvre pas.
 

@@ -6,7 +6,8 @@ services:
     container_name: youvape_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      # Jamais public : Docker contourne ufw, et 0.0.0.0 ouvrait la base à Internet.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -21,7 +22,8 @@ services:
     container_name: youvape_backend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Jamais public : tout passe par Traefik puis le nginx du frontend, en https.
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env
     extra_hosts:
