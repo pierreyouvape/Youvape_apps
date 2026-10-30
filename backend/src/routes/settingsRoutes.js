@@ -2,18 +2,39 @@ const express = require('express');
 const router = express.Router();
 const appConfigModel = require('../models/appConfigModel');
 const authMiddleware = require('../middleware/authMiddleware');
+const { checkAdmin } = require('../middleware/permissionMiddleware');
 const wcSyncService = require('../services/wcSyncService');
 
-// GET /api/settings - Récupérer tous les paramètres
-router.get('/', authMiddleware, async (req, res) => {
-  try {
-    const configs = await appConfigModel.getAll();
+/*
+ * Clés accessibles depuis l'app : la liste est FERMÉE, exprès.
+ *
+ * `app_config` mélange réglages et secrets (jetons, mots de passe SMTP, clés
+ * transporteurs, URL de synchro). Sans cette liste, tout compte connecté lisait
+ * les uns et les autres, et pouvait réécrire `wc_sync_wp_url` : le polling aurait
+ * alors envoyé son jeton à une adresse de son choix (trouvé le 30/10/2026).
+ *
+ * La valeur de chaque entrée valide ce qui est enregistré. Toute autre clé
+ * répond 404, en lecture comme en écriture, y compris pour un admin.
+ */
+const EXPOSED_SETTINGS = {
+  wc_sync_interval: (value) => {
+    const seconds = Number(value);
+    return Number.isInteger(seconds) && seconds >= 0 && seconds <= 3600 ? String(seconds) : null;
+  },
+};
 
-    // Transformer en objet clé-valeur
+const isExposed = (key) => Object.prototype.hasOwnProperty.call(EXPOSED_SETTINGS, key);
+
+router.use(authMiddleware, checkAdmin);
+
+// GET /api/settings - Récupérer les paramètres exposés
+router.get('/', async (req, res) => {
+  try {
     const settings = {};
-    configs.forEach(config => {
-      settings[config.config_key] = config.config_value;
-    });
+    for (const key of Object.keys(EXPOSED_SETTINGS)) {
+      const config = await appConfigModel.get(key);
+      if (config) settings[key] = config.config_value;
+    }
 
     res.json({ success: true, settings });
   } catch (error) {
@@ -32,7 +53,7 @@ router.get('/', authMiddleware, async (req, res) => {
  * « les données sont-elles à jour ? ». Les valeurs viennent d'app_config, donc
  * elles survivent aux rebuilds Docker.
  */
-router.get('/sync-health', authMiddleware, async (req, res) => {
+router.get('/sync-health', async (req, res) => {
   try {
     const read = async (key) => (await appConfigModel.get(key))?.config_value || null;
 
@@ -84,9 +105,9 @@ router.get('/sync-health', authMiddleware, async (req, res) => {
 });
 
 // GET /api/settings/:key - Récupérer un paramètre spécifique
-router.get('/:key', authMiddleware, async (req, res) => {
+router.get('/:key', async (req, res) => {
   try {
-    const config = await appConfigModel.get(req.params.key);
+    const config = isExposed(req.params.key) ? await appConfigModel.get(req.params.key) : null;
 
     if (!config) {
       return res.status(404).json({ success: false, error: 'Setting not found' });
@@ -100,15 +121,18 @@ router.get('/:key', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/settings/:key - Mettre à jour un paramètre
-router.put('/:key', authMiddleware, async (req, res) => {
+router.put('/:key', async (req, res) => {
   try {
-    const { value } = req.body;
-
-    if (value === undefined) {
-      return res.status(400).json({ success: false, error: 'Value is required' });
+    if (!isExposed(req.params.key)) {
+      return res.status(404).json({ success: false, error: 'Setting not found' });
     }
 
-    const config = await appConfigModel.upsert(req.params.key, String(value));
+    const value = EXPOSED_SETTINGS[req.params.key](req.body?.value);
+    if (value === null) {
+      return res.status(400).json({ success: false, error: 'Invalid value' });
+    }
+
+    const config = await appConfigModel.upsert(req.params.key, value);
 
     // Si l'intervalle de sync WC change, redémarrer le service
     if (req.params.key === 'wc_sync_interval') {
@@ -116,7 +140,7 @@ router.put('/:key', authMiddleware, async (req, res) => {
       console.log(`🔄 WC Sync Service: Intervalle mis à jour (${value}s)`);
     }
 
-    res.json({ success: true, config });
+    res.json({ success: true, config: { config_key: config.config_key, config_value: config.config_value } });
   } catch (error) {
     console.error('Error updating setting:', error);
     res.status(500).json({ success: false, error: 'Failed to update setting' });

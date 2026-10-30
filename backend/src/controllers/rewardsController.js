@@ -2,14 +2,36 @@ const rewardsConfigModel = require('../models/rewardsConfigModel');
 const rewardsHistoryModel = require('../models/rewardsHistoryModel');
 const rewardService = require('../services/rewardService');
 
+/**
+ * Ce que le navigateur a le droit de voir de `rewards_config` : tout sauf les
+ * secrets, remplacés par un simple « renseigné ou non ». Ces clés WooCommerce
+ * ouvrent le site en écriture : elles ne sortent jamais du backend, quelle que
+ * soit la route (lecture, enregistrement, activation).
+ */
+const toPublicConfig = (config) => {
+  if (!config) return null;
+  const { consumer_secret, htaccess_password, ...publicFields } = config;
+  return {
+    ...publicFields,
+    consumer_secret_set: !!consumer_secret,
+    htaccess_password_set: !!htaccess_password,
+  };
+};
+
 const rewardsController = {
   // Sauvegarder la configuration
   saveConfig: async (req, res) => {
     try {
       const { woocommerce_url, consumer_key, consumer_secret, points_site, points_product, enabled } = req.body;
 
+      // Le navigateur ne connaît pas les secrets : un champ vide veut dire « ne
+      // pas y toucher ». Le mot de passe htaccess n'a pas de champ à l'écran et
+      // était effacé à chaque enregistrement.
+      const existing = await rewardsConfigModel.get();
+      const secret = consumer_secret || existing?.consumer_secret;
+
       // Validation
-      if (!woocommerce_url || !consumer_key || !consumer_secret) {
+      if (!woocommerce_url || !consumer_key || !secret) {
         return res.status(400).json({ error: 'URL, Consumer Key et Consumer Secret sont requis' });
       }
 
@@ -20,16 +42,18 @@ const rewardsController = {
       const config = await rewardsConfigModel.upsert({
         woocommerce_url,
         consumer_key,
-        consumer_secret,
+        consumer_secret: secret,
         points_site: parseInt(points_site),
         points_product: parseInt(points_product),
-        enabled: enabled !== undefined ? enabled : true
+        enabled: enabled !== undefined ? enabled : true,
+        htaccess_user: existing?.htaccess_user,
+        htaccess_password: existing?.htaccess_password
       });
 
       res.json({
         success: true,
         message: 'Configuration sauvegardée avec succès',
-        config
+        config: toPublicConfig(config)
       });
 
     } catch (error) {
@@ -45,7 +69,7 @@ const rewardsController = {
 
       res.json({
         success: true,
-        config: config || null
+        config: toPublicConfig(config)
       });
 
     } catch (error) {
@@ -188,7 +212,7 @@ const rewardsController = {
       res.json({
         success: true,
         message: enabled ? 'Système de récompenses activé' : 'Système de récompenses désactivé',
-        config
+        config: toPublicConfig(config)
       });
 
     } catch (error) {

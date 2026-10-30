@@ -3,11 +3,19 @@ const reviewsLog = require('../models/reviewsLog');
 const reviewsModel = require('../models/reviewsModel');
 const appConfigModel = require('../models/appConfigModel');
 
+// Réglages de l'écran Avis, seuls lisibles ici : `app_config` contient aussi tous
+// les secrets de l'app (SMTP, Zendesk, La Poste, synchro…), et cette route ne
+// demande que le droit `reviews` en lecture. `api_key` n'est jamais renvoyée.
+const REVIEW_SETTINGS = ['review_type', 'limit', 'product_id', 'interval', 'cron_enabled', 'cutoff_date'];
+
 const reviewsController = {
   // Récupérer les avis depuis l'API Société des Avis Garantis
   fetchReviews: async (req, res) => {
     try {
-      const { api_key, review_type, limit, product_id, page } = req.body;
+      const { review_type, limit, product_id, page } = req.body;
+
+      // Le navigateur ne connaît plus la clé : sans saisie, on prend celle enregistrée.
+      const api_key = req.body.api_key || (await appConfigModel.get('api_key'))?.config_value;
 
       // Validation
       if (!api_key || !review_type || !limit) {
@@ -161,7 +169,10 @@ const reviewsController = {
   // Sauvegarder la configuration
   saveConfig: async (req, res) => {
     try {
-      const { api_key, review_type, limit, product_id, interval, cutoff_date } = req.body;
+      const { review_type, limit, product_id, interval, cutoff_date } = req.body;
+
+      // Champ vide = garder la clé enregistrée, que le navigateur ne voit plus.
+      const api_key = req.body.api_key || (await appConfigModel.get('api_key'))?.config_value;
 
       // Validation
       if (!api_key || !review_type || !limit || !interval) {
@@ -190,13 +201,12 @@ const reviewsController = {
   // Récupérer la configuration
   getConfig: async (req, res) => {
     try {
-      const configs = await appConfigModel.getAll();
-
-      // Convertir en objet clé-valeur
       const configObject = {};
-      configs.forEach(config => {
-        configObject[config.config_key] = config.config_value;
-      });
+      for (const key of REVIEW_SETTINGS) {
+        const config = await appConfigModel.get(key);
+        if (config) configObject[key] = config.config_value;
+      }
+      configObject.api_key_set = !!(await appConfigModel.get('api_key'))?.config_value;
 
       // Ajouter cron_enabled par défaut si absent
       if (!configObject.cron_enabled) {

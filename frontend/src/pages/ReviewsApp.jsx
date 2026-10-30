@@ -76,7 +76,8 @@ const ReviewsApp = () => {
 
       if (response.data.success && response.data.config) {
         setConfig({
-          api_key: response.data.config.api_key || '',
+          api_key: '',
+          api_key_set: !!response.data.config.api_key_set,
           review_type: response.data.config.review_type || 'site',
           limit: parseInt(response.data.config.limit) || 100,
           product_id: response.data.config.product_id || '',
@@ -386,7 +387,8 @@ const ReviewsApp = () => {
                   name="api_key"
                   value={config.api_key}
                   onChange={handleConfigChange}
-                  required
+                  required={!config.api_key_set}
+                  placeholder={config.api_key_set ? 'Déjà renseignée, laisser vide pour conserver' : ''}
                   style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #ccc' }}
                 />
               </div>
@@ -496,14 +498,14 @@ const ReviewsApp = () => {
             <p>Teste l'API avec les paramètres ci-dessus et récupère les avis immédiatement.</p>
             <button
               onClick={handleTestAPI}
-              disabled={testLoading || !config.api_key}
+              disabled={testLoading || !(config.api_key || config.api_key_set)}
               style={{
                 padding: '10px 30px',
                 backgroundColor: '#007bff',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: (testLoading || !config.api_key) ? 'not-allowed' : 'pointer'
+                cursor: (testLoading || !(config.api_key || config.api_key_set)) ? 'not-allowed' : 'pointer'
               }}
             >
               {testLoading ? 'Chargement...' : 'Tester l\'API maintenant'}

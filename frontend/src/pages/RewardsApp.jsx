@@ -60,7 +60,8 @@ const RewardsApp = () => {
       });
 
       if (response.data.config) {
-        setConfig(response.data.config);
+        // Le secret ne revient plus du serveur : le champ reste vide pour le conserver.
+        setConfig({ ...response.data.config, consumer_secret: '' });
       }
     } catch (error) {
       console.error('Erreur lors du chargement de la configuration:', error);
@@ -341,7 +342,7 @@ const RewardsApp = () => {
               type="password"
               value={config.consumer_secret}
               onChange={(e) => handleConfigChange('consumer_secret', e.target.value)}
-              placeholder="cs_..."
+              placeholder={config.consumer_secret_set ? 'Déjà renseigné, laisser vide pour conserver' : 'cs_...'}
               style={{
                 width: '100%',
                 padding: '12px',
