@@ -19,8 +19,8 @@ const REASONS = {
 
 const LOST_REASON = 'colis_perdu';
 
-/** Colis ramené par erreur par le transporteur : créé sans ticket, il en prend un. */
-const CARRIER_RETURN_REASON = 'retour_transporteur';
+/** Colis revenu seul (transporteur, non réclamé) : créé sans ticket, il en prend un. */
+const ORDER_TICKET_REASONS = ['retour_transporteur', 'non_recupere'];
 
 const OUTCOMES = {
   renvoi: 'Renvoi',
@@ -306,7 +306,7 @@ module.exports = {
   pickRefund,
   REASONS,
   LOST_REASON,
-  CARRIER_RETURN_REASON,
+  ORDER_TICKET_REASONS,
   OUTCOMES,
   unitPaid,
   bundleParents,
