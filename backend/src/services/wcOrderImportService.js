@@ -23,13 +23,10 @@
  */
 
 const axios = require('axios');
-const https = require('https');
 const pool = require('../config/database');
 const appConfigModel = require('../models/appConfigModel');
 const { sendAlert } = require('./alertService');
 const wcSyncService = require('./wcSyncService');
-
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Délai laissé à yousync avant de prendre le relais (il interroge la file toutes les 60 s).
 const GRACE_MINUTES = 5;
@@ -260,7 +257,6 @@ const wcRequest = async (method, path, body = null) => {
     params: { consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
     data: body || undefined,
     headers,
-    httpsAgent,
     timeout: 30000
   });
   return data;

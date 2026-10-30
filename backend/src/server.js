@@ -7,7 +7,6 @@ const reviewsRoutes = require('./routes/reviewsRoutes');
 const rewardsRoutes = require('./routes/rewardsRoutes');
 const emailRoutes = require('./routes/emailRoutes');
 const usersRoutes = require('./routes/usersRoutes');
-const syncRoutes = require('./routes/syncRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const customersRoutes = require('./routes/customersRoutes');
 const productsRoutes = require('./routes/productsRoutes');
@@ -16,7 +15,6 @@ const brandsRoutes = require('./routes/brandsRoutes');
 const categoriesRoutes = require('./routes/categoriesRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
-const webhookRoutes = require('./routes/webhookRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -82,8 +80,6 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/rewards', rewardsRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/users', usersRoutes);
-app.use('/api/sync', syncRoutes); // Frontend stats app
-app.use('/api/woo-sync', syncRoutes); // WooCommerce module
 app.use('/api/stats', authMiddleware, statsRoutes); // Stats & KPIs
 app.use('/api/customers', authMiddleware, customersRoutes); // Customers
 app.use('/api/products', authMiddleware, productsRoutes); // Products
@@ -92,7 +88,6 @@ app.use('/api/brands', authMiddleware, brandsRoutes); // Brands & Sub-brands
 app.use('/api/categories', authMiddleware, categoriesRoutes); // Categories & Sub-categories
 app.use('/api/analysis', authMiddleware, analysisRoutes); // Analysis & Segmentation
 app.use('/api/reports', authMiddleware, reportsRoutes); // Reports
-app.use('/api/webhook', webhookRoutes); // YouSync real-time webhooks (auth propre : verifyToken)
 app.use('/api/settings', settingsRoutes); // App settings
 app.use('/api/shipping', authMiddleware, shippingRoutes); // Shipping costs management
 app.use('/api/payment', authMiddleware, paymentRoutes); // Payment methods configuration

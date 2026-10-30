@@ -12,10 +12,7 @@
  */
 
 const axios = require('axios');
-const https = require('https');
 const pool = require('../config/database');
-
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Remboursements repris par le cron : au-delà, la commande est partie depuis
 // longtemps et la fiche commande relit à la demande.
@@ -84,7 +81,7 @@ const syncOrder = async (wpOrderId) => {
   let refunds;
   try {
     const res = await axios.get(`${config.baseUrl}/wp-json/wc/v3/orders/${wpOrderId}/refunds`, {
-      params: config.params, headers: config.headers, httpsAgent, timeout: 15000
+      params: config.params, headers: config.headers, timeout: 15000
     });
     refunds = res.data || [];
   } catch (error) {

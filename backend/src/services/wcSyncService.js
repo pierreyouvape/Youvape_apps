@@ -4,7 +4,6 @@
  */
 
 const axios = require('axios');
-const https = require('https');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
 const refundLinesService = require('./refundLinesService');
@@ -22,9 +21,6 @@ const GATEWAY_LABELS = {
   'ppcp-gateway': 'PayPal',
   systempaystd: 'Paiement par carte bancaire'
 };
-
-// Agent HTTPS qui ignore les certificats auto-signés (pour communication interne Docker)
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 let syncInterval = null;
 let isProcessing = false;
@@ -160,8 +156,7 @@ const wcSyncService = {
         headers: {
           'X-YouSync-Token': wpToken
         },
-        timeout: 30000,
-        httpsAgent
+        timeout: 30000
       });
 
       // Signal de vie, noté AVANT le retour anticipé ci-dessous : un poll abouti
@@ -243,8 +238,7 @@ const wcSyncService = {
               'X-YouSync-Token': wpToken,
               'Content-Type': 'application/json'
             },
-            timeout: 10000,
-            httpsAgent
+            timeout: 10000
           });
           console.log(`🔄 WC Sync: ${processedIds.length} événement(s) acquitté(s)`);
         } catch (err) {
