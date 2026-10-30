@@ -6,6 +6,7 @@ import './SettingsApp.css';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
+import PluginLogistiqueSection from '../components/settings/PluginLogistiqueSection';
 
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
 // Réception : Lecture = consulter les PO attendus ; Écriture = valider une
@@ -613,6 +614,12 @@ const SettingsApp = () => {
             <p className="field-hint">
               Personne ne voit ni ne copie le jeton : l'app le génère et le pose elle-même sur le site.
             </p>
+          </div>
+        )}
+
+        {activeTab === 'woocommerce' && (isAdmin || isSuperAdmin) && (
+          <div style={{ marginTop: '20px' }}>
+            <PluginLogistiqueSection token={token} />
           </div>
         )}
       </div>

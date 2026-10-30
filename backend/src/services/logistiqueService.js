@@ -2,9 +2,13 @@
  * Client du plugin WordPress `youvape-logistique` (dossier du même nom à la
  * racine du dépôt) : ce qui remplacera les écritures de BMS dans WooCommerce.
  *
- * Pour l'instant, seuls ses RÉGLAGES sont lus et modifiés, depuis l'écran
- * Réglages du Picking. Ils vivent dans WordPress (une option du plugin), rien
+ * Pour l'instant, seuls ses RÉGLAGES sont lus et modifiés, depuis les
+ * Paramètres généraux (onglet WooCommerce). Ils vivent dans WordPress (une option du plugin), rien
  * n'est gardé chez nous. Les clés WooCommerce ne quittent jamais le backend.
+ *
+ * Le site visé a sa propre connexion, dans `app_config` et modifiable depuis le
+ * même écran : pointer vers la préprod ne touche ni aux points fidélité
+ * (`rewards_config`) ni à la synchro.
  *
  * Plugin absent ou inactif (404 `rest_no_route`) : c'est le cas normal jusqu'à
  * la bascule hors BMS, on le dit (`installed: false`) sans en faire une erreur.
@@ -15,39 +19,108 @@
  */
 
 const axios = require('axios');
-const pool = require('../config/database');
+const appConfigModel = require('../models/appConfigModel');
 
 const PLUGIN_NAMESPACE = 'wc-youvape-logistique/v1';
+// Jamais dans EXPOSED_SETTINGS : cette entrée porte des secrets.
+const CONNECTION_KEY = 'logistique_connection';
 
 // Les réglages que l'app a le droit de modifier : ceux de l'expédition.
-// `restock_refunded_items_default` (case de l'écran de remboursement) n'a rien
-// à faire ici et reste à sa valeur du plugin.
 const EDITABLE_SETTINGS = [
   'ship_target_statuses', 'ship_from_statuses', 'ship_keep_statuses',
   'status_target_statuses', 'status_from_statuses',
-  'meta_keys', 'write_bms_meta', 'bms_meta_keys', 'bms_tracking_link_template',
+  'meta_keys',
   'batch_max', 'time_budget',
 ];
 
 const serviceError = (message, statusCode = 502) => Object.assign(new Error(message), { statusCode });
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+const readConnection = async () => {
+  const row = await appConfigModel.get(CONNECTION_KEY);
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.config_value);
+    return isObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Ce que l'écran a le droit de voir : jamais une clé ni un mot de passe. */
+const publicConnection = (cfg) => ({
+  configured: !!(cfg?.url && cfg.consumer_key && cfg.consumer_secret),
+  url: cfg?.url || '',
+  host: cfg?.url ? new URL(cfg.url).host : null,
+  consumer_key_set: !!cfg?.consumer_key,
+  consumer_secret_set: !!cfg?.consumer_secret,
+  htaccess_user: cfg?.htaccess_user || '',
+  htaccess_password_set: !!cfg?.htaccess_password,
+});
+
+const cleanUrl = (value) => {
+  let url;
+  try {
+    url = new URL(String(value ?? '').trim());
+  } catch {
+    return null;
+  }
+  // https seulement : les clés voyagent dans l'adresse, et le certificat est toujours vérifié.
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return null;
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+};
 
 /**
- * Le site visé et ses clés. Tout passe par ici : pointer le client sur la
- * copie de test du site ne demandera que de changer cette fonction.
+ * Applique une saisie sur la connexion enregistrée. Un champ secret vide veut
+ * dire « ne pas y toucher », SAUF si l'adresse change : il faut alors tout
+ * ressaisir, pour que les clés d'un site ne partent jamais vers un autre.
+ * @returns {{ connection: object } | { errors: string[] }}
  */
+const mergeConnection = (current, input) => {
+  const errors = [];
+  const url = cleanUrl(input?.url);
+  if (!url) errors.push('Adresse du site invalide : https://… sans identifiant ni paramètre.');
+
+  const sameSite = !!current?.url && url === current.url;
+  const kept = (field) => String(input?.[field] ?? '').trim() || (sameSite ? current[field] : '') || '';
+  const consumer_key = kept('consumer_key');
+  const consumer_secret = kept('consumer_secret');
+  const htaccess_user = String(input?.htaccess_user ?? '').trim();
+  const htaccess_password = htaccess_user ? kept('htaccess_password') : '';
+
+  if (url && current?.url && !sameSite && !(input?.consumer_key && input?.consumer_secret)) {
+    errors.push('L\'adresse change : ressaisir la clé et le secret de ce site.');
+  } else if (!consumer_key || !consumer_secret) {
+    errors.push('La clé et le secret WooCommerce sont obligatoires.');
+  }
+  if (consumer_key && !consumer_key.startsWith('ck_')) errors.push('La clé WooCommerce commence par ck_.');
+  if (consumer_secret && !consumer_secret.startsWith('cs_')) errors.push('Le secret WooCommerce commence par cs_.');
+  if (htaccess_user && !htaccess_password) errors.push('Mot de passe du site manquant pour cet identifiant.');
+
+  if (errors.length) return { errors };
+  return { connection: { url, consumer_key, consumer_secret, htaccess_user, htaccess_password } };
+};
+
+const getConnection = async () => publicConnection(await readConnection());
+
+/** @returns {{ errors: string[] } | { connection: object }} la vue publique, sans secret */
+const saveConnection = async (input) => {
+  const merged = mergeConnection(await readConnection(), input);
+  if (merged.errors) return merged;
+  await appConfigModel.upsert(CONNECTION_KEY, JSON.stringify(merged.connection));
+  return { connection: publicConnection(merged.connection) };
+};
+
+/** Le site visé et ses clés : le seul endroit qui les lit pour appeler le plugin. */
 const connection = async () => {
-  const { rows: [cfg] } = await pool.query(
-    'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
-  );
-  if (!cfg?.woocommerce_url || !cfg.consumer_key) throw serviceError('Identifiants WooCommerce non configurés (Récompense Avis).', 503);
+  const cfg = await readConnection();
+  if (!publicConnection(cfg).configured) throw serviceError('Connexion au site non renseignée.', 503);
   const headers = { 'Content-Type': 'application/json' };
   if (cfg.htaccess_user && cfg.htaccess_password) {
     headers.Authorization = `Basic ${Buffer.from(`${cfg.htaccess_user}:${cfg.htaccess_password}`).toString('base64')}`;
   }
-  const baseUrl = cfg.woocommerce_url.replace(/\/$/, '');
   return {
-    baseUrl,
-    host: new URL(baseUrl).host,
+    baseUrl: cfg.url,
     options: {
       params: { consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
       headers,
@@ -57,8 +130,6 @@ const connection = async () => {
 };
 
 const isNoRoute = (error) => error?.response?.status === 404 && error.response.data?.code === 'rest_no_route';
-
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Une erreur du site, dite lisiblement. Ne renvoie jamais l'URL appelée : elle porte les clés.
 const siteError = (error) => {
@@ -153,6 +224,7 @@ const updateSettings = async (patch) => {
   }
 };
 
-const siteHost = async () => (await connection()).host;
-
-module.exports = { getStatus, getSettings, updateSettings, siteHost, EDITABLE_SETTINGS, PLUGIN_NAMESPACE };
+module.exports = {
+  getStatus, getSettings, updateSettings, getConnection, saveConnection, mergeConnection,
+  EDITABLE_SETTINGS, PLUGIN_NAMESPACE,
+};

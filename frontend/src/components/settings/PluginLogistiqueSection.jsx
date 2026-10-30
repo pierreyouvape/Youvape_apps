@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { API_URL, authHeaders, C } from '../pickingUi';
+import { API_URL, authHeaders, C } from '../picking/pickingUi';
 
 /**
  * Réglages du plugin WordPress `youvape-logistique`, celui qui remplacera les
@@ -11,8 +11,8 @@ import { API_URL, authHeaders, C } from '../pickingUi';
  * réglages modifiés (le plugin fait une mise à jour partielle) ; une seule
  * valeur refusée et le plugin n'enregistre rien.
  *
- * Seuls les réglages de l'expédition sont ici. La case « Restocker » de
- * l'écran de remboursement reste à sa valeur du plugin.
+ * Seuls les réglages de l'expédition sont ici. L'onglet est réservé aux admins,
+ * et le backend l'exige aussi.
  */
 
 // Explications tirées de youvape-logistique/AVANT-DE-MODIFIER.md §7.
@@ -38,14 +38,13 @@ const STATUS_LISTS = [
     ],
   },
   {
-    group: 'Changement de statut sans mail',
-    intro: 'Nettoyage des commandes restées figées : le statut change, le client ne reçoit jamais de mail.',
+    group: 'Changement de statut',
+    intro: 'Statuts posés par l\'app sur une commande (livraison, nettoyage des commandes figées). Chaque changement dit si le client est prévenu : sans mail, le plugin bloque aussi Probance et Guaranteed Reviews, les prestataires actuels du site.',
     items: [
       {
         key: 'status_target_statuses',
         title: 'Statuts demandables',
-        help: 'Statuts que l\'app peut poser sur une commande. Liste encore à décider.',
-        warning: 'Passer en « Colis expédié » une vieille commande figée laisse le site la passer ensuite en « Livrée », ce qui crédite les points fidélité.',
+        help: 'Statuts que l\'app peut poser sur une commande.',
       },
       {
         key: 'status_from_statuses',
@@ -57,19 +56,12 @@ const STATUS_LISTS = [
 ];
 
 const META_LABELS = {
-  meta_keys: {
-    carrier: 'Code transporteur',
-    carrier_label: 'Libellé transporteur',
-    tracking_number: 'N° de suivi',
-    tracking_url: 'URL de suivi',
-    shipped_at: 'Date d\'expédition',
-    shipments: 'Liste de tous les colis (JSON)',
-  },
-  bms_meta_keys: {
-    carrier: 'Transporteur (reçoit le libellé)',
-    tracking_number: 'N° de suivi',
-    tracking_link: 'Lien de suivi (HTML, selon le gabarit)',
-  },
+  carrier: 'Code transporteur',
+  carrier_label: 'Libellé transporteur',
+  tracking_number: 'N° de suivi',
+  tracking_url: 'URL de suivi',
+  shipped_at: 'Date d\'expédition',
+  shipments: 'Liste de tous les colis (JSON)',
 };
 
 const FORBIDDEN_REASON = {
@@ -86,26 +78,6 @@ const NUMBERS = {
   batch_max: { min: 1, max: 200 },
   time_budget: { min: 5, max: 60 },
 };
-
-// Colis d'exemple pour l'aperçu du lien de suivi.
-const SAMPLE = {
-  url: 'https://www.mondialrelay.fr/suivi-de-colis/?ens=LGYOUVAP&exp=12345678&pays=FR&language=fr',
-  number: '12345678',
-  carrier: 'mondial_relay',
-  carrier_label: 'Mondial Relay - Point Relais',
-};
-
-const escHtml = (s) => String(s)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-// Proche de esc_url de WordPress : « & » devient « &#038; », les guillemets sont neutralisés.
-const escUrl = (s) => String(s).replace(/&/g, '&#038;').replace(/"/g, '%22').replace(/'/g, '&#039;').replace(/</g, '%3C').replace(/>/g, '%3E');
-
-const renderTemplate = (template) => String(template ?? '')
-  .split('{url}').join(escUrl(SAMPLE.url))
-  .split('{number}').join(escHtml(SAMPLE.number))
-  .split('{carrier_label}').join(escHtml(SAMPLE.carrier_label))
-  .split('{carrier}').join(escHtml(SAMPLE.carrier));
 
 const stripWc = (slug) => (slug.startsWith('wc-') ? slug.slice(3) : slug);
 
@@ -128,17 +100,14 @@ const validate = (draft) => {
   const errors = {};
   const overlap = (draft.ship_from_statuses || []).filter(s => (draft.ship_keep_statuses || []).includes(s));
   if (overlap.length) errors.overlap = overlap;
-  for (const group of ['meta_keys', 'bms_meta_keys']) {
-    for (const [sub, name] of Object.entries(draft[group] || {})) {
-      if (!META_NAME.test(name)) errors[`${group}.${sub}`] = 'Lettres, chiffres, _ et - seulement (191 caractères au plus).';
-    }
+  for (const [sub, name] of Object.entries(draft.meta_keys || {})) {
+    if (!META_NAME.test(name)) errors[`meta_keys.${sub}`] = 'Lettres, chiffres, _ et - seulement (191 caractères au plus).';
   }
   const names = Object.values(draft.meta_keys || {});
   const dup = names.filter((n, i) => names.indexOf(n) !== i);
   for (const [sub, name] of Object.entries(draft.meta_keys || {})) {
     if (dup.includes(name) && !errors[`meta_keys.${sub}`]) errors[`meta_keys.${sub}`] = 'Ce nom sert déjà à un autre usage.';
   }
-  if (String(draft.bms_tracking_link_template ?? '').length > 1000) errors.bms_tracking_link_template = '1000 caractères au plus.';
   for (const [key, { min, max }] of Object.entries(NUMBERS)) {
     const n = Number(draft[key]);
     if (!Number.isInteger(n) || n < min || n > max) errors[key] = `Nombre entier entre ${min} et ${max}.`;
@@ -186,7 +155,7 @@ const Pill = ({ label, value, kind = 'neutral', title }) => {
 const yesNo = (v) => (v === null || v === undefined ? 'Inconnu' : v ? 'Oui' : 'Non');
 
 /** Un réglage : titre, explication, repère « modifié », retour au défaut. */
-const Setting = ({ title, help, warning, changed, isDefault, onReset, canEdit, children }) => (
+const Setting = ({ title, help, warning, changed, isDefault, onReset, children }) => (
   <div style={{ padding: '14px 0', borderTop: `1px solid ${C.greyB}` }}>
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
       <strong style={{ fontSize: 14, color: C.dark }}>{title}</strong>
@@ -195,7 +164,7 @@ const Setting = ({ title, help, warning, changed, isDefault, onReset, canEdit, c
           modifié
         </span>
       )}
-      {canEdit && !isDefault && (
+      {!isDefault && (
         <button onClick={onReset} style={{
           marginLeft: 'auto', border: 'none', background: 'none', padding: 0, cursor: 'pointer',
           color: C.violet, fontSize: 12.5, fontWeight: 600,
@@ -208,15 +177,8 @@ const Setting = ({ title, help, warning, changed, isDefault, onReset, canEdit, c
   </div>
 );
 
-const Toggle = ({ checked, onChange, disabled, label }) => (
-  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: disabled ? 'default' : 'pointer', fontSize: 13.5 }}>
-    <input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} style={{ width: 16, height: 16 }} />
-    {label}
-  </label>
-);
-
 /** Choix multiple parmi les statuts du site ; les statuts interdits sont visibles mais grisés. */
-const StatusPicker = ({ value, onChange, registered, forbidden, conflicts, disabled }) => {
+const StatusPicker = ({ value, onChange, registered, forbidden, conflicts }) => {
   const options = Object.entries(registered).map(([slug, label]) => ({ slug: stripWc(slug), label }));
   // Un statut retenu mais inconnu du site reste affiché : il serait refusé à l'usage.
   const unknown = value.filter(s => !options.some(o => o.slug === s));
@@ -225,7 +187,7 @@ const StatusPicker = ({ value, onChange, registered, forbidden, conflicts, disab
   const chip = (slug, label, { isForbidden = false, isUnknown = false } = {}) => {
     const on = value.includes(slug);
     const conflict = on && conflicts.includes(slug);
-    const locked = disabled || (isForbidden && !on);
+    const locked = isForbidden && !on;
     return (
       <label
         key={slug}
@@ -255,16 +217,15 @@ const StatusPicker = ({ value, onChange, registered, forbidden, conflicts, disab
   );
 };
 
-const MetaFields = ({ group, value, onChange, errors, disabled }) => (
+const MetaFields = ({ value, onChange, errors }) => (
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
-    {Object.entries(META_LABELS[group]).map(([sub, label]) => {
-      const err = errors[`${group}.${sub}`];
+    {Object.entries(META_LABELS).map(([sub, label]) => {
+      const err = errors[`meta_keys.${sub}`];
       return (
         <label key={sub} style={{ fontSize: 12.5, fontWeight: 600, color: C.dark }}>
           {label}
           <input
             value={value[sub] ?? ''}
-            disabled={disabled}
             onChange={e => onChange({ ...value, [sub]: e.target.value })}
             style={{ ...input, width: '100%', marginTop: 4, fontFamily: 'monospace', borderColor: err ? C.red : C.greyB }}
           />
@@ -275,9 +236,83 @@ const MetaFields = ({ group, value, onChange, errors, disabled }) => (
   </div>
 );
 
+const emptyForm = (conn) => ({
+  url: conn.url, consumer_key: '', consumer_secret: '', htaccess_user: conn.htaccess_user, htaccess_password: '',
+});
+
+/** Le site visé. Les secrets ne reviennent jamais du backend : vide = valeur gardée. */
+const ConnectionForm = ({ token, connection, onSaved }) => {
+  const [form, setForm] = useState(() => emptyForm(connection));
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState(null);
+  const urlChanged = !!connection.url && form.url.trim().replace(/\/+$/, '') !== connection.url;
+
+  useEffect(() => { setForm(emptyForm(connection)); }, [connection]);
+
+  const hint = (isSet) => (isSet && !urlChanged ? 'Enregistré : laisser vide pour le garder' : '');
+  const field = (key, label, { secret = false, isSet = false, placeholder } = {}) => (
+    <label style={{ fontSize: 12.5, fontWeight: 600, color: C.dark }}>
+      {label}
+      <input
+        type={secret ? 'password' : 'text'}
+        autoComplete={secret ? 'new-password' : 'off'}
+        value={form[key]}
+        placeholder={placeholder ?? hint(isSet)}
+        onChange={e => { setForm(f => ({ ...f, [key]: e.target.value })); setFailure(null); }}
+        style={{ ...input, width: '100%', marginTop: 4, fontFamily: 'monospace' }}
+      />
+    </label>
+  );
+
+  const save = async () => {
+    setSaving(true);
+    setFailure(null);
+    try {
+      await axios.put(`${API_URL}/plugin-logistique/connection`, form, authHeaders(token));
+      onSaved();
+    } catch (err) {
+      const body = err.response?.data;
+      setFailure({ text: body?.error || err.message, errors: body?.errors || [] });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Connexion au site</h3>
+      <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 10 }}>
+        Le site visé par ce plugin : prod ou copie de test. Les clés WooCommerce sont celles de ce site.
+        Les points fidélité et la synchronisation gardent leur propre connexion.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10, marginBottom: 10 }}>
+        {field('url', 'Adresse du site', { placeholder: 'https://…' })}
+        {field('consumer_key', 'Clé WooCommerce', { secret: true, isSet: connection.consumer_key_set })}
+        {field('consumer_secret', 'Secret WooCommerce', { secret: true, isSet: connection.consumer_secret_set })}
+        {field('htaccess_user', 'Identifiant du site (si protégé par mot de passe)', { placeholder: '' })}
+        {field('htaccess_password', 'Mot de passe du site', { secret: true, isSet: connection.htaccess_password_set })}
+      </div>
+      {urlChanged && <Box kind="warn">L&apos;adresse change : ressaisir la clé et le secret de ce site, ainsi que son mot de passe s&apos;il en a un.</Box>}
+      {failure && (
+        <Box kind="error">
+          <strong>{failure.text}</strong>
+          {failure.errors.length > 0 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+              {failure.errors.map(e => <li key={e}>{e}</li>)}
+            </ul>
+          )}
+        </Box>
+      )}
+      <button onClick={save} disabled={saving} style={btn(true, saving)}>
+        {saving ? 'Enregistrement…' : 'Enregistrer la connexion'}
+      </button>
+    </div>
+  );
+};
+
 // ── Section ─────────────────────────────────────────────────────────────────
 
-export default function PluginLogistiqueSection({ token, canEdit }) {
+export default function PluginLogistiqueSection({ token }) {
   const [data, setData] = useState(null);
   const [draft, setDraft] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -287,7 +322,7 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const { data: d } = await axios.get(`${API_URL}/picking/plugin-logistique`, authHeaders(token));
+      const { data: d } = await axios.get(`${API_URL}/plugin-logistique`, authHeaders(token));
       setData(d);
       setDraft(d.installed ? clone(d.settings) : null);
     } catch (err) {
@@ -318,7 +353,6 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
     changed: changedKeys.includes(key),
     isDefault: draft && same(draft[key], data.defaults[key]),
     onReset: () => reset(key),
-    canEdit,
   });
 
   const save = async () => {
@@ -327,7 +361,7 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
     setSaving(true);
     setResult(null);
     try {
-      const { data: r } = await axios.post(`${API_URL}/picking/plugin-logistique/settings`, patch, authHeaders(token));
+      const { data: r } = await axios.post(`${API_URL}/plugin-logistique/settings`, patch, authHeaders(token));
       setData(d => ({ ...d, settings: r.settings }));
       setDraft(clone(r.settings));
       setResult({ kind: 'ok', warnings: r.warnings || [] });
@@ -344,14 +378,13 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
   };
 
   const status = data?.status;
-  const preview = draft ? renderTemplate(draft.bms_tracking_link_template) : '';
 
   return (
     <section style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
         <h2 style={{ margin: 0, fontSize: 18, color: C.primary }}>Plugin WooCommerce — Logistique</h2>
-        {data?.site?.host && (
-          <span style={{ fontSize: 12.5, color: C.greyT }}>Site : <strong style={{ color: C.dark }}>{data.site.host}</strong></span>
+        {data?.connection?.host && (
+          <span style={{ fontSize: 12.5, color: C.greyT }}>Site : <strong style={{ color: C.dark }}>{data.connection.host}</strong></span>
         )}
         <button onClick={load} style={{ ...btn(false), marginLeft: 'auto', padding: '5px 10px', fontSize: 12.5 }}>Actualiser</button>
       </div>
@@ -363,7 +396,15 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
       {loadError && <Box kind="error">Impossible de lire le plugin : {loadError}</Box>}
       {!data && !loadError && <div style={{ color: C.greyT, fontSize: 13.5 }}>Chargement…</div>}
 
-      {data && !data.installed && (
+      {data && <ConnectionForm token={token} connection={data.connection} onSaved={load} />}
+
+      {data?.site_error && <Box kind="error">Impossible de lire le plugin sur ce site : {data.site_error}</Box>}
+
+      {data && !data.connection.configured && (
+        <Box kind="info">Renseigner la connexion pour lire les réglages du plugin.</Box>
+      )}
+
+      {data?.connection.configured && !data.installed && !data.site_error && (
         <Box kind="info">
           <strong>Plugin non installé ou pas encore activé sur le site.</strong>{' '}
           C&apos;est normal jusqu&apos;à la sortie de BMS : le plugin sera activé ce jour-là, et ses réglages
@@ -406,8 +447,6 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
 
       {data?.installed && draft && (
         <>
-          {!canEdit && <Box kind="info">Lecture seule : l&apos;enregistrement de ces réglages est réservé aux admins.</Box>}
-
           {STATUS_LISTS.map(g => (
             <div key={g.group} style={{ marginBottom: 10 }}>
               <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>{g.group}</h3>
@@ -416,14 +455,13 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
                 const isShipPair = item.key === 'ship_from_statuses' || item.key === 'ship_keep_statuses';
                 const conflicts = isShipPair ? errors.overlap || [] : [];
                 return (
-                  <Setting key={item.key} title={item.title} help={item.help} warning={item.warning} {...props(item.key)}>
+                  <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
                     <StatusPicker
                       value={draft[item.key]}
                       onChange={v => set(item.key, v)}
                       registered={data.registered_statuses}
                       forbidden={data.forbidden_statuses}
                       conflicts={conflicts}
-                      disabled={!canEdit}
                     />
                     {conflicts.length > 0 && (
                       <div style={{ marginTop: 8, fontSize: 12.5, color: C.red }}>
@@ -440,76 +478,11 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Suivi écrit sur la commande</h3>
           <Setting
             title="Métas de suivi"
-            help="Écrites sur la commande à chaque colis : le dernier colis fait foi, la liste garde tous les colis. Noms pas encore validés par l'agence."
+            help="Écrites sur la commande à chaque colis : le dernier colis fait foi, la liste garde tous les colis. L'URL est le lien complet, construit par l'app. Noms pas encore validés par l'agence."
+            warning="yousync et le rattrapage des commandes lisent le libellé transporteur et le n° de suivi sous leurs noms actuels, écrits en dur : les renommer viderait le transporteur et le suivi dans l'app."
             {...props('meta_keys')}
           >
-            <MetaFields group="meta_keys" value={draft.meta_keys} onChange={v => set('meta_keys', v)} errors={errors} disabled={!canEdit} />
-          </Setting>
-          <Setting
-            title="Métas historiques (bms_*)"
-            help="Lues aujourd'hui par le site : suivi affiché au client, passage automatique en « Livrée ». À écrire tant que le site les lit."
-            {...props('write_bms_meta')}
-          >
-            <Toggle
-              checked={draft.write_bms_meta}
-              onChange={v => set('write_bms_meta', v)}
-              disabled={!canEdit}
-              label="Écrire aussi les métas historiques"
-            />
-          </Setting>
-          <Setting
-            title="Noms des métas historiques"
-            help="Le transporteur reçoit le libellé exact du transporteur, comme BMS l'écrivait."
-            {...props('bms_meta_keys')}
-          >
-            <MetaFields group="bms_meta_keys" value={draft.bms_meta_keys} onChange={v => set('bms_meta_keys', v)} errors={errors} disabled={!canEdit || !draft.write_bms_meta} />
-          </Setting>
-          <Setting
-            title="Gabarit du lien de suivi"
-            help="Contenu de la méta « lien de suivi ». Les valeurs sont échappées par le plugin, et la méta reste vide quand le colis n'a pas d'URL de suivi."
-            {...props('bms_tracking_link_template')}
-          >
-            <textarea
-              value={draft.bms_tracking_link_template}
-              disabled={!canEdit}
-              onChange={e => set('bms_tracking_link_template', e.target.value)}
-              rows={2}
-              style={{
-                ...input, width: '100%', fontFamily: 'monospace', resize: 'vertical',
-                borderColor: errors.bms_tracking_link_template ? C.red : C.greyB,
-              }}
-            />
-            {errors.bms_tracking_link_template && <div style={{ fontSize: 11.5, color: C.red }}>{errors.bms_tracking_link_template}</div>}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '6px 0 10px', fontSize: 12.5, color: C.greyT }}>
-              Variables :
-              {['{url}', '{number}', '{carrier}', '{carrier_label}'].map(v => (
-                <button
-                  key={v}
-                  disabled={!canEdit}
-                  onClick={() => set('bms_tracking_link_template', `${draft.bms_tracking_link_template}${v}`)}
-                  title="Ajouter à la fin du gabarit"
-                  style={{
-                    fontFamily: 'monospace', fontSize: 12, padding: '2px 8px', borderRadius: 6,
-                    border: `1px solid ${C.greyB}`, background: C.grey, cursor: canEdit ? 'pointer' : 'default',
-                  }}
-                >{v}</button>
-              ))}
-            </div>
-            <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, background: C.grey }}>
-              <div style={{ fontSize: 12, color: C.greyT, marginBottom: 6 }}>
-                Aperçu pour un colis {SAMPLE.carrier_label} n° {SAMPLE.number}
-              </div>
-              <code style={{ display: 'block', fontSize: 12, wordBreak: 'break-all', color: C.dark, marginBottom: 8 }}>
-                {preview || '(vide)'}
-              </code>
-              {/* sandbox sans aucune permission : un brouillon ne peut exécuter aucun script. */}
-              <iframe
-                title="Rendu du lien de suivi"
-                sandbox=""
-                srcDoc={`<body style="margin:0;font:14px system-ui,sans-serif">${preview}</body>`}
-                style={{ width: '100%', height: 34, border: 'none', background: C.white, borderRadius: 6 }}
-              />
-            </div>
+            <MetaFields value={draft.meta_keys} onChange={v => set('meta_keys', v)} errors={errors} />
           </Setting>
 
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Taille des envois</h3>
@@ -518,14 +491,14 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
             help="Nombre maximal de lignes (colis, mouvements de stock) dans un appel au plugin, de 1 à 200."
             {...props('batch_max')}
           >
-            <NumberField value={draft.batch_max} onChange={v => set('batch_max', v)} error={errors.batch_max} disabled={!canEdit} unit="lignes" />
+            <NumberField value={draft.batch_max} onChange={v => set('batch_max', v)} error={errors.batch_max} unit="lignes" />
           </Setting>
           <Setting
             title="Temps maximal par requête"
             help="Au-delà, les lignes restantes reviennent sans avoir été traitées et l'app les renvoie. De 5 à 60 secondes."
             {...props('time_budget')}
           >
-            <NumberField value={draft.time_budget} onChange={v => set('time_budget', v)} error={errors.time_budget} disabled={!canEdit} unit="secondes" />
+            <NumberField value={draft.time_budget} onChange={v => set('time_budget', v)} error={errors.time_budget} unit="secondes" />
           </Setting>
 
           {result?.kind === 'error' && (
@@ -549,39 +522,36 @@ export default function PluginLogistiqueSection({ token, canEdit }) {
             ) : <Box kind="ok">Réglages enregistrés sur le site.</Box>
           )}
 
-          {canEdit && (
-            <div style={{
-              position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end',
-              padding: '12px 0 0', background: C.white, borderTop: `1px solid ${C.greyB}`,
-            }}>
-              {hasErrors && changedKeys.length > 0 && (
-                <span style={{ fontSize: 12.5, color: C.red, marginRight: 'auto' }}>Corriger les erreurs en rouge avant d&apos;enregistrer.</span>
-              )}
-              <button
-                onClick={() => { setDraft(clone(data.settings)); setResult(null); }}
-                disabled={!changedKeys.length || saving}
-                style={btn(false, !changedKeys.length || saving)}
-              >Annuler les modifications</button>
-              <button
-                onClick={save}
-                disabled={!changedKeys.length || hasErrors || saving}
-                style={btn(true, !changedKeys.length || hasErrors || saving)}
-              >{saving ? 'Enregistrement…' : `Enregistrer${changedKeys.length ? ` (${changedKeys.length})` : ''}`}</button>
-            </div>
-          )}
+          <div style={{
+            position: 'sticky', bottom: 0, display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end',
+            padding: '12px 0 0', background: C.white, borderTop: `1px solid ${C.greyB}`,
+          }}>
+            {hasErrors && changedKeys.length > 0 && (
+              <span style={{ fontSize: 12.5, color: C.red, marginRight: 'auto' }}>Corriger les erreurs en rouge avant d&apos;enregistrer.</span>
+            )}
+            <button
+              onClick={() => { setDraft(clone(data.settings)); setResult(null); }}
+              disabled={!changedKeys.length || saving}
+              style={btn(false, !changedKeys.length || saving)}
+            >Annuler les modifications</button>
+            <button
+              onClick={save}
+              disabled={!changedKeys.length || hasErrors || saving}
+              style={btn(true, !changedKeys.length || hasErrors || saving)}
+            >{saving ? 'Enregistrement…' : `Enregistrer${changedKeys.length ? ` (${changedKeys.length})` : ''}`}</button>
+          </div>
         </>
       )}
     </section>
   );
 }
 
-function NumberField({ value, onChange, error, disabled, unit }) {
+function NumberField({ value, onChange, error, unit }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <input
         type="number"
         value={value}
-        disabled={disabled}
         onChange={e => onChange(e.target.value === '' ? '' : Number(e.target.value))}
         style={{ ...input, width: 110, borderColor: error ? C.red : C.greyB }}
       />

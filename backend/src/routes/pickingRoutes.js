@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware');
-const { checkPermission, checkAdmin } = require('../middleware/permissionMiddleware');
+const { checkPermission } = require('../middleware/permissionMiddleware');
 const pickingController = require('../controllers/pickingController');
 const packingController = require('../controllers/packingController');
-const pickingPluginController = require('../controllers/pickingPluginController');
 
 router.use(authMiddleware);
 
@@ -27,12 +26,6 @@ router.post('/rules', canWrite, pickingController.saveRule);
 router.put('/rules/:id', canWrite, pickingController.saveRule);
 router.delete('/rules/:id', canWrite, pickingController.deleteRule);
 router.put('/settings/manual-prefix', canWrite, pickingController.setManualPrefix);
-
-// Réglages du plugin WordPress youvape-logistique (écran /picking/reglages).
-// Enregistrer est réservé aux admins : ces réglages décident quels statuts de
-// commande le plugin peut changer sans mail, et quelles métas le site lit.
-router.get('/plugin-logistique', canRead, pickingPluginController.getPluginLogistique);
-router.post('/plugin-logistique/settings', canRead, checkAdmin, pickingPluginController.updatePluginLogistiqueSettings);
 
 router.get('/waves', canRead, pickingController.listWaves);
 router.get('/waves/preview', canWrite, pickingController.previewGeneration);

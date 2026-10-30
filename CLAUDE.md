@@ -46,7 +46,7 @@ Le shop utilise des **statuts personnalisés** en plus des statuts natifs WC.
 - `wc-processing` — En cours
 - `wc-awaiting-delivery` — Retrait boutique (statut custom)
 - `wc-shipped` — Expédiée (statut custom)
-- `wc-being-delivered` — En cours de livraison (statut custom)
+- `wc-being-delivered` — affiché « Préparation en cours » sur le site (statut custom)
 
 **Statuts à exclure** :
 - `wc-cancelled` — Annulée
@@ -349,19 +349,31 @@ L'API WPLoyalty d'origine range tout sous « REST API » et ignore tout motif.
   juger un appel sur son seul statut HTTP (avant le 15/10, un retrait refusé passait pour fait).
 - Un retrait est plafonné au solde : la réponse donne `points` réellement retirés.
 
-### Plugin `youvape-logistique` : ses réglages depuis l'app (27/10/2026)
+### Plugin `youvape-logistique` : ses réglages depuis l'app (27/10/2026, révisé le 30/10)
 
-Le plugin (racine du dépôt, **pas encore installé**, activé le jour de la sortie de BMS) garde ses
-réglages dans WordPress. L'app les lit et les modifie depuis **`/picking/reglages`** (« Réglages »,
-bouton de l'en-tête du Picking — distinct des règles des vagues `/picking/settings`).
+Le plugin (racine du dépôt, **pas encore installé**, activé le jour de la sortie de BMS) gère tous
+les statuts d'expédition et remplace `vikings-update-order-status-automatically` : notre backend
+suivra les colis et posera « Livrée » par `order/status`. Il garde ses réglages dans WordPress.
+L'app les lit et les modifie depuis les paramètres généraux : **`/settings`, onglet « Paramètres
+WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
 
-- Client : `services/logistiqueService.js`, clés de `rewards_config` comme loyalty. Le site visé
-  est tout entier dans `connection()` : c'est là qu'on pointera la copie de test (choix `.env` ou
-  `app_config` pas encore fait).
-- Routes : `GET /api/picking/plugin-logistique` (droit picking lecture), `POST …/settings`
-  (picking lecture **+ `checkAdmin`** : ces réglages décident quels statuts changent sans mail).
-- **Seuls les réglages de l'expédition** sont modifiables (`EDITABLE_SETTINGS`) :
-  `restock_refunded_items_default` n'a rien à faire dans cet écran, voulu.
+- Client : `services/logistiqueService.js`. **Connexion propre au plugin**, modifiable au même endroit :
+  adresse, clés WooCommerce, mot de passe du site, dans `app_config.logistique_connection` (jamais
+  dans `EXPOSED_SETTINGS`, jamais renvoyée au navigateur). Pas `rewards_config` : viser la préprod
+  aurait changé les points fidélité. **Changer l'adresse oblige à ressaisir les clés**, pour que
+  celles d'un site ne partent jamais vers un autre. À remettre sur la prod avant la bascule.
+- Routes : `GET /api/plugin-logistique` et `POST …/settings`, **`checkAdmin`** sur les deux (ces
+  réglages décident quels statuts changent sans mail). Pas sous `/api/picking` : `checkPermission`
+  n'a pas de passe-droit admin, un admin sans le droit picking prendrait un 403.
+- **Seuls les réglages de l'expédition** sont modifiables (`EDITABLE_SETTINGS`). Les statuts se
+  choisissent dans ces réglages : hors statuts interdits en dur, aucun passage n'est refusé par le code.
+- **Plus aucune méta `bms_*` écrite**, uniquement `_yv_*`. `_yv_tracking_url` = lien complet construit
+  par l'app. `carrier_label` garde les libellés d'aujourd'hui : `detectCarrier()` et nos stats les lisent.
+- `notify_customer` est obligatoire sur `order/ship` et `order/status`.
+- ⚠️ **Les mails clients partent par Probance (API HTTP), pas par `wp_mail`.** Le mode muet bloque aussi
+  Probance et Guaranteed Reviews (`youvape_logistique_silent_hosts`), liste liée aux prestataires
+  actuels. Il ne bloque ni les points WPLoyalty, ni VosFactures, ni la capture Mollie.
+- Case « Restocker » de l'admin : cochée seulement si la commande n'est pas expédiée, pas un réglage.
 - Plugin absent = 404 `rest_no_route` → `installed: false`, affiché comme normal. Un 200 dont le
   corps n'a pas la forme attendue est une erreur ; un 401 du site devient un 502 chez nous (un 401
   déconnecterait l'utilisateur).

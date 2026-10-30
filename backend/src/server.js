@@ -16,6 +16,7 @@ const categoriesRoutes = require('./routes/categoriesRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const pluginLogistiqueRoutes = require('./routes/pluginLogistiqueRoutes');
 const shippingRoutes = require('./routes/shippingRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const tariffRoutes = require('./routes/tariffRoutes');
@@ -89,6 +90,8 @@ app.use('/api/categories', authMiddleware, categoriesRoutes); // Categories & Su
 app.use('/api/analysis', authMiddleware, analysisRoutes); // Analysis & Segmentation
 app.use('/api/reports', authMiddleware, reportsRoutes); // Reports
 app.use('/api/settings', settingsRoutes); // App settings
+// Réglages du plugin youvape-logistique : authMiddleware ici, droit admin dans le routeur.
+app.use('/api/plugin-logistique', authMiddleware, pluginLogistiqueRoutes);
 app.use('/api/shipping', authMiddleware, shippingRoutes); // Shipping costs management
 app.use('/api/payment', authMiddleware, paymentRoutes); // Payment methods configuration
 app.use('/api/tariffs', authMiddleware, tariffRoutes); // Tariff zones and rates
