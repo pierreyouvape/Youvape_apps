@@ -1,5 +1,6 @@
 const pool = require('../config/database');
 const { emitChange } = require('../services/ticketEvents');
+const { parseReturnCode } = require('../services/returnRules');
 
 // ─── Statuts ──────────────────────────────────────────────────────────────────
 async function getValidStatuses() {
@@ -143,7 +144,8 @@ class SavModel {
         o.tracking_number ILIKE $${idx} OR
         t.messages::text ILIKE $${idx}
       )`);
-      values.push(`%${search}%`);
+      // Étiquette retour scannée : son code n'est nulle part, sa commande si.
+      values.push(`%${parseReturnCode(search)?.wpOrderId || search}%`);
       idx++;
     }
 
