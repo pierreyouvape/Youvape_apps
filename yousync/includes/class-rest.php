@@ -3,11 +3,8 @@
  * Rest - Routes lues par le serveur Youvape.
  *
  * Tout est en lecture, sauf l'ack (qui ne touche qu'à notre table) et le
- * renouvellement du jeton. yousync n'écrit jamais sur le site : ni stock, ni statut,
+ * renouvellement de l'accès. yousync n'écrit jamais sur le site : ni stock, ni statut,
  * ni méta.
- *
- * Le préfixe « wc- » de la route du jeton est obligatoire : WooCommerce n'authentifie
- * ses clés que sur `wc/…` et `wc-…`.
  */
 
 namespace YouSync;
@@ -63,7 +60,7 @@ class Rest {
     }
 
     /**
-     * Route du jeton : clé WooCommerce d'un compte qui gère la boutique, en HTTPS.
+     * Réservé aux comptes qui gèrent la boutique, en HTTPS.
      */
     public static function can_manage() {
         return Auth::is_https() && current_user_can('manage_woocommerce');
@@ -180,7 +177,7 @@ class Rest {
     }
 
     /**
-     * POST token : { "token": "…" }. Le jeton n'est jamais renvoyé.
+     * POST token.
      */
     public static function post_token($request) {
         $body = $request->get_json_params();

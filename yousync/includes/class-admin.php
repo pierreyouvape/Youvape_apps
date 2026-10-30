@@ -1,8 +1,6 @@
 <?php
 /**
  * Admin - État de la file, pause, et lignes en échec à rejouer.
- *
- * Aucun réglage de connexion ici, et le jeton ne s'affiche nulle part.
  */
 
 namespace YouSync;

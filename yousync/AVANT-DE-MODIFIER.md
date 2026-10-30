@@ -184,9 +184,12 @@ et cite le champ, jamais sa valeur.
       Tout passe par `Install::maybe_upgrade`, sous `GET_LOCK`.
 - [ ] Syntaxe PHP 7.4. `backend/tests/yousync-plugin/run.sh [version]` : banc de la file dans un
       conteneur PHP jetable sur le VPS (`docker rmi` après).
+- [ ] **Commentaires du plugin neutres** : ils partent à l'agence. Rien sur le fonctionnement du
+      jeton, le serveur, les chemins ou nos services, et aucun renvoi à cette note : tout ça vit
+      ici. Le zip conserve les droits des fichiers : `chmod 644` (des fichiers étaient en `600`).
 - [ ] Livrer :
       ```bash
-      zip -r yousync.zip yousync -x '*.DS_Store' -x '*.md'
+      zip -rX yousync.zip yousync -x '*.DS_Store' -x '*.md'
       unzip -l yousync.zip   # puis relire CHAQUE fichier listé
       ```
       Contenu attendu : `yousync.php`, `readme.txt`, `includes/*.php`, `admin/css/admin.css`.

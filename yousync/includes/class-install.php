@@ -113,7 +113,6 @@ class Install {
     /**
      * Réglages de la 1.x : l'adresse d'envoi disparaît avec l'envoi, et une
      * synchro désactivée devient une pause (les événements s'enregistrent).
-     * Le reste de l'option reste en place : elle sert au retour à la 1.4.
      */
     private static function migrate_settings() {
         $settings = get_option('yousync_settings', []);
@@ -175,7 +174,7 @@ class Install {
     }
 
     /**
-     * Journal d'erreur de WooCommerce. Jamais de donnée client, jamais le jeton.
+     * Journal d'erreur de WooCommerce. Jamais de donnée client.
      */
     public static function log_error($message) {
         if (function_exists('wc_get_logger')) {

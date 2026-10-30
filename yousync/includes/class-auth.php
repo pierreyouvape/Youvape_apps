@@ -1,10 +1,6 @@
 <?php
 /**
- * Auth - Contrôle d'accès aux routes de lecture.
- *
- * Le site ne garde qu'une empreinte du jeton : une lecture de la base ne le révèle
- * pas, et il ne peut plus s'afficher nulle part. Empreinte rapide voulue, le jeton
- * fait 32 octets aléatoires : il n'y a rien à deviner, contrairement à un mot de passe.
+ * Auth - Contrôle d'accès aux routes.
  */
 
 namespace YouSync;
@@ -18,9 +14,7 @@ class Auth {
     const GRACE_SECONDS = 900;
 
     /**
-     * Reprend le jeton de la 1.x, sans action de l'agence ni coupure. La valeur en
-     * clair reste dans `yousync_settings` jusqu'au premier renouvellement : c'est ce
-     * qui permet de repasser en 1.4 sans ressaisir quoi que ce soit.
+     * Reprend l'accès de la version précédente.
      */
     public static function import_legacy_token() {
         if (get_option(self::OPTION)) {
@@ -34,9 +28,7 @@ class Auth {
     }
 
     /**
-     * Requête en HTTPS ? Derrière le proxy, `is_ssl()` dépend de la configuration du
-     * serveur : l'en-tête du proxy sert de second avis. Il ne protège pas d'un client
-     * qui mentirait, mais ce contrôle sert à refuser un envoi mal configuré.
+     * La requête est-elle en HTTPS ?
      */
     public static function is_https() {
         if (is_ssl()) {
@@ -71,7 +63,7 @@ class Auth {
     }
 
     /**
-     * Jeton courant, ou précédent pendant le délai de bascule.
+     * Accès courant, ou précédent pendant le délai de bascule.
      */
     private static function matches($auth, $hash) {
         $current = hash_equals($auth['hash'], $hash);
@@ -84,8 +76,7 @@ class Auth {
     }
 
     /**
-     * Accepte un nouveau jeton en gardant l'ancien quelques minutes. Rejouable : une
-     * réponse perdue peut être renvoyée sans effet de bord.
+     * Remplace l'accès, avec un délai de bascule. Rejouable sans effet de bord.
      *
      * @param mixed $token
      * @return true|\WP_Error
@@ -112,7 +103,6 @@ class Auth {
             'previous_until' => time() + self::GRACE_SECONDS,
         ], false);
 
-        // Le premier renouvellement efface le jeton en clair hérité de la 1.x.
         $settings = get_option('yousync_settings', []);
         if (is_array($settings) && array_key_exists('api_token', $settings)) {
             unset($settings['api_token']);

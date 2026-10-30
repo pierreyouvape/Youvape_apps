@@ -86,8 +86,8 @@ class Data_Fetcher {
             }
         }
 
-        // Dernier envoi : métas de youvape-logistique, sinon celles de BMS. Le repli se
-        // fait par paire : un retrait entrepôt (sans suivi) ne garde pas un vieux suivi.
+        // Dernier envoi. Le repli sur les anciennes métas se fait par paire : un retrait
+        // sans suivi ne doit pas garder un ancien numéro.
         $shipment = self::get_shipment($order);
 
         // Point relais choisi par le client (voir get_relay_point)
@@ -217,9 +217,6 @@ class Data_Fetcher {
     /**
      * Transporteur et suivi du dernier envoi.
      *
-     * Noms des métas : réglage `meta_keys` de youvape-logistique, valeurs par défaut.
-     * S'il change, changer aussi `shipmentOf` dans wcOrderImportService côté serveur.
-     *
      * @param WC_Order $order
      * @return array ['carrier' => string, 'tracking_number' => string]
      */
@@ -243,7 +240,7 @@ class Data_Fetcher {
      *    déterminera lequel des deux contrats Chronopost utiliser. Elle est absente des
      *    enregistrements laissés par les anciennes versions du plugin (variante à
      *    7 clés) : on la transmet quand elle existe, sans en dépendre — le titre de la
-     *    méthode de livraison reste la source fiable côté VPS.
+     *    méthode de livraison reste la source fiable côté serveur.
      *
      *  - Colissimo (plugin officiel La Poste, préfixe `lpc`) éclate l'information sur
      *    quatre métas. `_lpc_meta_pickUpProductCode` contient le *type de point*
@@ -351,7 +348,7 @@ class Data_Fetcher {
             'permalink' => get_permalink($product->get_id())
         ];
 
-        // Get brand -- NE PAS REVENIR A $brands[0] (voir yousync/AVANT-DE-MODIFIER.md).
+        // Get brand -- NE PAS REVENIR A $brands[0].
         // Un produit peut porter A LA FOIS le terme parent et son enfant
         // (ex. Eliquid France + Fruizee Max). $brands[0] renvoie le parent, donc
         // sub_brand part vide et ecrase la sous-marque en base a chaque edition.
