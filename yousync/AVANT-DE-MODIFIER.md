@@ -183,7 +183,7 @@ et cite le champ, jamais sa valeur.
 - [ ] Déployé par fichiers sur un plugin **déjà actif** : le hook d'activation ne tourne PAS.
       Tout passe par `Install::maybe_upgrade`, sous `GET_LOCK`.
 - [ ] Syntaxe PHP 7.4. `backend/tests/yousync-plugin/run.sh [version]` : banc de la file dans un
-      conteneur PHP jetable sur le VPS (⚠️ disque à 96 % : `docker rmi` après).
+      conteneur PHP jetable sur le VPS (`docker rmi` après).
 - [ ] Livrer :
       ```bash
       zip -r yousync.zip yousync -x '*.DS_Store' -x '*.md'
