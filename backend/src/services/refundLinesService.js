@@ -72,9 +72,12 @@ const toRows = (wpOrderId, r) => [
  * Relit chez WC tous les remboursements d'une commande et remplace leurs lignes.
  * La liste de WC fait foi : un remboursement supprimé là-bas perd ses lignes ici.
  *
+ * Avec `withRefunds`, les remboursements eux-mêmes sont aussi repris : c'est le cas
+ * du rattrapage, quand l'événement yousync qui les portait a pu se perdre.
+ *
  * @returns {Promise<boolean>} false si l'API WC n'est pas configurée
  */
-const syncOrder = async (wpOrderId) => {
+const syncOrder = async (wpOrderId, { withRefunds = false } = {}) => {
   const config = await wcConfig();
   if (!config) return false;
 
@@ -94,6 +97,22 @@ const syncOrder = async (wpOrderId) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (withRefunds) {
+      for (const r of refunds) {
+        await client.query(
+          `INSERT INTO refunds (wp_refund_id, wp_order_id, refund_amount, refund_reason, refund_date, order_total, order_tax)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (wp_refund_id) DO UPDATE SET
+             refund_amount = EXCLUDED.refund_amount,
+             refund_reason = EXCLUDED.refund_reason,
+             order_total = EXCLUDED.order_total,
+             order_tax = EXCLUDED.order_tax,
+             updated_at = NOW()`,
+          [r.id, wpOrderId, abs(r.amount), r.reason || null, r.date_created ? String(r.date_created).replace('T', ' ') : null,
+            parseFloat(r.total) || 0, parseFloat(r.total_tax) || 0]
+        );
+      }
+    }
     await client.query('DELETE FROM refund_items WHERE wp_order_id = $1', [wpOrderId]);
     if (rows.length > 0) {
       await client.query(

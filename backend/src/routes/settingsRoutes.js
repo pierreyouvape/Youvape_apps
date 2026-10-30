@@ -4,6 +4,9 @@ const appConfigModel = require('../models/appConfigModel');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkAdmin } = require('../middleware/permissionMiddleware');
 const wcSyncService = require('../services/wcSyncService');
+const yousyncClient = require('../services/yousyncClient');
+const yousyncTokenService = require('../services/yousyncTokenService');
+const { LAST_RUN_KEY } = require('../services/orderReconcileService');
 
 /*
  * Clés accessibles depuis l'app : la liste est FERMÉE, exprès.
@@ -57,7 +60,7 @@ router.get('/sync-health', async (req, res) => {
   try {
     const read = async (key) => (await appConfigModel.get(key))?.config_value || null;
 
-    const [status, lastPollOkAt, lastEventAt, lastBatchSize, lastErrorRaw, intervalRaw] =
+    const [status, lastPollOkAt, lastEventAt, lastBatchSize, lastErrorRaw, intervalRaw, queueRaw, reconcileRaw, pendingToken] =
       await Promise.all([
         read('wc_sync_status'),
         read('wc_sync_last_poll_ok_at'),
@@ -65,7 +68,15 @@ router.get('/sync-health', async (req, res) => {
         read('wc_sync_last_batch_size'),
         read('wc_sync_last_error'),
         read('wc_sync_interval'),
+        read('wc_sync_queue'),
+        read(LAST_RUN_KEY),
+        read(yousyncClient.PENDING_TOKEN_KEY),
       ]);
+
+    const parseJson = (raw) => {
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
+    };
 
     const intervalSeconds = parseInt(intervalRaw, 10) || 60;
 
@@ -96,11 +107,31 @@ router.get('/sync-health', async (req, res) => {
         lastEventAt,
         lastBatchSize: lastBatchSize === null ? null : parseInt(lastBatchSize, 10),
         lastError,
+        queue: parseJson(queueRaw),
+        lastReconcile: parseJson(reconcileRaw),
+        tokenRotationPending: !!pendingToken,
       },
     });
   } catch (error) {
     console.error('Error fetching sync health:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch sync health' });
+  }
+});
+
+/*
+ * POST /api/settings/yousync/rotate-token - Renouveler le jeton de synchro.
+ * Le jeton ne passe jamais par ici : ni en entrée, ni en réponse.
+ */
+router.post('/yousync/rotate-token', async (req, res) => {
+  try {
+    await yousyncTokenService.rotate();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error rotating yousync token:', error.statusCode ? error.message : error.code || 'erreur');
+    res.status(error.statusCode || 500).json({
+      success: false,
+      error: error.statusCode ? error.message : 'Failed to rotate token',
+    });
   }
 });
 

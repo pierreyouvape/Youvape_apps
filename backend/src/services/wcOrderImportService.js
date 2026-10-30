@@ -42,6 +42,16 @@ const num = (v) => parseFloat(v) || 0;
 // WooCommerce REST rend les dates en heure du site (Paris) : « 2026-10-09T11:02:25 ».
 const wcDate = (v) => (v ? String(v).replace('T', ' ') : null);
 
+/**
+ * Dernier envoi : les métas `_yv_*` du plugin youvape-logistique, ou les `bms_*`
+ * des commandes parties avant lui. Le repli se fait par PAIRE : une commande
+ * expédiée par BMS puis retirée à l'entrepôt ne doit pas garder le vieux suivi.
+ * Mêmes noms que `Data_Fetcher::get_shipment` et que le réglage `meta_keys`.
+ */
+const shipmentOf = (meta) => (meta('_yv_carrier_label')
+  ? { carrier: meta('_yv_carrier_label'), trackingNumber: meta('_yv_tracking_number') }
+  : { carrier: meta('bms_carrier'), trackingNumber: meta('bms_tracking_number') });
+
 const metaOf = (metaData) => {
   const map = new Map((metaData || []).map(m => [m.key, m.value]));
   return (key) => {
@@ -144,6 +154,7 @@ const toSyncPayload = (o) => {
   const billing = o.billing || {};
   const shipping = o.shipping || {};
   const shippingLines = o.shipping_lines || [];
+  const shipment = shipmentOf(meta);
 
   return {
     wp_order_id: o.id,
@@ -160,7 +171,6 @@ const toSyncPayload = (o) => {
     customer_email: billing.email,
     billing_first_name: billing.first_name,
     billing_last_name: billing.last_name,
-    billing_company: billing.company,
     billing_address_1: billing.address_1,
     billing_address_2: billing.address_2,
     billing_city: billing.city,
@@ -174,7 +184,6 @@ const toSyncPayload = (o) => {
     shipping_city: shipping.city,
     shipping_postcode: shipping.postcode,
     shipping_country: shipping.country,
-    customer_note: o.customer_note,
     date_created: wcDate(o.date_created),
     date_modified: wcDate(o.date_modified),
     date_completed: wcDate(o.date_completed),
@@ -182,8 +191,8 @@ const toSyncPayload = (o) => {
     items: (o.line_items || []).map(toItem),
     shipping: shippingLines.map(l => ({ method_id: l.method_id, method_title: l.method_title, total: num(l.total) })),
     shipping_method: shippingLines[0]?.method_title || null,
-    shipping_carrier: meta('bms_carrier'),
-    tracking_number: meta('bms_tracking_number'),
+    shipping_carrier: shipment.carrier,
+    tracking_number: shipment.trackingNumber,
     relay_point: relayPointOf(meta),
     coupons: (o.coupon_lines || []).map(c => c.code),
     coupon_items: (o.coupon_lines || []).map(c => ({
@@ -218,7 +227,6 @@ const toSyncPayload = (o) => {
       utm_content: meta('_wc_order_attribution_utm_content'),
       utm_term: meta('_wc_order_attribution_utm_term'),
       device_type: meta('_wc_order_attribution_device_type'),
-      user_agent: meta('_wc_order_attribution_user_agent'),
       session_entry: meta('_wc_order_attribution_session_entry'),
       session_start_time: meta('_wc_order_attribution_session_start_time'),
       session_pages: parseInt(meta('_wc_order_attribution_session_pages'), 10) || null,
@@ -229,8 +237,6 @@ const toSyncPayload = (o) => {
       mollie_payment_id: meta('_mollie_payment_id'),
       mollie_order_id: meta('_mollie_order_id'),
       mollie_payment_mode: meta('_mollie_payment_mode'),
-      mollie_customer_id: meta('_mollie_customer_id'),
-      mollie_payment_instructions: meta('_mollie_payment_instructions'),
       mollie_paid_and_processed: Boolean(meta('_mollie_paid_and_processed')),
     },
   };
@@ -238,9 +244,10 @@ const toSyncPayload = (o) => {
 
 /**
  * Appel à l'API REST WooCommerce (identifiants de `rewards_config`).
- * Partagé avec les Retours, qui créent les commandes de renvoi.
+ * Partagé avec les Retours, qui créent les commandes de renvoi, et le jeton
+ * yousync, dont la route vit dans un autre espace de noms.
  */
-const wcRequest = async (method, path, body = null) => {
+const wcRequest = async (method, path, body = null, namespace = 'wc/v3') => {
   const { rows } = await pool.query(
     'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
   );
@@ -253,7 +260,7 @@ const wcRequest = async (method, path, body = null) => {
   }
   const { data } = await axios({
     method,
-    url: `${cfg.woocommerce_url.replace(/\/$/, '')}/wp-json/wc/v3${path}`,
+    url: `${cfg.woocommerce_url.replace(/\/$/, '')}/wp-json/${namespace}${path}`,
     params: { consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
     data: body || undefined,
     headers,

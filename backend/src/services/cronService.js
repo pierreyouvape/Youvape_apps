@@ -1099,6 +1099,32 @@ const setupRefundLinesCron = () => {
 };
 
 
+// ==================== RATTRAPAGE DES COMMANDES (YOUSYNC) ====================
+
+let orderReconcileFrequentJob = null;
+let orderReconcileDailyJob = null;
+
+const setupOrderReconcileCron = () => {
+  if (orderReconcileFrequentJob) {
+    orderReconcileFrequentJob.stop();
+    orderReconcileFrequentJob = null;
+  }
+  if (orderReconcileDailyJob) {
+    orderReconcileDailyJob.stop();
+    orderReconcileDailyJob = null;
+  }
+  // Compare le site et notre base, sans dépendre de BMS. La passe fréquente couvre
+  // quelques heures, la nuit reprend quelques jours (une panne plus longue).
+  orderReconcileFrequentJob = cron.schedule('*/15 * * * *', () => require('./orderReconcileService').runFrequent(), {
+    timezone: 'Europe/Paris'
+  });
+  orderReconcileDailyJob = cron.schedule('40 4 * * *', () => require('./orderReconcileService').runDaily(), {
+    timezone: 'Europe/Paris'
+  });
+  console.log('Cron rattrapage commandes configure: toutes les 15 min + 4h40');
+};
+
+
 // ==================== DOUBLONS DE COMMANDES CLIENTS ====================
 
 let orderDuplicatesCronJob = null;
@@ -1185,6 +1211,7 @@ module.exports = {
   setupInventoryRefCron,
   setupReturnsRefundCron,
   setupRefundLinesCron,
+  setupOrderReconcileCron,
   setupOrderDuplicatesCron,
   setupTableauRemindersCron,
   runProductDbSyncJob,

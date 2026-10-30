@@ -126,6 +126,32 @@ test('sans point relais → null', () => {
   assert.strictEqual(toSyncPayload(o).relay_point, null);
 });
 
+test('transporteur : `_yv_*` d\'abord, `bms_*` pour les anciennes commandes', () => {
+  const o = wcOrder();
+  o.meta_data = [
+    { key: 'bms_carrier', value: 'Ancien' }, { key: 'bms_tracking_number', value: 'BMS1' },
+  ];
+  let p = toSyncPayload(o);
+  assert.strictEqual(p.shipping_carrier, 'Ancien');
+  assert.strictEqual(p.tracking_number, 'BMS1');
+
+  o.meta_data.push({ key: '_yv_carrier_label', value: 'Store Pickup - Entrepot' }, { key: '_yv_tracking_number', value: '' });
+  p = toSyncPayload(o);
+  assert.strictEqual(p.shipping_carrier, 'Store Pickup - Entrepot');
+  assert.strictEqual(p.tracking_number, null, 'pas de vieux suivi BMS sur un retrait entrepôt');
+});
+
+test('moindre donnée : les champs qu\'on ne lit pas ne passent plus', () => {
+  const o = wcOrder();
+  o.customer_note = 'note du client';
+  o.meta_data.push({ key: '_wc_order_attribution_user_agent', value: 'Mozilla' }, { key: '_mollie_payment_instructions', value: 'IBAN' });
+  const p = toSyncPayload(o);
+  for (const field of ['customer_note', 'billing_company']) assert.ok(!(field in p), field);
+  assert.ok(!('user_agent' in p.attribution));
+  assert.ok(!('mollie_payment_instructions' in p.payment_meta));
+  assert.ok(!('mollie_customer_id' in p.payment_meta));
+});
+
 test('montants en nombres, TVA produits + livraison, coupon', () => {
   const p = toSyncPayload(wcOrder());
   assert.strictEqual(p.total, 37.38);

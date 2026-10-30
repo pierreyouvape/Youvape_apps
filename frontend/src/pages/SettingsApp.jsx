@@ -55,6 +55,8 @@ const SettingsApp = () => {
   // Onglet WooCommerce
   const [wcSyncInterval, setWcSyncInterval] = useState('');
   const [savingSync, setSavingSync] = useState(false);
+  const [syncHealth, setSyncHealth] = useState(null);
+  const [rotatingToken, setRotatingToken] = useState(false);
 
   // Messages globaux
   const [error, setError] = useState(null);
@@ -116,6 +118,36 @@ const SettingsApp = () => {
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres:', err);
+    }
+    loadSyncHealth();
+  };
+
+  const loadSyncHealth = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/settings/sync-health`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSyncHealth(response.data.health);
+    } catch (err) {
+      console.error('Erreur lors du chargement de l\'état de la synchro:', err);
+    }
+  };
+
+  const rotateSyncToken = async () => {
+    if (!window.confirm('Renouveler le jeton de synchronisation ? La synchro continue pendant l\'opération.')) return;
+    setRotatingToken(true);
+    try {
+      await axios.post(`${API_URL}/settings/yousync/rotate-token`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSuccessMessage('Jeton de synchronisation renouvelé');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Renouvellement impossible');
+      setTimeout(() => setError(null), 8000);
+    } finally {
+      setRotatingToken(false);
+      loadSyncHealth();
     }
   };
 
@@ -544,6 +576,42 @@ const SettingsApp = () => {
             </div>
             <p className="field-hint">
               0 = désactivé. Le backend poll WordPress à cet intervalle pour récupérer les modifications.
+            </p>
+
+            <h2 style={{ marginTop: '24px' }}>État de la connexion</h2>
+            {syncHealth ? (
+              <>
+                <p style={{ color: syncHealth.healthy ? '#16a34a' : '#dc2626', fontWeight: '500' }}>
+                  {syncHealth.healthy ? 'Connexion en bon état' : 'Connexion à vérifier'}
+                  {syncHealth.queue?.paused ? ' (livraison en pause dans WordPress)' : ''}
+                </p>
+                <p className="field-hint">
+                  Dernier contact : {syncHealth.secondsSinceLastPoll === null ? 'jamais' : `il y a ${syncHealth.secondsSinceLastPoll} s`}
+                  {syncHealth.queue?.protocol ? ` · Protocole ${syncHealth.queue.protocol}` : ''}
+                  {syncHealth.queue?.pending != null ? ` · En attente : ${syncHealth.queue.pending}` : ''}
+                  {syncHealth.queue?.failed != null ? ` · En échec : ${syncHealth.queue.failed}` : ''}
+                </p>
+                {syncHealth.lastError && (
+                  <p className="field-hint">Dernière erreur : {syncHealth.lastError.message}</p>
+                )}
+                {syncHealth.lastReconcile && (
+                  <p className="field-hint">
+                    Dernier rattrapage : {syncHealth.lastReconcile.scanned} commande(s) vérifiée(s),
+                    {' '}{syncHealth.lastReconcile.imported.length} réimportée(s)
+                  </p>
+                )}
+                {syncHealth.tokenRotationPending && (
+                  <p className="field-hint">Un renouvellement du jeton n'a pas abouti : la synchro continue, il peut être relancé.</p>
+                )}
+              </>
+            ) : (
+              <p className="field-hint">Chargement...</p>
+            )}
+            <button onClick={rotateSyncToken} disabled={rotatingToken} className="btn btn-save">
+              {rotatingToken ? 'Renouvellement...' : 'Renouveler le jeton'}
+            </button>
+            <p className="field-hint">
+              Personne ne voit ni ne copie le jeton : l'app le génère et le pose elle-même sur le site.
             </p>
           </div>
         )}
