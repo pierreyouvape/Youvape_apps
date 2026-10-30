@@ -31,7 +31,7 @@ const { WAREHOUSE_BY_ID } = require('../config/nextore');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const { createTicket } = require('./pickingPackingModel');
 const {
-  REASONS, LOST_REASON, CARRIER_RETURN_REASON, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  REASONS, LOST_REASON, ORDER_TICKET_REASONS, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
   suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
@@ -166,7 +166,7 @@ const insertLines = async (client, returnId, picks, partials = new Map()) => {
   }
 };
 
-const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, note, selection }, user) => {
+const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, note, selection }, user, { attachTicket = true } = {}) => {
   if (!REASONS[reason]) throw httpError(400, 'Motif inconnu.');
   if (reason === LOST_REASON) throw httpError(400, 'Un colis perdu se déclare par « Déclarer colis perdu ».');
   if (outcome && !OUTCOMES[outcome]) throw httpError(400, 'Issue inconnue.');
@@ -202,10 +202,10 @@ const create = async ({ wpOrderId, ticketId, reason, returnRequired, outcome, no
     `<strong>Retour n°${returnId} créé</strong> — ${escapeHtml(REASONS[reason])}${returnRequired === false ? ' (sans retour du produit)' : ''}`,
     ...picks.filter(p => !p.bundleOf).map(p => `${p.qty} × ${escapeHtml(p.line.name)}`),
   ];
-  // Colis ramené par erreur par le transporteur : créé depuis la commande, sans
-  // ticket. Comme un colis non réclamé, il en trouve un — ou en ouvre un — pour
-  // que ses notes (création, renvoi) y soient écrites (Pierre, 20/10/2026).
-  if (!ticketId && reason === CARRIER_RETURN_REASON) {
+  // Colis revenu seul (transporteur, non réclamé) : créé depuis la commande, sans
+  // ticket. Il en trouve un — ou en ouvre un — pour que ses notes (création,
+  // renvoi, points) y soient écrites (Pierre, 20/10 et 30/10/2026).
+  if (!ticketId && attachTicket && ORDER_TICKET_REASONS.includes(reason)) {
     const { warnings } = await attachOrderTicket(returnId, order, lines, user);
     return { ...(await get(returnId)), warnings };
   }
@@ -336,7 +336,7 @@ const declareUnclaimed = async (wpOrderId, user) => {
   // Le retour d'abord, sans ticket : la note doit en donner le numéro.
   const ret = await create({
     wpOrderId, ticketId: null, reason: 'non_recupere', returnRequired: true, outcome: 'points', selection,
-  }, user);
+  }, user, { attachTicket: false });
 
   const note = [
     '<strong>Colis revenu chez nous, non réclamé par le client.</strong>',
