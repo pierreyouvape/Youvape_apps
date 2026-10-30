@@ -215,31 +215,24 @@ rattrapage reprend les commandes modifiées pendant ce temps.
 **Préprod** : le polling de PROD ne doit JAMAIS la viser, sinon des commandes de test entrent
 dans notre base. Aucune écriture vers elle depuis l'app : `wc_sync_wp_url` n'est plus modifiable.
 
-## 11. Tests préprod (non faits : préprod non touchée à la demande de Pierre)
+## 11. Tests préprod
 
-Le banc couvre la file et le jeton, pas WooCommerce. Préprod en WC 10.8.1, prod en 11.2.1 :
-les hooks ont été vérifiés dans le source 11.2.1, pas exécutés.
+**Passés le 30/10/2026 sur vps.youvape.fr** (WC 10.8.1, WP 7.0, PHP 8.2, HPOS non), plugin réel :
+`backend/tests/yousync-plugin/preprod-scenario.php` tout au vert ; 18 événements réels acceptés par
+`validateEvent` ; **30 commandes créées par 6 processus pendant 255 lectures/ack : 0 perdue**.
 
-Lire sans importer (ne jamais brancher le polling de prod) :
-`curl -H "X-YouSync-Token: <jeton de préprod>" <site>/wp-json/yousync/v2/queue`
+⚠️ **Une commande créée en préprod sort de la préprod** : webhooks Metorik actifs (`order.created`,
+`customer.created`, `product.created`…), Klaviyo sur les produits, appels VosFactures, API d'avis,
+Jetpack. Le scénario les bloque (`pre_http_request`, `woocommerce_webhook_should_deliver`,
+`pre_wp_mail`) : **ne jamais créer de commande de test sans ces garde-fous**.
 
-- [ ] Mise à jour par fichiers sur le plugin actif : table créée une fois, `queue.json` repris
-      puis supprimé, jeton repris (route répond), cron `yousync_process_queue` absent.
-- [ ] Commande passée : lignes `create`/`update` en table, contenu complet à la lecture, lignes
-      de commande et taxes présentes.
-- [ ] `/orders/index` : `delivered`, `awaiting-delivery`, `completed` présents ; brouillons absents.
-- [ ] Remboursement partiel admin : événement, `order_tax` présent ; suppression : marqueur `gone`.
-- [ ] Produit variable modifié, stock changé, produit supprimé définitivement : `gone`.
-- [ ] Compte client supprimé avec un événement en attente : `gone`, le lot n'est pas bloqué.
-- [ ] **Serveur coupé 48 h** (aucune lecture) : commandes passées, rien ne sort de la table ;
-      à la reprise, tout part, dans l'ordre, sans expiration.
-- [ ] **Commandes et acks simultanés** : 20 commandes en parallèle pendant des lectures/acks en
-      boucle : autant d'objets livrés que créés, aucune ligne `pending` orpheline.
-- [ ] **Jeton faux → 401, sans jeton → 401, HTTP → refus, option `yousync_auth` vidée → 503.**
-- [ ] `is_ssl()` réellement vrai sur une requête REST, derrière le proxy.
-- [ ] **Rattrapage** : supprimer à la main la ligne d'événement d'une commande, attendre : la
-      comparaison la retrouve et alerte.
-- [ ] Pause : événements enregistrés, rien de livré, reprise sans perte ; `Rejouer` fonctionne.
-- [ ] Renouvellement : deux jetons acceptés 15 min, puis seul le nouveau ; clair effacé.
-- [ ] Le tout avec le site passé en **HPOS**, source de lecture changée.
-- [ ] Bloqueur Cloudflare : confirmer que `yousync/v2/*` et `wc-yousync/v1/*` passent comme la v1.
+**Ce que la préprod n'a PAS prouvé :**
+- [ ] WC 11.2.1 : hooks lus dans le source, pas exécutés (préprod en 10.8.1).
+- [ ] HPOS actif, source de lecture changée (préprod en stockage classique).
+- [ ] Vraie requête HTTP : appels internes `rest_do_request`, le site est derrière un mot de passe.
+      Donc `is_ssl()`, Cloudflare et Plesk ne sont vérifiés qu'en prod (§10). Si `is_ssl()` et
+      `X-Forwarded-Proto` échouent, le polling répond 403 et alerte : les événements attendent,
+      et le rattrapage continue par l'API WooCommerce.
+- [ ] Vrai tunnel de commande : commandes créées par le code, pas par le checkout ni Mollie.
+- [ ] Coupure réelle de 48 h : simulée en vieillissant des lignes de 72 h.
+- [ ] Bouton Rejouer à l'écran : méthode testée, pas le clic. Pause : idem.
