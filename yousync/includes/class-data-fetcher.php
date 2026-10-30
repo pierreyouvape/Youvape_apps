@@ -146,6 +146,7 @@ class Data_Fetcher {
             'utm_content'        => $order->get_meta('_wc_order_attribution_utm_content') ?: null,
             'utm_term'           => $order->get_meta('_wc_order_attribution_utm_term') ?: null,
             'device_type'        => $order->get_meta('_wc_order_attribution_device_type') ?: null,
+            'user_agent'         => $order->get_meta('_wc_order_attribution_user_agent') ?: null,
             'session_entry'      => $order->get_meta('_wc_order_attribution_session_entry') ?: null,
             'session_start_time' => $order->get_meta('_wc_order_attribution_session_start_time') ?: null,
             'session_pages'      => intval($order->get_meta('_wc_order_attribution_session_pages')) ?: null,
@@ -158,6 +159,8 @@ class Data_Fetcher {
             'mollie_payment_id'           => $order->get_meta('_mollie_payment_id') ?: null,
             'mollie_order_id'             => $order->get_meta('_mollie_order_id') ?: null,
             'mollie_payment_mode'         => $order->get_meta('_mollie_payment_mode') ?: null,
+            'mollie_customer_id'          => $order->get_meta('_mollie_customer_id') ?: null,
+            'mollie_payment_instructions' => $order->get_meta('_mollie_payment_instructions') ?: null,
             'mollie_paid_and_processed'   => (bool) $order->get_meta('_mollie_paid_and_processed'),
         ];
 
@@ -177,6 +180,7 @@ class Data_Fetcher {
             'customer_email' => $order->get_billing_email(),
             'billing_first_name' => $order->get_billing_first_name(),
             'billing_last_name' => $order->get_billing_last_name(),
+            'billing_company' => $order->get_billing_company(),
             'billing_address_1' => $order->get_billing_address_1(),
             'billing_address_2' => $order->get_billing_address_2(),
             'billing_city' => $order->get_billing_city(),
@@ -190,6 +194,7 @@ class Data_Fetcher {
             'shipping_city' => $order->get_shipping_city(),
             'shipping_postcode' => $order->get_shipping_postcode(),
             'shipping_country' => $order->get_shipping_country(),
+            'customer_note' => $order->get_customer_note(),
             'date_created' => $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null,
             'date_modified' => $order->get_date_modified() ? $order->get_date_modified()->format('Y-m-d H:i:s') : null,
             'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->format('Y-m-d H:i:s') : null,
@@ -323,6 +328,8 @@ class Data_Fetcher {
             'slug' => $product->get_slug(),
             'sku' => $product->get_sku(),
             'status' => $product->get_status(),
+            'description' => $product->get_description(),
+            'short_description' => $product->get_short_description(),
             'price' => floatval($product->get_price()),
             'regular_price' => floatval($product->get_regular_price()),
             'sale_price' => $product->get_sale_price() ? floatval($product->get_sale_price()) : null,
@@ -340,7 +347,8 @@ class Data_Fetcher {
             'date_modified' => $product->get_date_modified() ? $product->get_date_modified()->format('Y-m-d H:i:s') : null,
             'image_url' => wp_get_attachment_url($product->get_image_id()) ?: (
                 $product->get_parent_id() ? wp_get_attachment_url(get_post_thumbnail_id($product->get_parent_id())) ?: null : null
-            )
+            ),
+            'permalink' => get_permalink($product->get_id())
         ];
 
         // Get brand -- NE PAS REVENIR A $brands[0] (voir yousync/AVANT-DE-MODIFIER.md).
@@ -407,20 +415,42 @@ class Data_Fetcher {
      */
     public static function get_customer($customer_id) {
         // new WC_Customer() lève une exception sur un compte supprimé.
-        if (!get_user_by('id', $customer_id)) {
+        $user = get_user_by('id', $customer_id);
+        if (!$user) {
             return null;
         }
 
         $customer = new \WC_Customer($customer_id);
 
-        // Seul ce que le serveur lit : pas d'adresse, ni de téléphone, ni d'identifiant.
         return [
             'wp_customer_id' => $customer->get_id(),
             'email' => $customer->get_email(),
             'first_name' => $customer->get_first_name(),
             'last_name' => $customer->get_last_name(),
+            'display_name' => $customer->get_display_name(),
+            'username' => $user->user_login,
+            'billing_first_name' => $customer->get_billing_first_name(),
+            'billing_last_name' => $customer->get_billing_last_name(),
+            'billing_company' => $customer->get_billing_company(),
+            'billing_address_1' => $customer->get_billing_address_1(),
+            'billing_address_2' => $customer->get_billing_address_2(),
+            'billing_city' => $customer->get_billing_city(),
+            'billing_postcode' => $customer->get_billing_postcode(),
+            'billing_country' => $customer->get_billing_country(),
+            'billing_phone' => $customer->get_billing_phone(),
+            'billing_email' => $customer->get_billing_email(),
+            'shipping_first_name' => $customer->get_shipping_first_name(),
+            'shipping_last_name' => $customer->get_shipping_last_name(),
+            'shipping_company' => $customer->get_shipping_company(),
+            'shipping_address_1' => $customer->get_shipping_address_1(),
+            'shipping_address_2' => $customer->get_shipping_address_2(),
+            'shipping_city' => $customer->get_shipping_city(),
+            'shipping_postcode' => $customer->get_shipping_postcode(),
+            'shipping_country' => $customer->get_shipping_country(),
             'date_created' => $customer->get_date_created() ? $customer->get_date_created()->format('Y-m-d H:i:s') : null,
             'date_modified' => $customer->get_date_modified() ? $customer->get_date_modified()->format('Y-m-d H:i:s') : null,
+            'orders_count' => $customer->get_order_count(),
+            'total_spent' => floatval($customer->get_total_spent())
         ];
     }
 

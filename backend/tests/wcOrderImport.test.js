@@ -141,15 +141,21 @@ test('transporteur : `_yv_*` d\'abord, `bms_*` pour les anciennes commandes', ()
   assert.strictEqual(p.tracking_number, null, 'pas de vieux suivi BMS sur un retrait entrepôt');
 });
 
-test('moindre donnée : les champs qu\'on ne lit pas ne passent plus', () => {
+test('tous les champs du flux restent transmis, même ceux qu\'on ne lit pas encore', () => {
   const o = wcOrder();
   o.customer_note = 'note du client';
-  o.meta_data.push({ key: '_wc_order_attribution_user_agent', value: 'Mozilla' }, { key: '_mollie_payment_instructions', value: 'IBAN' });
+  o.billing.company = 'Société';
+  o.meta_data.push(
+    { key: '_wc_order_attribution_user_agent', value: 'Mozilla' },
+    { key: '_mollie_customer_id', value: 'cst_1' },
+    { key: '_mollie_payment_instructions', value: 'Virement' }
+  );
   const p = toSyncPayload(o);
-  for (const field of ['customer_note', 'billing_company']) assert.ok(!(field in p), field);
-  assert.ok(!('user_agent' in p.attribution));
-  assert.ok(!('mollie_payment_instructions' in p.payment_meta));
-  assert.ok(!('mollie_customer_id' in p.payment_meta));
+  assert.strictEqual(p.customer_note, 'note du client');
+  assert.strictEqual(p.billing_company, 'Société');
+  assert.strictEqual(p.attribution.user_agent, 'Mozilla');
+  assert.strictEqual(p.payment_meta.mollie_customer_id, 'cst_1');
+  assert.strictEqual(p.payment_meta.mollie_payment_instructions, 'Virement');
 });
 
 test('montants en nombres, TVA produits + livraison, coupon', () => {

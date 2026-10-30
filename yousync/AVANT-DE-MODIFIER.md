@@ -156,11 +156,12 @@ du site, comme `orders.post_modified`.
 
 ## 7. Moindre donnée
 
-La table ne contient que identifiants, type, action, dates, état. Retirés du flux le 30/10/2026,
-car lus nulle part chez nous : `billing_company`, `customer_note`, `user_agent`,
-`mollie_customer_id`, `mollie_payment_instructions` ; pour un client, tout sauf nom, email et
-dates ; pour un produit, `description`, `short_description`, `permalink`. Les colonnes
-existantes (`attribution_user_agent`…) gardent leur historique et ne sont plus alimentées.
+La table ne contient que identifiants, type, action, dates, état : aucune donnée client.
+
+Le flux, lui, transmet TOUS les champs de `Data_Fetcher`, y compris ceux qu'on ne lit pas
+aujourd'hui (`billing_company`, `customer_note`, `description`, adresses du client…) : choix de
+Pierre le 30/10/2026, pour de futurs usages. Ne pas les retirer. ⚠️ Transmis n'est pas stocké :
+`processOrder`, `processCustomer` et `processProduct` ignorent ceux sans colonne chez nous.
 
 Le contenu reçu est traité comme non fiable : `utils/yousyncPayload.js` refuse la ligne entière
 et cite le champ, jamais sa valeur.
