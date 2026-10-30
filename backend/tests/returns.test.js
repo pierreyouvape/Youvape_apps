@@ -14,7 +14,7 @@ const assert = require('assert');
 const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
-  lotRemaining, checkLot, suggestLot,
+  lotRemaining, checkLot, suggestLot, parseReturnCode,
 } = require('../src/services/returnRules');
 
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message) && e.statusCode === 400);
@@ -181,5 +181,16 @@ assert.strictEqual(telephoneInternational('+352621123456', 'LU'), '+352621123456
 assert.strictEqual(telephoneInternational('+390612345678', 'IT'), '+390612345678', 'Italie : le 0 reste');
 assert.strictEqual(telephoneInternational('', 'FR'), '');
 assert.strictEqual(telephoneInternational('123', 'FR'), '', 'illisible : vide');
+
+// ── Code de l'étiquette retour scanné ───────────────────────────────────────
+const code56 = { returnId: '56', wpOrderId: '1267197' };
+assert.deepStrictEqual(parseReturnCode('R56-1267197'), code56);
+assert.deepStrictEqual(parseReturnCode('R56§1267197'), code56, 'tiret déformé par la douchette');
+assert.deepStrictEqual(parseReturnCode('  r56-1267197\n'), code56, 'casse et blancs du scan');
+assert.strictEqual(parseReturnCode('1267197'), null);
+assert.strictEqual(parseReturnCode('R2D2'), null, 'du texte reste du texte');
+assert.strictEqual(parseReturnCode('Retour n°56'), null);
+assert.strictEqual(parseReturnCode(''), null);
+assert.strictEqual(parseReturnCode(null), null);
 
 console.log('✓ returns.test.js');

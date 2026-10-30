@@ -34,6 +34,16 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+/**
+ * Code imprimé sur l'étiquette retour (`R56-1267197`, cf. createLabel), stocké
+ * nulle part. Séparateur libre : selon son réglage clavier, la douchette change
+ * le « - » (« § » sur Mac). Au moins 6 chiffres de commande : « R2D2 » reste du texte.
+ */
+const parseReturnCode = (term) => {
+  const match = /^R(\d+)\D(\d{6,})$/i.exec(String(term ?? '').trim());
+  return match ? { returnId: match[1], wpOrderId: match[2] } : null;
+};
+
 /** Prix payé TTC d'une pièce de la ligne (remises comprises). */
 const unitPaid = (line) => {
   const qty = Number(line.qty) || 0;
@@ -308,6 +318,7 @@ module.exports = {
   LOST_REASON,
   ORDER_TICKET_REASONS,
   OUTCOMES,
+  parseReturnCode,
   unitPaid,
   bundleParents,
   expandSelection,

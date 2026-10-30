@@ -31,7 +31,7 @@ const { WAREHOUSE_BY_ID } = require('../config/nextore');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const { createTicket } = require('./pickingPackingModel');
 const {
-  REASONS, LOST_REASON, ORDER_TICKET_REASONS, OUTCOMES, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
+  REASONS, LOST_REASON, ORDER_TICKET_REASONS, OUTCOMES, parseReturnCode, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   lotRemaining, checkLot, suggestLot,
   suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
@@ -401,16 +401,21 @@ const update = async (id, { reason, returnRequired, outcome, note, selection }, 
 const list = async ({ status, reason, q } = {}) => {
   const where = [];
   const params = [];
-  if (status) {
+  const term = String(q || '').trim();
+  // Étiquette scannée : un seul retour, quel que soit l'onglet affiché.
+  const code = parseReturnCode(term);
+  if (status && !code) {
     params.push(status);
     where.push(`r.status = $${params.length}`);
   }
-  if (reason) {
+  if (reason && !code) {
     params.push(reason);
     where.push(`r.reason = $${params.length}`);
   }
-  const term = String(q || '').trim();
-  if (term) {
+  if (code) {
+    params.push(code.returnId);
+    where.push(`r.id::text = $${params.length}`);
+  } else if (term) {
     params.push(`%${term}%`, term);
     const p = `$${params.length - 1}`;
     where.push(`(r.wp_order_id::text LIKE ${p} OR r.id::text = $${params.length}
