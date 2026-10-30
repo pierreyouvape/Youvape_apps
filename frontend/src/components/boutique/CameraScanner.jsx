@@ -1,9 +1,49 @@
 import { useEffect, useRef, useState } from 'react';
 
+const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
+
+// Gardé d'une ouverture à l'autre : le Comptage relance le scanner à chaque scan
+// (onDetect instable), et ZXing ne doit se charger qu'une fois.
+let zxingDetector = null;
+
+async function loadZxingDetector() {
+  const [{ BarcodeDetector, prepareZXingModule }, { default: wasmUrl }] = await Promise.all([
+    import('barcode-detector/ponyfill'),
+    import('zxing-wasm/reader/zxing_reader.wasm?url'),
+  ]);
+  await prepareZXingModule({
+    overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? wasmUrl : prefix + path) },
+    fireImmediately: true,
+  });
+  return new BarcodeDetector({ formats: FORMATS });
+}
+
 /**
- * Scanner code-barres via la caméra (API native BarcodeDetector, Android/Chrome).
+ * Android/Chrome : BarcodeDetector natif. iPhone : WebKit (imposé à tous les navigateurs
+ * iOS) n'a pas cette API → même API recréée par ZXing en WebAssembly, chargée seulement
+ * ici et servie par nous (pas de CDN).
+ */
+function createDetector() {
+  if ('BarcodeDetector' in window) {
+    try {
+      return new window.BarcodeDetector({ formats: FORMATS });
+    } catch {
+      return new window.BarcodeDetector();
+    }
+  }
+  if (!zxingDetector) {
+    zxingDetector = loadZxingDetector().catch((e) => {
+      zxingDetector = null; // échec réseau : la prochaine ouverture retente
+      throw e;
+    });
+  }
+  return zxingDetector;
+}
+
+/**
+ * Scanner code-barres via la caméra (BarcodeDetector natif, ou ZXing sur iPhone).
  * onDetect(code) est appelé à chaque code lu (cooldown anti double-scan).
- * Fallback propre si l'appareil ne supporte pas BarcodeDetector.
+ * Fallback propre si l'appareil n'a pas de caméra accessible.
  */
 export default function CameraScanner({ onDetect, onClose }) {
   const videoRef = useRef(null);
@@ -11,7 +51,7 @@ export default function CameraScanner({ onDetect, onClose }) {
   const rafRef = useRef(null);
   const lastRef = useRef({ code: null, at: 0 });
   const [error, setError] = useState(null);
-  const [supported] = useState(() => typeof window !== 'undefined' && 'BarcodeDetector' in window);
+  const [supported] = useState(() => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia);
   const [flash, setFlash] = useState(false);
 
   const beep = () => {
@@ -29,14 +69,16 @@ export default function CameraScanner({ onDetect, onClose }) {
   useEffect(() => {
     if (!supported) return undefined;
     let cancelled = false;
-    let detector;
-    try {
-      detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'] });
-    } catch {
-      detector = new window.BarcodeDetector();
-    }
 
     (async () => {
+      let detector;
+      try {
+        detector = await createDetector();
+      } catch {
+        if (!cancelled) setError('Lecteur de codes-barres indisponible.');
+        return;
+      }
+      if (cancelled) return;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
