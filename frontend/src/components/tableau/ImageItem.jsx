@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { copyImageToClipboard, apiError, TABLEAU_COLOR } from './tableauShared';
+import { copyImageToClipboard, apiError, TABLEAU_COLOR, snap } from './tableauShared';
 
 const MIN_SIZE = 40;
 
@@ -34,10 +34,12 @@ export default function ImageItem({ item, selected, onSelect, onLocalChange, onS
     const move = (ev) => {
       const dx = ev.clientX - start.px;
       const dy = ev.clientY - start.py;
+      const free = ev.altKey;
       if (kind === 'move') {
-        last = { x: Math.max(0, Math.round(start.x + dx)), y: Math.max(0, Math.round(start.y + dy)) };
+        last = { x: Math.max(0, snap(start.x + dx, free)), y: Math.max(0, snap(start.y + dy, free)) };
       } else {
-        const width = Math.max(MIN_SIZE, Math.round(start.w + dx));
+        // Proportions gardées : seule la largeur se cale sur la grille
+        const width = Math.max(MIN_SIZE, snap(start.w + dx, free));
         last = { width, height: Math.max(MIN_SIZE, Math.round(width / ratio)) };
       }
       onLocalChange(last);

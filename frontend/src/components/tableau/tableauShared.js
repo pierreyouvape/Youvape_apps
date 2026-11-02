@@ -16,6 +16,14 @@ export const NOTE_COLORS = {
 };
 export const noteColor = (key) => NOTE_COLORS[key] || NOTE_COLORS.jaune;
 
+/**
+ * Grille magnétique du tableau Épinglé : position et taille se calent sur ce pas
+ * pendant le geste, pour aligner les post-its sans viser au pixel. Le fond
+ * pointillé en dessine un point sur deux. Alt maintenu = placement libre.
+ */
+export const GRID = 10;
+export const snap = (v, free = false) => (free ? Math.round(v) : Math.round(v / GRID) * GRID);
+
 const post = (path, body) => axios.post(`${API_URL}/tableau${path}`, body).then((r) => r.data);
 
 const imageForm = (file, fields = {}) => {

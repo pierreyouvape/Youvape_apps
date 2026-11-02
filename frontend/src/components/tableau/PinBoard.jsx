@@ -7,6 +7,7 @@ import NoteReminderDialog from './NoteReminderDialog';
 import TableauModal from './TableauModal';
 import {
   tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR, previewText, imageFilesOf, copyImageToClipboard,
+  GRID, snap,
 } from './tableauShared';
 
 /** Taille d'affichage maximale d'une image collée (elle se redimensionne ensuite). */
@@ -96,7 +97,7 @@ export default function PinBoard() {
   };
 
   const addNote = async (color) => {
-    const offset = (notes.length % 6) * 28;
+    const offset = (notes.length % 6) * 3 * GRID;
     try {
       const note = await tableauApi.createNote({ color, x: 40 + offset, y: 40 + offset });
       setNotes((ns) => [...ns, note]);
@@ -117,15 +118,17 @@ export default function PinBoard() {
 
   // Image collée sur le tableau : posée là où est la souris (sinon en haut à gauche)
   const addImages = async (files) => {
-    let { x, y } = pointerRef.current || { x: 40 + (notes.length % 6) * 28, y: 40 + (notes.length % 6) * 28 };
+    const at = pointerRef.current || { x: 40 + (notes.length % 6) * 3 * GRID, y: 40 + (notes.length % 6) * 3 * GRID };
+    let x = snap(at.x);
+    let y = snap(at.y);
     for (const file of files) {
       try {
         const size = await displaySize(file);
         const item = await tableauApi.createImage(file, { x, y, ...size });
         setNotes((ns) => [...ns, item]);
         setSelectedId(item.id);
-        x += 24;
-        y += 24;
+        x += 2 * GRID;
+        y += 2 * GRID;
       } catch (e) {
         setError(apiError(e));
       }
@@ -217,6 +220,7 @@ export default function PinBoard() {
         ))}
         <span style={{ fontSize: 12.5, color: '#8A99A4' }}>
           Cmd+V sur le tableau pour y coller une image, ou dans un post-it pour l'ajouter à son texte.
+          Les post-its se calent sur la grille ; Alt maintenu pour les placer au pixel.
         </span>
         {error && <span style={{ fontSize: 13, color: '#B91C1C', fontWeight: 600 }}>{error}</span>}
       </div>
@@ -229,7 +233,9 @@ export default function PinBoard() {
           style={{
           position: 'relative', minWidth: '100%', width: boardWidth, height: boardHeight,
           backgroundColor: '#FBFAF7',
-          backgroundImage: 'radial-gradient(#E3DED3 1px, transparent 1px)', backgroundSize: '22px 22px',
+          // Un point tous les deux pas de grille, centré sur un nœud (coin 0,0 compris)
+          backgroundImage: 'radial-gradient(circle, #DDD7CA 1.2px, transparent 1.3px)',
+          backgroundSize: `${2 * GRID}px ${2 * GRID}px`, backgroundPosition: `-${GRID}px -${GRID}px`,
         }}>
           {!loading && notes.length === 0 && (
             <div style={{

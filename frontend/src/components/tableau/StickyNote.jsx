@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import NoteEditor from './NoteEditor';
-import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError, formatDue } from './tableauShared';
+import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError, formatDue, snap } from './tableauShared';
 
 const SAVE_DELAY_MS = 700;
 
 /**
  * Un post-it du tableau Épinglé.
  *
- * Déplacement par la barre du haut, taille par le coin bas-droit : la position
+ * Déplacement par la barre du haut, taille par le coin bas-droit, calés sur la
+ * grille du tableau (Alt maintenu = au pixel) : la position
  * bouge à l'écran pendant le geste (onLocalChange) et n'est enregistrée qu'au
  * lâcher (onSave), une seule requête par geste. Le texte (images comprises)
  * s'enregistre seul, 0,7 s après la dernière modification.
@@ -61,9 +62,10 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
     const move = (ev) => {
       const dx = ev.clientX - start.px;
       const dy = ev.clientY - start.py;
+      const free = ev.altKey;
       last = kind === 'move'
-        ? { x: Math.max(0, Math.round(start.x + dx)), y: Math.max(0, Math.round(start.y + dy)) }
-        : { width: Math.max(140, Math.round(start.w + dx)), height: Math.max(100, Math.round(start.h + dy)) };
+        ? { x: Math.max(0, snap(start.x + dx, free)), y: Math.max(0, snap(start.y + dy, free)) }
+        : { width: Math.max(140, snap(start.w + dx, free)), height: Math.max(100, snap(start.h + dy, free)) };
       onLocalChange(last);
     };
     const up = () => {
