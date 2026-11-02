@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { mollieCostFor } = require('../services/mollieCostService');
 
 /**
  * GET /api/payment/methods
@@ -258,6 +259,15 @@ const loadMappings = async () => {
  */
 exports.applyPaymentCostToOrder = async (wpOrderId, paymentMethodTitle, shippingCountry, orderTotal) => {
   try {
+    // Mollie d'abord : coût réparti depuis la facture, ou tarif recalé sur la dernière
+    // (services/mollieCostService). Sans ça, chaque resynchro d'une commande remettait
+    // le tarif unique par libellé par-dessus le coût réel.
+    const mollieCost = await mollieCostFor(wpOrderId, paymentMethodTitle, orderTotal);
+    if (mollieCost != null) {
+      await pool.query('UPDATE orders SET payment_cost_calculated = $1 WHERE wp_order_id = $2', [mollieCost, wpOrderId]);
+      return;
+    }
+
     const mappings = await loadMappings();
     const mapping = matchPaymentMethod(paymentMethodTitle, shippingCountry, mappings);
     if (!mapping) return;
@@ -312,6 +322,12 @@ exports.calculatePaymentCosts = async (req, res) => {
     const unmatchedMethods = {};
 
     for (const order of ordersResult.rows) {
+      const mollieCost = await mollieCostFor(order.wp_order_id, order.payment_method_title, order.order_total);
+      if (mollieCost != null) {
+        ordersMatched++;
+        totalCalculated += mollieCost;
+        continue;
+      }
       const mapping = matchPaymentMethod(order.payment_method_title, order.shipping_country, mappings);
 
       if (!mapping) {
@@ -378,17 +394,20 @@ exports.applyPaymentCosts = async (req, res) => {
     let skipped = 0;
 
     for (const order of ordersResult.rows) {
-      const mapping = matchPaymentMethod(order.payment_method_title, order.shipping_country, mappings);
+      let cost = await mollieCostFor(order.wp_order_id, order.payment_method_title, order.order_total);
+      if (cost == null) {
+        const mapping = matchPaymentMethod(order.payment_method_title, order.shipping_country, mappings);
 
-      if (!mapping) {
-        skipped++;
-        continue;
+        if (!mapping) {
+          skipped++;
+          continue;
+        }
+
+        const fixedFee = parseFloat(mapping.fixed_fee) || 0;
+        const percentFee = parseFloat(mapping.percent_fee) || 0;
+        const orderTotal = parseFloat(order.order_total) || 0;
+        cost = Math.round((fixedFee + (percentFee / 100) * orderTotal) * 100) / 100;
       }
-
-      const fixedFee = parseFloat(mapping.fixed_fee) || 0;
-      const percentFee = parseFloat(mapping.percent_fee) || 0;
-      const orderTotal = parseFloat(order.order_total) || 0;
-      const cost = Math.round((fixedFee + (percentFee / 100) * orderTotal) * 100) / 100;
 
       await pool.query(
         'UPDATE orders SET payment_cost_calculated = $1, updated_at = NOW() WHERE wp_order_id = $2',

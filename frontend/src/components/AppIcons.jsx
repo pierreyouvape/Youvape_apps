@@ -203,6 +203,16 @@ export const MondialRelay = ({ size = 56, color = '#fff' }) => (
   </svg>
 );
 
+export const Mollie = (props) => (
+  <Base {...props}>
+    {/* Carte bancaire + coche : facture de paiement contrôlée */}
+    <rect x="2.8" y="5.5" width="18.4" height="13" rx="2.2" />
+    <path d="M2.8 9.4 h18.4" />
+    <path d="M6 15 h4" />
+    <path d="M14.2 14.6 l1.8 1.8 l3 -3.4" />
+  </Base>
+);
+
 export const Transporteurs = (props) => (
   <Base {...props}>
     <path d="M3 5.5 h10 v9 h-10 z" />
@@ -501,6 +511,7 @@ export const APPS = [
   { key: 'colissimo',  path: '/colissimo',  label: 'Factures Colissimo',       Icon: Colissimo,    color: '#D96000' },
   { key: 'lettre-suivie', path: '/lettre-suivie', label: 'Factures Lettre Suivie', Icon: LettreSuivie, color: '#FFB000' },
   { key: 'mondial-relay', path: '/mondial-relay', label: 'Factures Mondial Relay', Icon: MondialRelay, color: '#9C2462' },
+  { key: 'mollie', path: '/mollie', label: 'Factures Mollie', Icon: Mollie, color: '#1E293B' },
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
   { key: 'seo', path: '/seo', label: 'Suivi SEO', Icon: Seo, color: '#7C3AED' },

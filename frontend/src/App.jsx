@@ -60,6 +60,7 @@ const ChronopostApp = page('chronopost', () => import('./pages/ChronopostApp'));
 const ColissimoApp = page('colissimo', () => import('./pages/ColissimoApp'));
 const LettreSuivieApp = page('lettre-suivie', () => import('./pages/LettreSuivieApp'));
 const MondialRelayApp = page('mondial-relay', () => import('./pages/MondialRelayApp'));
+const MollieApp = page('mollie', () => import('./pages/MollieApp'));
 const TransporteursApp = page('transporteurs', () => import('./pages/TransporteursApp'));
 const VeilleApp = page('veille', () => import('./pages/VeilleApp'));
 const SeoApp = page('seo', () => import('./pages/SeoApp'));
@@ -109,6 +110,7 @@ const PAGE_TITLES = {
   '/colissimo':  'Colissimo',
   '/lettre-suivie': 'Lettre Suivie',
   '/mondial-relay': 'Mondial Relay',
+  '/mollie': 'Factures Mollie',
   '/transporteurs': 'Transporteurs',
   '/veille': 'Veille concurrentielle',
   '/seo': 'Suivi SEO',
@@ -558,6 +560,14 @@ function App() {
             element={
               <PrivateRoute>
                 <MondialRelayApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/mollie"
+            element={
+              <PrivateRoute>
+                <MollieApp />
               </PrivateRoute>
             }
           />

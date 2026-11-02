@@ -29,6 +29,7 @@ const APP_KEYS = [
   'colissimo',
   'lettre-suivie',
   'mondial-relay',
+  'mollie',
   'transporteurs',
   'veille',
   'seo',

@@ -43,6 +43,7 @@ const chronopostRoutes = require('./routes/chronopostRoutes');
 const colissimoRoutes  = require('./routes/colissimoRoutes');
 const lettreSuivieRoutes = require('./routes/lettreSuivieRoutes');
 const mondialRelayRoutes = require('./routes/mondialRelayRoutes');
+const mollieRoutes = require('./routes/mollieRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
 const seoRoutes = require('./routes/seoRoutes');
@@ -122,6 +123,7 @@ app.use('/api/chronopost', authMiddleware, chronopostRoutes); // Chronopost invo
 app.use('/api/colissimo',  authMiddleware, colissimoRoutes);  // Colissimo invoice analysis
 app.use('/api/lettre-suivie', authMiddleware, lettreSuivieRoutes); // La Poste Lettre Suivie invoice analysis
 app.use('/api/mondial-relay', authMiddleware, mondialRelayRoutes); // Mondial Relay invoice analysis
+app.use('/api/mollie', authMiddleware, mollieRoutes); // Factures Mollie : contrôle contrat + coûts (droit `mollie`)
 app.use('/api/transporteurs', authMiddleware, transporteursRoutes); // Vue consolidée des 4 transporteurs
 app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurrentielle
 app.use('/api/seo', authMiddleware, seoRoutes); // Suivi SEO (Search Console, droit `seo` dans le routeur)
