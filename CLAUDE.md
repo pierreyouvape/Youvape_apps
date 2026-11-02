@@ -365,8 +365,11 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
 - Routes : `GET /api/plugin-logistique` et `POST …/settings`, **`checkAdmin`** sur les deux (ces
   réglages décident quels statuts changent sans mail). Pas sous `/api/picking` : `checkPermission`
   n'a pas de passe-droit admin, un admin sans le droit picking prendrait un 403.
-- **Seuls les réglages de l'expédition** sont modifiables (`EDITABLE_SETTINGS`). Les statuts se
-  choisissent dans ces réglages : hors statuts interdits en dur, aucun passage n'est refusé par le code.
+- **Statuts : quatre réglages** (0.3.0, 02/11) : « à expédier » (plusieurs), expédiée, retrait boutique,
+  livrée. Expédier : depuis « à expédier ». Livrer : depuis tout statut ni « à expédier » ni interdit.
+  Jamais de recul. L'app envoie une étape (`pickup`, `step`), plus de nom de statut.
+- **Un seul colis par commande.** Étiquette refaite = `order/ship` avec `replace: true` : suivi écrasé,
+  mail d'expédition renvoyé en rejouant la transition d'origine (Probance), lié au prestataire actuel.
 - **Plus aucune méta `bms_*` écrite**, uniquement `_yv_*`. `_yv_tracking_url` = lien complet construit
   par l'app. `carrier_label` garde les libellés d'aujourd'hui : `detectCarrier()` et nos stats les lisent.
 - `notify_customer` est obligatoire sur `order/ship` et `order/status`.

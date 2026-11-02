@@ -27,8 +27,7 @@ const CONNECTION_KEY = 'logistique_connection';
 
 // Les réglages que l'app a le droit de modifier : ceux de l'expédition.
 const EDITABLE_SETTINGS = [
-  'ship_target_statuses', 'ship_from_statuses', 'ship_keep_statuses',
-  'status_target_statuses', 'status_from_statuses',
+  'ship_from_statuses', 'ship_status', 'pickup_status', 'delivered_status',
   'meta_keys',
   'batch_max', 'time_budget',
 ];

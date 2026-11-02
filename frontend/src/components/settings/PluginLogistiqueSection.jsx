@@ -16,42 +16,25 @@ import { API_URL, authHeaders, C } from '../picking/pickingUi';
  */
 
 // Explications tirées de youvape-logistique/AVANT-DE-MODIFIER.md §7.
-const STATUS_LISTS = [
+const STATUS_INTRO = 'Une commande ne recule jamais : « à expédier » → expédiée ou retrait boutique → livrée. '
+  + 'Chaque changement dit si le client est prévenu ; sans mail, le plugin bloque aussi Probance et '
+  + 'Guaranteed Reviews, les prestataires actuels du site.';
+
+const SINGLE_STATUSES = [
   {
-    group: 'Expédition d\'un colis',
-    items: [
-      {
-        key: 'ship_target_statuses',
-        title: 'Statuts demandables',
-        help: 'Statuts que l\'app peut demander au moment d\'expédier un colis (« Colis expédié », « Retrait boutique »…).',
-      },
-      {
-        key: 'ship_from_statuses',
-        title: 'Commandes qui changent de statut',
-        help: 'Une commande dans un de ces statuts passe au statut demandé quand son colis est expédié.',
-      },
-      {
-        key: 'ship_keep_statuses',
-        title: 'Commandes déjà expédiées',
-        help: 'Le colis est ajouté à la commande (2ᵉ colis, article oublié) mais son statut ne bouge pas. Aucun statut en commun avec la liste précédente.',
-      },
-    ],
+    key: 'ship_status',
+    title: 'Statut une fois l\'expédition confirmée',
+    help: 'Posé quand le colis part. Le mail « Colis expédié » part sur ce passage.',
   },
   {
-    group: 'Changement de statut',
-    intro: 'Statuts posés par l\'app sur une commande (livraison, nettoyage des commandes figées). Chaque changement dit si le client est prévenu : sans mail, le plugin bloque aussi Probance et Guaranteed Reviews, les prestataires actuels du site.',
-    items: [
-      {
-        key: 'status_target_statuses',
-        title: 'Statuts demandables',
-        help: 'Statuts que l\'app peut poser sur une commande.',
-      },
-      {
-        key: 'status_from_statuses',
-        title: 'Statuts de départ acceptés',
-        help: 'Le changement n\'est accepté que pour une commande dans un de ces statuts.',
-      },
-    ],
+    key: 'pickup_status',
+    title: 'Statut pour un retrait boutique',
+    help: 'Posé à la place du précédent quand la commande est retirée sur place.',
+  },
+  {
+    key: 'delivered_status',
+    title: 'Statut à la livraison',
+    help: 'Posé quand le transporteur confirme la livraison, ou à la remise d\'un retrait. Accepté depuis tout statut qui n\'est pas « à expédier ».',
   },
 ];
 
@@ -61,17 +44,7 @@ const META_LABELS = {
   tracking_number: 'N° de suivi',
   tracking_url: 'URL de suivi',
   shipped_at: 'Date d\'expédition',
-  shipments: 'Liste de tous les colis (JSON)',
 };
-
-const FORBIDDEN_REASON = {
-  cancelled: 'WooCommerce remet le stock d\'une commande annulée : ce passage ne doit jamais se faire en silence.',
-  refunded: 'WooCommerce peut remettre le stock d\'une commande remboursée : ce passage ne doit jamais se faire en silence.',
-  pending: 'Commande non payée.',
-  failed: 'Commande non payée.',
-  'checkout-draft': 'Panier abandonné, pas une commande.',
-};
-const forbiddenReason = (slug) => `Interdit par le plugin. ${FORBIDDEN_REASON[slug] || 'Ce n\'est pas une vraie commande.'}`;
 
 const META_NAME = /^[A-Za-z0-9_-]{1,191}$/;
 const NUMBERS = {
@@ -98,8 +71,14 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 /** Erreurs visibles avant d'envoyer (le plugin revérifie tout). */
 const validate = (draft) => {
   const errors = {};
-  const overlap = (draft.ship_from_statuses || []).filter(s => (draft.ship_keep_statuses || []).includes(s));
-  if (overlap.length) errors.overlap = overlap;
+  const toShip = draft.ship_from_statuses || [];
+  if (!toShip.length) errors.ship_from_statuses = 'Au moins un statut « à expédier ».';
+  for (const { key } of SINGLE_STATUSES) {
+    if (toShip.includes(draft[key])) errors[key] = 'C\'est aussi un statut « à expédier » : la commande tournerait en rond.';
+  }
+  if (!errors.delivered_status && [draft.ship_status, draft.pickup_status].includes(draft.delivered_status)) {
+    errors.delivered_status = 'La livraison doit avoir son propre statut.';
+  }
   for (const [sub, name] of Object.entries(draft.meta_keys || {})) {
     if (!META_NAME.test(name)) errors[`meta_keys.${sub}`] = 'Lettres, chiffres, _ et - seulement (191 caractères au plus).';
   }
@@ -177,42 +156,48 @@ const Setting = ({ title, help, warning, changed, isDefault, onReset, children }
   </div>
 );
 
-/** Choix multiple parmi les statuts du site ; les statuts interdits sont visibles mais grisés. */
-const StatusPicker = ({ value, onChange, registered, forbidden, conflicts }) => {
-  const options = Object.entries(registered).map(([slug, label]) => ({ slug: stripWc(slug), label }));
-  // Un statut retenu mais inconnu du site reste affiché : il serait refusé à l'usage.
+/** Statuts proposés : ceux du site, sans les interdits. */
+const statusOptions = (registered, forbidden) => Object.entries(registered)
+  .map(([slug, label]) => ({ slug: stripWc(slug), label }))
+  .filter(o => !forbidden.includes(o.slug));
+
+const UNKNOWN_HINT = 'Ce statut n\'est pas enregistré sur le site : il sera refusé tant qu\'il ne l\'est pas.';
+
+/** Choix multiple. Un statut retenu mais inconnu du site reste affiché : il serait refusé à l'usage. */
+const StatusPicker = ({ value, onChange, options }) => {
   const unknown = value.filter(s => !options.some(o => o.slug === s));
   const toggle = (slug) => onChange(value.includes(slug) ? value.filter(s => s !== slug) : [...value, slug]);
-
-  const chip = (slug, label, { isForbidden = false, isUnknown = false } = {}) => {
+  const chip = (slug, label, isUnknown = false) => {
     const on = value.includes(slug);
-    const conflict = on && conflicts.includes(slug);
-    const locked = isForbidden && !on;
     return (
-      <label
-        key={slug}
-        title={isForbidden ? forbiddenReason(slug) : isUnknown ? 'Ce statut n\'est pas enregistré sur le site : il sera refusé tant qu\'il ne l\'est pas.' : undefined}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 8, fontSize: 13,
-          border: `1px solid ${conflict ? C.red : on ? C.violet : C.greyB}`,
-          background: conflict ? C.redL : on ? C.violetL : isForbidden ? C.grey : C.white,
-          color: isForbidden ? C.greyM : C.dark,
-          cursor: locked ? 'default' : 'pointer',
-        }}
-      >
-        <input type="checkbox" checked={on} disabled={locked} onChange={() => toggle(slug)} />
+      <label key={slug} title={isUnknown ? UNKNOWN_HINT : undefined} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 10px', borderRadius: 8, fontSize: 13,
+        border: `1px solid ${on ? C.violet : C.greyB}`, background: on ? C.violetL : C.white, color: C.dark, cursor: 'pointer',
+      }}>
+        <input type="checkbox" checked={on} onChange={() => toggle(slug)} />
         <span>{label}</span>
-        <span style={{ fontFamily: 'monospace', fontSize: 11.5, color: C.greyM }}>{slug}</span>
-        {isForbidden && <span style={{ fontSize: 11, fontWeight: 700 }}>interdit</span>}
         {isUnknown && <span style={{ fontSize: 11, fontWeight: 700, color: C.amber }}>non enregistré sur le site</span>}
       </label>
     );
   };
-
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {options.map(o => chip(o.slug, o.label, { isForbidden: forbidden.includes(o.slug) }))}
-      {unknown.map(s => chip(s, s, { isUnknown: true, isForbidden: forbidden.includes(s) }))}
+      {options.map(o => chip(o.slug, o.label))}
+      {unknown.map(s => chip(s, s, true))}
+    </div>
+  );
+};
+
+/** Un seul statut. */
+const StatusSelect = ({ value, onChange, options, error }) => {
+  const known = options.some(o => o.slug === value);
+  return (
+    <div>
+      <select value={value} onChange={e => onChange(e.target.value)} style={{ ...input, minWidth: 260, borderColor: error ? C.red : C.greyB }}>
+        {!known && <option value={value}>{value} (non enregistré sur le site)</option>}
+        {options.map(o => <option key={o.slug} value={o.slug}>{o.label}</option>)}
+      </select>
+      {error && <div style={{ marginTop: 4, fontSize: 12, color: C.red }}>{error}</div>}
     </div>
   );
 };
@@ -378,6 +363,10 @@ export default function PluginLogistiqueSection({ token }) {
   };
 
   const status = data?.status;
+  const options = useMemo(
+    () => (data?.installed ? statusOptions(data.registered_statuses, data.forbidden_statuses) : []),
+    [data],
+  );
 
   return (
     <section style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 20 }}>
@@ -447,32 +436,20 @@ export default function PluginLogistiqueSection({ token }) {
 
       {data?.installed && draft && (
         <>
-          {STATUS_LISTS.map(g => (
-            <div key={g.group} style={{ marginBottom: 10 }}>
-              <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>{g.group}</h3>
-              {g.intro && <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>{g.intro}</div>}
-              {g.items.map(item => {
-                const isShipPair = item.key === 'ship_from_statuses' || item.key === 'ship_keep_statuses';
-                const conflicts = isShipPair ? errors.overlap || [] : [];
-                return (
-                  <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
-                    <StatusPicker
-                      value={draft[item.key]}
-                      onChange={v => set(item.key, v)}
-                      registered={data.registered_statuses}
-                      forbidden={data.forbidden_statuses}
-                      conflicts={conflicts}
-                    />
-                    {conflicts.length > 0 && (
-                      <div style={{ marginTop: 8, fontSize: 12.5, color: C.red }}>
-                        En commun avec « {item.key === 'ship_from_statuses' ? 'Commandes déjà expédiées' : 'Commandes qui changent de statut'} » :{' '}
-                        <strong>{conflicts.join(', ')}</strong>. Une commande ne peut pas à la fois changer de statut et le garder.
-                      </div>
-                    )}
-                  </Setting>
-                );
-              })}
-            </div>
+          <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Statuts des commandes</h3>
+          <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>{STATUS_INTRO}</div>
+          <Setting
+            title="Statuts considérés « à expédier »"
+            help="Une commande dans un de ces statuts peut être expédiée."
+            {...props('ship_from_statuses')}
+          >
+            <StatusPicker value={draft.ship_from_statuses} onChange={v => set('ship_from_statuses', v)} options={options} />
+            {errors.ship_from_statuses && <div style={{ marginTop: 6, fontSize: 12, color: C.red }}>{errors.ship_from_statuses}</div>}
+          </Setting>
+          {SINGLE_STATUSES.map(item => (
+            <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
+              <StatusSelect value={draft[item.key]} onChange={v => set(item.key, v)} options={options} error={errors[item.key]} />
+            </Setting>
           ))}
 
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Suivi écrit sur la commande</h3>
