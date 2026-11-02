@@ -8,7 +8,7 @@
  */
 
 const assert = require('assert');
-const { mergeConnection } = require('../src/services/logistiqueService');
+const { mergeConnection, cleanToShipStatuses } = require('../src/services/logistiqueService');
 
 let failures = 0;
 function test(name, fn) {
@@ -82,6 +82,17 @@ test('adresses refusées : http, identifiants, paramètres, texte', () => {
 test('clé et secret inversés : refusé', () => {
   const { errors } = mergeConnection(null, { url: 'https://www.exemple.fr', consumer_key: 'cs_a', consumer_secret: 'ck_a' });
   assert.strictEqual(errors.length, 2);
+});
+
+test('statuts à expédier : préfixe retiré, doublons ignorés', () => {
+  assert.deepStrictEqual(cleanToShipStatuses(['wc-processing', 'processing', 'On-Hold']).statuses, ['processing', 'on-hold']);
+});
+
+test('statuts à expédier : jamais un statut interdit, jamais vide', () => {
+  assert.ok(cleanToShipStatuses(['processing', 'cancelled']).errors);
+  assert.ok(cleanToShipStatuses(['pending']).errors);
+  assert.ok(cleanToShipStatuses([]).errors);
+  assert.ok(cleanToShipStatuses('processing').errors);
 });
 
 console.log(failures ? `\nlogistiqueConnection : ${failures} échec(s)` : '\nlogistiqueConnection : tout est bon');

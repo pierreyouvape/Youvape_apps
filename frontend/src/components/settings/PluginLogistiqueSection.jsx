@@ -16,9 +16,23 @@ import { API_URL, authHeaders, C } from '../picking/pickingUi';
  */
 
 // Explications tirées de youvape-logistique/AVANT-DE-MODIFIER.md §7.
-const STATUS_INTRO = 'Une commande ne recule jamais : « à expédier » → expédiée ou retrait boutique → livrée. '
+const STATUS_INTRO = 'Dans les deux sens : les commandes qui arrivent (« à expédier », décision de l\'app) et les '
+  + 'statuts que le plugin pose sur le site. Une commande ne recule jamais : expédiée ou retrait boutique, puis livrée. '
   + 'Chaque changement dit si le client est prévenu ; sans mail, le plugin bloque aussi Probance et '
   + 'Guaranteed Reviews, les prestataires actuels du site.';
+
+// Libellés du site, quand le plugin ne répond pas encore (prod avant la bascule).
+const FALLBACK_LABELS = {
+  processing: 'En cours',
+  'on-hold': 'En attente',
+  completed: 'Colis expédié',
+  delivered: 'Livrée',
+  'awaiting-delivery': 'Retrait boutique',
+  'being-delivered': 'Préparation en cours',
+  shipped: 'Expédiée',
+  'return-approved': 'Retour approuvé (ancien plugin)',
+  'return-cancelled': 'Retour annulé (ancien plugin)',
+};
 
 const SINGLE_STATUSES = [
   {
@@ -34,7 +48,7 @@ const SINGLE_STATUSES = [
   {
     key: 'delivered_status',
     title: 'Statut à la livraison',
-    help: 'Posé quand le transporteur confirme la livraison, ou à la remise d\'un retrait. Accepté depuis tout statut qui n\'est pas « à expédier ».',
+    help: 'Posé quand le transporteur confirme la livraison, ou à la remise d\'un retrait. Une commande livrée ne revient jamais en arrière.',
   },
 ];
 
@@ -69,10 +83,8 @@ const same = (a, b) => {
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
 /** Erreurs visibles avant d'envoyer (le plugin revérifie tout). */
-const validate = (draft) => {
+const validate = (draft, toShip) => {
   const errors = {};
-  const toShip = draft.ship_from_statuses || [];
-  if (!toShip.length) errors.ship_from_statuses = 'Au moins un statut « à expédier ».';
   for (const { key } of SINGLE_STATUSES) {
     if (toShip.includes(draft[key])) errors[key] = 'C\'est aussi un statut « à expédier » : la commande tournerait en rond.';
   }
@@ -202,6 +214,71 @@ const StatusSelect = ({ value, onChange, options, error }) => {
   );
 };
 
+/**
+ * Statuts « à expédier » : réglage de l'APP (enregistré chez nous, pas sur le
+ * site), avec son propre bouton. Il s'affiche même sans plugin ni connexion.
+ */
+const ToShipSetting = ({ token, app, siteOptions, pluginStatuses, onSaved }) => {
+  const [value, setValue] = useState(app.to_ship_statuses);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { setValue(app.to_ship_statuses); }, [app]);
+
+  const options = siteOptions.length
+    ? siteOptions
+    : app.known_statuses.map(slug => ({ slug, label: FALLBACK_LABELS[slug] || slug }));
+  const changed = !same(value, app.to_ship_statuses);
+  const loop = value.filter(st => pluginStatuses.includes(st));
+  const error = !value.length
+    ? 'Au moins un statut « à expédier ».'
+    : loop.length ? `${loop.join(', ')} : c'est aussi un statut posé par le plugin, la commande tournerait en rond.` : null;
+
+  const edit = (v) => { setValue(v); setFailure(null); setSaved(false); };
+  const save = async () => {
+    setSaving(true);
+    setFailure(null);
+    try {
+      const { data: r } = await axios.put(`${API_URL}/plugin-logistique/to-ship-statuses`, { statuses: value }, authHeaders(token));
+      onSaved(r.to_ship_statuses);
+      setSaved(true);
+    } catch (err) {
+      const body = err.response?.data;
+      setFailure({ text: body?.error || err.message, errors: body?.errors || [] });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Setting
+      title="Statuts considérés « à expédier »"
+      help="Décision de l'app, enregistrée chez nous : une commande importée dans un de ces statuts part en préparation. Ne pilote rien tant que la liste du Picking vient de BMS."
+      changed={changed}
+      isDefault={same(value, app.to_ship_default)}
+      onReset={() => edit(app.to_ship_default)}
+    >
+      <StatusPicker value={value} onChange={edit} options={options} />
+      {error && <div style={{ marginTop: 6, fontSize: 12, color: C.red }}>{error}</div>}
+      {failure && (
+        <div style={{ marginTop: 8 }}>
+          <Box kind="error">
+            <strong>{failure.text}</strong>
+            {failure.errors.length > 0 && <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>{failure.errors.map(e => <li key={e}>{e}</li>)}</ul>}
+          </Box>
+        </div>
+      )}
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button onClick={save} disabled={!changed || !!error || saving} style={btn(true, !changed || !!error || saving)}>
+          {saving ? 'Enregistrement…' : 'Enregistrer les statuts à expédier'}
+        </button>
+        {saved && !changed && <span style={{ fontSize: 12.5, color: C.green }}>Enregistré.</span>}
+      </div>
+    </Setting>
+  );
+};
+
 const MetaFields = ({ value, onChange, errors }) => (
   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 10 }}>
     {Object.entries(META_LABELS).map(([sub, label]) => {
@@ -321,7 +398,7 @@ export default function PluginLogistiqueSection({ token }) {
     if (!data?.installed || !draft) return [];
     return Object.keys(draft).filter(k => k in data.settings && !same(draft[k], data.settings[k]));
   }, [data, draft]);
-  const errors = useMemo(() => (draft ? validate(draft) : {}), [draft]);
+  const errors = useMemo(() => (draft ? validate(draft, data?.app?.to_ship_statuses || []) : {}), [draft, data]);
   const hasErrors = Object.keys(errors).length > 0;
 
   // Quitter la page avec des modifications non enregistrées : le navigateur demande confirmation.
@@ -379,7 +456,7 @@ export default function PluginLogistiqueSection({ token }) {
       </div>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: C.greyT }}>
         Ce qui remplacera les écritures de BMS dans WooCommerce : statut d&apos;expédition et suivi des colis.
-        Les réglages sont enregistrés sur le site, pas dans l&apos;app.
+        Les réglages du plugin sont enregistrés sur le site ; la connexion et les statuts « à expédier », dans l&apos;app.
       </p>
 
       {loadError && <Box kind="error">Impossible de lire le plugin : {loadError}</Box>}
@@ -434,18 +511,27 @@ export default function PluginLogistiqueSection({ token }) {
         </div>
       )}
 
-      {data?.installed && draft && (
+      {data && (
         <>
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Statuts des commandes</h3>
           <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>{STATUS_INTRO}</div>
-          <Setting
-            title="Statuts considérés « à expédier »"
-            help="Une commande dans un de ces statuts peut être expédiée."
-            {...props('ship_from_statuses')}
-          >
-            <StatusPicker value={draft.ship_from_statuses} onChange={v => set('ship_from_statuses', v)} options={options} />
-            {errors.ship_from_statuses && <div style={{ marginTop: 6, fontSize: 12, color: C.red }}>{errors.ship_from_statuses}</div>}
-          </Setting>
+          <ToShipSetting
+            token={token}
+            app={data.app}
+            siteOptions={options}
+            pluginStatuses={draft ? SINGLE_STATUSES.map(({ key }) => draft[key]) : []}
+            onSaved={(statuses) => setData(d => ({ ...d, app: { ...d.app, to_ship_statuses: statuses } }))}
+          />
+          {!draft && (
+            <div style={{ fontSize: 12.5, color: C.greyT, padding: '6px 0 10px' }}>
+              Les statuts posés par le plugin (expédiée, retrait boutique, livrée) s&apos;afficheront quand il répondra.
+            </div>
+          )}
+        </>
+      )}
+
+      {data?.installed && draft && (
+        <>
           {SINGLE_STATUSES.map(item => (
             <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
               <StatusSelect value={draft[item.key]} onChange={v => set(item.key, v)} options={options} error={errors[item.key]} />
@@ -455,7 +541,7 @@ export default function PluginLogistiqueSection({ token }) {
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Suivi écrit sur la commande</h3>
           <Setting
             title="Métas de suivi"
-            help="Écrites sur la commande à chaque colis : le dernier colis fait foi, la liste garde tous les colis. L'URL est le lien complet, construit par l'app. Noms pas encore validés par l'agence."
+            help="Écrites sur la commande à l'expédition. Un seul colis par commande : une étiquette refaite les remplace. L'URL est le lien complet, construit par l'app. Noms pas encore validés par l'agence."
             warning="yousync et le rattrapage des commandes lisent le libellé transporteur et le n° de suivi sous leurs noms actuels, écrits en dur : les renommer viderait le transporteur et le suivi dans l'app."
             {...props('meta_keys')}
           >

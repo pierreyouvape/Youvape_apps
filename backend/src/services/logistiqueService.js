@@ -25,9 +25,20 @@ const PLUGIN_NAMESPACE = 'wc-youvape-logistique/v1';
 // Jamais dans EXPOSED_SETTINGS : cette entrée porte des secrets.
 const CONNECTION_KEY = 'logistique_connection';
 
+/*
+ * Statuts « à expédier » : une décision de l'APP, pas du plugin. Les commandes
+ * arrivent par yousync, et c'est nous qui décidons lesquelles partent. Réglé
+ * dans le même onglet que les statuts posés par le plugin, mais gardé ici.
+ * Ne pilote rien tant que la liste du Picking vient de BMS.
+ */
+const TO_SHIP_KEY = 'wc_to_ship_statuses';
+const DEFAULT_TO_SHIP = ['processing'];
+// Mêmes statuts interdits que le plugin : jamais une commande non payée ou annulée.
+const FORBIDDEN_STATUSES = ['refunded', 'cancelled', 'failed', 'pending', 'checkout-draft', 'trash', 'draft', 'auto-draft'];
+
 // Les réglages que l'app a le droit de modifier : ceux de l'expédition.
 const EDITABLE_SETTINGS = [
-  'ship_from_statuses', 'ship_status', 'pickup_status', 'delivered_status',
+  'ship_status', 'pickup_status', 'delivered_status',
   'meta_keys',
   'batch_max', 'time_budget',
 ];
@@ -101,6 +112,41 @@ const mergeConnection = (current, input) => {
 };
 
 const getConnection = async () => publicConnection(await readConnection());
+
+/** Statuts « à expédier » saisis : sans « wc- », sans doublon, jamais un statut interdit. */
+const cleanToShipStatuses = (input) => {
+  if (!Array.isArray(input) || input.length === 0 || input.length > 20) {
+    return { errors: ['Choisir entre 1 et 20 statuts « à expédier ».'] };
+  }
+  const errors = [];
+  const statuses = [];
+  for (const raw of input) {
+    const slug = String(raw ?? '').trim().toLowerCase().replace(/^wc-/, '');
+    if (!/^[a-z0-9_-]{1,40}$/.test(slug)) errors.push(`Statut invalide : « ${raw} ».`);
+    else if (FORBIDDEN_STATUSES.includes(slug)) errors.push(`Le statut « ${slug} » ne peut pas être « à expédier ».`);
+    else if (!statuses.includes(slug)) statuses.push(slug);
+  }
+  return errors.length ? { errors } : { statuses };
+};
+
+const getToShipStatuses = async () => {
+  const row = await appConfigModel.get(TO_SHIP_KEY);
+  if (!row) return DEFAULT_TO_SHIP;
+  try {
+    const cleaned = cleanToShipStatuses(JSON.parse(row.config_value));
+    return cleaned.statuses || DEFAULT_TO_SHIP;
+  } catch {
+    return DEFAULT_TO_SHIP;
+  }
+};
+
+/** @returns {{ errors: string[] } | { statuses: string[] }} */
+const saveToShipStatuses = async (input) => {
+  const cleaned = cleanToShipStatuses(input);
+  if (cleaned.errors) return cleaned;
+  await appConfigModel.upsert(TO_SHIP_KEY, JSON.stringify(cleaned.statuses));
+  return cleaned;
+};
 
 /** @returns {{ errors: string[] } | { connection: object }} la vue publique, sans secret */
 const saveConnection = async (input) => {
@@ -225,5 +271,6 @@ const updateSettings = async (patch) => {
 
 module.exports = {
   getStatus, getSettings, updateSettings, getConnection, saveConnection, mergeConnection,
-  EDITABLE_SETTINGS, PLUGIN_NAMESPACE,
+  getToShipStatuses, saveToShipStatuses, cleanToShipStatuses,
+  EDITABLE_SETTINGS, PLUGIN_NAMESPACE, DEFAULT_TO_SHIP, FORBIDDEN_STATUSES,
 };

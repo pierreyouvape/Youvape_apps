@@ -365,9 +365,11 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
 - Routes : `GET /api/plugin-logistique` et `POST …/settings`, **`checkAdmin`** sur les deux (ces
   réglages décident quels statuts changent sans mail). Pas sous `/api/picking` : `checkPermission`
   n'a pas de passe-droit admin, un admin sans le droit picking prendrait un 403.
-- **Statuts : quatre réglages** (0.3.0, 02/11) : « à expédier » (plusieurs), expédiée, retrait boutique,
-  livrée. Expédier : depuis « à expédier ». Livrer : depuis tout statut ni « à expédier » ni interdit.
-  Jamais de recul. L'app envoie une étape (`pickup`, `step`), plus de nom de statut.
+- **Statuts, dans les deux sens, au même endroit de l'écran** (0.4.0, 02/11) : « à expédier » est une
+  décision de l'APP (`app_config.wc_to_ship_statuses`, route `PUT …/to-ship-statuses`), pas du plugin ;
+  le plugin ne pose que trois statuts (expédiée, retrait boutique, livrée) et ne refuse que les reculs
+  et les interdits. L'app envoie une étape (`pickup`, `step`), plus de nom de statut. « À expédier »
+  ne pilote rien tant que la liste du Picking vient de BMS.
 - **Un seul colis par commande.** Étiquette refaite = `order/ship` avec `replace: true` : suivi écrasé,
   mail d'expédition renvoyé en rejouant la transition d'origine (Probance), lié au prestataire actuel.
 - **Plus aucune méta `bms_*` écrite**, uniquement `_yv_*`. `_yv_tracking_url` = lien complet construit

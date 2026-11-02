@@ -1,4 +1,5 @@
 const logistiqueService = require('../services/logistiqueService');
+const pool = require('../config/database');
 
 /**
  * Paramètres généraux, onglet WooCommerce : réglages du plugin youvape-logistique.
@@ -21,16 +22,40 @@ const handle = (fn) => async (req, res) => {
  * rester utilisable, c'est lui qui permet de corriger la connexion.
  */
 const getPluginLogistique = handle(async (req, res) => {
-  const conn = await logistiqueService.getConnection();
-  if (!conn.configured) return res.json({ connection: conn, installed: false });
+  const [conn, toShip, knownStatuses] = await Promise.all([
+    logistiqueService.getConnection(),
+    logistiqueService.getToShipStatuses(),
+    knownOrderStatuses(),
+  ]);
+  // Le réglage « à expédier » est à nous : il s'affiche même sans plugin ni connexion.
+  const app = {
+    to_ship_statuses: toShip,
+    to_ship_default: logistiqueService.DEFAULT_TO_SHIP,
+    known_statuses: knownStatuses,
+  };
+  if (!conn.configured) return res.json({ connection: conn, app, installed: false });
   try {
     const [status, settings] = await Promise.all([logistiqueService.getStatus(), logistiqueService.getSettings()]);
-    if (!status.installed || !settings.installed) return res.json({ connection: conn, installed: false });
-    res.json({ connection: conn, ...settings, status: status.status });
+    if (!status.installed || !settings.installed) return res.json({ connection: conn, app, installed: false });
+    res.json({ connection: conn, app, ...settings, status: status.status });
   } catch (error) {
     if (!error.statusCode) throw error;
-    res.json({ connection: conn, installed: false, site_error: error.message });
+    res.json({ connection: conn, app, installed: false, site_error: error.message });
   }
+});
+
+/** Statuts vus dans nos commandes, sans « wc- » ni statuts interdits : choix proposés sans le plugin. */
+const knownOrderStatuses = async () => {
+  const { rows } = await pool.query("SELECT DISTINCT regexp_replace(post_status, '^wc-', '') AS slug FROM orders WHERE post_status LIKE 'wc-%' ORDER BY 1");
+  return rows.map(r => r.slug).filter(s => !logistiqueService.FORBIDDEN_STATUSES.includes(s));
+};
+
+/** Statuts « à expédier » : réglage de l'app, enregistré chez nous. */
+const saveToShipStatuses = handle(async (req, res) => {
+  const result = await logistiqueService.saveToShipStatuses(req.body?.statuses);
+  if (result.errors) return res.status(400).json({ error: 'Statuts refusés, rien n\'a été enregistré.', errors: result.errors });
+  console.log(`[Plugin logistique] Statuts à expédier modifiés par ${req.user.email} : ${result.statuses.join(', ')}`);
+  res.json({ to_ship_statuses: result.statuses });
 });
 
 /** Le site visé par le plugin : champ secret vide = valeur gardée, tant que l'adresse ne change pas. */
@@ -63,4 +88,4 @@ const updatePluginLogistiqueSettings = handle(async (req, res) => {
   res.json({ settings: result.settings, warnings: result.warnings });
 });
 
-module.exports = { getPluginLogistique, savePluginLogistiqueConnection, updatePluginLogistiqueSettings };
+module.exports = { getPluginLogistique, savePluginLogistiqueConnection, saveToShipStatuses, updatePluginLogistiqueSettings };
