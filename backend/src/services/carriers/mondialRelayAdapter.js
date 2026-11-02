@@ -527,12 +527,14 @@ const labelFileName = (orderNumber) => `mondialrelay_${orderNumber}.pdf`;
 
 // Champs du contrat. Les libellés reprennent ceux de l'écran « Paramétrage des
 // API » de Mondial Relay (API 2 / Connect), pour qu'un responsable recopie sans
-// avoir à interpréter.
+// avoir à interpréter. La clé privée vient de l'API 1 (WSI2, WebService.asmx) :
+// l'API Connect ne sait pas suivre un colis, seul `WSI2_TracingColisDetaille` le fait.
 const ACCOUNT_FIELDS = {
   credentials: [
     { key: 'login',       label: 'Connexion API', required: true, placeholder: 'LGYOUVAP@business-api.mondialrelay.com' },
     { key: 'password',    label: "Mot de passe API", required: true, secret: true },
-    { key: 'customer_id', label: "Code enseigne", required: true, placeholder: 'LGYOUVAP' }
+    { key: 'customer_id', label: "Code enseigne", required: true, placeholder: 'LGYOUVAP' },
+    { key: 'wsi2_private_key', label: 'Clé privée (API 1, suivi des colis)', secret: true }
   ],
   settings: [
     { key: 'api_url',       label: "URL de l'API", required: true, perContract: true, placeholder: 'https://connect-api.mondialrelay.com/api/shipment' },
