@@ -1,0 +1,83 @@
+Facture
+Description 	Quantité 	Total
+3DS Authenticatie Verzoek kosten 	2 961 	118,44 EUR
+Acceptatie & Risico Fee 	2 971 	118,84 EUR
+Alma Belgique payez en 3 fois 	37 	187,00 EUR
+Alma France payez en 3 fois 	47 	154,16 EUR
+Alma France payez en 4 fois 	44 	194,64 EUR
+Chargebacks 	1 	25,00 EUR
+Paiements Bancontact 	757 	855,03 EUR
+Paiements par carte de crédit 	2 747 	1 314,17 EUR
+Paiements par virement bancaire 	7 	1,40 EUR
+Paiements Pay by Bank 	3 	3,46 EUR
+Remboursements 	15 	3,75 EUR
+Total hors TVA 	2 975,89 EUR
+Total TVA comprise 	2 975,89 EUR
+Montant préréglé EUR -2 994,01 	-2 994,01 EUR
+Montant versé au solde (Indemnité de Facture) 	18,12 EUR
+Montant dû 	0,00 EUR
+Nous vous remercions pour votre paiement. Cette facture a été réglée dans son intégralité et aucun autre paiement n'est requis
+TVA assujetti à l'acquéreur; article 44 et 196 de la Directive 2006/112. de l'UE sur la TVA.
+Les détails peuvent être trouvés sur les pages suivantes.
+Mollie B.V.
+Keizersgracht 126
+1015 CW Amsterdam
+Pays-Bas
+À l'attention de EMC
+maxime coglitore
+8 Bd Victor Hugo
+34000 MONTPELLIER
+France
+Date de facture 	30-06-2025
+Période de facturation 01-06-2025 pour 30-06-2025
+Référence de facture MOL-NL-R2025.0000761409
+ID de l'organisation 19229250
+Votre numéro de TVA Afin de vous conformer à la
+réglementation européenne, veuillez
+ajouter votre numéro de TVA dans votre
+espace Mollie.
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - REF: MOL-NL-R2025.0000761409 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch , SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 1 of 2 --
+
+Description de la facture EUR
+Description 	Solde Chiffre d'affaires 	Taux 	Non arrondi 	Arrondi
+3DS Authenticatie Verzoek kosten 	EUR 	2 961 	0,04 EUR 	118,44 EUR 	118,44 EUR
+Acceptatie & Risico Fee 	EUR 	2 971 	0,04 EUR 	118,84 EUR 	118,84 EUR
+Alma België Pay in 3 betaling variabele kosten 	EUR 	4 057,33 EUR 	4,29% 174,059457 EUR 	174,05 EUR
+Alma België Pay in 3 betaling variabele kosten 	EUR 	3 645,46 EUR 	4,1% 149,46386 EUR 	149,46 EUR
+Alma België Pay in 3 betaling vaste kosten 	EUR 	37 	0,35 EUR 	12,95 EUR 	12,95 EUR
+Alma België Pay in 3 betaling vaste kosten 	EUR 	47 	0,10 EUR 	4,70 EUR 	4,70 EUR
+Alma Frankrijk Pay in 4 betaling variabele kosten 	EUR 	3 812,44 EUR 	4,99% 190,240756 EUR 	190,24 EUR
+Alma Frankrijk Pay in 4 betaling vaste kosten 	EUR 	44 	0,10 EUR 	4,40 EUR 	4,40 EUR
+Alma terugstorting kosten 	EUR 	3 	0,25 EUR 	0,75 EUR 	0,75 EUR
+Bancontact betaling variabele kosten 	EUR 	47 556,39 EUR 	1,4% 665,78946 EUR 	665,78 EUR
+Bancontact betaling vaste kosten 	EUR 	757 	0,25 EUR 	189,25 EUR 	189,25 EUR
+Bancontact terugstorting kosten 	EUR 	1 	0,25 EUR 	0,25 EUR 	0,25 EUR
+Creditcard - American Express (intra-EEA) betaling variabele kosten 	EUR 	1 132,44 EUR 	2,2% 	24,91368 EUR 	24,91 EUR
+Creditcard - American Express (intra-EEA) betaling vaste kosten 	EUR 	18 	0,14 EUR 	2,52 EUR 	2,52 EUR
+Creditcard - Carte Bancaire betaling variabele kosten 	EUR 	91 894,77 EUR 	0,6% 551,36862 EUR 	551,36 EUR
+Creditcard - Carte Bancaire betaling vaste kosten 	EUR 	1 919 	0,14 EUR 	268,66 EUR 	268,66 EUR
+Creditcard - Carte Bancaire terugstorting kosten 	EUR 	8 	0,25 EUR 	2,00 EUR 	2,00 EUR
+Creditcard - Domestic betaling variabele kosten 	EUR 	26 743,98 EUR 	0,6% 160,46388 EUR 	160,46 EUR
+Creditcard - Domestic betaling vaste kosten 	EUR 	564 	0,14 EUR 	78,96 EUR 	78,96 EUR
+Creditcard - Domestic terugstorting kosten 	EUR 	3 	0,25 EUR 	0,75 EUR 	0,75 EUR
+Creditcard - European cards betaling variabele kosten 	EUR 	13 907,11 EUR 	0,6% 83,44266 EUR 	83,44 EUR
+Creditcard - European cards betaling vaste kosten 	EUR 	191 	0,14 EUR 	26,74 EUR 	26,74 EUR
+Creditcard - European commercial cards betaling variabele kosten 	EUR 	2 080,48 EUR 	2,9% 60,33392 EUR 	60,33 EUR
+Creditcard - European commercial cards betaling vaste kosten 	EUR 	32 	0,25 EUR 	8,00 EUR 	8,00 EUR
+Creditcard betaling variabele kosten 	EUR 	1 324,61 EUR 	3,25% 43,049825 EUR 	43,04 EUR
+Creditcard betaling vaste kosten 	EUR 	23 	0,25 EUR 	5,75 EUR 	5,75 EUR
+Creditcard chargeback kosten 	EUR 	1 	25,00 EUR 	25,00 EUR 	25,00 EUR
+Overboeking vaste kosten 	EUR 	7 	0,20 EUR 	1,40 EUR 	1,40 EUR
+Pay by Bank betaling variabele kosten 	EUR 	376,34 EUR 	0,8% 	3,01072 EUR 	3,01 EUR
+Pay by Bank betaling vaste kosten 	EUR 	3 	0,15 EUR 	0,45 EUR 	0,45 EUR
+Total hors TVA 	2 975,89 EUR
+Pour obtenir des informations sur tous les paiements et autres transactions du mois écoulé, consultez votre tableau de bord :
+Administration > Rapport
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - REF: MOL-NL-R2025.0000761409 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch , SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 2 of 2 --
+

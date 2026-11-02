@@ -1,0 +1,40 @@
+Extourne
+Application sur la facture: MOL-NL-R2025.0001383331
+Description 	Quantité 	Total
+Correction des frais minimums facturés à tort (Other) 	1 	-20,00 EUR
+Total hors TVA 	-20,00 EUR
+Total TVA comprise 	-20,00 EUR
+Montant versé au solde (Indemnité de Facture) 	20,00 EUR
+Le montant crédité a été retourné à votre solde actuel Mollie et aucune autre action n'est requise.
+TVA assujetti à l'acquéreur; article 44 et 196 de la Directive 2006/112 de l'UE sur la TVA.
+Les détails peuvent être trouvés sur les pages suivantes.
+Mollie B.V.
+Keizersgracht 126
+1015 CW Amsterdam
+Pays-Bas
+À l'attention de EMC
+maxime coglitore
+8 Bd Victor Hugo
+34000 MONTPELLIER
+France
+Date de l'extourne 	13-11-2025
+Référence de l'extourne MOL-NL-C2025.0000092966
+ID de l'organisation 	19229250
+Votre numéro de TVA Afin de vous conformer à la
+réglementation européenne, veuillez
+ajouter votre numéro de TVA dans votre
+espace Mollie.
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - REF: MOL-NL-C2025.0000092966 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch , SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 1 of 2 --
+
+Description de la facture EUR
+Description 	Solde Chiffre d'affaires 	Taux 	Non arrondi 	Arrondi
+Correction des frais minimums facturés à tort (Other) 	EUR 	1 	-20,00 EUR 	-20,00 EUR 	-20,00 EUR
+Total hors TVA 	-20,00 EUR
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - REF: MOL-NL-C2025.0000092966 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch , SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 2 of 2 --
+

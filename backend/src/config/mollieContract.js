@@ -27,8 +27,10 @@ const CONTRACT = {
 // factures : un changement y est signalé en avertissement, pas en anomalie.
 const GRIDS = [
   {
+    // « Prix actuel » de la proposition du 29/01/2026, vérifié sur la facture de
+    // déc. 2025. Avant, aucune grille connue : les taux ne sont pas contrôlés.
     label: 'Tarif avant contrat',
-    from: '2000-01-01',
+    from: '2025-12-01',
     to: '2026-01-29',
     rates: {
       card_consumer:   { fixed: 0.14,  pct: 0.60 },
@@ -63,10 +65,12 @@ const GRIDS = [
 // écart en notre défaveur passe d'avertissement à anomalie.
 const REFERENCE_GRIDS = [
   {
-    label: 'Tarif standard relevé (sept.–oct. 2026)',
-    from: '2000-01-01',
+    label: 'Tarif standard relevé (déc. 2025 – oct. 2026)',
+    from: '2025-12-01',
     to: '2100-01-01',
     rates: {
+      amex_non_eea: { fixed: 0.25, pct: 2.9 },
+      chargeback: { fixed: 25 },
       alma_be_3x: { fixed: 0.35, pct: 4.29 },
       alma_fr_3x: { fixed: 0.10, pct: 4.1 },
       alma_fr_4x: { fixed: 0.10, pct: 4.99 },
@@ -99,6 +103,10 @@ const RATE_LABELS = {
   alma_fr_4x:      'Alma 4x France',
   paybybank:       'Pay by Bank',
   refund:          'Remboursement',
+  amex_non_eea:    'American Express hors EEE',
+  chargeback:      'Rétrofacturation (chargeback)',
+  acceptance_risk: 'Frais d\'acceptation et de risque',
+  minimum:         'Minimum de facturation',
 };
 
 // Moyens de paiement Mollie ↔ libellé WooCommerce de nos commandes.

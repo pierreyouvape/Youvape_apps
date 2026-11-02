@@ -16,27 +16,72 @@ const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
  * ('FR' = France + DROM, 'EEA' = EEE hors France, 'NON_EEA', 'BE', null = tout le moyen).
  */
 function classifyLine(label) {
-  const L = label.toLowerCase();
-  const kind = /frais variables/.test(L) ? 'variable' : 'fixed';
-  const refundMethod = /alma/.test(L) ? 'alma' : /bancontact/.test(L) ? 'bancontact'
-    : /banque|pay by bank/.test(L) ? 'paybybank' : 'cards';
+  const raw = classifyRaw(label);
+  if (!raw) return null;
+  // « Remise … » (2025) : rabais négatif d'une ligne de frais. Même moyen et même
+  // zone que la ligne remisée, mais aucun taux à contrôler et aucune transaction.
+  const discount = /^(remise|korting|discount)\b/i.test(label.trim());
+  return { ...raw, discount, inContract: discount ? false : raw.inContract, rateKey: discount ? null : raw.rateKey };
+}
 
-  if (/rembours/.test(L)) return { rateKey: 'refund', method: refundMethod, kind: 'refund', zone: null, inContract: false };
+// Mollie a libellé ses factures en français, en anglais ou en néerlandais selon les mois (2025).
+function classifyRaw(label) {
+  const L = label.toLowerCase();
+  const kind = /variab/.test(L) ? 'variable' : 'fixed';
+  const refundMethod = /alma/.test(L) ? 'alma' : /bancontact/.test(L) ? 'bancontact'
+    : /banque|pay by bank|virement|overboeking|bank transfer/.test(L) ? 'paybybank' : 'cards';
+
+  // Corrections et avoirs : pas de moyen de paiement, réparties sur toutes les commandes.
+  if (/correction|credit note|extourne|incorrect pricing|creditnota/.test(L)) return { rateKey: null, method: 'other', kind: 'adjustment', zone: null, inContract: false };
+  if (/minimum/.test(L)) return { rateKey: 'minimum', method: 'other', kind: 'minimum', zone: null, inContract: true };
+  if (/chargeback|rétrofacturation|retrofacturation/.test(L)) return { rateKey: 'chargeback', method: 'cards', kind: 'refund', zone: null, inContract: false };
+  if (/rembours|terugstort|refund/.test(L)) return { rateKey: 'refund', method: refundMethod, kind: 'refund', zone: null, inContract: false };
   if (/3ds/.test(L)) return { rateKey: 'threeds', method: 'cards', kind: '3ds', zone: null, inContract: true };
-  if (/^alma/.test(L)) {
-    const be = /belgique/.test(L);
-    const x = /4 fois/.test(L) ? '4x' : '3x';
+  if (/acceptation et de risque|acceptance & risk|acceptatie & risico/.test(L)) return { rateKey: 'acceptance_risk', method: 'cards', kind: '3ds', zone: null, inContract: true };
+  if (/specialty merchant|integrity risk/.test(L)) return { rateKey: 'scheme_program', method: 'cards', kind: 'other', zone: null, inContract: false };
+  if (/alma/.test(L)) {
+    const be = /belgique|belgium|belgië/.test(L);
+    const x = /4 fois|in 4|en 4\b|payez en 4/.test(L) ? '4x' : '3x';
     return { rateKey: `alma_${be ? 'be' : 'fr'}_${x}`, method: 'alma', kind, zone: be ? 'BE' : 'FR', inContract: false };
   }
-  if (/^bancontact/.test(L)) return { rateKey: 'bancontact', method: 'bancontact', kind, zone: null, inContract: true };
-  if (/payer par banque|pay by bank/.test(L)) return { rateKey: 'paybybank', method: 'paybybank', kind, zone: null, inContract: false };
-  if (/^cartes - en ligne/.test(L)) {
-    if (/americanexpress|american express/.test(L)) return { rateKey: 'amex', method: 'cards', kind, zone: null, inContract: true };
-    if (/cartes bancaires/.test(L)) return { rateKey: 'cb', method: 'cards', kind, zone: 'FR', inContract: true };
-    if (/domestique particulier/.test(L)) return { rateKey: 'card_consumer', method: 'cards', kind, zone: 'FR', inContract: true };
-    if (/europ.enne particulier/.test(L)) return { rateKey: 'card_consumer', method: 'cards', kind, zone: 'EEA', inContract: true };
-    if (/commerciale/.test(L)) return { rateKey: 'card_commercial', method: 'cards', kind, zone: /domestique/.test(L) ? 'FR' : 'EEA', inContract: true };
-    if (/d.faut|non eee|hors eee/.test(L)) return { rateKey: 'card_non_eea', method: 'cards', kind, zone: 'NON_EEA', inContract: true };
+  if (/bancontact/.test(L)) return { rateKey: 'bancontact', method: 'bancontact', kind, zone: null, inContract: true };
+  if (/\bkbc\b|belfius/.test(L)) return { rateKey: null, method: 'other', kind, zone: 'BE', inContract: false };
+  if (/payer par banque|pay by bank|virement|overboeking|bank transfer/.test(L)) return { rateKey: 'paybybank', method: 'paybybank', kind, zone: null, inContract: false };
+  if (/carte|card|creditcard/.test(L)) {
+    if (/american ?express/.test(L)) {
+      return /hors|non-|extra|outside/.test(L)
+        ? { rateKey: 'amex_non_eea', method: 'cards', kind, zone: 'NON_EEA', inContract: false }
+        : { rateKey: 'amex', method: 'cards', kind, zone: null, inContract: true };
+    }
+    if (/cartes? bancaires?/.test(L)) return { rateKey: 'cb', method: 'cards', kind, zone: 'FR', inContract: true };
+    if (/commerci/.test(L)) return { rateKey: 'card_commercial', method: 'cards', kind, zone: /domesti/.test(L) ? 'FR' : 'EEA', inContract: true };
+    if (/domesti/.test(L)) return { rateKey: 'card_consumer', method: 'cards', kind, zone: 'FR', inContract: true };
+    if (/europ/.test(L)) return { rateKey: 'card_consumer', method: 'cards', kind, zone: 'EEA', inContract: true };
+    if (/d.faut|default|hors eee|non-eea|non eee/.test(L)) return { rateKey: 'card_non_eea', method: 'cards', kind, zone: 'NON_EEA', inContract: true };
+    // « Carte de Crédit » sans précision (2025) : toutes cartes, pas de taux contractuel.
+    return { rateKey: null, method: 'cards', kind, zone: null, inContract: false };
+  }
+  return null;
+}
+
+/**
+ * Période couverte par un avoir, lue dans son libellé :
+ * « Credit note on incorrect pricing during January 30 to May 20, 2026 ».
+ */
+const MONTHS_EN = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function coverageOf(label) {
+  const L = label.toLowerCase();
+  const month = (w) => { const i = MONTHS_EN.indexOf(w); return i >= 0 ? i : MONTHS_FR.indexOf(w); };
+  let m = /([a-zéû]+) (\d{1,2})(?:, (\d{4}))? (?:to|au|-) ([a-zéû]+) (\d{1,2}),? (\d{4})/.exec(L);
+  if (m && month(m[1]) >= 0 && month(m[4]) >= 0) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return { from: `${m[3] || m[6]}-${pad(month(m[1]) + 1)}-${pad(m[2])}`, to: `${m[6]}-${pad(month(m[4]) + 1)}-${pad(m[5])}` };
+  }
+  m = /(\d{1,2}) ([a-zéû]+)(?: (\d{4}))? au (\d{1,2}) ([a-zéû]+) (\d{4})/.exec(L);
+  if (m && month(m[2]) >= 0 && month(m[5]) >= 0) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return { from: `${m[3] || m[6]}-${pad(month(m[2]) + 1)}-${pad(m[1])}`, to: `${m[6]}-${pad(month(m[5]) + 1)}-${pad(m[4])}` };
   }
   return null;
 }
@@ -89,6 +134,7 @@ async function loadOrders(periodStart, periodEnd) {
  * (Alma Belgique → BE, cartes européennes → EEE hors France…). À défaut, tout le moyen.
  */
 function poolFor(cls, rows) {
+  if (cls.method === 'other') return rows;
   const ofMethod = rows.filter((o) => o.method === cls.method);
   let pool = ofMethod;
   if (cls.zone === 'BE' || cls.zone === 'FR' && cls.method === 'alma') {
@@ -106,7 +152,7 @@ function poolFor(cls, rows) {
 function allocate(line, cls, rows, keyOf = (o) => o.country) {
   const pool = poolFor(cls, rows);
   if (!pool.length) return null;
-  const weight = (o) => (cls.kind === 'variable' ? o.volume : o.n);
+  const weight = (o) => (cls.kind === 'variable' || cls.method === 'other' ? o.volume : o.n);
   const total = pool.reduce((s, o) => s + weight(o), 0) || 1;
   const out = {};
   for (const o of pool) out[keyOf(o)] = (out[keyOf(o)] || 0) + line.amount * weight(o) / total;
@@ -115,11 +161,18 @@ function allocate(line, cls, rows, keyOf = (o) => o.country) {
 
 /**
  * Contrôle complet. `orders` optionnel (sinon chargé).
+ * `ctx.credits` : avoirs connus ({ docNumber, label, amount, from, to, appliesTo }),
+ * pour dire qu'une surfacturation a déjà été remboursée.
  * Renvoie { checks[], lines[], byMethod{}, byCountry{}, reconciliation[], totals }.
  */
-async function auditInvoice(inv, orders) {
+async function auditInvoice(inv, orders, ctx = {}) {
+  const isCredit = inv.docType === 'credit';
+  if (isCredit) orders = [];
   if (!orders) orders = await loadOrders(inv.periodStart, inv.periodEnd);
   const grids = gridsFor(inv.periodStart, inv.periodEnd);
+  const afterContract = (inv.periodStart || '') >= CONTRACT.effectiveFrom;
+  const straddlesContract = !afterContract && (inv.periodEnd || '') >= CONTRACT.effectiveFrom;
+  let noGridNoted = false;
   const checks = [];
   const add = (level, title, detail, amount) => checks.push({ level, title, detail, amount: amount ?? null });
 
@@ -129,6 +182,29 @@ async function auditInvoice(inv, orders) {
   let overcharge = 0;
   let unknown = 0;
   let calcErrors = 0;
+
+  // Frais qui ne se contrôlent pas par un taux : avoirs, minimum, frais hors contrat.
+  const specialCheck = (l, cls) => {
+    if (cls.kind === 'adjustment') {
+      const cov = coverageOf(l.label);
+      return { level: 'info', title: l.amount < 0 ? 'Avoir / correction Mollie' : 'Régularisation Mollie',
+        detail: `« ${l.label} »${cov ? ` (période du ${cov.from.split('-').reverse().join('/')} au ${cov.to.split('-').reverse().join('/')})` : ''}.`, amount: l.amount, issue: 'Avoir' };
+    }
+    if (cls.rateKey === 'minimum' && l.amount > 0) {
+      return afterContract || straddlesContract
+        ? { level: 'error', title: 'Minimum de facturation hors contrat', detail: `${l.amount} € facturés alors que le contrat fixe le minimum mensuel à ${CONTRACT.minimumInvoice} €.`, amount: l.amount, overcharge: l.amount, issue: 'Hors contrat' }
+        : { level: 'warn', title: 'Minimum de facturation', detail: `${l.amount} € de complément au minimum mensuel : vérifier qu'il était dû.`, amount: l.amount, issue: 'À vérifier' };
+    }
+    if (cls.rateKey === 'acceptance_risk') {
+      if (afterContract) return { level: 'error', title: 'Frais non prévus au contrat', detail: `« ${l.label} » : ${l.base} × ${l.rate} €. Le contrat ne prévoit que les frais de tentative 3DS (0,04 €) en plus des paiements.`, amount: l.amount, overcharge: l.amount, issue: 'Hors contrat' };
+      if (straddlesContract) return { level: 'warn', title: 'Frais non prévus au contrat (en partie)', detail: `« ${l.label} » : ${l.amount} €, dont la part postérieure au ${CONTRACT.effectiveFrom.split('-').reverse().join('/')} n'est pas prévue au contrat.`, amount: l.amount, issue: 'À vérifier' };
+      return { level: 'info', title: 'Frais d\'acceptation et de risque', detail: `${l.amount} € (${l.base} × ${l.rate} €), facturés en plus du 3DS avant le contrat.`, amount: l.amount };
+    }
+    if (cls.rateKey === 'scheme_program') {
+      return { level: 'info', title: 'Programme Visa / Mastercard', detail: `« ${l.label} » : ${l.amount} € (frais des réseaux pour les marchands « à risque »).`, amount: l.amount };
+    }
+    return null;
+  };
 
   const lines = inv.lines.map((l) => {
     const cls = classifyLine(l.label);
@@ -140,21 +216,37 @@ async function auditInvoice(inv, orders) {
       return out;
     }
 
-    // 1. Calcul : assiette × taux = montant exact, montant facturé = tronqué au centime.
+    // 1. Calcul : assiette × taux = montant exact, montant facturé = tronqué au centime
+    //    (vers zéro). En valeur absolue : une remise 2025 affiche « 2,2 % » pour −17,57 €.
     const expected = l.rateUnit === 'pct' ? l.base * l.rate / 100 : l.base * l.rate;
-    if (Math.abs(expected - l.unrounded) > 0.0005) {
+    if (Math.abs(Math.abs(expected) - Math.abs(l.unrounded)) > 0.0005) {
       calcErrors++;
       out.issues.push(`Calcul faux : ${l.base} × ${l.rate} = ${expected.toFixed(6)}`);
-      add('error', 'Erreur de calcul', `« ${l.label} » : ${l.base} × ${l.rate}${l.rateUnit === 'pct' ? ' %' : ' €'} = ${expected.toFixed(4)} €, facturé ${l.unrounded} €.`, r2(l.unrounded - expected));
+      add('error', 'Erreur de calcul', `« ${l.label} » : ${l.base} × ${l.rate}${l.rateUnit === 'pct' ? ' %' : ' €'} = ${expected.toFixed(4)} €, facturé ${l.unrounded} €.`, r2(Math.abs(l.unrounded) - Math.abs(expected)));
     }
-    if (l.amount - l.unrounded > 0.005 || l.unrounded - l.amount >= 0.01) {
+    const gapCents = (Math.abs(l.unrounded) - Math.abs(l.amount)) * 100;
+    if (gapCents < -0.5 || gapCents >= 1 + 1e-6) {
       calcErrors++;
       out.issues.push('Arrondi anormal');
-      add('error', 'Arrondi anormal', `« ${l.label} » : ${l.unrounded} € arrondi à ${l.amount} € (Mollie tronque au centime inférieur).`, r2(l.amount - l.unrounded));
+      add('error', 'Arrondi anormal', `« ${l.label} » : ${l.unrounded} € arrondi à ${l.amount} € (Mollie tronque au centime, vers zéro).`, r2(Math.abs(l.amount) - Math.abs(l.unrounded)));
     }
 
-    // 2. Taux contre le contrat (ou contre le tarif standard relevé, hors contrat).
+    // 2. Frais particuliers, puis taux contre le contrat (ou le tarif standard relevé).
     const field = l.rateUnit === 'pct' ? 'pct' : 'fixed';
+    const special = specialCheck(l, cls);
+    if (special) {
+      if (special.overcharge) { overcharge += special.overcharge; out.rateGap = r2(special.overcharge); }
+      if (special.issue) out.issues.push(special.issue);
+      add(special.level, special.title, special.detail, special.amount);
+    }
+    const skipRate = special || !cls.rateKey
+      || (cls.inContract && !grids.length)
+      || (!cls.inContract && !referenceFor(cls.rateKey, inv.periodStart, inv.periodEnd).length);
+    if (!special && cls.rateKey && cls.inContract && !grids.length && !noGridNoted) {
+      noGridNoted = true;
+      add('info', 'Taux non contrôlés', 'Aucune grille tarifaire connue avant décembre 2025 : seuls les calculs et les totaux sont vérifiés.');
+    }
+    if (!skipRate) {
     const refGrids = cls.inContract ? [] : referenceFor(cls.rateKey, inv.periodStart, inv.periodEnd);
     const candidates = cls.inContract
       ? grids.map((g) => g.rates[cls.rateKey]?.[field]).filter((v) => v != null)
@@ -187,14 +279,17 @@ async function auditInvoice(inv, orders) {
     } else if (!candidates.length) {
       add('warn', 'Pas de tarif de référence', `« ${l.label} » : aucun tarif attendu dans le contrat ni relevé. À compléter dans config/mollieContract.js.`, null);
     }
+    }
 
     // 3. Ventilation moyen de paiement / pays.
-    const m = (byMethod[cls.method] = byMethod[cls.method] || { cost: 0, transactions: 0, volume: 0, fixed: 0, variable: 0, threeds: 0, refunds: 0 });
+    const m = (byMethod[cls.method] = byMethod[cls.method] || { cost: 0, transactions: 0, volume: 0, fixed: 0, variable: 0, threeds: 0, refunds: 0, discounts: 0, other: 0 });
     m.cost += l.amount;
-    if (cls.kind === 'variable') { m.variable += l.amount; m.volume += l.base; }
+    if (cls.discount) m.discounts += l.amount;
+    else if (cls.kind === 'variable') { m.variable += l.amount; m.volume += l.base; }
     else if (cls.kind === 'fixed') { m.fixed += l.amount; m.transactions += l.base; }
     else if (cls.kind === '3ds') m.threeds += l.amount;
-    else m.refunds += l.amount;
+    else if (cls.kind === 'refund') m.refunds += l.amount;
+    else m.other += l.amount;
 
     out.countries = allocate(l, cls, orders) || { [cls.zone && cls.zone.length === 2 ? cls.zone : '??']: l.amount };
     for (const [c, v] of Object.entries(out.countries)) {
@@ -210,11 +305,18 @@ async function auditInvoice(inv, orders) {
   const sumSummary = r2(inv.summary.reduce((s, l) => s + l.amount, 0));
   if (inv.totalHT == null) add('error', 'Total HT illisible', 'Le total hors TVA n\'a pas été trouvé sur la facture.');
   else {
-    if (Math.abs(sumLines - inv.totalHT) > 0.005) add('error', 'Détail ≠ total facturé', `Somme des lignes de détail ${sumLines} € contre total HT ${inv.totalHT} €.`, r2(inv.totalHT - sumLines));
+    if (Math.abs(sumLines - inv.totalHT) > 0.005 && Math.abs(sumLines - inv.totalHT) <= 0.025) add('warn', 'Écart d\'arrondi', `Somme des lignes ${sumLines} € contre total HT ${inv.totalHT} €.`, r2(inv.totalHT - sumLines));
+    else if (Math.abs(sumLines - inv.totalHT) > 0.005) add('error', 'Détail ≠ total facturé', `Somme des lignes de détail ${sumLines} € contre total HT ${inv.totalHT} €.`, r2(inv.totalHT - sumLines));
     if (inv.summary.length && Math.abs(sumSummary - inv.totalHT) > 0.005) add('error', 'Récapitulatif ≠ total facturé', `Somme du récapitulatif ${sumSummary} € contre total HT ${inv.totalHT} €.`, r2(inv.totalHT - sumSummary));
     if (inv.prepaid != null) {
       const net = r2(-inv.prepaid - (inv.credited || 0));
       if (Math.abs(net - inv.totalHT) > 0.005) add('warn', 'Prélèvement ≠ facture', `Prélevé ${-inv.prepaid} €, reversé ${inv.credited || 0} € : net ${net} € contre ${inv.totalHT} € facturés.`, r2(net - inv.totalHT));
+    }
+    if (isCredit && inv.credited != null && Math.abs(inv.credited + inv.totalHT) > 0.005) {
+      add('warn', 'Avoir non reversé en totalité', `Avoir de ${-inv.totalHT} €, ${inv.credited} € reversés au solde.`, r2(-inv.totalHT - inv.credited));
+    }
+    if (isCredit) {
+      add('info', 'Avoir', `Avoir de ${-inv.totalHT} €${inv.appliesTo ? ` sur la facture ${inv.appliesTo}` : ''}, reversé au solde Mollie.`, inv.totalHT);
     }
     if (inv.amountDue && inv.amountDue > 0) add('warn', 'Reste à payer', `Montant dû : ${inv.amountDue} €.`, inv.amountDue);
   }
@@ -225,7 +327,7 @@ async function auditInvoice(inv, orders) {
 
   // 5. Rapprochement avec nos commandes (nombre de paiements et montant encaissé).
   const ours = (filter) => orders.filter(filter).reduce((a, o) => ({ n: a.n + o.n, volume: a.volume + o.volume, estimated: a.estimated + o.estimated }), { n: 0, volume: 0, estimated: 0 });
-  const mollieOf = (filter) => lines.filter((l) => l.cls && l.cls.kind !== 'refund' && l.cls.kind !== '3ds' && filter(l))
+  const mollieOf = (filter) => lines.filter((l) => l.cls && !l.cls.discount && (l.cls.kind === 'fixed' || l.cls.kind === 'variable') && filter(l))
     .reduce((a, l) => (l.cls.kind === 'variable' ? { ...a, volume: a.volume + l.base } : { ...a, n: a.n + l.base }), { n: 0, volume: 0 });
   const recoDefs = [
     { key: 'cards', label: 'Cartes', mol: (l) => l.cls.method === 'cards', our: (o) => o.method === 'cards' },
@@ -243,7 +345,7 @@ async function auditInvoice(inv, orders) {
       ourCount: ou.n, ourVolume: r2(ou.volume),
       diffCount: mo.n - ou.n, diffVolume: r2(mo.volume - ou.volume),
     };
-  }).filter((r) => r.mollieCount || r.ourCount);
+  }).filter((r) => !isCredit && (r.mollieCount || r.ourCount));
   for (const r of reconciliation) {
     const tolN = Math.max(3, r.ourCount * 0.02);
     const tolV = Math.max(50, r.ourVolume * 0.02);
@@ -264,8 +366,16 @@ async function auditInvoice(inv, orders) {
   // 7. Frais estimés par l'app (/financier) contre frais réels.
   const estimated = r2(orders.reduce((s, o) => s + o.estimated, 0));
 
+  // 8. Surfacturation déjà remboursée par un avoir qui couvre la période ?
+  const coveredBy = overcharge > 0 ? (ctx.credits || []).filter((c) => c.docNumber !== inv.invoiceNumber
+    && (c.appliesTo === inv.invoiceNumber || (c.from && c.from <= (inv.periodEnd || '') && c.to >= (inv.periodStart || ''))))
+    : [];
+  for (const c of coveredBy) {
+    add('info', 'Surfacturation remboursée par Mollie', `« ${c.label} » : ${-c.amount} € sur ${c.docNumber}${c.from ? ` (du ${c.from.split('-').reverse().join('/')} au ${c.to.split('-').reverse().join('/')})` : ''}.`, c.amount);
+  }
+
   if (!checks.some((c) => c.level === 'error' || c.level === 'warn')) {
-    add('ok', 'Facture conforme', 'Tous les taux sont ceux du contrat, chaque ligne est juste et les totaux se recoupent.');
+    add('ok', isCredit ? 'Avoir cohérent' : 'Facture conforme', 'Tous les taux sont ceux du contrat, chaque ligne est juste et les totaux se recoupent.');
   }
 
   const volume = Object.values(byMethod).reduce((s, m) => s + m.volume, 0);
@@ -279,6 +389,8 @@ async function auditInvoice(inv, orders) {
     totals: {
       cost: inv.totalHT, volume: r2(volume), effectiveRate: volume ? inv.totalHT / volume * 100 : null,
       overcharge: r2(overcharge), unknownLines: unknown, calcErrors,
+      coveredBy: coveredBy.map((c) => c.docNumber),
+      credits: r2(lines.filter((l) => l.cls && (l.cls.kind === 'adjustment')).reduce((s, l) => s + l.amount, 0)),
       threedsAttempts: threeds?.base ?? null, threedsRatio, estimatedByApp: estimated,
       errors: checks.filter((c) => c.level === 'error').length,
       warnings: checks.filter((c) => c.level === 'warn').length,
@@ -303,7 +415,8 @@ async function loadOrderRows(from, to) {
   const { rows } = await pool.query(`
     SELECT wp_order_id::bigint AS id, payment_method_title AS title,
            COALESCE(NULLIF(billing_country, ''), NULLIF(shipping_country, ''), '??') AS country,
-           order_total::float AS volume, payment_cost_calculated::float AS current
+           order_total::float AS volume, payment_cost_calculated::float AS current,
+           to_char(COALESCE(paid_date, post_date), 'YYYY-MM-DD') AS day
     FROM orders
     WHERE COALESCE(paid_date, post_date) >= $1::date
       AND ($2::date IS NULL OR COALESCE(paid_date, post_date) < $2::date + 1)
@@ -380,4 +493,4 @@ function allocateInvoiceToOrders(inv, rows, rateDate) {
   return { costs, allocated: r2(allocated), unallocated, rates };
 }
 
-module.exports = { auditInvoice, classifyLine, loadOrders, loadOrderRows, allocateInvoiceToOrders, rateGroup, METHOD_OF_TITLE };
+module.exports = { auditInvoice, classifyLine, coverageOf, allocate, roundKeepingTotal, loadOrders, loadOrderRows, allocateInvoiceToOrders, rateGroup, METHOD_OF_TITLE };

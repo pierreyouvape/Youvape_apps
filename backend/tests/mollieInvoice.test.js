@@ -9,7 +9,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { parseMollieInvoice } = require('../src/parsers/mollieInvoiceParser');
-const { auditInvoice, classifyLine, allocateInvoiceToOrders } = require('../src/services/mollieAuditService');
+const { auditInvoice, classifyLine, coverageOf, allocateInvoiceToOrders } = require('../src/services/mollieAuditService');
 
 const fixture = (n) => fs.readFileSync(path.join(__dirname, 'fixtures', `mollie-${n}.txt`), 'utf8');
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -100,5 +100,42 @@ const ORDERS_OCT = [
   // Tarif recalé : Pay by Bank suit la baisse annoncée au 01/12/2026.
   assert.ok(Math.abs(allocateInvoiceToOrders(oct, rows, '2026-12-05').rates['paybybank|ALL'].pct - 0.45) < 0.01);
 
-  console.log('✓ mollieInvoice : 7 scénarios OK');
+  // 8. Toutes les factures réelles (2025 en français, néerlandais, anglais) : lues,
+  //    somme des lignes = total à un arrondi près, aucune ligne inconnue.
+  const all = fs.readdirSync(path.join(__dirname, 'fixtures')).filter((f) => /^mollie-MOL/.test(f));
+  for (const f of all) {
+    const inv = parseMollieInvoice(fs.readFileSync(path.join(__dirname, 'fixtures', f), 'utf8'));
+    assert.ok(Math.abs(r2(inv.lines.reduce((s, l) => s + l.amount, 0)) - inv.totalHT) <= 0.02, f);
+    for (const l of inv.lines) assert.ok(classifyLine(l.label), `${f} : ligne non classée « ${l.label} »`);
+  }
+
+  // 9. Avoir : lu comme tel, rattaché à sa facture, cohérent.
+  const cn = parseMollieInvoice(fixture('MOL-NL-C2025.0000092966'));
+  assert.strictEqual(cn.docType, 'credit');
+  assert.strictEqual(cn.appliesTo, 'MOL-NL-R2025.0001383331');
+  assert.strictEqual(cn.invoiceDate, '2025-11-13');
+  assert.strictEqual(cn.totalHT, -20);
+  assert.strictEqual(cn.credited, 20);
+  const cna = await auditInvoice({ ...cn, periodStart: '2025-10-01', periodEnd: '2025-10-31' });
+  assert.ok(!cna.checks.some((c) => c.level === 'error' || c.level === 'warn'), JSON.stringify(cna.checks));
+  //    … et la facture qu'il corrige porte bien un minimum de 20 € signalé.
+  const oct25 = parseMollieInvoice(fixture('MOL-NL-R2025.0001383331'));
+  const oa = await auditInvoice(oct25, []);
+  assert.ok(oa.checks.some((c) => c.title === 'Minimum de facturation' && c.amount === 20));
+
+  // 10. Contrat appliqué en retard (fév. 2026 à l'ancien tarif) : surfacturation chiffrée,
+  //     puis reconnue comme remboursée par l'avoir de la facture de juin 2026.
+  const feb = parseMollieInvoice(fixture('MOL-NL-R2026.0000175906'));
+  const jun = parseMollieInvoice(fixture('MOL-NL-R2026.0000808398'));
+  const creditLine = jun.lines.find((l) => /incorrect pricing/.test(l.label));
+  assert.strictEqual(creditLine.amount, -654.13);
+  assert.deepStrictEqual(coverageOf(creditLine.label), { from: '2026-01-30', to: '2026-05-20' });
+  const fa = await auditInvoice(feb, []);
+  assert.ok(fa.totals.overcharge > 100 && fa.totals.coveredBy.length === 0);
+  const credits = [{ docNumber: jun.invoiceNumber, label: creditLine.label, amount: creditLine.amount, from: '2026-01-30', to: '2026-05-20', appliesTo: null }];
+  const fc = await auditInvoice(feb, [], { credits });
+  assert.deepStrictEqual(fc.totals.coveredBy, [jun.invoiceNumber]);
+  assert.ok(fc.checks.some((c) => c.title === 'Surfacturation remboursée par Mollie'));
+
+  console.log('✓ mollieInvoice : 10 scénarios OK');
 })().catch((e) => { console.error(e); process.exit(1); });

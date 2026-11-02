@@ -5,6 +5,9 @@
  * Page 2 : le détail qui fait foi, une ligne par tarif :
  *   « Bancontact (frais variables) \tEUR 60 488,08 EUR \t1,33% 804,491464 EUR 804,49 EUR »
  *   = libellé, assiette (nombre de transactions ou montant), taux, montant exact, montant facturé.
+ *
+ * Avoir (« Extourne », MOL-NL-C…) : même mise en page, sans période ; il désigne
+ * la facture qu'il corrige (« Application sur la facture: MOL-NL-R… »).
  */
 
 const SP = '[ \\u00a0\\u202f]';
@@ -24,6 +27,7 @@ const SUMMARY_RE = new RegExp(`^(.+?)\\s*\\t\\s*(${NUM})\\s*\\t\\s*(${NUM})\\s*E
 function parseMollieInvoice(text) {
   const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
   const out = {
+    docType: 'invoice', appliesTo: null,
     invoiceNumber: null, invoiceDate: null, periodStart: null, periodEnd: null,
     organisationId: null, totalHT: null, totalTTC: null, prepaid: null, credited: null, amountDue: null,
     summary: [], lines: [], warnings: [],
@@ -33,8 +37,10 @@ function parseMollieInvoice(text) {
   for (const l of lines) {
     if (/^-- \d+ of \d+ --$/.test(l)) { page++; continue; }
     let m;
-    if ((m = /^Référence de facture\s+(MOL-[A-Z0-9.\-]+)/.exec(l))) { out.invoiceNumber = m[1]; continue; }
-    if ((m = /^Date de facture\s+(\d{2}-\d{2}-\d{4})/.exec(l))) { out.invoiceDate = toIsoDate(m[1]); continue; }
+    if ((m = /^Référence de (?:facture|l.extourne)\s+(MOL-[A-Z0-9.\-]+)/.exec(l))) { out.invoiceNumber = m[1]; continue; }
+    if ((m = /^Date de (?:facture|l.extourne)\s+(\d{2}-\d{2}-\d{4})/.exec(l))) { out.invoiceDate = toIsoDate(m[1]); continue; }
+    if ((m = /^Application sur la facture\s*:\s*(MOL-[A-Z0-9.\-]+)/.exec(l))) { out.appliesTo = m[1]; continue; }
+    if (/^Extourne$/.test(l)) { out.docType = 'credit'; continue; }
     if ((m = /^Période de facturation\s+(\d{2}-\d{2}-\d{4})\s+pour\s+(\d{2}-\d{2}-\d{4})/.exec(l))) {
       out.periodStart = toIsoDate(m[1]); out.periodEnd = toIsoDate(m[2]); continue;
     }
@@ -67,6 +73,7 @@ function parseMollieInvoice(text) {
     }
   }
 
+  if (/^MOL-[A-Z]+-C/.test(out.invoiceNumber || '')) out.docType = 'credit';
   if (!out.invoiceNumber) throw new Error('Référence de facture Mollie introuvable : est-ce bien une facture Mollie ?');
   if (!out.lines.length) throw new Error('Aucune ligne de détail lue (page « Description de la facture »)');
   return out;

@@ -23,6 +23,8 @@ const METHODS = [
   { key: 'bancontact', label: 'Bancontact', color: '#eb6834' },
   { key: 'alma', label: 'Alma (3x/4x)', color: '#1baf7a' },
   { key: 'paybybank', label: 'Pay by Bank', color: '#eda100' },
+  // Minimum de facturation, programmes Visa/Mastercard, avoirs (négatifs).
+  { key: 'other', label: 'Autres frais / avoirs', color: '#e87ba4' },
 ];
 const METHOD_LABEL = Object.fromEntries(METHODS.map((m) => [m.key, m.label]));
 
@@ -122,16 +124,30 @@ function Dashboard({ invoices, onOpen }) {
   const list = useMemo(() => invoices.filter((i) => year === 'all' || (i.periodStart || '').startsWith(year))
     .sort((a, b) => (a.periodStart || '').localeCompare(b.periodStart || '')), [invoices, year]);
 
-  const monthly = list.map((i) => ({
-    id: i.id,
-    month: monthLabel(i.periodStart),
-    ...Object.fromEntries(METHODS.map((m) => [m.key, i.byMethod?.[m.key]?.cost || 0])),
+  // Un avoir rejoint le mois de la facture qu'il corrige.
+  const byMonth = [];
+  for (const i of list) {
+    const key = (i.periodStart || '').slice(0, 7);
+    let m = byMonth.find((x) => x.key === key);
+    if (!m) byMonth.push((m = { key, id: null, periodStart: i.periodStart, byMethod: {} }));
+    if (i.docType !== 'credit') m.id = i.id;
+    else if (!m.id) m.id = i.id;
+    for (const [k, b] of Object.entries(i.byMethod || {})) {
+      const t = (m.byMethod[k] = m.byMethod[k] || { cost: 0, volume: 0 });
+      t.cost += b.cost || 0;
+      t.volume += b.volume || 0;
+    }
+  }
+  const monthly = byMonth.map((m) => ({
+    id: m.id,
+    month: monthLabel(m.periodStart),
+    ...Object.fromEntries(METHODS.map((x) => [x.key, Math.round((m.byMethod[x.key]?.cost || 0) * 100) / 100])),
   }));
-  const rates = list.map((i) => ({
-    month: monthLabel(i.periodStart),
-    ...Object.fromEntries(METHODS.map((m) => {
-      const b = i.byMethod?.[m.key];
-      return [m.key, b?.volume ? b.cost / b.volume * 100 : null];
+  const rates = byMonth.map((m) => ({
+    month: monthLabel(m.periodStart),
+    ...Object.fromEntries(METHODS.filter((x) => x.key !== 'other').map((x) => {
+      const b = m.byMethod[x.key];
+      return [x.key, b?.volume ? b.cost / b.volume * 100 : null];
     })),
   }));
 
@@ -139,11 +155,13 @@ function Dashboard({ invoices, onOpen }) {
   const cost = sum((i) => i.totalHT);
   const volume = sum((i) => i.totals?.volume);
   const overcharge = sum((i) => i.totals?.overcharge);
+  const overchargeCovered = sum((i) => (i.totals?.coveredBy?.length ? i.totals.overcharge : 0));
+  const creditsTotal = -sum((i) => i.totals?.credits);
   const errors = sum((i) => i.totals?.errors);
   const warnings = sum((i) => i.totals?.warnings);
   const estimated = sum((i) => i.totals?.estimatedByApp);
 
-  const byMethod = METHODS.map((m) => {
+  const byMethod = METHODS.filter((m) => m.key !== 'other' || list.some((i) => i.byMethod?.other)).map((m) => {
     const agg = list.reduce((a, i) => {
       const b = i.byMethod?.[m.key] || {};
       return { cost: a.cost + (b.cost || 0), volume: a.volume + (b.volume || 0), tx: a.tx + (b.transactions || 0), threeds: a.threeds + (b.threeds || 0), refunds: a.refunds + (b.refunds || 0) };
@@ -193,8 +211,9 @@ function Dashboard({ invoices, onOpen }) {
         <StatCard label="Frais Mollie HT" value={fmtEur(cost)} sub={list.length ? `${fmtEur(cost / list.length, 0)} / mois en moyenne` : null} />
         <StatCard label="Encaissé via Mollie" value={fmtEur(volume, 0)} />
         <StatCard label="Taux effectif" value={fmtPct(volume ? cost / volume * 100 : null)} sub="frais ÷ montant encaissé" />
-        <StatCard label="Surfacturation détectée" value={fmtEur(overcharge)} color={overcharge > 0 ? C.red : C.green}
-          sub={errors || warnings ? `${errors} anomalie${errors > 1 ? 's' : ''}, ${warnings} point${warnings > 1 ? 's' : ''} à vérifier` : 'aucune anomalie'} />
+        <StatCard label="Surfacturation non remboursée" value={fmtEur(overcharge - overchargeCovered)} color={overcharge - overchargeCovered > 0 ? C.red : C.green}
+          sub={overcharge ? `${fmtEur(overcharge)} détectés, dont ${fmtEur(overchargeCovered)} couverts par un avoir` : (errors || warnings ? `${errors} anomalie${errors > 1 ? 's' : ''}, ${warnings} à vérifier` : 'aucune anomalie')} />
+        <StatCard label="Avoirs Mollie" value={fmtEur(creditsTotal)} color={creditsTotal > 0 ? C.green : C.greyT} sub="remboursés au solde" />
         <StatCard label="Frais dans /financier" value={fmtEur(estimated)} sub={cost ? `${fmtEur(estimated - cost)} vs facturé` : null} color={C.greyT} />
       </div>
 
@@ -317,18 +336,22 @@ function InvoiceList({ invoices, onOpen, onPdf, onDelete }) {
           <tbody>
             {invoices.map((i) => {
               const t = i.totals || {};
-              const level = t.errors ? 'error' : t.warnings ? 'warn' : 'ok';
+              const covered = t.errors && t.coveredBy?.length;
+              const level = covered ? 'info' : t.errors ? 'error' : t.warnings ? 'warn' : 'ok';
               return (
                 <tr key={i.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(i.id)}>
                   <td style={{ ...td, fontWeight: 600 }}>{monthLabel(i.periodStart)}</td>
-                  <td style={td}><div>{i.invoiceNumber}</div><div style={{ fontSize: 11.5, color: C.greyT }}>du {fmtDate(i.invoiceDate)}</div></td>
                   <td style={td}>
-                    <Badge level={level}>{level === 'ok' ? 'Conforme' : [t.errors && `${t.errors} anomalie${t.errors > 1 ? 's' : ''}`, t.warnings && `${t.warnings} à vérifier`].filter(Boolean).join(', ')}</Badge>
+                    <div>{i.docType === 'credit' && <span style={{ fontSize: 11, fontWeight: 700, color: C.green, marginRight: 6 }}>AVOIR</span>}{i.invoiceNumber}</div>
+                    <div style={{ fontSize: 11.5, color: C.greyT }}>du {fmtDate(i.invoiceDate)}{i.appliesTo ? ` · sur ${i.appliesTo}` : ''}</div>
+                  </td>
+                  <td style={td}>
+                    <Badge level={level}>{covered ? 'Surfacturation remboursée par avoir' : level === 'ok' ? (i.docType === 'credit' ? 'Avoir cohérent' : 'Conforme') : [t.errors && `${t.errors} anomalie${t.errors > 1 ? 's' : ''}`, t.warnings && `${t.warnings} à vérifier`].filter(Boolean).join(', ')}</Badge>
                   </td>
                   <td style={{ ...td, ...num, fontWeight: 700 }}>{fmtEur(i.totalHT)}</td>
                   <td style={{ ...td, ...num }}>{fmtEur(t.volume, 0)}</td>
                   <td style={{ ...td, ...num }}>{fmtPct(t.effectiveRate)}</td>
-                  <td style={{ ...td, ...num, color: t.overcharge > 0 ? C.red : C.greyT, fontWeight: t.overcharge > 0 ? 700 : 400 }}>{t.overcharge > 0 ? fmtEur(t.overcharge) : '—'}</td>
+                  <td style={{ ...td, ...num, color: t.overcharge > 0 ? (covered ? C.greyT : C.red) : C.greyT, fontWeight: t.overcharge > 0 && !covered ? 700 : 400, textDecoration: covered ? 'line-through' : 'none' }}>{t.overcharge > 0 ? fmtEur(t.overcharge) : '—'}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => onPdf(i)} style={linkBtn}>PDF</button>
                     <button onClick={() => onDelete(i)} style={{ ...linkBtn, color: C.red }}>Supprimer</button>
@@ -358,7 +381,7 @@ function InvoiceDetail({ data, onBack, onPdf }) {
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
         <button onClick={onBack} style={{ ...linkBtn, padding: 0, fontSize: 13.5 }}>← Retour</button>
-        <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>Facture {monthLabel(inv.periodStart)}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: C.dark }}>{inv.docType === 'credit' ? `Avoir${inv.appliesTo ? ` sur ${inv.appliesTo}` : ''}` : `Facture ${monthLabel(inv.periodStart)}`}</div>
         <span style={{ fontSize: 12.5, color: C.greyT }}>{inv.invoiceNumber} · du {fmtDate(inv.periodStart)} au {fmtDate(inv.periodEnd)} · grille : {audit.grids.join(' + ')}</span>
         <button onClick={() => onPdf({ id: inv.id, invoiceNumber: inv.invoiceNumber })} style={{ ...linkBtn, marginLeft: 'auto' }}>Ouvrir le PDF</button>
       </div>
@@ -532,7 +555,7 @@ function CostsPanel({ preview, busy, done, onApply, onClose }) {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
             <th style={th}>Période</th><th style={th}>Source</th><th style={{ ...th, ...num }}>Commandes</th>
-            <th style={{ ...th, ...num }}>Frais actuels</th><th style={{ ...th, ...num }}>Frais ajustés</th><th style={{ ...th, ...num }}>Écart</th>
+            <th style={{ ...th, ...num }}>Facture</th><th style={{ ...th, ...num }}>Frais actuels</th><th style={{ ...th, ...num }}>Frais ajustés</th><th style={{ ...th, ...num }}>Écart</th>
           </tr></thead>
           <tbody>
             {rows.map((m, idx) => (
@@ -543,6 +566,7 @@ function CostsPanel({ preview, busy, done, onApply, onClose }) {
                   {m.unallocated?.length > 0 && <div style={{ color: C.orange }}>non réparti : {m.unallocated.map((u) => `${u.label} (${fmtEur(u.amount)})`).join(', ')}</div>}
                 </td>
                 <td style={{ ...td, ...num }}>{fmtNum(m.orders)}</td>
+                <td style={{ ...td, ...num, color: C.greyT }}>{m.invoiceTotal != null ? fmtEur(m.invoiceTotal) : '—'}</td>
                 <td style={{ ...td, ...num }}>{fmtEur(m.before)}</td>
                 <td style={{ ...td, ...num, fontWeight: 700 }}>{fmtEur(m.after)}</td>
                 <td style={{ ...td, ...num, color: m.after - m.before > 0 ? C.red : C.green }}>{m.after - m.before > 0 ? '+' : ''}{fmtEur(m.after - m.before)}</td>
@@ -551,12 +575,22 @@ function CostsPanel({ preview, busy, done, onApply, onClose }) {
           </tbody>
           <tfoot><tr>
             <td style={{ ...td, fontWeight: 700 }} colSpan={3}>Total</td>
+            <td style={{ ...td, ...num, color: C.greyT }}>{fmtEur(tot('invoiceTotal'))}</td>
             <td style={{ ...td, ...num }}>{fmtEur(tot('before'))}</td>
             <td style={{ ...td, ...num, fontWeight: 800 }}>{fmtEur(tot('after'))}</td>
             <td style={{ ...td, ...num, fontWeight: 700 }}>{fmtEur(tot('after') - tot('before'))}</td>
           </tr></tfoot>
         </table>
       </div>
+
+      {preview.credits?.length > 0 && (
+        <div style={{ marginTop: 14, fontSize: 12.5, color: '#374151' }}>
+          <div style={{ fontWeight: 700, color: C.dark, marginBottom: 4 }}>Avoirs répartis sur la période qu'ils corrigent (d'où « ajustés » ≠ « facture » sur ces mois)</div>
+          {preview.credits.map((c, idx) => (
+            <div key={idx}>{fmtEur(c.amount)} — « {c.label} » ({c.invoiceNumber}) → commandes du {c.spreadOn.split(' → ').map(fmtDate).join(' au ')}{c.orders ? ` (${fmtNum(c.orders)} commandes)` : ''}</div>
+          ))}
+        </div>
+      )}
 
       <div style={{ fontSize: 13, fontWeight: 700, color: C.dark, margin: '16px 0 6px' }}>Tarif recalé sur {preview.sourceInvoice} (commandes à venir)</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 8 }}>

@@ -1,0 +1,113 @@
+Facture
+Description 	Quantité 	Total
+3DS Authentication Attempt Fee 	2 439 	97,56 EUR
+Acceptance & Risk Fee 	2 660 	106,40 EUR
+Alma Belgique payez en 3 fois 	16 	63,55 EUR
+Alma France payez en 3 fois 	20 	70,80 EUR
+Alma France payez en 4 fois 	28 	136,44 EUR
+Discount paiements Bancontact 	347 	-376,84 EUR
+Discount paiements par virement bancaire 	12 	-2,40 EUR
+Discount sur les paiements par carte de crédit 	1 590 	-745,78 EUR
+Frais de conformité 	4 	1 550,00 EUR
+Paiements Bancontact 	507 	545,33 EUR
+Paiements par carte de crédit 	2 159 	1 003,25 EUR
+Paiements par virement bancaire 	17 	3,40 EUR
+Remboursements 	11 	2,75 EUR
+Remise paiements Alma Belgique payez en 3 fois 	9 	-34,55 EUR
+Remise paiements Alma France payez en 3 fois 	15 	-55,84 EUR
+Remise paiements Alma France payez en 4 fois 	14 	-62,86 EUR
+Total hors TVA 	2 301,21 EUR
+Total TVA comprise 	2 301,21 EUR
+Montant préréglé EUR -2 305,08 	-2 305,08 EUR
+Montant versé au solde (Indemnité de Facture) 	3,87 EUR
+Montant dû 	0,00 EUR
+Nous vous remercions pour votre paiement. Cette facture a été réglée dans son intégralité et aucun autre paiement n'est requis
+TVA assujetti à l'acquéreur; article 44 et 196 de la Directive 2006/112. de l'UE sur la TVA.
+Les détails peuvent être trouvés sur les pages suivantes.
+Mollie B.V.
+Keizersgracht 126
+1015 CW Amsterdam
+Pays-Bas
+À l'attention de: 	EMC
+maxime coglitore
+8 Bd Victor Hugo
+34000 MONTPELLIER
+France
+Date de facture 	31-03-2025
+Période de facturation 	01-03-2025 pour 31-03-2025
+Référence de facture 	MOL-NL-R2025.0000402821
+Votre identifiant partenaire 19229250
+Votre numéro de TVA 	Afin de vous conformer à la réglementation européenne, veuillez ajouter votre numéro de TVA dans votre
+espace Mollie.
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch, SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 1 of 3 --
+
+Description de la facture EUR
+Description 	Solde Chiffre d'affaires 	Taux 	Non arrondi 	Arrondi
+Carte de crédit - frais de remboursement Carte Bancaire 	EUR 	5 0,25 EUR 	1,25 EUR 1,25 EUR
+Carte de crédit - frais de remboursement Cartes Européennes 	EUR 	1 0,25 EUR 	0,25 EUR 0,25 EUR
+Carte de crédit - frais de rétrofacturation Domestique 	EUR 	3 0,25 EUR 	0,75 EUR 0,75 EUR
+Carte de crédit - frais fixes American Express (intra-EEE) 	EUR 	13 0,14 EUR 	1,82 EUR 1,82 EUR
+Carte de crédit - frais fixes Carte Bancaire 	EUR 	1 456 0,14 EUR 	203,84 EUR 203,84 EUR
+Carte de crédit - frais fixes Cartes Européennes 	EUR 	199 0,14 EUR 	27,86 EUR 27,86 EUR
+Carte de crédit - frais fixes Domestiques 	EUR 	457 0,14 EUR 	63,98 EUR 63,98 EUR
+Carte de crédit - Frais fixes pour les cartes commerciales européennes 	EUR 	19 0,25 EUR 	4,75 EUR 4,75 EUR
+Carte de crédit - frais variables American Express (intra-EEE) 	EUR 	981,22 EUR 	2,2% 21,58684 EUR 21,58 EUR
+Carte de crédit - frais variables Carte Bancaire 	EUR 64 833,71 EUR 	0,6% 389,00226 EUR 389,00 EUR
+Carte de crédit - frais variables Cartes Européennes 	EUR 13 800,56 EUR 	0,6% 82,80336 EUR 82,80 EUR
+Carte de crédit - frais variables Domestiques 	EUR 21 471,95 EUR 	0,6% 128,8317 EUR 128,83 EUR
+Carte de crédit - frais variables pour les Cartes Commerciales Européennes 	EUR 1 166,14 EUR 	2,9% 33,81806 EUR 33,81 EUR
+Frais d'acceptation et de risque 	EUR 	2 660 0,04 EUR 	106,40 EUR 106,40 EUR
+Frais de remboursement Alma 	EUR 	2 0,25 EUR 	0,50 EUR 0,50 EUR
+Frais de tentative d'authentification 3DS 	EUR 	2 439 0,04 EUR 	97,56 EUR 97,56 EUR
+Frais fixes Alma Belgique payez en 3 fois 	EUR 	16 0,35 EUR 	5,60 EUR 5,60 EUR
+Frais fixes Alma France payez en 3 fois 	EUR 	20 0,10 EUR 	2,00 EUR 2,00 EUR
+Frais fixes Alma France payez en 4 fois 	EUR 	28 0,10 EUR 	2,80 EUR 2,80 EUR
+Frais fixes Bancontact 	EUR 	507 0,25 EUR 	126,75 EUR 126,75 EUR
+Frais fixes Carte de Crédit 	EUR 	15 0,25 EUR 	3,75 EUR 3,75 EUR
+Frais fixes Virement Bancaire 	EUR 	17 0,20 EUR 	3,40 EUR 3,40 EUR
+Frais variables Alma Belgique payez en 3 fois 	EUR 1 350,87 EUR 	4,29% 57,952323 EUR 57,95 EUR
+Frais variables Alma France payez en 3 fois 	EUR 1 678,14 EUR 	4,1% 68,80374 EUR 68,80 EUR
+Frais variables Alma France payez en 4 fois 	EUR 2 678,19 EUR 	4,99% 133,641681 EUR 133,64 EUR
+Frais variables Bancontact 	EUR 29 899,10 EUR 	1,4% 418,5874 EUR 418,58 EUR
+Frais variables Carte de Crédit 	EUR 1 268,81 EUR 	3,25% 41,236325 EUR 41,23 EUR
+Mastercard - Specialty Merchant Program - frais de traitement 	EUR 	1 50,00 EUR 	50,00 EUR 50,00 EUR
+Mastercard - Specialty Merchant Program - frais d’inscription 	EUR 	1 500,00 EUR 	500,00 EUR 500,00 EUR
+Remise Carte de crédit - frais fixes American Express (intra-EEE) 	EUR 	10 -0,14 EUR 	-1,40 EUR -1,40 EUR
+Remise Carte de crédit - frais fixes Carte Bancaire 	EUR 	1 079 -0,14 EUR 	-151,06 EUR -151,06 EUR
+Remise Carte de crédit - frais fixes Cartes Européennes 	EUR 	148 -0,14 EUR 	-20,72 EUR -20,72 EUR
+Remise Carte de crédit - frais fixes Domestiques 	EUR 	323 -0,14 EUR 	-45,22 EUR -45,22 EUR
+Remise Carte de crédit - Frais fixes pour les cartes commerciales européennes 	EUR 	17 -0,25 EUR 	-4,25 EUR -4,25 EUR
+Remise Carte de crédit - frais variables American Express (intra-EEE) 	EUR 	798,79 EUR 	2,2% -17,57338 EUR -17,57 EUR
+Remise Carte de crédit - frais variables Carte Bancaire 	EUR 47 615,50 EUR 	0,6% -285,693 EUR -285,69 EUR
+Remise Carte de crédit - frais variables Cartes Européennes 	EUR 9 650,08 EUR 	0,6% -57,90048 EUR -57,90 EUR
+Remise Carte de crédit - frais variables Domestiques 	EUR 15 047,42 EUR 	0,6% -90,28452 EUR -90,28 EUR
+Remise Carte de crédit - frais variables pour les Cartes Commerciales Européennes EUR 1 037,31 EUR 	2,9% -30,08199 EUR -30,08 EUR
+Remise Frais fixes Alma Belgique payez en 3 fois 	EUR 	9 -0,35 EUR 	-3,15 EUR -3,15 EUR
+Remise Frais fixes Alma France payez en 3 fois 	EUR 	15 -0,10 EUR 	-1,50 EUR -1,50 EUR
+Remise Frais fixes Alma France payez en 4 fois 	EUR 	14 -0,10 EUR 	-1,40 EUR -1,40 EUR
+Remise Frais fixes Bancontact 	EUR 	347 -0,25 EUR 	-86,75 EUR -86,75 EUR
+Remise Frais fixes Carte de Crédit 	EUR 	13 -0,25 EUR 	-3,25 EUR -3,25 EUR
+Remise Frais fixes Virement Bancaire 	EUR 	12 -0,20 EUR 	-2,40 EUR -2,40 EUR
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch, SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 2 of 3 --
+
+Description 	Solde Chiffre d'affaires 	Taux 	Non arrondi 	Arrondi
+Remise Frais variables Alma Belgique payez en 3 fois 	EUR 	732,10 EUR 	4,29% -31,40709 EUR -31,40 EUR
+Remise Frais variables Alma France payez en 3 fois 	EUR 1 325,39 EUR 	4,1% -54,34099 EUR -54,34 EUR
+Remise Frais variables Alma France payez en 4 fois 	EUR 1 231,78 EUR 	4,99% -61,465822 EUR -61,46 EUR
+Remise Frais variables Bancontact 	EUR 20 720,80 EUR 	1,4% -290,0912 EUR -290,09 EUR
+Remise Frais variables Carte de Crédit 	EUR 1 180,37 EUR 	3,25% -38,362025 EUR -38,36 EUR
+Visa - Integrity Risk Program - frais de traitement 	EUR 	1 50,00 EUR 	50,00 EUR 50,00 EUR
+Visa - Integrity Risk Program - frais d’inscription 	EUR 	1 950,00 EUR 	950,00 EUR 950,00 EUR
+Total hors TVA 	2 301,21 EUR
+Pour obtenir des informations sur tous les paiements et autres transactions du mois écoulé, consultez votre tableau de bord : Administration > Rapport
+Compte bancaire (IBAN): NL21 CITI 2032 3285 42 - BIC: CITINL2X (Citibank Europe PLC Netherlands branch, SCHIPHOL)
+Mollie B.V. - Numéro de TVA NL815839091B01 - Numéro d’identification de l’entreprise 30204462
+
+-- 3 of 3 --
+

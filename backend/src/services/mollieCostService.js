@@ -13,7 +13,9 @@
  * de statut. Hors Mollie (PayPal, Systempay), rien ne change.
  */
 const pool = require('../config/database');
-const { loadOrderRows, allocateInvoiceToOrders, rateGroup, METHOD_OF_TITLE } = require('./mollieAuditService');
+const {
+  loadOrderRows, allocateInvoiceToOrders, rateGroup, METHOD_OF_TITLE, classifyLine, coverageOf, allocate, roundKeepingTotal,
+} = require('./mollieAuditService');
 
 let tablesReady = null;
 function ensureTables() {
@@ -95,35 +97,74 @@ const isoDay = (d) => (d instanceof Date
  */
 async function applyMollieCosts({ apply = false } = {}) {
   await ensureTables();
-  const { rows: invoices } = await pool.query(`
+  const { rows: docs } = await pool.query(`
     SELECT invoice_number, period_start, period_end, total_ht::float AS total, parsed
-    FROM mollie_invoices WHERE period_start IS NOT NULL ORDER BY period_start`);
+    FROM mollie_invoices WHERE period_start IS NOT NULL ORDER BY period_start, invoice_number`);
+  const invoices = docs.filter((d) => d.parsed.docType !== 'credit');
   if (!invoices.length) throw new Error('Aucune facture Mollie enregistrée');
 
   const today = isoDay(new Date());
-  const months = [];
-  const exactCosts = [];
-  for (const inv of invoices) {
-    const from = isoDay(inv.period_start);
-    const to = isoDay(inv.period_end);
+  const periods = invoices.map((d) => ({ from: isoDay(d.period_start), to: isoDay(d.period_end), number: d.invoice_number }));
+  const invoiced = (day) => periods.some((p) => day >= p.from && day <= p.to);
+
+  const acc = {};        // coût accumulé par commande (factures + avoirs)
+  const source = {};     // facture qui porte la commande
+  const current = {};    // frais actuels, pour l'avant / après
+  const credits = [];
+  let lastRates = null;
+  const add = (costs, number) => {
+    for (const [id, c] of Object.entries(costs)) { acc[id] = r2((acc[id] || 0) + c); source[id] = source[id] || number; }
+  };
+
+  for (const doc of docs) {
+    const from = isoDay(doc.period_start);
+    const to = isoDay(doc.period_end);
+    // Un avoir qui nomme sa période (« during January 30 to May 20, 2026 ») va aux
+    // commandes de cette période, pas à celles du mois où il est émis.
+    const covering = [];
+    const rest = [];
+    for (const l of doc.parsed.lines || []) {
+      const cls = classifyLine(l.label);
+      const cov = cls?.kind === 'adjustment' ? coverageOf(l.label) : null;
+      (cov ? covering : rest).push({ l, cls, cov });
+    }
+
     const rows = await loadOrderRows(from, to);
-    const res = allocateInvoiceToOrders(inv.parsed, rows, today);
-    for (const [id, cost] of Object.entries(res.costs)) exactCosts.push({ id, cost, invoice: inv.invoice_number });
-    months.push({
-      invoiceNumber: inv.invoice_number, periodStart: from, periodEnd: to, kind: 'facture',
-      orders: rows.length, invoiceTotal: inv.total,
-      before: r2(rows.reduce((s, r) => s + (r.current || 0), 0)),
-      after: res.allocated, unallocated: res.unallocated,
-      rates: res.rates,
-    });
+    for (const r of rows) current[r.id] = r.current || 0;
+    const res = allocateInvoiceToOrders({ ...doc.parsed, lines: rest.map((x) => x.l) }, rows, today);
+    add(res.costs, doc.invoice_number);
+    if (doc.parsed.docType !== 'credit') lastRates = { rates: res.rates, number: doc.invoice_number, end: to };
+    if (doc.parsed.docType === 'credit') credits.push({ invoiceNumber: doc.invoice_number, label: (doc.parsed.lines || []).map((l) => l.label).join(' + '), amount: doc.total, spreadOn: `${from} → ${to}` });
+
+    for (const { l, cls, cov } of covering) {
+      let target = (await loadOrderRows(cov.from, cov.to)).filter((r) => invoiced(r.day));
+      if (!target.length) target = rows;
+      for (const r of target) current[r.id] = r.current || 0;
+      const parts = allocate(l, cls, target, (o) => o.id) || {};
+      add(roundKeepingTotal(parts, l.amount), doc.invoice_number);
+      credits.push({ invoiceNumber: doc.invoice_number, label: l.label, amount: l.amount, spreadOn: `${cov.from} → ${cov.to}`, orders: target.length });
+    }
   }
 
+  // Avant / après par facture : commandes de sa période, avoirs compris.
+  const months = [];
+  for (const p of periods) {
+    const rows = await loadOrderRows(p.from, p.to);
+    months.push({
+      invoiceNumber: p.number, periodStart: p.from, periodEnd: p.to, kind: 'facture', orders: rows.length,
+      invoiceTotal: invoices.find((d) => d.invoice_number === p.number).total,
+      before: r2(rows.reduce((s, r) => s + (current[r.id] ?? r.current ?? 0), 0)),
+      after: r2(rows.reduce((s, r) => s + (acc[r.id] || 0), 0)),
+      unallocated: [],
+    });
+  }
+  const exactCosts = Object.entries(acc).map(([id, cost]) => ({ id, cost, invoice: source[id] }));
+
   // Commandes plus récentes que la dernière facture : tarif recalé.
-  const last = months[months.length - 1];
-  const rates = last.rates;
-  const next = new Date(`${last.periodEnd}T12:00:00`);
+  const rates = lastRates.rates;
+  const next = new Date(`${lastRates.end}T12:00:00`);
   next.setDate(next.getDate() + 1);
-  const pending = await loadOrderRows(isoDay(next), null);
+  const pending = (await loadOrderRows(isoDay(next), null)).filter((r) => acc[r.id] == null);
   const estimated = [];
   for (const r of pending) {
     const rate = rates[rateGroup(r.method, r.country)];
@@ -133,6 +174,7 @@ async function applyMollieCosts({ apply = false } = {}) {
     kind: 'estimation', periodStart: isoDay(next), periodEnd: today, orders: pending.length,
     before: r2(estimated.reduce((s, e) => s + e.before, 0)), after: r2(estimated.reduce((s, e) => s + e.cost, 0)),
   });
+  const last = { invoiceNumber: lastRates.number };
 
   if (apply) {
     const client = await pool.connect();
@@ -169,7 +211,7 @@ async function applyMollieCosts({ apply = false } = {}) {
     }
   }
 
-  return { applied: apply, months, rates, sourceInvoice: last.invoiceNumber, exactOrders: exactCosts.length, estimatedOrders: estimated.length };
+  return { applied: apply, months, credits, rates, sourceInvoice: last.invoiceNumber, exactOrders: exactCosts.length, estimatedOrders: estimated.length };
 }
 
 module.exports = { ensureTables, mollieCostFor, applyMollieCosts };

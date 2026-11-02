@@ -1,0 +1,82 @@
+Facture
+Description 	Quantité 	Total
+Alma Belgique payez en 3 fois 	47 	234,39 EUR
+Alma France payez en 3 fois 	14 	52,74 EUR
+Alma France payez en 4 fois 	30 	151,57 EUR
+Cartes - Paiements En Ligne 	2 027 	918,43 EUR
+Cartes - Paiements en ligne 	16 	37,61 EUR
+Credit note on incorrect pricing during January 30 to May 20, 2026 (Other) 	1 	-654,13 EUR
+Frais d'acceptation et de risque 	37 	1,48 EUR
+Frais de tentative d'authentification 3DS 	2 291 	91,64 EUR
+Paiements Bancontact 	696 	751,66 EUR
+Paiements Pay by Bank 	14 	7,74 EUR
+Remboursements 	17 	4,25 EUR
+Total hors TVA 	1 597,38 EUR
+Total TVA comprise 	1 597,38 EUR
+Montant préréglé EUR -2 266,21 	-2 266,21 EUR
+Montant versé au solde (Indemnité de Facture) 	668,83 EUR
+Montant dû 	0,00 EUR
+Nous vous remercions pour votre paiement. Cette facture a été réglée dans son intégralité et aucun autre paiement n'est requis
+TVA assujetti à l'acquéreur; article 44 et 196 de la Directive 2006/112 de l'UE sur la TVA.
+Les détails peuvent être trouvés sur les pages suivantes.
+Mollie B.V.
+Keizersgracht 126
+1015 CW Amsterdam
+Pays-Bas
+À l'attention de EMC
+maxime coglitore
+8 Bd Victor Hugo
+34000 MONTPELLIER
+France
+Date de facture 	30-06-2026
+Période de facturation 01-06-2026 pour 30-06-2026
+Référence de facture MOL-NL-R2026.0000808398
+ID de l'organisation 19229250
+Votre numéro de TVA Afin de vous conformer à la
+réglementation européenne, veuillez
+ajouter votre numéro de TVA dans votre
+espace Mollie.
+Compte bancaire IBAN NL21 CITI 2032 3285 42  REF MOLNLR2026.0000808398  BIC CITINL2X Citibank Europe PLC Netherlands branch , SCHIPHOL
+Mollie B.V. - Numéro de TVA NL815839091B01  Numéro dʼidentification de lʼentreprise 30204462
+
+-- 1 of 2 --
+
+Description de la facture EUR
+Description 	Solde Chiffre d'affaires 	Taux 	Non arrondi 	Arrondi
+Alma Payer en 3 fois (Belgique) (frais fixes) 	EUR 	47 	0,35 EUR 	16,45 EUR 	16,45 EUR
+Alma Payer en 3 fois (Belgique) (frais variables) 	EUR 	5 080,39 EUR 	4,29% 217,948731 EUR 217,94 EUR
+Alma Payer en 3 fois (France) (frais fixes) 	EUR 	14 	0,10 EUR 	1,40 EUR 	1,40 EUR
+Alma Payer en 3 fois (France) (frais variables) 	EUR 	1 252,34 EUR 	4,1% 51,34594 EUR 	51,34 EUR
+Alma Payer en 4 fois (France) (frais fixes) 	EUR 	30 	0,10 EUR 	3,00 EUR 	3,00 EUR
+Alma Payer en 4 fois (France) (frais variables) 	EUR 	2 977,43 EUR 	4,99% 148,573757 EUR 148,57 EUR
+Bancontact (frais fixes) 	EUR 	696 0,228 EUR 	158,688 EUR 158,68 EUR
+Bancontact (frais variables) 	EUR 44 585,03 EUR 	1,33% 592,980899 EUR 592,98 EUR
+Carte de crédit - frais de remboursement Carte Bancaire 	EUR 	9 	0,25 EUR 	2,25 EUR 	2,25 EUR
+Carte de crédit - frais de remboursement Cartes domestiques 	EUR 	4 	0,25 EUR 	1,00 EUR 	1,00 EUR
+Carte de crédit - frais de remboursement des cartes européennes 	EUR 	2 	0,25 EUR 	0,50 EUR 	0,50 EUR
+Cartes - En Ligne - AmericanExpress Intra-EEE (frais fixes) 	EUR 	11 	0,134 EUR 	1,474 EUR 	1,47 EUR
+Cartes - En Ligne - AmericanExpress Intra-EEE (frais variables) 	EUR 	810,81 EUR 	2,17% 17,594577 EUR 	17,59 EUR
+Cartes - En Ligne - Cartes Bancaires (frais fixes) 	EUR 	1 350 	0,132 EUR 	178,20 EUR 178,20 EUR
+Cartes - En Ligne - Cartes Bancaires (frais variables) 	EUR 66 987,64 EUR 	0,57% 381,829548 EUR 381,82 EUR
+Cartes - En Ligne - Domestique Particulier (frais fixes) 	EUR 	468 	0,132 EUR 	61,776 EUR 	61,77 EUR
+Cartes - En Ligne - Domestique Particulier (frais variables) 	EUR 22 848,41 EUR 	0,56% 127,951096 EUR 127,95 EUR
+Cartes - En Ligne - Défaut (frais fixes) 	EUR 	16 	0,25 EUR 	4,00 EUR 	4,00 EUR
+Cartes - En Ligne - Défaut (frais variables) 	EUR 	1 034,35 EUR 	3,25% 33,616375 EUR 	33,61 EUR
+Cartes - En Ligne - Européenne Commerciale (frais fixes) 	EUR 	19 	0,25 EUR 	4,75 EUR 	4,75 EUR
+Cartes - En Ligne - Européenne Commerciale (frais variables) 	EUR 	1 659,69 EUR 	2,9% 	48,13101 EUR 	48,13 EUR
+Cartes - En Ligne - Européenne Particulier (frais fixes) 	EUR 	179 	0,132 EUR 	23,628 EUR 23,62 EUR
+Cartes - En Ligne - Européenne Particulier (frais variables) 	EUR 13 060,43 EUR 	0,56% 73,138408 EUR 	73,13 EUR
+Credit note on incorrect pricing during January 30 to May 20, 2026 (Other) 	EUR 	1 -654,13 EUR 	-654,13 EUR -654,13 EUR
+Frais d'acceptation et de risque (frais fixes) 	EUR 	37 	0,04 EUR 	1,48 EUR 	1,48 EUR
+Frais de tentative d'authentification 3DS (frais fixes) 	EUR 	2 291 	0,04 EUR 	91,64 EUR 	91,64 EUR
+Payer par Banque (frais fixes) 	EUR 	14 	0,15 EUR 	2,10 EUR 	2,10 EUR
+Payer par Banque (frais variables) 	EUR 	706,23 EUR 	0,8% 	5,64984 EUR 	5,64 EUR
+Remboursement Bancontact (frais fixes) 	EUR 	2 	0,25 EUR 	0,50 EUR 	0,50 EUR
+Total hors TVA 	1 597,38 EUR
+Pour obtenir des informations sur tous les paiements et autres transactions du mois écoulé, consultez votre tableau de bord :
+Administration > Rapport
+Compte bancaire IBAN NL21 CITI 2032 3285 42  REF MOLNLR2026.0000808398  BIC CITINL2X Citibank Europe PLC Netherlands branch , SCHIPHOL
+Mollie B.V. - Numéro de TVA NL815839091B01  Numéro dʼidentification de lʼentreprise 30204462
+
+-- 2 of 2 --
+
