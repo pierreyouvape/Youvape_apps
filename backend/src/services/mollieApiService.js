@@ -200,16 +200,18 @@ const MOLLIE_METHOD = { creditcard: 'cards', bancontact: 'bancontact', alma: 'al
  * Paiements Mollie payés sur la période (heure de Paris, comme nos commandes)
  * confrontés à nos commandes : chaque écart nommé, avec sa raison probable.
  */
-async function reconcile(periodStart, periodEnd, paidStatuses) {
+async function reconcile(periodStart, periodEnd, paidStatuses, titleMethods = {}) {
   await ensureTable();
   const { rows: pays } = await pool.query(`
     SELECT p.id, p.method, p.amount::float, COALESCE(p.amount_refunded, 0)::float AS refunded,
            COALESCE(p.amount_charged_back, 0)::float AS charged_back, p.order_id, p.description,
            to_char(p.paid_at AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD HH24:MI') AS paid_at,
-           o.wp_order_id::bigint AS our_order, o.post_status, o.mollie_payment_id AS order_payment, o.order_total::float AS order_total,
+           o.wp_order_id::bigint AS our_order, o.post_status, o.payment_method_title AS order_title, o.mollie_payment_id AS order_payment, o.order_total::float AS order_total,
            to_char(COALESCE(o.paid_date, o.post_date), 'YYYY-MM-DD HH24:MI') AS order_paid_at
     FROM mollie_payments p
-    LEFT JOIN orders o ON o.wp_order_id = p.order_id
+    -- Sans metadata (lien de paiement fait à la main), le n° est dans la description :
+    -- « Complément commande N°1269313 ».
+    LEFT JOIN orders o ON o.wp_order_id = COALESCE(p.order_id, NULLIF(substring(p.description from '(\\d{6,8})'), '')::bigint)
     WHERE p.paid_at IS NOT NULL
       AND (p.paid_at AT TIME ZONE 'Europe/Paris') >= $1::date
       AND (p.paid_at AT TIME ZONE 'Europe/Paris') <  $2::date + 1
@@ -225,6 +227,9 @@ async function reconcile(periodStart, periodEnd, paidStatuses) {
   `, [periodStart, periodEnd, paidStatuses]);
 
   const payIds = new Set(pays.map((p) => p.id));
+  // Paiements Mollie par commande : une commande réglée en plusieurs fois.
+  const perOrder = {};
+  for (const p of pays) if (p.our_order) (perOrder[p.our_order] = perOrder[p.our_order] || []).push(p);
   const byMethod = {};
   const mollieOnly = [];
   for (const p of pays) {
@@ -233,13 +238,24 @@ async function reconcile(periodStart, periodEnd, paidStatuses) {
     byMethod[m].count++;
     byMethod[m].amount += p.amount;
     let reason = null;
-    if (!p.our_order) reason = p.order_id ? 'Commande inconnue chez nous' : 'Paiement sans commande (lien de paiement, paiement manuel ?)';
+    const siblings = p.our_order ? perOrder[p.our_order] : [];
+    const isPartial = p.our_order && siblings.length > 1 && Math.abs(siblings.reduce((a, x) => a + x.amount, 0) - p.order_total) < 0.05;
+    const viaLink = p.our_order && !p.order_id;
+    if (isPartial) {
+      const other = siblings.filter((x) => x.id !== p.id).map((x) => `${x.amount} € en ${MOLLIE_METHOD[x.method] || x.method}`).join(' + ');
+      reason = `Commande réglée en plusieurs fois (${p.amount} € ici + ${other}) : chez nous, tout est compté sur un seul moyen`;
+    } else if (viaLink && p.order_payment !== p.id) {
+      reason = `Lien de paiement « ${p.description} » (commande ${p.our_order} de ${p.order_total} €, réglée par ailleurs) : encaissement en plus de la commande`;
+    } else if (!p.our_order) reason = p.order_id ? 'Commande inconnue chez nous' : 'Paiement sans commande (lien de paiement, paiement manuel ?)';
     else if (p.order_payment && p.order_payment !== p.id) reason = `Paiement en double : la commande est réglée par ${p.order_payment}`;
     else if (!paidStatuses.includes(p.post_status) && !p.order_paid_at) reason = `Commande « ${p.post_status} » chez nous alors que Mollie l'a encaissée`;
     else if (p.order_paid_at && (p.order_paid_at.slice(0, 10) < periodStart || p.order_paid_at.slice(0, 10) > periodEnd)) reason = `Payée le ${p.order_paid_at} chez nous (autre mois)`;
+    else if (titleMethods[p.order_title] !== m) reason = `Payée en ${m} chez Mollie, enregistrée « ${p.order_title || 'sans libellé'} » chez nous (le client a changé de moyen sur la page Mollie)`;
+    else if (p.order_total != null && Math.abs(p.order_total - p.amount) > 0.015) reason = `Montant différent de la commande (${p.amount} € encaissés pour ${p.order_total} €)`;
     if (reason) mollieOnly.push({ ...p, methodKey: m, reason });
   }
-  const oursOnly = ours.filter((o) => !payIds.has(o.mollie_payment_id)).map((o) => ({ ...o, reason: 'Paiement Mollie absent ou payé un autre mois' }));
+  // Une commande Systempay garde parfois l'identifiant d'une tentative Mollie abandonnée : hors sujet.
+  const oursOnly = ours.filter((o) => titleMethods[o.title] && !payIds.has(o.mollie_payment_id)).map((o) => ({ ...o, reason: 'Paiement Mollie absent ou payé un autre mois' }));
 
   const { rows: [sync] } = await pool.query('SELECT max(created_at) AS last, min(created_at) AS first FROM mollie_payments');
   return {
@@ -251,4 +267,20 @@ async function reconcile(periodStart, periodEnd, paidStatuses) {
   };
 }
 
-module.exports = { getToken, saveToken, probe, runSync, status, reconcile, ensureTable };
+/**
+ * Chaque nuit à 5h40 : synchro incrémentale (10 derniers jours), pour que le
+ * rapprochement paiement par paiement reste à jour sans clic. Sans jeton : rien.
+ */
+function setupMollieSyncCron() {
+  const cron = require('node-cron');
+  cron.schedule('40 5 * * *', async () => {
+    try {
+      if (await getToken()) await runSync();
+    } catch (e) {
+      console.error('Cron synchro paiements Mollie :', e.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron synchro paiements Mollie configure: tous les jours a 5h40 (Europe/Paris)');
+}
+
+module.exports = { getToken, saveToken, probe, runSync, status, reconcile, ensureTable, setupMollieSyncCron };

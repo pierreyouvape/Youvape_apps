@@ -165,6 +165,7 @@ app.listen(PORT, async () => {
 
   // Emplacements de rangement (indication pour la reception)
   setupBmsShelfLocationCron();
+  require('./services/mollieApiService').setupMollieSyncCron();
   // Initialiser le check re-sync stocks (one-shot programme)
   setupStockResyncCron();
 

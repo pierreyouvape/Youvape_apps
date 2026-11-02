@@ -212,7 +212,8 @@ exports.paymentsReco = async (req, res) => {
     const { rows } = await pool.query('SELECT period_start, period_end FROM mollie_invoices WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, error: 'Facture introuvable' });
     if (!(await mollieApi.getToken())) return res.json({ success: true, configured: false });
-    const reco = await mollieApi.reconcile(isoDate(rows[0].period_start), isoDate(rows[0].period_end), PAID_STATUSES);
+    const titleMethods = Object.fromEntries(Object.entries(METHODS).flatMap(([k, m]) => m.titles.map((t) => [t, k])));
+    const reco = await mollieApi.reconcile(isoDate(rows[0].period_start), isoDate(rows[0].period_end), PAID_STATUSES, titleMethods);
     res.json({ success: true, configured: true, ...reco });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

@@ -106,6 +106,18 @@ function referenceFor(rateKey, periodStart, periodEnd) {
   return [atStart, ...during].filter(Boolean);
 }
 
+/**
+ * Moyen de paiement d'une commande : celui que Mollie a RÉELLEMENT encaissé
+ * (API, mollie_payments) l'emporte sur le libellé WooCommerce. Juillet 2026 :
+ * 4 commandes payées en Pay by Bank restaient « Carte Bancaire » chez nous, dont
+ * une sous le libellé Systempay (1249304), donc hors des frais Mollie.
+ */
+const PAID_METHOD_SQL = `COALESCE(
+  CASE mp.method WHEN 'creditcard' THEN 'cards' WHEN 'bancontact' THEN 'bancontact' WHEN 'alma' THEN 'alma'
+                 WHEN 'paybybank' THEN 'paybybank' WHEN 'banktransfer' THEN 'paybybank' END,
+  (SELECT t.k FROM jsonb_each_text($5::jsonb) AS t(title, k) WHERE t.title = o.payment_method_title))`;
+const methodParams = () => [Object.values(METHODS).flatMap((m) => m.titles), JSON.stringify(Object.fromEntries(Object.entries(METHODS).flatMap(([k, m]) => m.titles.map((t) => [t, k]))))];
+
 const zoneOf = (country) => (FR_ZONE.includes(country) ? 'FR' : EEA.includes(country) ? 'EEA' : 'NON_EEA');
 
 /**
@@ -114,25 +126,25 @@ const zoneOf = (country) => (FR_ZONE.includes(country) ? 'FR' : EEA.includes(cou
  * Mollie a encaissé, et facturé, ce paiement (1247510 / 1247512 en juillet 2026).
  */
 async function loadOrders(periodStart, periodEnd) {
-  const titles = Object.values(METHODS).flatMap((m) => m.titles);
+  await require('./mollieApiService').ensureTable();
   const { rows } = await pool.query(`
-    SELECT payment_method_title AS title,
-           COALESCE(NULLIF(billing_country, ''), NULLIF(shipping_country, ''), '??') AS country,
+    SELECT ${PAID_METHOD_SQL} AS method,
+           COALESCE(NULLIF(o.billing_country, ''), NULLIF(o.shipping_country, ''), '??') AS country,
            count(*)::int AS n,
-           COALESCE(sum(order_total), 0)::float AS volume,
-           COALESCE(sum(payment_cost_calculated), 0)::float AS estimated,
-           count(*) FILTER (WHERE NOT post_status = ANY($3))::int AS paid_then_cancelled,
-           string_agg(wp_order_id::text, ', ') FILTER (WHERE NOT post_status = ANY($3)) AS paid_then_cancelled_ids
-    FROM orders
-    WHERE COALESCE(paid_date, post_date) >= $1::date
-      AND COALESCE(paid_date, post_date) <  $2::date + 1
-      AND (post_status = ANY($3) OR paid_date IS NOT NULL)
-      AND order_total > 0
-      AND payment_method_title = ANY($4)
+           COALESCE(sum(o.order_total), 0)::float AS volume,
+           COALESCE(sum(o.payment_cost_calculated), 0)::float AS estimated,
+           count(*) FILTER (WHERE NOT o.post_status = ANY($3))::int AS paid_then_cancelled,
+           string_agg(o.wp_order_id::text, ', ') FILTER (WHERE NOT o.post_status = ANY($3)) AS paid_then_cancelled_ids
+    FROM orders o
+    LEFT JOIN mollie_payments mp ON mp.id = o.mollie_payment_id AND mp.paid_at IS NOT NULL
+    WHERE COALESCE(o.paid_date, o.post_date) >= $1::date
+      AND COALESCE(o.paid_date, o.post_date) <  $2::date + 1
+      AND (o.post_status = ANY($3) OR o.paid_date IS NOT NULL)
+      AND o.order_total > 0
+      AND (o.payment_method_title = ANY($4) OR mp.id IS NOT NULL)
     GROUP BY 1, 2
-  `, [periodStart, periodEnd, PAID_STATUSES, titles]);
-  const methodOf = Object.fromEntries(Object.entries(METHODS).flatMap(([k, m]) => m.titles.map((t) => [t, k])));
-  return rows.map((r) => ({ ...r, method: methodOf[r.title], zone: zoneOf(r.country) }));
+  `, [periodStart, periodEnd, PAID_STATUSES, ...methodParams()]);
+  return rows.filter((r) => r.method).map((r) => ({ ...r, zone: zoneOf(r.country) }));
 }
 
 /**
@@ -431,19 +443,21 @@ function rateGroup(method, country) {
 
 /** Commandes Mollie payées sur [from, to] (dates incluses), une ligne par commande. */
 async function loadOrderRows(from, to) {
+  await require('./mollieApiService').ensureTable();
   const { rows } = await pool.query(`
-    SELECT wp_order_id::bigint AS id, payment_method_title AS title,
-           COALESCE(NULLIF(billing_country, ''), NULLIF(shipping_country, ''), '??') AS country,
-           order_total::float AS volume, payment_cost_calculated::float AS current,
-           to_char(COALESCE(paid_date, post_date), 'YYYY-MM-DD') AS day
-    FROM orders
-    WHERE COALESCE(paid_date, post_date) >= $1::date
-      AND ($2::date IS NULL OR COALESCE(paid_date, post_date) < $2::date + 1)
-      AND post_status = ANY($3)
-      AND order_total > 0
-      AND payment_method_title = ANY($4)
-  `, [from, to, PAID_STATUSES, Object.keys(METHOD_OF_TITLE)]);
-  return rows.map((r) => ({ ...r, n: 1, method: METHOD_OF_TITLE[r.title], zone: zoneOf(r.country) }));
+    SELECT o.wp_order_id::bigint AS id, o.payment_method_title AS title, ${PAID_METHOD_SQL} AS method,
+           COALESCE(NULLIF(o.billing_country, ''), NULLIF(o.shipping_country, ''), '??') AS country,
+           o.order_total::float AS volume, o.payment_cost_calculated::float AS current,
+           to_char(COALESCE(o.paid_date, o.post_date), 'YYYY-MM-DD') AS day
+    FROM orders o
+    LEFT JOIN mollie_payments mp ON mp.id = o.mollie_payment_id AND mp.paid_at IS NOT NULL
+    WHERE COALESCE(o.paid_date, o.post_date) >= $1::date
+      AND ($2::date IS NULL OR COALESCE(o.paid_date, o.post_date) < $2::date + 1)
+      AND o.post_status = ANY($3)
+      AND o.order_total > 0
+      AND (o.payment_method_title = ANY($4) OR mp.id IS NOT NULL)
+  `, [from, to, PAID_STATUSES, ...methodParams()]);
+  return rows.filter((r) => r.method).map((r) => ({ ...r, n: 1, zone: zoneOf(r.country) }));
 }
 
 /** Tarif en vigueur à une date pour une ligne classée (contrat ou tarif standard). */
