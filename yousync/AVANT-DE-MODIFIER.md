@@ -233,6 +233,9 @@ Jetpack. Le scénario les bloque (`pre_http_request`, `woocommerce_webhook_shoul
       Donc `is_ssl()`, Cloudflare et Plesk ne sont vérifiés qu'en prod (§10). Si `is_ssl()` et
       `X-Forwarded-Proto` échouent, le polling répond 403 et alerte : les événements attendent,
       et le rattrapage continue par l'API WooCommerce.
+      ✅ **`is_ssl()` vrai en prod, prouvé le 02/11/2026** : `wc/v3/orders` y accepte la clé
+      WooCommerce passée en paramètres (`wcRequest`), ce que WooCommerce ne permet que si
+      `is_ssl()` est vrai (sinon OAuth 1.0a obligatoire). Même chemin Cloudflare → Plesk que yousync.
 - [ ] Vrai tunnel de commande : commandes créées par le code, pas par le checkout ni Mollie.
 - [ ] Coupure réelle de 48 h : simulée en vieillissant des lignes de 72 h.
 - [ ] Bouton Rejouer à l'écran : méthode testée, pas le clic. Pause : idem.
