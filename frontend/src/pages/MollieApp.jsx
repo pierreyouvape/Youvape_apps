@@ -410,13 +410,14 @@ function InvoiceDetail({ data, onBack, onPdf }) {
         </div>
       </Card>
 
-      <Card title="Rapprochement avec nos commandes" sub="Paiements et montants facturés par Mollie contre nos commandes payées de la période (date de paiement).">
+      <Card title="Rapprochement avec nos commandes" sub="Argent ENCAISSÉ par Mollie contre nos commandes payées de la période (date de paiement). Un écart ici n'est pas une surfacturation : la dernière colonne donne ce qu'il représente en frais.">
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
               <th style={th}>Moyen</th>
               <th style={{ ...th, ...num }}>Paiements Mollie</th><th style={{ ...th, ...num }}>Nos commandes</th><th style={{ ...th, ...num }}>Écart</th>
               <th style={{ ...th, ...num }}>Montant Mollie</th><th style={{ ...th, ...num }}>Nos commandes</th><th style={{ ...th, ...num }}>Écart</th>
+              <th style={{ ...th, ...num }}>Frais correspondants</th>
             </tr></thead>
             <tbody>
               {audit.reconciliation.map((r) => (
@@ -428,6 +429,7 @@ function InvoiceDetail({ data, onBack, onPdf }) {
                   <td style={{ ...td, ...num }}>{fmtEur(r.mollieVolume)}</td>
                   <td style={{ ...td, ...num }}>{fmtEur(r.ourVolume)}</td>
                   <td style={{ ...td, ...num, color: r.diffVolume > 0 ? C.orange : C.greyT }}>{r.diffVolume > 0 ? '+' : ''}{fmtEur(r.diffVolume)}</td>
+                  <td style={{ ...td, ...num, color: C.greyT }}>{r.feeImpact ? `${r.feeImpact > 0 ? '+' : ''}${fmtEur(r.feeImpact)}` : '—'}</td>
                 </tr>
               ))}
             </tbody>

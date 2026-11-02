@@ -108,7 +108,11 @@ function referenceFor(rateKey, periodStart, periodEnd) {
 
 const zoneOf = (country) => (FR_ZONE.includes(country) ? 'FR' : EEA.includes(country) ? 'EEA' : 'NON_EEA');
 
-/** Nos commandes payées sur la période, par libellé de paiement × pays. */
+/**
+ * Nos commandes payées sur la période, par libellé de paiement × pays.
+ * Une commande payée puis annulée (paid_date posé, statut « annulée ») compte :
+ * Mollie a encaissé, et facturé, ce paiement (1247510 / 1247512 en juillet 2026).
+ */
 async function loadOrders(periodStart, periodEnd) {
   const titles = Object.values(METHODS).flatMap((m) => m.titles);
   const { rows } = await pool.query(`
@@ -116,11 +120,13 @@ async function loadOrders(periodStart, periodEnd) {
            COALESCE(NULLIF(billing_country, ''), NULLIF(shipping_country, ''), '??') AS country,
            count(*)::int AS n,
            COALESCE(sum(order_total), 0)::float AS volume,
-           COALESCE(sum(payment_cost_calculated), 0)::float AS estimated
+           COALESCE(sum(payment_cost_calculated), 0)::float AS estimated,
+           count(*) FILTER (WHERE NOT post_status = ANY($3))::int AS paid_then_cancelled,
+           string_agg(wp_order_id::text, ', ') FILTER (WHERE NOT post_status = ANY($3)) AS paid_then_cancelled_ids
     FROM orders
     WHERE COALESCE(paid_date, post_date) >= $1::date
       AND COALESCE(paid_date, post_date) <  $2::date + 1
-      AND post_status = ANY($3)
+      AND (post_status = ANY($3) OR paid_date IS NOT NULL)
       AND order_total > 0
       AND payment_method_title = ANY($4)
     GROUP BY 1, 2
@@ -336,22 +342,35 @@ async function auditInvoice(inv, orders, ctx = {}) {
     { key: 'alma_fr', label: 'Alma France', mol: (l) => l.cls.method === 'alma' && l.cls.zone === 'FR', our: (o) => o.method === 'alma' && o.country !== 'BE' },
     { key: 'paybybank', label: 'Pay by Bank', mol: (l) => l.cls.method === 'paybybank', our: (o) => o.method === 'paybybank' },
   ];
+  // Ce que l'écart représente en FRAIS (fixe moyen × paiements + taux moyen × montant).
+  const feeOf = (method, n, vol) => {
+    const b = byMethod[method];
+    if (!b) return 0;
+    return (b.transactions ? b.fixed / b.transactions * n : 0) + (b.volume ? b.variable / b.volume * vol : 0);
+  };
   const reconciliation = recoDefs.map((d) => {
     const mo = mollieOf(d.mol);
     const ou = ours(d.our);
+    const method = d.key.startsWith('alma') ? 'alma' : d.key;
     return {
+      feeImpact: r2(feeOf(method, mo.n - ou.n, mo.volume - ou.volume)),
       key: d.key, label: d.label,
       mollieCount: mo.n, mollieVolume: r2(mo.volume),
       ourCount: ou.n, ourVolume: r2(ou.volume),
       diffCount: mo.n - ou.n, diffVolume: r2(mo.volume - ou.volume),
     };
   }).filter((r) => !isCredit && (r.mollieCount || r.ourCount));
+  const ptc = orders.filter((o) => o.paid_then_cancelled);
+  if (ptc.length) {
+    const ids = ptc.map((o) => o.paid_then_cancelled_ids).join(', ');
+    add('info', 'Commandes payées puis annulées', `${ptc.reduce((a, o) => a + o.paid_then_cancelled, 0)} commande(s) payée(s) puis annulée(s) comptée(s) dans le rapprochement (${ids}) : Mollie a encaissé et facturé ces paiements.`);
+  }
   for (const r of reconciliation) {
     const tolN = Math.max(3, r.ourCount * 0.02);
     const tolV = Math.max(50, r.ourVolume * 0.02);
     if (r.diffCount > tolN || r.diffVolume > tolV) {
-      add('warn', `${r.label} : Mollie facture plus que nos ventes`,
-        `${r.mollieCount} paiements / ${r.mollieVolume} € chez Mollie contre ${r.ourCount} / ${r.ourVolume} € dans nos commandes payées (écart ${r.diffCount} / ${r.diffVolume} €). Paiements hors site (boutiques, liens de paiement) ou commandes non synchronisées ?`);
+      add('warn', `${r.label} : plus de paiements chez Mollie que dans nos commandes`,
+        `${r.mollieCount} paiements / ${r.mollieVolume} € encaissés chez Mollie contre ${r.ourCount} / ${r.ourVolume} € dans nos commandes payées (écart ${r.diffCount} / ${r.diffVolume} €). Ce n'est pas une surfacturation : ce sont des paiements que nous ne retrouvons pas (paiement en double remboursé, lien de paiement, paiement hors site). Frais Mollie correspondants : environ ${r.feeImpact} €.`, r.feeImpact);
     } else if (-r.diffCount > tolN || -r.diffVolume > tolV) {
       add('info', `${r.label} : moins de paiements Mollie que de commandes`,
         `${r.mollieCount} / ${r.mollieVolume} € chez Mollie contre ${r.ourCount} / ${r.ourVolume} € chez nous (commandes payées autrement ou à cheval sur deux mois).`);
