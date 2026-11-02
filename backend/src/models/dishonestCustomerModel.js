@@ -43,7 +43,8 @@ const activeFlags = async () => {
     `SELECT wp_customer_id::text AS wp_user_id, billing_email, billing_phone, shipping_phone,
             billing_first_name, billing_last_name
        FROM orders
-      WHERE wp_customer_id = ANY($1::bigint[])`,
+      WHERE wp_customer_id = ANY($1::bigint[])
+      ORDER BY post_date DESC`,
     [flags.map(f => f.wp_user_id)]
   );
   const byUser = new Map();
@@ -57,7 +58,10 @@ const activeFlags = async () => {
     return {
       id: f.id,
       wpUserId: f.wp_user_id,
-      customerName: fullName(f.first_name, f.last_name) || f.email || `#${f.wp_user_id}`,
+      // Compte sans nom (fréquent) : celui de sa dernière commande.
+      customerName: fullName(f.first_name, f.last_name)
+        || own.map(o => fullName(o.billing_first_name, o.billing_last_name)).find(Boolean)
+        || f.email || `#${f.wp_user_id}`,
       reason: f.reason,
       flaggedAt: f.flagged_at,
       flaggedLocal: f.flagged_local,
