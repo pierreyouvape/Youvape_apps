@@ -151,3 +151,51 @@ export default function DishonestFlagPanel({ wpUserId }) {
     </div>
   );
 }
+
+/** « même téléphone (06…) », puis « … que Nom (#id) ». */
+const matchText = (a) => `${MATCH_LABELS[a.matchedBy] || a.matchedBy}${a.matchedValue ? ` (${a.matchedValue})` : ''}`;
+const relatedText = (a) => `${matchText(a)} que ${a.customerName} (#${a.wpUserId})`;
+
+/**
+ * SAV, panneau client du ticket : le client est signalé, ou ressemble à un
+ * client signalé (`alert` = ticket.dishonest, cf. dishonestCustomerModel.matchTickets).
+ */
+export function DishonestTicketBanner({ alert }) {
+  if (!alert) return null;
+  const self = alert.matchedBy === 'compte';
+  return (
+    <div style={{ ...banner, fontSize: 12.5, padding: '10px 12px', marginBottom: 14 }}>
+      <strong style={{ fontSize: 13.5 }}>
+        {self ? 'Client ayant été malhonnête' : 'Peut-être un client ayant été malhonnête'}
+      </strong>
+      {!self && (
+        <div>
+          {matchText(alert)} que{' '}
+          <a href={`/customers/${alert.wpUserId}`} target="_blank" rel="noopener noreferrer"
+            style={{ color: RED, fontWeight: 800 }}>
+            {alert.customerName} (#{alert.wpUserId})
+          </a>
+        </div>
+      )}
+      <div>Motif : « {alert.reason} »</div>
+      <div style={{ fontSize: 11.5, opacity: 0.85 }}>{signedBy(alert)}</div>
+    </div>
+  );
+}
+
+/** SAV, liste des tickets : puce à côté du sujet. */
+export function DishonestTicketChip({ alert, style }) {
+  if (!alert) return null;
+  const self = alert.matchedBy === 'compte';
+  return (
+    <span
+      title={`${self ? 'Client ayant été malhonnête' : `Peut-être un client ayant été malhonnête : ${relatedText(alert)}`}`
+        + ` — motif : « ${alert.reason} »`}
+      style={{
+        display: 'inline-block', background: RED, color: '#fff', borderRadius: 4,
+        padding: '1px 6px', fontSize: 10.5, fontWeight: 800, whiteSpace: 'nowrap', verticalAlign: 'middle',
+        ...style,
+      }}
+    >{self ? 'Client malhonnête' : 'Client malhonnête ?'}</span>
+  );
+}

@@ -1,6 +1,14 @@
 const pool = require('../config/database');
 const { emitChange } = require('../services/ticketEvents');
 const { parseReturnCode } = require('../services/returnRules');
+const dishonestCustomerModel = require('./dishonestCustomerModel');
+
+// Client signalé (ou un autre compte à lui) : marqueur du SAV. Une panne ne
+// doit jamais empêcher d'afficher les tickets.
+const dishonestByTicket = (ids) => dishonestCustomerModel.matchTickets(ids).catch((error) => {
+  console.error('[SAV] Clients signalés illisibles :', error.message);
+  return new Map();
+});
 
 // ─── Statuts ──────────────────────────────────────────────────────────────────
 async function getValidStatuses() {
@@ -175,6 +183,9 @@ class SavModel {
       values
     );
 
+    const dishonest = await dishonestByTicket(result.rows.map(t => t.id));
+    for (const t of result.rows) t.dishonest = dishonest.get(t.id) || null;
+
     return { tickets: result.rows, total };
   }
 
@@ -210,6 +221,8 @@ class SavModel {
     );
     const ticket = result.rows[0] || null;
     if (!ticket) return null;
+
+    ticket.dishonest = (await dishonestByTicket([ticket.id])).get(ticket.id) || null;
 
     // Articles de la commande concernée
     if (ticket.order_wp_id) {

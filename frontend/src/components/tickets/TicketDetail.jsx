@@ -20,6 +20,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import Drawer from '../Drawer';
 import useTicketsAccess from './useTicketsAccess';
 import { openSavStream } from './savStream';
+import { DishonestTicketBanner } from '../DishonestFlagPanel';
 
 const C = {
   orange: '#E28F00', rouge: '#DE2020',
@@ -2943,6 +2944,7 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
             </a>
           </div>
         </div>
+        <DishonestTicketBanner alert={ticket.dishonest} />
         <div style={{
           display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 14px',
           paddingTop: 14, borderTop: `1px solid ${C.grisCL}`,

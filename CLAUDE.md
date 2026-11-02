@@ -412,6 +412,9 @@ Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_item
 - Picking : **hors des règles tant que le client est signalé**, ticket fermé ou non (choix
   Pierre), vague manuelle possible. Recalculé à chaque lecture (`dishonestCustomerModel.matchOrders`),
   jamais lu depuis `dishonest_orders` : le cron ne sert qu'aux tickets (`dishonestOrderService`, */5).
+- SAV : `ticket.dishonest` (liste et détail, `matchTickets`) → puce « Client malhonnête » dans la liste,
+  bandeau dans le panneau client. Tout ce que le ticket sait compte (compte, email, tél., nom du ticket
+  ET de sa commande), sans condition de date.
 
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.

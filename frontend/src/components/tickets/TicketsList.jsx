@@ -9,6 +9,7 @@ import { useTicketStatuses } from './useTicketStatuses';
 import { AuthContext } from '../../context/AuthContext';
 import useTicketsAccess from './useTicketsAccess';
 import { openSavStream } from './savStream';
+import { DishonestTicketChip } from '../DishonestFlagPanel';
 
 const C = {
   grisTL: '#F2F6F8', grisCL: '#E2E2E2', grisM: '#8A99A4',
@@ -1084,6 +1085,7 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                       borderRadius: 4, padding: '1px 6px', fontSize: 10.5, fontWeight: 800,
                     }}>⚠ Doublon</span>
                   )}
+                  <DishonestTicketChip alert={t.dishonest} />
                   <span style={{ marginLeft: 'auto', color: C.grisM, fontSize: 11.5, whiteSpace: 'nowrap' }}>
                     {formatDateUTC(t.updated_at, { time: true })}
                   </span>
@@ -1201,9 +1203,10 @@ export default function TicketsList({ activeView, views = [], onRefresh, refresh
                               }}
                             >⚠ Doublon</span>
                           )}
+                          <DishonestTicketChip alert={t.dishonest} style={{ marginRight: 8 }} />
                           <span style={{
                             display: 'inline-block',
-                            maxWidth: t.has_duplicate_warning ? 'calc(100% - 80px)' : '100%',
+                            maxWidth: `calc(100% - ${(t.has_duplicate_warning ? 80 : 0) + (t.dishonest ? 130 : 0)}px)`,
                             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             fontWeight: 500, verticalAlign: 'middle',
                             ...(subjectPill(t) || {}),

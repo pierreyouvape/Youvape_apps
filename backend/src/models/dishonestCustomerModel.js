@@ -203,6 +203,55 @@ const forCustomer = async (wpUserId) => {
   };
 };
 
+/**
+ * Pour le SAV : les tickets dont le client est signalé, ou semble l'être sous
+ * un autre compte. Tout ce que le ticket sait compte (compte, email, téléphone,
+ * nom du ticket et de sa commande), sans condition de date : un ticket d'un
+ * client signalé est toujours à lire avec prudence.
+ *
+ * @param {Array<number>} ticketIds
+ * @returns {Promise<Map<number, object>>} id du ticket → { wpUserId, customerName,
+ *   reason, flaggedAt, flaggedBy, matchedBy, matchedValue }
+ */
+const matchTickets = async (ticketIds) => {
+  const byTicket = new Map();
+  const ids = [...new Set(ticketIds.map(Number))].filter(Number.isInteger);
+  if (ids.length === 0) return byTicket;
+  const flags = await activeFlags();
+  if (flags.length === 0) return byTicket;
+
+  const { rows } = await pool.query(
+    `SELECT t.id, c.wp_user_id::text AS c_wp, o.wp_customer_id::text AS o_wp,
+            t.customer_email, c.email AS c_email, o.billing_email,
+            t.customer_phone, o.billing_phone, o.shipping_phone,
+            t.customer_first_name, t.customer_last_name, c.first_name, c.last_name,
+            o.billing_first_name, o.billing_last_name, o.shipping_first_name, o.shipping_last_name
+       FROM sav_tickets t
+       LEFT JOIN customers c ON c.id = t.customer_id
+       LEFT JOIN orders o ON o.wp_order_id::text = t.order_id
+      WHERE t.id = ANY($1::int[])`,
+    [ids]
+  );
+  for (const t of rows) {
+    const base = {
+      emails: [t.customer_email, t.c_email, t.billing_email],
+      phones: [t.customer_phone, t.billing_phone, t.shipping_phone],
+      names: [[t.customer_first_name, t.customer_last_name], [t.first_name, t.last_name],
+        [t.billing_first_name, t.billing_last_name], [t.shipping_first_name, t.shipping_last_name]]
+    };
+    const accounts = [...new Set([t.c_wp, t.o_wp].filter(Boolean))];
+    let best = null;
+    for (const flag of flags) {
+      for (const wpUserId of accounts.length ? accounts : [null]) {
+        const m = matchSignature({ ...base, wpUserId }, flag.signature);
+        if (m && (!best || CRITERIA.indexOf(m.matchedBy) < CRITERIA.indexOf(best.matchedBy))) best = { ...m, flag };
+      }
+    }
+    if (best) byTicket.set(t.id, toAlert(best));
+  }
+  return byTicket;
+};
+
 const flagCustomer = async (wpUserId, reason, userId) => {
   const text = String(reason ?? '').trim();
   if (!text) throw httpError(400, 'Le motif est obligatoire.');
@@ -229,4 +278,6 @@ const unflagCustomer = async (wpUserId, userId) => {
   if (rowCount === 0) throw httpError(404, 'Ce client n\'est pas signalé.');
 };
 
-module.exports = { activeFlags, matchOrderRow, matchOrders, findNewMatches, forCustomer, flagCustomer, unflagCustomer };
+module.exports = {
+  activeFlags, matchOrderRow, matchOrders, matchTickets, findNewMatches, forCustomer, flagCustomer, unflagCustomer
+};
