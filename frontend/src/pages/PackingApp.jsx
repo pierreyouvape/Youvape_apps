@@ -1269,6 +1269,32 @@ const PackingApp = () => {
                 ))}
               </div>
             )}
+            {pickingInfo?.dishonest && (() => {
+              const d = pickingInfo.dishonest;
+              const how = { email: 'même email', telephone: 'même téléphone', nom: 'même nom et prénom' }[d.matchedBy];
+              return (
+                <div style={{
+                  backgroundColor: '#FEE2E2', borderLeft: '10px solid #DC2626', borderRadius: '12px',
+                  padding: '14px 20px', marginTop: '15px', color: '#7F1D1D', fontSize: '16px'
+                }}>
+                  <strong>Client ayant été malhonnête</strong> — vérifiez avant d'expédier.
+                  <div style={{ marginTop: '4px' }}>Motif : « {d.reason} »</div>
+                  <div style={{ marginTop: '4px' }}>
+                    {d.matchedBy === 'compte'
+                      ? 'Commande passée depuis le compte signalé'
+                      : `Reconnu par ${how}${d.matchedValue ? ` (${d.matchedValue})` : ''} avec ${d.customerName} (#${d.wpUserId})`}
+                    {d.ticketId && (
+                      <>
+                        {' '}— Ticket SAV{' '}
+                        <a href={`/tickets/${d.ticketId}`} target="_blank" rel="noreferrer" style={{ color: '#B91C1C', fontWeight: 700 }}>
+                          #{d.ticketId}
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {pickingInfo?.duplicates?.length > 0 && (
               <div style={{
                 backgroundColor: '#FDF3E2', borderLeft: '10px solid #E28F00', borderRadius: '12px',

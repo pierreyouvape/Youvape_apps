@@ -1147,6 +1147,28 @@ const setupOrderDuplicatesCron = () => {
 };
 
 
+// ==================== CLIENTS AYANT ÉTÉ MALHONNÊTES ====================
+
+let dishonestOrdersCronJob = null;
+
+const setupDishonestOrdersCron = () => {
+  if (dishonestOrdersCronJob) {
+    dishonestOrdersCronJob.stop();
+    dishonestOrdersCronJob = null;
+  }
+  // Toutes les 5 min, 7 j/7 : une commande d'un client signalé ouvre un ticket
+  // SAV. Son exclusion des règles de vague, elle, ne dépend pas de ce cron.
+  dishonestOrdersCronJob = cron.schedule('*/5 * * * *', async () => {
+    try {
+      await require('./dishonestOrderService').run();
+    } catch (error) {
+      console.error('Erreur cron clients signalés:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron clients signalés configure: detection toutes les 5 min');
+};
+
+
 // ==================== TABLEAU : RAPPELS DES TÂCHES RÉCURRENTES ====================
 
 let tableauRemindersCronJob = null;
@@ -1213,6 +1235,7 @@ module.exports = {
   setupRefundLinesCron,
   setupOrderReconcileCron,
   setupOrderDuplicatesCron,
+  setupDishonestOrdersCron,
   setupTableauRemindersCron,
   runProductDbSyncJob,
   runProductSuppliersLink,

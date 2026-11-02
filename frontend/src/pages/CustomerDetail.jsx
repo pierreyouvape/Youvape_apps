@@ -9,6 +9,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import CopyButton from '../components/CopyButton';
 import { formatPriceEur } from '../utils/formatNumber';
 import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/SavBadge';
+import DishonestFlagPanel from '../components/DishonestFlagPanel';
 
 const API_BASE_URL = '/api';
 
@@ -269,6 +270,8 @@ const CustomerDetail = () => {
               <div style={{ fontSize: 13, color: C.grisF, marginTop: 2 }}>Client #{id}</div>
             </div>
           </div>
+
+          <DishonestFlagPanel wpUserId={id} />
 
           {/* Infos + stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) 2fr', gap: 20, marginBottom: 20, alignItems: 'start' }}>

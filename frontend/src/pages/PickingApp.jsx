@@ -13,6 +13,11 @@ import {
   CarrierLogo, CountryFlag, Chip, CountBadge, Modal,
 } from '../components/picking/pickingUi';
 
+// Critère par lequel une commande a été rattachée à un client signalé.
+const DISHONEST_MATCH = {
+  email: 'même email', telephone: 'même téléphone', nom: 'même nom et prénom',
+};
+
 /**
  * Picking — groupe « Prépa de commande ».
  *
@@ -514,6 +519,24 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                           Retour partiel SAV — vague manuelle
                         </Chip>
                       )}
+                      {o.dishonest && (() => {
+                        const d = o.dishonest;
+                        const how = d.matchedBy === 'compte'
+                          ? 'son compte'
+                          : `${DISHONEST_MATCH[d.matchedBy] || d.matchedBy}${d.matchedValue ? ` (${d.matchedValue})` : ''}`
+                            + ` que ${d.customerName} (#${d.wpUserId})`;
+                        return (
+                          <Link to={d.ticketId ? `/tickets/${d.ticketId}` : `/customers/${d.wpUserId}`} style={{ textDecoration: 'none' }}>
+                            <Chip
+                              color={C.white} bg={C.red}
+                              title={`Motif : ${d.reason}. Reconnue par ${how}. `
+                                + 'Les règles l\'ignorent tant que le client est signalé, ticket fermé ou non.'}
+                            >
+                              Client ayant été malhonnête — vague manuelle
+                            </Chip>
+                          </Link>
+                        );
+                      })()}
                       {o.duplicates.map(d => {
                         const chip = d.held ? (
                           <Chip
@@ -631,12 +654,13 @@ function OrdersView({ token, canWrite, onWavesCreated, setMessage }) {
                           ? `${r.orders} cmd → ${r.waveSizes.length} vague(s)`
                           : 'Aucune commande libre'}
                       </span>
-                      {(r.skipped.bmsWave > 0 || r.skipped.toFix > 0 || r.skipped.duplicate > 0) && (
+                      {(r.skipped.bmsWave > 0 || r.skipped.toFix > 0 || r.skipped.duplicate > 0 || r.skipped.dishonest > 0) && (
                         <span style={{ display: 'block', fontSize: 12, color: C.greyT, marginTop: 2 }}>
                           {[
                             r.skipped.bmsWave > 0 && `${r.skipped.bmsWave} déjà dans une vague BMS`,
                             r.skipped.toFix > 0 && `${r.skipped.toFix} à corriger`,
                             r.skipped.duplicate > 0 && `${r.skipped.duplicate} doublon(s) en attente du SAV`,
+                            r.skipped.dishonest > 0 && `${r.skipped.dishonest} client(s) ayant été malhonnête(s)`,
                           ].filter(Boolean).join(' · ')}
                         </span>
                       )}

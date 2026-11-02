@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const customersController = require('../controllers/customersController');
 const customerNotesController = require('../controllers/customerNotesController');
+const dishonestCustomerController = require('../controllers/dishonestCustomerController');
+const { checkPermission } = require('../middleware/permissionMiddleware');
 
 // Liste et recherche
 router.get('/', customersController.getAll);
@@ -21,6 +23,11 @@ router.get('/:id/orders-by-month', customersController.getOrdersByMonth);
 router.get('/:id/favorite-products', customersController.getFavoriteProducts);
 router.get('/:id/stats', customersController.getStats);
 router.get('/:id/coupons', customersController.getCoupons);
+
+// Client ayant été malhonnête : ses commandes futures sortent des règles du Picking
+router.get('/:id/dishonest-flag', dishonestCustomerController.get);
+router.post('/:id/dishonest-flag', checkPermission('tickets', 'write'), dishonestCustomerController.flag);
+router.delete('/:id/dishonest-flag', checkPermission('tickets', 'write'), dishonestCustomerController.unflag);
 
 // Notes client
 router.get('/:customerId/notes', customerNotesController.getNotes);

@@ -402,6 +402,17 @@ Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_item
   passe toutes les commandes à `active = false`. `getWavePrintData` les écarte, sauf `withRemoved`
   pour les manquants (les lignes figées comptent encore leur part).
 
+### Client ayant été malhonnête (fiche client — 02/11/2026)
+
+- Signalé depuis `/customers/:id` (droit `tickets` en écriture), motif libre :
+  `customer_dishonest_flags` (retirer = `removed_at`, jamais DELETE).
+- Ses commandes **futures** (payées, > 0 €, créées après le signalement) sont reconnues même
+  sous un autre compte : même compte > email > téléphone (9 derniers chiffres) > nom et prénom
+  (`utils/customerIdentity`). Le nom donne des homonymes : le critère est toujours affiché.
+- Picking : **hors des règles tant que le client est signalé**, ticket fermé ou non (choix
+  Pierre), vague manuelle possible. Recalculé à chaque lecture (`dishonestCustomerModel.matchOrders`),
+  jamais lu depuis `dishonest_orders` : le cron ne sert qu'aux tickets (`dishonestOrderService`, */5).
+
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 

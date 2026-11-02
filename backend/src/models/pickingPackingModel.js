@@ -20,6 +20,7 @@ const pool = require('../config/database');
 const pickingModel = require('./pickingModel');
 const savModel = require('./savModel');
 const orderDuplicateModel = require('./orderDuplicateModel');
+const dishonestCustomerModel = require('./dishonestCustomerModel');
 const { allocateMissing } = require('../services/pickingPlanner');
 const { sendMail } = require('../services/alertService');
 const { tagDuplicates } = require('../services/duplicateDetector');
@@ -72,9 +73,13 @@ const ticketsForOrder = async (orderNumber) => {
 
 /** Ce que le packing affiche au scan d'une commande. */
 const getPackingInfo = async (orderNumber) => {
-  const [wave, tickets, duplicates, blocked] = await Promise.all([
+  const [wave, tickets, duplicates, blocked, dishonest] = await Promise.all([
     findWave(orderNumber), ticketsForOrder(orderNumber), orderDuplicateModel.activeFor([orderNumber]),
-    pickingModel.getBlock(orderNumber)
+    pickingModel.getBlock(orderNumber),
+    dishonestCustomerModel.matchOrders([orderNumber]).catch((error) => {
+      console.error('[Packing] Clients signalés illisibles :', error.message);
+      return new Map();
+    })
   ]);
   const missing = wave ? await missingForOrder(wave.id, orderNumber) : [];
   const { rows: incidents } = wave
@@ -89,6 +94,7 @@ const getPackingInfo = async (orderNumber) => {
     missing,
     tickets,
     duplicates: duplicates.get(String(orderNumber)) || [],
+    dishonest: dishonest.get(String(orderNumber)) || null,
     incidents: incidents.map(i => ({ action: i.action, at: i.created_at, ticketId: i.ticket_id }))
   };
 };

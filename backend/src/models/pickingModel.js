@@ -14,6 +14,7 @@ const { buildDetailLines, buildPrintLines, withPackRefunds } = require('../servi
 const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 const { partialReplacementOrders } = require('../services/returnPartialService');
 const orderDuplicateModel = require('./orderDuplicateModel');
+const dishonestCustomerModel = require('./dishonestCustomerModel');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -187,6 +188,15 @@ const getOrdersView = async () => {
     console.error('[Picking] Doublons illisibles :', error.message);
   }
 
+  // Client ayant été malhonnête (dishonestCustomerModel) : hors des règles tant
+  // qu'il est signalé, ticket fermé ou non (décision Pierre du 02/11/2026).
+  let dishonest = new Map();
+  try {
+    dishonest = await dishonestCustomerModel.matchOrders(orders.map(o => o.order_number));
+  } catch (error) {
+    console.error('[Picking] Clients signalés illisibles :', error.message);
+  }
+
   const view = [];
   for (const o of orders) {
     if (o.bms_status !== 'processing' || o.in_app_wave) continue;
@@ -222,6 +232,7 @@ const getOrdersView = async () => {
       bmsWaveId: o.bms_wave_id,
       savPartial: savPartial.has(String(o.order_number)),
       duplicates: duplicates.get(String(o.order_number)) || [],
+      dishonest: dishonest.get(String(o.order_number)) || null,
       // Couverture par le stock, SKU par SKU : le dépliage de la ligne la montre.
       stock: alloc.lines.map(l => ({ sku: l.sku, qty: l.qty, allocated: l.allocated })),
       items: alloc.lines.reduce((s, l) => s + l.qty, 0),
@@ -415,10 +426,11 @@ const setManualPrefix = async (prefix) => {
 // ── Vagues ─────────────────────────────────────────────────────────────────
 
 // Ne partent qu'en vague manuelle : une commande de renvoi en retour partiel,
-// la seconde commande d'un doublon probable dont le ticket n'est pas résolu.
+// la seconde commande d'un doublon probable dont le ticket n'est pas résolu,
+// la commande d'un client ayant été malhonnête.
 const heldByDuplicate = (o) => o.duplicates.some(d => d.held);
 const candidatesForRules = (view) => view.filter(o => o.selectable && o.bucket === BUCKETS.READY
-  && !o.savPartial && !heldByDuplicate(o));
+  && !o.savPartial && !heldByDuplicate(o) && !o.dishonest);
 
 /**
  * Pour la fenêtre « Générer les vagues » : ce que chaque règle active
@@ -444,7 +456,9 @@ const previewRules = async () => {
         bmsWave: left.filter(o => o.bmsWaveId).length,
         toFix: left.filter(o => !o.bmsWaveId && o.tags.length > 0).length,
         duplicate: view.filter(o => o.bucket === BUCKETS.READY && o.selectable && heldByDuplicate(o)
-          && wanted.has(norm(o.shippingMethod))).length
+          && wanted.has(norm(o.shippingMethod))).length,
+        dishonest: view.filter(o => o.bucket === BUCKETS.READY && o.selectable && o.dishonest
+          && !o.savPartial && !heldByDuplicate(o) && wanted.has(norm(o.shippingMethod))).length
       }
     };
   });
