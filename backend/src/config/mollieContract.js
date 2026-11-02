@@ -115,7 +115,9 @@ const METHODS = {
   cards:      { label: 'Cartes',      titles: ['Carte Bancaire'] },
   bancontact: { label: 'Bancontact',  titles: ['Bancontact'] },
   alma:       { label: 'Alma (3x/4x)', titles: ['En 3 ou 4x sans frais'] },
-  paybybank:  { label: 'Pay by Bank', titles: ['Virement saisie automatique'] },
+  // Libellés successifs des virements Mollie : « Virement Bancaire » (mars-avril 2025),
+  // « Virement saisie manuelle » (avril-juillet 2025), puis « Virement saisie automatique ».
+  paybybank:  { label: 'Pay by Bank', titles: ['Virement saisie automatique', 'Virement saisie manuelle', 'Virement Bancaire', 'Virement bancaire', 'Pay By Bank'] },
 };
 
 // Statuts d'une commande payée (une commande remboursée a d'abord été payée).
