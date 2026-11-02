@@ -4,6 +4,8 @@ const pool = require('../config/database');
 const { parseMollieInvoice } = require('../parsers/mollieInvoiceParser');
 const { auditInvoice, classifyLine, coverageOf } = require('../services/mollieAuditService');
 const { ensureTables, applyMollieCosts } = require('../services/mollieCostService');
+const mollieApi = require('../services/mollieApiService');
+const { PAID_STATUSES } = require('../config/mollieContract');
 const { CONTRACT, GRIDS, REFERENCE_GRIDS, RATE_LABELS, METHODS } = require('../config/mollieContract');
 
 // Les migrations .sql ne sont pas versionnées (.gitignore) : les tables se
@@ -167,6 +169,51 @@ exports.applyCosts = async (req, res) => {
   try {
     const result = await applyMollieCosts({ apply: req.body?.apply === true });
     res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/* ─── API Mollie (lecture seule) ─────────────────────────────────────── */
+
+// GET /api/mollie/api/status — jeton présent (masqué), paiements synchronisés, synchro en cours.
+exports.apiStatus = async (req, res) => {
+  try {
+    res.json({ success: true, ...(await mollieApi.status()) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// PUT /api/mollie/api/token — admin : jeton testé chez Mollie avant d'être enregistré.
+exports.saveApiToken = async (req, res) => {
+  try {
+    const permissions = await mollieApi.saveToken(req.body?.token);
+    mollieApi.runSync().catch(() => {});
+    res.json({ success: true, permissions });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message, permissions: err.permissions });
+  }
+};
+
+// POST /api/mollie/api/sync — lance la synchro des paiements en tâche de fond.
+exports.syncPayments = async (req, res) => {
+  try {
+    const job = await mollieApi.runSync({ full: req.body?.full === true });
+    res.json({ success: true, job });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/mollie/invoices/:id/payments — rapprochement paiement par paiement.
+exports.paymentsReco = async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT period_start, period_end FROM mollie_invoices WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success: false, error: 'Facture introuvable' });
+    if (!(await mollieApi.getToken())) return res.json({ success: true, configured: false });
+    const reco = await mollieApi.reconcile(isoDate(rows[0].period_start), isoDate(rows[0].period_end), PAID_STATUSES);
+    res.json({ success: true, configured: true, ...reco });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

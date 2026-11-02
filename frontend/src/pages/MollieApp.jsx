@@ -437,6 +437,8 @@ function InvoiceDetail({ data, onBack, onPdf }) {
         </div>
       </Card>
 
+      {inv.docType !== 'credit' && <PaymentsReco invoiceId={inv.id} reconciliation={audit.reconciliation} />}
+
       <Card title="Lignes de la facture" sub="Taux attendu = contrat (ou tarif standard relevé pour Alma, Pay by Bank et remboursements). Mollie tronque chaque ligne au centime inférieur.">
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -481,6 +483,167 @@ function InvoiceDetail({ data, onBack, onPdf }) {
         </div>
       </Card>
     </>
+  );
+}
+
+/* ─── API Mollie (lecture seule) ─────────────────────────────── */
+
+const METHOD_LABEL_API = { cards: 'Cartes', bancontact: 'Bancontact', alma: 'Alma', paybybank: 'Pay by Bank' };
+
+function ApiTab() {
+  const [st, setSt] = useState(null);
+  const [token, setToken] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [perms, setPerms] = useState(null);
+
+  async function refresh() {
+    try { const { data } = await axios.get(`${API_URL}/mollie/api/status`); setSt(data); } catch (e) { setMsg({ level: 'error', text: e.response?.data?.error || e.message }); }
+  }
+  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    if (!st?.job?.running) return undefined;
+    const t = setTimeout(refresh, 2500);
+    return () => clearTimeout(t);
+  }, [st]);
+
+  async function save() {
+    setSaving(true); setMsg(null); setPerms(null);
+    try {
+      const { data } = await axios.put(`${API_URL}/mollie/api/token`, { token });
+      setToken(''); setPerms(data.permissions);
+      setMsg({ level: 'ok', text: 'Clé acceptée par Mollie et enregistrée. Synchronisation des paiements lancée.' });
+      refresh();
+    } catch (e) {
+      setPerms(e.response?.data?.permissions || null);
+      setMsg({ level: 'error', text: e.response?.status === 403 ? 'Réservé aux administrateurs' : (e.response?.data?.error || e.message) });
+    } finally { setSaving(false); }
+  }
+
+  async function sync(full) {
+    setMsg(null);
+    try { await axios.post(`${API_URL}/mollie/api/sync`, { full }); refresh(); } catch (e) { setMsg({ level: 'error', text: e.response?.data?.error || e.message }); }
+  }
+
+  const job = st?.job;
+  return (
+    <>
+      <Card title="Connexion à l'API Mollie" sub="Jeton d'accès Mollie en LECTURE SEULE (payments.read, refunds.read, invoices.read, settlements.read, payment-links.read). Il est testé chez Mollie avant d'être enregistré, puis stocké sur le serveur : il n'est jamais réaffiché.">
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+          <Badge level={st?.configured ? 'ok' : 'warn'}>{st?.configured ? `Clé enregistrée (${st.tokenHint})` : 'Aucune clé enregistrée'}</Badge>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)}
+            placeholder={st?.configured ? 'Coller une nouvelle clé pour la remplacer' : 'Coller ici la clé (access_… ou live_…)'}
+            style={{ flex: 1, minWidth: 260, padding: '9px 12px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5 }} />
+          <button onClick={save} disabled={!token.trim() || saving}
+            style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: C.primary, color: C.white, fontWeight: 700, fontSize: 13.5, cursor: saving ? 'wait' : 'pointer', opacity: !token.trim() ? 0.5 : 1 }}>
+            {saving ? 'Test chez Mollie…' : 'Tester et enregistrer'}
+          </button>
+        </div>
+        {msg && <div style={{ marginTop: 10, fontSize: 13, color: msg.level === 'ok' ? C.green : C.red }}>{msg.text}</div>}
+        {perms && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {Object.entries(perms).map(([k, v]) => <Badge key={k} level={v === true ? 'ok' : 'warn'}>{`${k}.read ${v === true ? 'OK' : 'non accordé'}`}</Badge>)}
+          </div>
+        )}
+      </Card>
+
+      {st?.configured && (
+        <Card title="Paiements synchronisés" sub="Recopie des paiements Mollie (sans nom, IBAN ni carte) depuis mars 2025, pour le rapprochement paiement par paiement de chaque facture."
+          right={<div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => sync(false)} disabled={job?.running} style={{ ...linkBtn, border: `1px solid ${C.greyB}`, borderRadius: 8, padding: '6px 12px' }}>Mettre à jour</button>
+            <button onClick={() => sync(true)} disabled={job?.running} style={{ ...linkBtn, color: C.greyT }}>Tout resynchroniser</button>
+          </div>}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <StatCard label="Paiements" value={fmtNum(st.stats?.payments)} />
+            <StatCard label="Du" value={st.stats?.first ? fmtDate(String(st.stats.first).slice(0, 10)) : '—'} />
+            <StatCard label="Au" value={st.stats?.last ? fmtDate(String(st.stats.last).slice(0, 10)) : '—'} />
+          </div>
+          {job?.running && <div style={{ marginTop: 12, fontSize: 13, color: C.blue }}>Synchronisation en cours ({job.mode}) : {fmtNum(job.upserted)} paiements lus{job.oldest ? `, jusqu'au ${fmtDate(job.oldest.slice(0, 10))}` : ''}…</div>}
+          {!job?.running && job?.finishedAt && <div style={{ marginTop: 12, fontSize: 13, color: job.error ? C.red : C.greyT }}>{job.error ? `Erreur : ${job.error}` : `Dernière synchro terminée : ${fmtNum(job.upserted)} paiements lus.`}</div>}
+        </Card>
+      )}
+    </>
+  );
+}
+
+function PaymentsReco({ invoiceId, reconciliation }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    axios.get(`${API_URL}/mollie/invoices/${invoiceId}/payments`).then(({ data: d }) => setData(d)).catch((e) => setErr(e.response?.data?.error || e.message));
+  }, [invoiceId]);
+  if (err) return <Card title="Paiement par paiement (API Mollie)"><div style={{ color: C.red, fontSize: 13 }}>{err}</div></Card>;
+  if (!data) return <Card title="Paiement par paiement (API Mollie)"><div style={{ color: C.greyT, fontSize: 13 }}>Chargement…</div></Card>;
+  if (!data.configured) return <Card title="Paiement par paiement (API Mollie)"><div style={{ color: C.greyT, fontSize: 13 }}>Clé API non enregistrée : onglet « API Mollie ».</div></Card>;
+  const recoKey = { cards: ['cards'], bancontact: ['bancontact'], alma: ['alma_be', 'alma_fr'], paybybank: ['paybybank'] };
+  return (
+    <Card title="Paiement par paiement (API Mollie)" sub={`Paiements encaissés selon l'API Mollie, rapprochés de nos commandes par leur identifiant tr_…${data.complete ? '' : ' — ⚠ synchro incomplète pour cette période (onglet API Mollie)'}`}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr><th style={th}>Moyen</th><th style={{ ...th, ...num }}>Paiements API</th><th style={{ ...th, ...num }}>Paiements facturés</th><th style={{ ...th, ...num }}>Montant API</th><th style={{ ...th, ...num }}>Montant facturé</th></tr></thead>
+          <tbody>
+            {Object.entries(data.byMethod).map(([k, v]) => {
+              const inv = (recoKey[k] || []).map((x) => reconciliation.find((r) => r.key === x)).filter(Boolean);
+              const n = inv.reduce((a, r) => a + r.mollieCount, 0);
+              const a = inv.reduce((s2, r) => s2 + r.mollieVolume, 0);
+              return (
+                <tr key={k}>
+                  <td style={td}>{METHOD_LABEL_API[k] || k}</td>
+                  <td style={{ ...td, ...num }}>{fmtNum(v.count)}</td>
+                  <td style={{ ...td, ...num, color: inv.length && n !== v.count ? C.orange : C.greyT }}>{inv.length ? fmtNum(n) : '—'}</td>
+                  <td style={{ ...td, ...num }}>{fmtEur(v.amount)}</td>
+                  <td style={{ ...td, ...num, color: inv.length && Math.abs(a - v.amount) > 0.01 ? C.orange : C.greyT }}>{inv.length ? fmtEur(a) : '—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ fontSize: 13.5, fontWeight: 700, margin: '16px 0 6px' }}>Encaissés par Mollie, absents de nos commandes payées ({data.mollieOnly.length})</div>
+      {data.mollieOnly.length ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>Paiement</th><th style={th}>Payé le</th><th style={th}>Moyen</th><th style={{ ...th, ...num }}>Montant</th><th style={{ ...th, ...num }}>Remboursé</th><th style={th}>Commande</th><th style={th}>Explication</th></tr></thead>
+            <tbody>
+              {data.mollieOnly.map((p) => (
+                <tr key={p.id}>
+                  <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{p.id}</td>
+                  <td style={{ ...td, fontSize: 12.5 }}>{p.paid_at}</td>
+                  <td style={td}>{METHOD_LABEL_API[p.methodKey] || p.method}</td>
+                  <td style={{ ...td, ...num }}>{fmtEur(p.amount)}</td>
+                  <td style={{ ...td, ...num, color: p.refunded ? C.green : C.greyT }}>{p.refunded ? fmtEur(p.refunded) : '—'}</td>
+                  <td style={td}>{p.our_order ? <a href={`/orders/${p.our_order}`} style={{ color: C.blue }}>{p.our_order}</a> : (p.order_id || '—')}</td>
+                  <td style={{ ...td, fontSize: 12.5 }}>{p.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <div style={{ fontSize: 13, color: C.green }}>Aucun : chaque paiement Mollie correspond à une commande payée.</div>}
+
+      <div style={{ fontSize: 13.5, fontWeight: 700, margin: '16px 0 6px' }}>Commandes payées chez nous, sans paiement Mollie ce mois-ci ({data.oursOnly.length})</div>
+      {data.oursOnly.length ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><th style={th}>Commande</th><th style={th}>Payée le</th><th style={th}>Moyen</th><th style={{ ...th, ...num }}>Montant</th><th style={th}>Paiement attendu</th></tr></thead>
+            <tbody>
+              {data.oursOnly.map((o) => (
+                <tr key={o.id}>
+                  <td style={td}><a href={`/orders/${o.id}`} style={{ color: C.blue }}>{o.id}</a></td>
+                  <td style={{ ...td, fontSize: 12.5 }}>{o.paid_at}</td>
+                  <td style={td}>{o.title}</td>
+                  <td style={{ ...td, ...num }}>{fmtEur(o.total)}</td>
+                  <td style={{ ...td, fontFamily: 'monospace', fontSize: 12 }}>{o.mollie_payment_id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <div style={{ fontSize: 13, color: C.green }}>Aucune.</div>}
+    </Card>
   );
 }
 
@@ -712,7 +875,7 @@ export default function MollieApp() {
     }
   }
 
-  const tabs = [['dashboard', 'Tableau de bord'], ['invoices', `Factures (${invoices.length})`], ['contract', 'Contrat']];
+  const tabs = [['dashboard', 'Tableau de bord'], ['invoices', `Factures (${invoices.length})`], ['contract', 'Contrat'], ['api', 'API Mollie']];
 
   return (
     <AppShell currentPath="/mollie">
@@ -771,6 +934,7 @@ export default function MollieApp() {
                 {tab === 'dashboard' && <Dashboard invoices={invoices} onOpen={openInvoice} />}
                 {tab === 'invoices' && <InvoiceList invoices={invoices} onOpen={openInvoice} onPdf={openPdf} onDelete={deleteInvoice} />}
                 {tab === 'contract' && <ContractTab contract={contract} />}
+                {tab === 'api' && <ApiTab />}
               </Fragment>
             )}
           </>
