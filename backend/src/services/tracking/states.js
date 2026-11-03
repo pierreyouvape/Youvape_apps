@@ -12,6 +12,9 @@ const STATES = {
   label_created:    'Étiquette créée',
   picked_up:        'Pris en charge',
   in_transit:       'En transit',
+  // Annoncé PAR LE TRANSPORTEUR (colis retardé, livraison reportée) ; pas un
+  // retard calculé chez nous.
+  delayed:          'Retard déclaré',
   out_for_delivery: 'En livraison',
   at_pickup_point:  'En point relais',
   delivery_failed:  'Échec de livraison',
@@ -35,6 +38,7 @@ const RECHECK_HOURS = {
   label_created:    6,
   picked_up:        4,
   in_transit:       4,
+  delayed:          4,
   out_for_delivery: 1,
   at_pickup_point:  12,
   delivery_failed:  4,

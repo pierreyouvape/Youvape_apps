@@ -2,13 +2,14 @@
  * États du suivi des colis — mêmes codes que le backend
  * (backend/src/services/tracking/states.js).
  *
- * Couleurs : bleu tant que le colis avance, orange quand il attend le client
- * ou a raté une livraison, rouge pour ce qui revient vers nous, vert livré.
+ * Couleurs : bleu tant que le colis avance, ocre quand le transporteur annonce
+ * un retard, orange quand il attend le client ou a raté une livraison, rouge pour ce qui revient vers nous, vert livré.
  */
 export const TRACKING_STATES = {
   label_created:    { label: 'Étiquette créée',     color: '#6c757d' },
   picked_up:        { label: 'Pris en charge',      color: '#0d6efd' },
   in_transit:       { label: 'En transit',          color: '#0d6efd' },
+  delayed:          { label: 'Retard déclaré',      color: '#b7791f' },
   out_for_delivery: { label: 'En livraison',        color: '#6610f2' },
   at_pickup_point:  { label: 'En point relais',     color: '#fd7e14' },
   delivery_failed:  { label: 'Échec de livraison',  color: '#e8590c' },
