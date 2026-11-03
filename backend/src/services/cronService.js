@@ -1206,6 +1206,28 @@ const setupTableauRemindersCron = () => {
 };
 
 
+// ==================== SUIVI DES COLIS (API TRANSPORTEURS) ====================
+
+let shipmentTrackingCronJob = null;
+
+const setupShipmentTrackingCron = () => {
+  if (shipmentTrackingCronJob) {
+    shipmentTrackingCronJob.stop();
+    shipmentTrackingCronJob = null;
+  }
+  // Toutes les 30 min, 7 j/7 : chaque colis porte sa date de prochain passage
+  // (selon son état), le cron ne prend que ceux qui sont dus.
+  shipmentTrackingCronJob = cron.schedule('7,37 * * * *', async () => {
+    try {
+      await require('./shipmentTrackingService').runDue();
+    } catch (error) {
+      console.error('Erreur cron suivi des colis:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron suivi des colis configure: toutes les 30 min');
+};
+
+
 module.exports = {
   setupCron,
   restartCron,
@@ -1237,6 +1259,7 @@ module.exports = {
   setupOrderDuplicatesCron,
   setupDishonestOrdersCron,
   setupTableauRemindersCron,
+  setupShipmentTrackingCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,

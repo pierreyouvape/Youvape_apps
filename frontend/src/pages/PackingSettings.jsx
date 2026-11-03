@@ -3,6 +3,7 @@ import AppShell from '../components/AppShell';
 import { Link } from 'react-router-dom';
 import MethodMappingTab from '../components/shipping/MethodMappingTab';
 import CarrierAccountsTab from '../components/shipping/CarrierAccountsTab';
+import TrackingMapTab from '../components/shipping/TrackingMapTab';
 
 /**
  * Paramètres de l'app Packing.
@@ -19,7 +20,8 @@ import CarrierAccountsTab from '../components/shipping/CarrierAccountsTab';
  */
 const ONGLETS = [
   { id: 'etiquetage', label: 'Modes de livraison' },
-  { id: 'contrats',   label: 'Contrats API' }
+  { id: 'contrats',   label: 'Contrats API' },
+  { id: 'suivi',      label: 'Suivi des colis' }
 ];
 
 function PackingSettings() {
@@ -37,7 +39,7 @@ function PackingSettings() {
           Paramètres du packing
         </h1>
         <p style={{ margin: '0 0 22px', color: '#666', fontSize: '14px' }}>
-          Quel transporteur pour quel mode de livraison, et avec quels identifiants d'API.
+          Quel transporteur pour quel mode de livraison, avec quels identifiants d'API, et ce que veut dire chaque étape de leur suivi.
         </p>
 
         <div style={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #e9ecef', overflow: 'hidden' }}>
@@ -51,7 +53,9 @@ function PackingSettings() {
               }}>{o.label}</div>
             ))}
           </div>
-          {onglet === 'etiquetage' ? <MethodMappingTab /> : <CarrierAccountsTab />}
+          {onglet === 'etiquetage' && <MethodMappingTab />}
+          {onglet === 'contrats' && <CarrierAccountsTab />}
+          {onglet === 'suivi' && <TrackingMapTab />}
         </div>
       </div>
     </AppShell>

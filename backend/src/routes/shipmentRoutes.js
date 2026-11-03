@@ -19,6 +19,7 @@ const express = require('express');
 const router = express.Router();
 const shipmentController = require('../controllers/shipmentController');
 const mapController = require('../controllers/shippingMethodMapController');
+const trackingController = require('../controllers/shipmentTrackingController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 
@@ -58,5 +59,14 @@ router.post('/carrier-accounts',
 
 router.delete('/carrier-accounts/:id',
   checkPermission('transporteurs', 'write'), mapController.deleteAccount);
+
+// ── Suivi des colis ─────────────────────────────────────────────────────────
+// Code transporteur → état commun. Même droit que le reste des réglages :
+// un mauvais classement fera un jour passer une commande en « Livrée ».
+router.get('/tracking-map',
+  checkPermission('transporteurs', 'read'), trackingController.getMap);
+
+router.put('/tracking-map',
+  checkPermission('transporteurs', 'write'), trackingController.saveMapping);
 
 module.exports = router;

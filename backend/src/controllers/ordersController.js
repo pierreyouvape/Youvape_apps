@@ -1,6 +1,8 @@
 const orderModel = require('../models/orderModel');
 const savModel = require('../models/savModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
+const shipmentTrackingModel = require('../models/shipmentTrackingModel');
+const { STATES: TRACKING_STATES } = require('../services/tracking/states');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const pickingModel = require('../models/pickingModel');
 const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../services/carriers/relayPoints');
@@ -75,6 +77,9 @@ exports.getById = async (req, res) => {
       order.shipment_labels = await shipmentLabelModel.findForOrderNumber(
         order.wp_order_id, order.tracking_number || null
       );
+      // Le parcours chez le transporteur, pour l'étiquette affichée en tête.
+      const premiere = order.shipment_labels[0];
+      order.tracking_events = premiere ? await shipmentTrackingModel.eventsForLabel(premiere.id) : [];
     } catch (labelError) {
       console.error('Error getting shipment labels for order:', labelError.message);
       order.shipment_labels = [];
@@ -415,6 +420,22 @@ exports.filterOrders = async (req, res) => {
       paramIndex++;
     }
 
+    // Filtre par état de suivi transporteur (étiquette active la plus récente :
+    // une commande n'a qu'un colis). « none » = expédiée sans suivi encore reçu.
+    if (req.query.trackingState === 'none' || TRACKING_STATES[req.query.trackingState]) {
+      const etat = `(SELECT l.tracking_state FROM shipment_labels l
+                      WHERE l.order_number = o.wp_order_id::text AND l.status = 'active'
+                      ORDER BY l.created_at DESC LIMIT 1)`;
+      if (req.query.trackingState === 'none') {
+        conditions.push(`EXISTS (SELECT 1 FROM shipment_labels l WHERE l.order_number = o.wp_order_id::text AND l.status = 'active')
+          AND ${etat} IS NULL`);
+      } else {
+        conditions.push(`${etat} = $${paramIndex}`);
+        params.push(req.query.trackingState);
+        paramIndex++;
+      }
+    }
+
     // Filtre par catégorie de produit
     if (req.query.category) {
       conditions.push(`EXISTS (
@@ -477,8 +498,18 @@ exports.filterOrders = async (req, res) => {
         o.tracking_number,
         (SELECT COUNT(*) FROM order_items oi_c WHERE oi_c.wp_order_id = o.wp_order_id AND oi_c.order_item_type = 'line_item') as items_count,
         (SELECT COUNT(*) > 0 FROM reviews WHERE order_id = o.wp_order_id::text) as has_review,
-        (SELECT STRING_AGG(oi_cp.order_item_name, ', ') FROM order_items oi_cp WHERE oi_cp.wp_order_id = o.wp_order_id AND oi_cp.order_item_type = 'coupon') as coupons
+        (SELECT STRING_AGG(oi_cp.order_item_name, ', ') FROM order_items oi_cp WHERE oi_cp.wp_order_id = o.wp_order_id AND oi_cp.order_item_type = 'coupon') as coupons,
+        trk.tracking_state,
+        trk.tracking_state_at,
+        trk.tracking_last_label,
+        trk.has_label
       FROM orders o
+      LEFT JOIN LATERAL (
+        SELECT l.tracking_state, l.tracking_state_at, l.tracking_last_label, true AS has_label
+          FROM shipment_labels l
+         WHERE l.order_number = o.wp_order_id::text AND l.status = 'active'
+         ORDER BY l.created_at DESC LIMIT 1
+      ) trk ON true
       ${whereClause}
       ORDER BY o.post_date DESC
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}

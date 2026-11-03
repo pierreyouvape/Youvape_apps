@@ -15,6 +15,9 @@
 
 const pool = require('../config/database');
 const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
+const { STATES, FINAL_STATES } = require('../services/tracking/states');
+const { SOURCE_BY_CARRIER } = require('../services/tracking/readers');
+const trackingModel = require('./shipmentTrackingModel');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_SIZE = 50;
@@ -32,6 +35,8 @@ const BASE_APP = `
          l.tracking_number, l.weight_g, l.status, l.cancelled_at, l.packed_by,
          l.bms_ship_status, l.bms_last_error, l.bms_attempts, l.bms_confirmed_at,
          (l.cn23_data IS NOT NULL) AS has_cn23,
+         l.tracking_state, l.tracking_state_at, l.tracking_last_event_at, l.tracking_last_label,
+         l.tracking_error, l.tracking_checked_at,
          CASE WHEN l.carrier_code = 'chronopost' AND l.account_code = '2shop'
               THEN 'chronopost_2shop' ELSE l.carrier_code END AS carrier_key,
          pu.name AS packer_name,
@@ -80,6 +85,9 @@ const BASE_BMS = `
          'active'::varchar AS status, NULL::timestamp AS cancelled_at, pm.user_id AS packed_by,
          'bms'::varchar AS bms_ship_status, NULL::text AS bms_last_error, 0 AS bms_attempts,
          NULL::timestamp AS bms_confirmed_at, false AS has_cn23,
+         NULL::varchar AS tracking_state, NULL::timestamptz AS tracking_state_at,
+         NULL::timestamptz AS tracking_last_event_at, NULL::text AS tracking_last_label,
+         NULL::text AS tracking_error, NULL::timestamptz AS tracking_checked_at,
          CASE WHEN b.carrier_code = 'chronopost' AND b.account_code = '2shop'
               THEN 'chronopost_2shop' ELSE b.carrier_code END AS carrier_key,
          COALESCE(pu.name, b.packer_name) AS packer_name,
@@ -151,6 +159,20 @@ const buildWhere = (f, depositCarriers, { withUser = true } = {}) => {
       break;
     case 'bms': conds.push(`source = 'bms'`); break;
     default: break;
+  }
+
+  // Suivi transporteur : un état, ou les colis sans mouvement depuis N jours
+  // (ni livrés ni revenus, date du dernier évènement — ou de l'étiquette s'il
+  // n'y en a aucun).
+  const stale = /^stale(\d{1,2})$/.exec(f.tracking || '');
+  if (stale) {
+    conds.push(`source = 'app' AND status = 'active' AND carrier_code = ANY(${p(Object.keys(SOURCE_BY_CARRIER))})
+      AND (tracking_state IS NULL OR tracking_state <> ALL(${p(FINAL_STATES)}))
+      AND COALESCE(tracking_last_event_at, created_at AT TIME ZONE 'UTC') < NOW() - make_interval(days => ${p(Number(stale[1]))})`);
+  } else if (f.tracking === 'none') {
+    conds.push(`source = 'app' AND status = 'active' AND tracking_state IS NULL AND carrier_code = ANY(${p(Object.keys(SOURCE_BY_CARRIER))})`);
+  } else if (STATES[f.tracking]) {
+    conds.push(`tracking_state = ${p(f.tracking)}`);
   }
 
   return { where: conds.length ? `WHERE ${conds.join(' AND ')}` : '', params };
@@ -288,6 +310,7 @@ const getDetail = async (id, source = 'app') => {
 
   return {
     label,
+    trackingEvents: source === 'app' ? await trackingModel.eventsForLabel(label.id) : [],
     order: order.rows[0] || null,
     wave: wave.rows[0] || null,
     incidents: incidents.rows,

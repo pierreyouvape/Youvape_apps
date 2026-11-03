@@ -13,6 +13,7 @@ import { SavTicketChips, SavConcernedTag, TICKETS_COLOR } from '../components/Sa
 import OrderReturnsBox from '../components/returns/OrderReturnsBox';
 import { Modal } from '../components/picking/pickingUi';
 import { usePermissions } from '../hooks/usePermissions';
+import { TrackingStateBadge, TrackingTimeline } from '../components/shipping/TrackingState';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -422,6 +423,33 @@ function BlocagePicking({ order, token, onChange }) {
 }
 
 /* ─── COMPOSANT PRINCIPAL ────────────────────────────────── */
+/**
+ * État du colis chez le transporteur, et son parcours à la demande. Lu sur
+ * l'étiquette de l'app affichée en tête (suivi des colis, mis à jour toutes
+ * les 30 min) : une commande expédiée par BMS seul n'en a pas.
+ */
+function SuiviTransporteur({ etiquette, events }) {
+  const [ouvert, setOuvert] = useState(false);
+  if (!etiquette || etiquette.status !== 'active') return null;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span title={etiquette.tracking_last_label || undefined}>
+          <TrackingStateBadge state={etiquette.tracking_state} at={etiquette.tracking_state_at}
+            error={etiquette.tracking_error} compact />
+        </span>
+        {events?.length > 0 && (
+          <button onClick={() => setOuvert(o => !o)} style={{
+            border: 'none', background: 'none', padding: 0, cursor: 'pointer',
+            fontSize: 12, color: C.bleu, textDecoration: 'underline', fontFamily: 'inherit',
+          }}>{ouvert ? 'Masquer le parcours' : `Parcours (${events.length})`}</button>
+        )}
+      </div>
+      {ouvert && <div style={{ marginTop: 10 }}><TrackingTimeline events={events} /></div>}
+    </div>
+  );
+}
+
 const OrderDetail = () => {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -802,6 +830,7 @@ const OrderDetail = () => {
                     )}
                     <CopyButton text={suiviNumero} size={14} />
                   </div>
+                  <SuiviTransporteur etiquette={etiquette} events={order.tracking_events} />
                 </div>
               )}
               {weightDisplay && (

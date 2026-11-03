@@ -114,6 +114,7 @@ const detailOf = (source) => async (req, res) => {
       bordereau: data.bordereau,
       otherLabels: data.otherLabels,
       timeline: buildTimeline(data),
+      trackingEvents: data.trackingEvents,
     });
   } catch (error) {
     console.error(`[${LOG_TAG}] Erreur detail :`, error.message);

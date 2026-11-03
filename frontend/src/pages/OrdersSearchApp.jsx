@@ -8,6 +8,8 @@ import { formatDate } from '../utils/dateUtils';
 import { formatPriceEur } from '../utils/formatNumber';
 import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
+import { TRACKING_STATE_OPTIONS } from '../utils/trackingStates';
+import { TrackingStateBadge } from '../components/shipping/TrackingState';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -100,6 +102,7 @@ const OrdersSearchApp = () => {
   const [search, setSearch]     = useState('');
   const [status, setStatus]     = useState(urlStatus);
   const [carrier, setCarrier]   = useState('');
+  const [trackingState, setTrackingState] = useState('');
   const [period, setPeriod]     = useState(hasUrlFilter ? 'custom' : '');
   const [dateFrom, setDateFrom] = useState(urlFrom);
   const [dateTo, setDateTo]     = useState(urlTo);
@@ -149,7 +152,7 @@ const OrdersSearchApp = () => {
   /* ── Reset pagination quand les filtres changent ── */
   useEffect(() => {
     setPage(0);
-  }, [search, status, carrier, period, dateFrom, dateTo]);
+  }, [search, status, carrier, trackingState, period, dateFrom, dateTo]);
 
   /* ── Debounce recherche texte ── */
   useEffect(() => {
@@ -161,6 +164,7 @@ const OrdersSearchApp = () => {
         search: search || undefined,
         status: status || undefined,
         carrier: carrier || undefined,
+        trackingState: trackingState || undefined,
         ...(dates || {}),
         ...customDates,
         paris: paris ? 1 : undefined,
@@ -169,7 +173,7 @@ const OrdersSearchApp = () => {
       });
     }, 400);
     return () => clearTimeout(debounceRef.current);
-  }, [search, status, carrier, period, dateFrom, dateTo, paris, refunded, page, fetchOrders]);
+  }, [search, status, carrier, trackingState, period, dateFrom, dateTo, paris, refunded, page, fetchOrders]);
 
   /* ── Expand ligne ── */
   const toggleExpand = async (orderId) => {
@@ -190,12 +194,12 @@ const OrdersSearchApp = () => {
   };
 
   const resetFilters = () => {
-    setSearch(''); setStatus(''); setCarrier('');
+    setSearch(''); setStatus(''); setCarrier(''); setTrackingState('');
     setPeriod(''); setDateFrom(''); setDateTo('');
     setRefunded(false); setReportBanner(false);
   };
 
-  const hasActiveFilter = search || status || carrier || period || refunded;
+  const hasActiveFilter = search || status || carrier || trackingState || period || refunded;
   const isMultiStatus = status.includes(',');
 
   /* ─── RENDU ─────────────────────────────────────────────── */
@@ -310,6 +314,13 @@ const OrdersSearchApp = () => {
             ))}
           </select>
 
+          {/* Suivi transporteur */}
+          <select className="cmd-select" value={trackingState} onChange={e => setTrackingState(e.target.value)} style={{ minWidth: 160 }}>
+            <option value="">Tous les suivis</option>
+            {TRACKING_STATE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <option value="none">Expédiée, aucun suivi reçu</option>
+          </select>
+
           {/* Période */}
           <select className="cmd-select" value={period} onChange={e => { setPeriod(e.target.value); setDateFrom(''); setDateTo(''); }} style={{ minWidth: 160 }}>
             {PERIODS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
@@ -395,7 +406,7 @@ const OrdersSearchApp = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead>
                     <tr style={{ background: C.grisTL, borderBottom: `2px solid ${C.grisCL}` }}>
-                      {['Commande', 'Date', 'Client', 'Pays', 'Montant TTC', 'Statut', 'Transporteur', 'Articles', 'Avis', 'Coupon'].map(h => (
+                      {['Commande', 'Date', 'Client', 'Pays', 'Montant TTC', 'Statut', 'Transporteur', 'Suivi', 'Articles', 'Avis', 'Coupon'].map(h => (
                         <th key={h} style={{
                           padding: '10px 12px', fontSize: 11, fontWeight: 700,
                           color: C.grisF, textTransform: 'uppercase', letterSpacing: '0.5px',
@@ -479,6 +490,13 @@ const OrdersSearchApp = () => {
                               {order.shipping_method || order.shipping_carrier || '-'}
                             </td>
 
+                            {/* Suivi : état chez le transporteur, d'après notre étiquette */}
+                            <td style={{ padding: '11px 12px' }} title={order.tracking_last_label || undefined}>
+                              {order.has_label
+                                ? <TrackingStateBadge state={order.tracking_state} at={order.tracking_state_at} compact />
+                                : <span style={{ color: C.grisCL }}>—</span>}
+                            </td>
+
                             {/* Articles */}
                             <td style={{ padding: '11px 12px', fontSize: 13, textAlign: 'right', fontWeight: 600 }}>
                               {order.items_count}
@@ -501,7 +519,7 @@ const OrdersSearchApp = () => {
                           {/* ── Ligne dépliée ── */}
                           {isExpanded && (
                             <tr key={`${order.wp_order_id}-details`}>
-                              <td colSpan={10} style={{ padding: 0, background: '#f4f1fb' }}>
+                              <td colSpan={11} style={{ padding: 0, background: '#f4f1fb' }}>
                                 <div style={{ padding: '20px 24px', borderTop: `2px solid ${C.violetTL}` }}>
                                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
 

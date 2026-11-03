@@ -384,6 +384,32 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
   déconnecterait l'utilisateur).
 - Lire `youvape-logistique/AVANT-DE-MODIFIER.md` §7-8 avant d'ajouter un réglage à l'écran.
 
+### Suivi des colis par les API transporteurs (03/11/2026)
+
+Remplacera Vikings (passage en « Livrée ») à la sortie de BMS. **Ce lot ne fait que suivre** :
+aucune écriture sur le site. Cron `7,37 * * * *` → `shipmentTrackingService.runDue` (300 colis
+par passage), fréquence par état (`tracking/states.RECHECK_HOURS`), arrêt à « livré » / « revenu
+chez nous » ou 45 jours après l'étiquette. Seules les étiquettes de l'app (`shipment_labels`) sont suivies.
+
+- **Sources** (`services/tracking/readers.js`) : La Poste Suivi v2 (`OKAPI_API_KEY`) pour Colissimo +
+  Lettre suivie ; **API Chronopost** `trackSkybillV2` (choix Pierre, pas La Poste) pour Chronopost/2Shop ;
+  Mondial Relay **WSI2** `WSI2_TracingColisDetaille`, clé privée dans le contrat (`wsi2_private_key`,
+  saisie dans `/packing/settings` → Contrats API). L'API Connect de MR ne sait PAS suivre.
+- ⚠️ **Mondial Relay n'a aucun code par évènement** : la clé est le libellé, **coupé à 30 caractères**
+  (« PRISE EN CHARGE PAR LE TRANSPO »), dates `jj/mm/aa` heure de Paris. Son STAT global ne distingue
+  pas un retour d'un colis en route : ne pas s'en servir pour l'état.
+- Chronopost : codes complétés par des espaces (`D  `) ; La Poste : numéro inconnu = HTTP 400.
+- **Correspondance code → état** : `tracking_status_map`, réglable dans `/packing/settings` → « Suivi des
+  colis » (droit `transporteurs`). Code jamais vu = « à classer », sans effet. Changer un classement
+  recalcule les colis concernés depuis `shipment_tracking_events`.
+- ⚠️ **Un retour est sans retour arrière** : un « livré » APRÈS un évènement de retour = « Revenu chez
+  nous ». Chronopost renvoie un colis non retiré et finit par « D Livraison effectuée » au centre de
+  retour (1264731). Sans cette règle, une commande jamais reçue passerait « Livrée ».
+- Affiché dans `/expeditions` (colonne, filtre, journal + « Actualiser »), `/commandes` (colonne + filtre),
+  `/orders/:id` et le badge du SAV (`trackingService.getTrackingStatus` lit l'état enregistré).
+- **Non-régression** : `tests/shipmentTracking.test.js` rejoue des réponses réelles
+  (`tests/fixtures/tracking/`) et vérifie que la migration classe chaque code reçu.
+
 ### Bundles WooCommerce (woosb)
 
 Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_items` :

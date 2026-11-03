@@ -6,6 +6,8 @@ import AppShell from '../components/AppShell';
 import { ShipmentHistory as ShipmentHistoryIcon } from '../components/AppIcons';
 import { API_URL, authHeaders, C, CarrierLogo, CountryFlag, Chip } from '../components/picking/pickingUi';
 import { codesTransporteurs, visuelTransporteur } from '../utils/carrierVisuals';
+import { TRACKING_STATE_OPTIONS } from '../utils/trackingStates';
+import { TrackingStateBadge, TrackingTimeline } from '../components/shipping/TrackingState';
 
 /**
  * Historique d'expédition — groupe « Prépa de commande ».
@@ -45,6 +47,15 @@ const STATUTS = [
   { value: 'not_deposited', label: 'Pas encore déposé' },
   { value: 'cancelled', label: 'Annulées' },
   { value: 'bms', label: 'Emballés dans BMS' },
+];
+
+/** Suivi transporteur : un état, ou les colis qui ne bougent plus. */
+const SUIVIS = [
+  { value: '', label: 'Tous les suivis' },
+  ...TRACKING_STATE_OPTIONS,
+  { value: 'stale3', label: 'Sans mouvement depuis 3 jours' },
+  { value: 'stale7', label: 'Sans mouvement depuis 7 jours' },
+  { value: 'none', label: 'Aucun suivi reçu' },
 ];
 
 /** Les clés de l'API : 2Shop se distingue de Chronopost par son contrat. */
@@ -212,6 +223,19 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
     }
   };
 
+  const actualiserSuivi = async () => {
+    setAction('tracking');
+    try {
+      await axios.post(`${API_URL}/shipment-history/${id}/tracking/refresh`, {}, authHeaders(token));
+      await charger();
+      onChanged();
+    } catch (err) {
+      alert(erreurApi(err, 'Actualisation du suivi impossible'));
+    } finally {
+      setAction(null);
+    }
+  };
+
   const l = data?.label;
 
   return (
@@ -306,6 +330,26 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
               </div>
             )}
 
+            {l.source !== 'bms' && l.tracking_number && (
+              <div style={{ marginBottom: 22 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: C.dark }}>Suivi transporteur</h3>
+                  <TrackingStateBadge state={l.tracking_state} compact />
+                  <span style={{ marginLeft: 'auto' }}>
+                    <Btn small variant="ghost" onClick={actualiserSuivi} disabled={action === 'tracking'}
+                      title="Interroger le transporteur maintenant">
+                      {action === 'tracking' ? '…' : 'Actualiser'}
+                    </Btn>
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: C.greyT, marginBottom: 10 }}>
+                  {l.tracking_checked_at ? `Dernière vérification : ${fmtDateHeure(l.tracking_checked_at)}` : 'Pas encore vérifié'}
+                  {l.tracking_error && <div style={{ color: C.amber }}>{l.tracking_error}</div>}
+                </div>
+                <TrackingTimeline events={data.trackingEvents} />
+              </div>
+            )}
+
             <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 800, color: C.dark }}>Parcours</h3>
             <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {data.timeline.map((e, i) => (
@@ -371,6 +415,7 @@ const ShipmentHistoryApp = () => {
   const [carrier, setCarrier] = useState('');
   const [user, setUser] = useState('');
   const [status, setStatus] = useState('');
+  const [tracking, setTracking] = useState('');
   const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -393,7 +438,7 @@ const ShipmentHistoryApp = () => {
     try {
       const res = await axios.get(`${API_URL}/shipment-history`, {
         ...authHeaders(token),
-        params: { from, to, carrier: carrier || undefined, user: user || undefined, status: status || undefined, q: q || undefined, page },
+        params: { from, to, carrier: carrier || undefined, user: user || undefined, status: status || undefined, tracking: tracking || undefined, q: q || undefined, page },
       });
       setData(res.data);
     } catch (err) {
@@ -401,7 +446,7 @@ const ShipmentHistoryApp = () => {
     } finally {
       setLoading(false);
     }
-  }, [token, from, to, carrier, user, status, q, page]);
+  }, [token, from, to, carrier, user, status, tracking, q, page]);
 
   useEffect(() => { charger(); }, [charger]);
 
@@ -486,6 +531,10 @@ const ShipmentHistoryApp = () => {
               {STATUTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
 
+            <select value={tracking} onChange={e => filtre(setTracking)(e.target.value)} style={champ}>
+              {SUIVIS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+
             <input
               type="search" value={qInput} onChange={e => setQInput(e.target.value)}
               placeholder="N° de commande, de suivi, client…"
@@ -567,6 +616,7 @@ const ShipmentHistoryApp = () => {
                     <Th>Client</Th>
                     <Th>Transporteur</Th>
                     <Th>N° de suivi</Th>
+                    <Th>Suivi</Th>
                     <Th align="right">Poids</Th>
                     <Th>Pické par</Th>
                     <Th>Packé par</Th>
@@ -576,12 +626,12 @@ const ShipmentHistoryApp = () => {
                 </thead>
                 <tbody>
                   {data?.rows.length === 0 && (
-                    <tr><td colSpan={10} style={{ padding: '28px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
+                    <tr><td colSpan={11} style={{ padding: '28px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
                       {loading ? 'Chargement…' : 'Aucun colis pour ces critères.'}
                     </td></tr>
                   )}
                   {!data && loading && (
-                    <tr><td colSpan={10} style={{ padding: '28px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
+                    <tr><td colSpan={11} style={{ padding: '28px 16px', textAlign: 'center', color: C.greyT, fontSize: 13.5 }}>
                       Chargement…
                     </td></tr>
                   )}
@@ -602,6 +652,13 @@ const ShipmentHistoryApp = () => {
                       </Td>
                       <Td><CarrierLogo carrier={{ carrierCode: r.carrier_code, accountCode: r.account_code }} height={16} /></Td>
                       <Td style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{r.tracking_number || '—'}</Td>
+                      <Td>
+                        {r.source === 'bms'
+                          ? <span style={{ fontSize: 12, color: C.greyM }}>—</span>
+                          : <span title={r.tracking_last_label || undefined}>
+                              <TrackingStateBadge state={r.tracking_state} at={r.tracking_state_at} error={r.tracking_error} compact />
+                            </span>}
+                      </Td>
                       <Td align="right" color={C.greyT}>{r.weight_g ? `${r.weight_g} g` : '—'}</Td>
                       <Td color={r.picker_name ? C.dark : C.greyM}>
                         {r.picker_name || '—'}

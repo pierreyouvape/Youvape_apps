@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TICKETS_COLOR, normalizeProductLabel } from './ticketConstants';
 import { formatDate } from '../../utils/dateUtils';
+import { TRACKING_STATES } from '../../utils/trackingStates';
 
 const C = {
   blanc: '#fff',
@@ -52,7 +53,7 @@ function IconUnlink({ size = 12, color = 'currentColor' }) {
   );
 }
 
-// ─── Badge statut livraison (live tracking) ──────────────────────────────────
+// ─── Badge statut livraison (suivi des colis) ──────────────────────────────────
 export function TrackingBadge({ trackingNum, shippingCarrier, country }) {
   const [status, setStatus] = useState(null);
 
@@ -80,8 +81,9 @@ export function TrackingBadge({ trackingNum, shippingCarrier, country }) {
     );
   }
 
+  // L'état vient du suivi des colis enregistré chez nous (cf. utils/trackingStates).
   const label      = status?.label || 'Suivi';
-  const color      = status?.color || '#135E84';
+  const color      = TRACKING_STATES[status?.state]?.color || '#135E84';
   const url        = status?.trackingUrl;
   const isLight    = color === '#fff491';
   const textColor  = isLight ? '#000' : '#fff';

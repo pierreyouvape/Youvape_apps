@@ -231,7 +231,9 @@ const markCancelled = async (id) => {
 const findForOrderNumber = async (orderNumber, trackingNumber = null) => {
   const { rows } = await pool.query(
     `SELECT l.id, l.carrier_code, l.account_code, l.tracking_number, l.status,
-            l.weight_g, l.created_at, l.cancelled_at, u.name AS packer_name
+            l.weight_g, l.created_at, l.cancelled_at, u.name AS packer_name,
+            l.tracking_state, l.tracking_state_at, l.tracking_last_label, l.tracking_last_event_at,
+            l.tracking_error, l.tracking_checked_at
      FROM shipment_labels l
      LEFT JOIN users u ON u.id = l.packed_by
      WHERE l.order_number = $1
