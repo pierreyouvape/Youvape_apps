@@ -182,7 +182,7 @@ const placementsByStory = async () => {
   const { rows } = await pool.query(
     `SELECT i.story_id, w.id AS widget_id, w.slug AS widget_slug, w.title AS widget_title,
             w.status AS widget_status, w.layout,
-            p.target_type, p.target_ref, pr.post_title AS product_title
+            p.target_type, p.target_ref, p.target_label, pr.post_title AS product_title
        FROM story_widget_items i
        JOIN story_widgets w ON w.id = i.widget_id
        LEFT JOIN story_placements p ON p.widget_id = w.id

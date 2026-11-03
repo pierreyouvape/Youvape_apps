@@ -88,6 +88,55 @@ const PreviewLink = ({ url, widget, pending }) => {
   );
 };
 
+/**
+ * Recherche d'une catégorie WooCommerce (nom ou chemin, sans accents). La liste
+ * complète s'ouvre au focus : il n'y a qu'une soixantaine de catégories.
+ */
+const CategoryPicker = ({ onPick }) => {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [results, setResults] = useState([]);
+  const [error, setError] = useState(null);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API_URL}/stories/categories/search`, { params: { q: query.trim() } });
+        setResults(res.data.data || []);
+        setError(null);
+      } catch (err) {
+        setResults([]);
+        setError(errMsg(err));
+      }
+    }, 250);
+    return () => clearTimeout(timer.current);
+  }, [query, open]);
+
+  return (
+    <div style={{ position: 'relative', marginTop: 10 }}>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        placeholder="Chercher une catégorie (ex. arômes, puffs…)"
+        style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }} />
+      {open && (error || results.length > 0) && (
+        <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '100%', marginTop: 4, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: 8, maxHeight: 260, overflowY: 'auto', boxShadow: '0 6px 18px rgba(0,0,0,.12)' }}>
+          {error && <div style={{ padding: '8px 10px', fontSize: 12, color: C.rouge }}>{error}</div>}
+          {results.map((c) => (
+            <div key={c.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { onPick(c); setQuery(''); setOpen(false); }}
+              style={{ padding: '7px 10px', fontSize: 13, color: C.grisTF, cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}` }}>
+              {c.path}
+              <span style={{ color: C.grisM, fontSize: 11 }}> · {c.count} produit{c.count > 1 ? 's' : ''}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /** Onglet « Widgets » : composer les bulles / carrousels et les publier sur le site. */
 const StoryWidgets = ({ stories }) => {
   const [widgets, setWidgets] = useState([]);
@@ -337,6 +386,7 @@ const WidgetEditor = ({ id, stories, previewUrl, onChanged, onDeleted }) => {
   const available = stories.filter((s) => s.status === 'ready' && !inWidget.has(s.id));
   const products = w.placements.filter((p) => p.target_type === 'product');
   const pages = w.placements.filter((p) => p.target_type === 'page');
+  const categories = w.placements.filter((p) => p.target_type === 'category');
 
   return (
     <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -442,6 +492,25 @@ const WidgetEditor = ({ id, stories, previewUrl, onChanged, onDeleted }) => {
               style={{ ...inputStyle, flex: 1 }} />
             <button type="submit" disabled={!pagePath.trim()} style={{ ...btn('primary'), opacity: pagePath.trim() ? 1 : 0.5 }}>Ajouter</button>
           </form>
+        </div>
+        <div>
+          <strong style={{ fontSize: 13, color: C.grisTF }}>Catégories et sous-catégories</strong>
+          <div style={{ fontSize: 11, color: C.grisM, marginTop: 2 }}>
+            Le widget s’affiche sur toutes les fiches de la catégorie, sous-catégories comprises.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+            {categories.length === 0 && <div style={{ fontSize: 12, color: C.grisM }}>Aucune catégorie.</div>}
+            {categories.map((p) => (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: C.grisTF }}>
+                <span style={{ flex: 1 }}>
+                  {p.target_label || `Catégorie #${p.target_ref}`}
+                  <span style={{ color: C.grisM, fontSize: 11 }}> · #{p.target_ref}</span>
+                </span>
+                <button onClick={() => run(() => axios.delete(`${API_URL}/stories/widgets/${id}/placements/${p.id}`))} style={btn('danger')}>Retirer</button>
+              </div>
+            ))}
+          </div>
+          <CategoryPicker onPick={(c) => addPlacement('category', c.id)} />
         </div>
       </section>
     </div>

@@ -4,6 +4,7 @@
 const widgetModel = require('../models/storyWidgetModel');
 const publishService = require('../services/storyPublishService');
 const r2 = require('../services/r2Service');
+const wpCategories = require('../services/wpCategoryService');
 
 const LAYOUTS = ['bubbles', 'cards'];
 const STATUSES = ['draft', 'published'];
@@ -129,7 +130,14 @@ const addPlacement = async (req, res) => {
   try {
     const type = req.body.target_type;
     let ref;
-    if (type === 'product') {
+    let label = null;
+    if (type === 'category') {
+      // Identifiant du terme WooCommerce, vérifié sur le site : le nom peut changer, l'id non.
+      const cat = await wpCategories.getCategory(req.body.target_ref);
+      if (!cat) return res.status(400).json({ error: 'Catégorie introuvable sur le site' });
+      ref = String(cat.id);
+      label = cat.path;
+    } else if (type === 'product') {
       const n = parseInt(req.body.target_ref, 10);
       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'Produit invalide' });
       ref = String(n);
@@ -139,7 +147,7 @@ const addPlacement = async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Type d’emplacement inconnu' });
     }
-    await widgetModel.addPlacement(req.params.id, type, ref);
+    await widgetModel.addPlacement(req.params.id, type, ref, label);
     res.json({ data: withUrls(await widgetModel.getById(req.params.id)) });
   } catch (err) {
     if (err.code === '23503') return fail(res, new Error('Widget introuvable'), 404);
@@ -164,6 +172,14 @@ const searchProducts = async (req, res) => {
   }
 };
 
+const searchCategories = async (req, res) => {
+  try {
+    res.json({ data: await wpCategories.searchCategories(req.query.q) });
+  } catch (err) {
+    fail(res, new Error(`Catégories du site illisibles : ${err.message}`), 502);
+  }
+};
+
 const publish = async (req, res) => {
   try {
     if (r2.missingConfig().length) {
@@ -176,6 +192,6 @@ const publish = async (req, res) => {
 };
 
 module.exports = {
-  list, get, create, update, remove, setStories, addPlacement, removePlacement, searchProducts, publish,
+  list, get, create, update, remove, setStories, addPlacement, removePlacement, searchProducts, searchCategories, publish,
   normalizePath,
 };

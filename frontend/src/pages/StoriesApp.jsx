@@ -571,8 +571,8 @@ const clock = (sec) => {
 
 /** Info-bulle de la colonne « Affichée sur » : la liste des fiches et des pages. */
 const placementsTitle = (placements) => {
-  const { products, pages } = summarizePlacements(placements);
-  return [...products.values(), ...pages].join('\n');
+  const { products, pages, categories } = summarizePlacements(placements);
+  return [...products.values(), ...[...categories.values()].map((c) => `Catégorie : ${c}`), ...pages].join('\n');
 };
 
 /** Champs modifiables envoyés au backend (le reste de la story est en lecture seule). */

@@ -36,6 +36,13 @@ sitemap vidéo, attribution des commandes.
   - `widgets` : slug → `{ title, layout: "bubbles" | "cards", stories: [slugs dans l'ordre] }`
   - `products` : `wp_product_id` (parent ou simple) → `[slugs de widgets]`
   - `pages` : chemin (`/youvape-awards`) → `[slugs de widgets]`
+  - `categories` (ajouté le 03/11/2026) : identifiant WooCommerce d'une catégorie
+    `product_cat` → `[slugs de widgets]`. Le widget s'affiche sur **toutes les fiches de
+    la catégorie et de ses sous-catégories** (une fiche appartient à la catégorie si l'un
+    de ses termes OU l'un de leurs ancêtres y figure). Sur une fiche qui a aussi ses
+    propres widgets (`products`), ceux-ci passent d'abord, puis ceux des catégories,
+    sans doublon. Identifiant et non slug : il ne change pas si la catégorie est renommée.
+  - `category_info` : identifiant → `{ name }` (chemin lisible, informatif).
 - `stories/widgets/<slug>.json` — un widget déplié (stories complètes).
 
 Les fichiers vidéo sont versionnés (`story.v2.mp4`) et servis en cache immuable :

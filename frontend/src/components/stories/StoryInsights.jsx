@@ -45,7 +45,9 @@ export const PlacementsDetail = ({ placements = [] }) => {
                 <li key={`${t.target_type}-${t.target_ref}`}>
                   {t.target_type === 'product'
                     ? <a href={`${SITE}/?post_type=product&p=${t.target_ref}`} target="_blank" rel="noreferrer" style={{ color: C.bleu }}>{t.product_title || `Produit #${t.target_ref}`}</a>
-                    : <a href={`${SITE}${t.target_ref}`} target="_blank" rel="noreferrer" style={{ color: C.bleu, fontFamily: 'monospace' }}>{t.target_ref}</a>}
+                    : t.target_type === 'category'
+                      ? <span>Catégorie : {t.target_label || `#${t.target_ref}`} <span style={{ color: C.grisM }}>(toutes ses fiches)</span></span>
+                      : <a href={`${SITE}${t.target_ref}`} target="_blank" rel="noreferrer" style={{ color: C.bleu, fontFamily: 'monospace' }}>{t.target_ref}</a>}
                 </li>
               ))}
             </ul>

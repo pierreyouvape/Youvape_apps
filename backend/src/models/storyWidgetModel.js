@@ -40,12 +40,12 @@ const getById = async (id) => {
       [id],
     ),
     pool.query(
-      `SELECT p.id, p.target_type, p.target_ref, pr.post_title, pr.post_status, pr.image_url
+      `SELECT p.id, p.target_type, p.target_ref, p.target_label, pr.post_title, pr.post_status, pr.image_url
          FROM story_placements p
          LEFT JOIN products pr
                 ON pr.wp_product_id = CASE WHEN p.target_type = 'product' THEN p.target_ref::bigint END
         WHERE p.widget_id = $1
-        ORDER BY p.target_type, pr.post_title, p.target_ref`,
+        ORDER BY p.target_type, COALESCE(pr.post_title, p.target_label), p.target_ref`,
       [id],
     ),
   ]);
@@ -107,11 +107,12 @@ const setStories = async (widgetId, storyIds) => {
   }
 };
 
-const addPlacement = async (widgetId, targetType, targetRef) => {
+const addPlacement = async (widgetId, targetType, targetRef, targetLabel = null) => {
   const { rows } = await pool.query(
-    `INSERT INTO story_placements (widget_id, target_type, target_ref) VALUES ($1, $2, $3)
-     ON CONFLICT (widget_id, target_type, target_ref) DO NOTHING RETURNING *`,
-    [widgetId, targetType, targetRef],
+    `INSERT INTO story_placements (widget_id, target_type, target_ref, target_label) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (widget_id, target_type, target_ref) DO UPDATE SET target_label = EXCLUDED.target_label
+     RETURNING *`,
+    [widgetId, targetType, targetRef, targetLabel],
   );
   await touch(pool, widgetId);
   return rows[0] || null;
@@ -159,7 +160,7 @@ const dataForPublish = async () => {
         ORDER BY i.widget_id, i.position`,
     ),
     pool.query(
-      `SELECT p.widget_id, p.target_type, p.target_ref
+      `SELECT p.widget_id, p.target_type, p.target_ref, p.target_label
          FROM story_placements p
          JOIN story_widgets w ON w.id = p.widget_id AND w.status = 'published'
         ORDER BY p.target_type, p.target_ref, p.widget_id`,

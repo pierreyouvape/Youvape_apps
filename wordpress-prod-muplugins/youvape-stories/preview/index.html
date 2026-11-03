@@ -105,6 +105,19 @@
         mock.appendChild(left); mock.appendChild(right); b.appendChild(mock); app.appendChild(b);
       });
 
+      // Catégories WooCommerce : le widget s'affiche sur toutes leurs fiches (sous-catégories comprises).
+      Object.keys(index.categories || {}).filter(function (cid) { return keep(index.categories[cid]); }).forEach(function (cid) {
+        var info = (index.category_info || {})[cid] || {};
+        var b = box('Catégorie : ' + (info.name || '#' + cid),
+          'Widget(s) : ' + index.categories[cid].join(', ') + ' · affiché sur toutes les fiches de cette catégorie et de ses sous-catégories');
+        index.categories[cid].forEach(function (slug) {
+          var w = YVStories.expand(index, slug); if (!w) return;
+          var host = widgetHost(); b.appendChild(host);
+          YVStories.mount(host, w, { siteUrl: SITE }); expanded.push(w);
+        });
+        app.appendChild(b);
+      });
+
       // Pages éditoriales (ex. /youvape-awards) : carrousel.
       Object.keys(index.pages).filter(function (path) { return keep(index.pages[path]); }).forEach(function (path) {
         var b = box('Page ' + path,
@@ -119,7 +132,8 @@
 
       if (only && index.widgets[only]
           && !Object.keys(index.products).some(function (k) { return index.products[k].indexOf(only) >= 0; })
-          && !Object.keys(index.pages).some(function (k) { return index.pages[k].indexOf(only) >= 0; })) {
+          && !Object.keys(index.pages).some(function (k) { return index.pages[k].indexOf(only) >= 0; })
+          && !Object.keys(index.categories || {}).some(function (k) { return index.categories[k].indexOf(only) >= 0; })) {
         var wb = box('Widget sans emplacement', 'Il est publié mais rattaché à aucune fiche ni page : voici son rendu seul.');
         var wh = widgetHost(); wb.appendChild(wh); app.appendChild(wb);
         var wx = YVStories.expand(index, only); YVStories.mount(wh, wx, { siteUrl: SITE }); expanded.push(wx);

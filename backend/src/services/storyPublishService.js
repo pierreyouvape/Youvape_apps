@@ -8,6 +8,9 @@
  *     widgets   slug → { title, layout, stories: [slugs dans l'ordre] }
  *     products  wp_product_id → [slugs de widgets]   (fiches produit)
  *     pages     chemin de page → [slugs de widgets]   (ex. /youvape-awards)
+ *     categories  id de catégorie WooCommerce (product_cat) → [slugs de widgets] :
+ *               toutes les fiches de la catégorie ET de ses sous-catégories
+ *     category_info  id → { name } (informatif, page d'aperçu)
  *     product_info  wp_product_id → { title, image, price } (page d'aperçu)
  *   stories/widgets/<slug>.json   un widget déplié (stories complètes), pour
  *                                 un usage côté navigateur ou un contrôle à l'œil.
@@ -74,11 +77,14 @@ const publish = async ({ userId } = {}) => {
 
   const products = {};
   const pages = {};
+  const categories = {};
+  const categoryInfo = {};
   for (const p of data.placements) {
     const slug = slugById.get(p.widget_id);
     if (!live.has(slug)) continue;
-    const map = p.target_type === 'product' ? products : pages;
+    const map = p.target_type === 'product' ? products : p.target_type === 'category' ? categories : pages;
     (map[p.target_ref] ||= []).push(slug);
+    if (p.target_type === 'category') categoryInfo[p.target_ref] = { name: p.target_label || null };
   }
 
   const index = {
@@ -90,6 +96,9 @@ const publish = async ({ userId } = {}) => {
     products,
     pages,
     // Informatif (page d'aperçu) : nom, photo et prix TTC des fiches visées.
+    // Ajouté le 03/11/2026 : un site qui ne connaît pas encore cette clé l'ignore simplement.
+    categories,
+    category_info: categoryInfo,
     product_info: Object.fromEntries(data.products
       .filter((pr) => products[String(pr.wp_product_id)])
       .map((pr) => [String(pr.wp_product_id), {
@@ -141,6 +150,7 @@ const publish = async ({ userId } = {}) => {
     stories: data.stories.length,
     products: Object.keys(products).length,
     pages: Object.keys(pages).length,
+    categories: Object.keys(categories).length,
     empty_widgets: Object.keys(widgets).filter((slug) => !live.has(slug)),
     index_url: r2.publicUrl('stories/index.json'),
     purge: {

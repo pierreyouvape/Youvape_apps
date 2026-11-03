@@ -30,6 +30,7 @@ router.put('/widgets/:id/stories', write, widgetController.setStories);
 router.post('/widgets/:id/placements', write, widgetController.addPlacement);
 router.delete('/widgets/:id/placements/:placementId', write, widgetController.removePlacement);
 router.get('/products/search', read, widgetController.searchProducts);
+router.get('/categories/search', read, widgetController.searchCategories);
 router.post('/publish', write, widgetController.publish);
 
 // Stories (vidéos)
