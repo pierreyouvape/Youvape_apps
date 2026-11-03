@@ -83,6 +83,11 @@ function parseColissimoPdf(text) {
   const CAE_RE      = /^Coefficient.*[ÉE]nergie\s+([\d\s,]+)/i;
   const SUPPTOT_RE  = /^Suppl?ements?\s+([\d\s,]+)/i;
   const INDEMTOT_RE = /^Indemnisations\s+(-[\d\s,]+)/i;
+  // Total imprimé du récap, indemnisations comprises : « TOTAL HT 8 192,92 ¤ »
+  const TOTALHT_RE  = /^TOTAL HT\s+(-?[\d\s]+,\d{2})\s*[€¤]/;
+  // Lignes du récap « INDEMNISATIONS » : « Article IN6 - Indemnisations HD (10%) -42,89€ »
+  const RECAP_INDEMN_RE = /^Article\s+(IN\w+|ICA)\s+-\s+(.+?)\s+(-[\d\s]*,\d{2})\s*[€¤]$/i;
+  const recapIndemn = [];
   // Ligne récap : "Article Supplément Participation à la décarbonation - TVA 20.00% 987 0,05€ 49,35€"
   const DECARBO_RE  = /Article Suppl[ée]ment Participation.*?d[ée]carbonation.*?\d+\s+([\d,]+)\s*[€¤]\s+[\d,]+\s*[€¤]/i;
 
@@ -98,6 +103,9 @@ function parseColissimoPdf(text) {
     const caeM = line.match(CAE_RE);     if (caeM) globalSummary.cae     = parseFloat(caeM[1].replace(/\s/g,'').replace(',','.'));
     const spM = line.match(SUPPTOT_RE);  if (spM) globalSummary.supplements = parseFloat(spM[1].replace(/\s/g,'').replace(',','.'));
     const idM = line.match(INDEMTOT_RE); if (idM) globalSummary.indemnizations = parseFloat(idM[1].replace(/\s/g,'').replace(',','.'));
+    const thM = line.match(TOTALHT_RE);  if (thM && globalSummary.totalHt == null) globalSummary.totalHt = parseFloat(thM[1].replace(/\s/g,'').replace(',','.'));
+    const riM = line.match(RECAP_INDEMN_RE);
+    if (riM) recapIndemn.push({ date: null, reference: null, tracking: null, label: `Article ${riM[1]} - ${riM[2].trim()}`, amount: parseFloat(riM[3].replace(/\s/g,'').replace(',','.')), type: 'Hors Délais' });
     const dcM = line.match(DECARBO_RE);  if (dcM && globalSummary.decarbonationUnit == null) globalSummary.decarbonationUnit = parseFloat(dcM[1].replace(',','.'));
   }
 
@@ -263,6 +271,15 @@ function parseColissimoPdf(text) {
   // n'a rien trouvé → on lit le récapitulatif agrégé à la place.
   if (!parcels.length && TARGET_FORMAT_RE.test(text)) {
     return parseColissimoTargetPdf(lines, { invoiceNumber, periodStart, periodEnd, accountNumber });
+  }
+
+  // Factures 2024-2026 : les indemnisations ne figurent qu'au récap de page 1
+  // (aucune section « Indemnisations Pour Hors Délais ») → on reprend ses lignes,
+  // ou à défaut le total « Indemnisations » du récap.
+  if (!indemnizations.length && globalSummary.indemnizations) {
+    const recapSum = Math.round(recapIndemn.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+    if (recapSum === globalSummary.indemnizations) indemnizations.push(...recapIndemn);
+    else indemnizations.push({ date: null, reference: null, tracking: null, label: 'Indemnisations', amount: globalSummary.indemnizations, type: 'Diverses' });
   }
 
   return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber };
@@ -1102,10 +1119,12 @@ async function analyzeColissimoBuffer(buffer) {
   return { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats, format: format || 'detail' };
 }
 
-// Total HT hors indemnisations (port net + CAE + SMIC + suppléments), comme les factures détaillées.
-// Format cible : aucun colis, on part du « MONTANT TOTAL HT » du récap, qui inclut les indemnisations.
+// Total HT hors indemnisations (port net + CAE + SMIC + suppléments).
+// PDF (détaillé ou cible) : on part du total imprimé au récap, qui inclut les indemnisations —
+// la somme des colis lus ne suffit pas (suppléments hors colis comme « partenaire postal »,
+// colis coupés entre deux pages). CSV : pas de total imprimé, somme colis + suppléments.
 function colissimoTotalHt(parcels, supplementsTotal, gs) {
-  if (!(parcels || []).length && gs.totalHt != null) {
+  if (gs.totalHt != null) {
     return Math.round((gs.totalHt - (gs.indemnizations ?? 0)) * 100) / 100;
   }
   return (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
