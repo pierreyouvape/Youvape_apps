@@ -485,6 +485,9 @@ const pdfImportModel = {
       // Total HT produits lu sur la facture (garde-fou de réconciliation à l'envoi BMS).
       // null si ni total explicite ni montants de ligne exploitables → contrôle B ignoré.
       invoice_total_ht: invoiceTotalHt,
+      // Remise de pied lue sur la facture : le contrôle B accepte alors aussi le
+      // total net (lignes déjà remisées par le tarif validé BMS).
+      invoice_discount_ht: parsed.invoiceDiscountHT ?? null,
     };
   }
 };

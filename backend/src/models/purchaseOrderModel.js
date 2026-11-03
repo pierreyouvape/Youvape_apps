@@ -748,9 +748,9 @@ const purchaseOrderModel = {
       const orderQuery = `
         INSERT INTO purchase_orders (
           order_number, supplier_id, status, notes, created_by, order_date, invoice_total_ht,
-          bms_supplier_reference
+          bms_supplier_reference, invoice_discount_ht
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
       `;
       const orderResult = await client.query(orderQuery, [
@@ -765,6 +765,7 @@ const purchaseOrderModel = {
         // BMS : sans quoi la synchro la remplacerait par le vide de BMS au
         // passage suivant.
         String(data.supplier_reference || '').trim() || null,
+        data.invoice_discount_ht != null ? parseFloat(data.invoice_discount_ht) : null,
       ]);
       const order = orderResult.rows[0];
 
@@ -1008,9 +1009,14 @@ const purchaseOrderModel = {
           )
         : null;
       const discountTotal = parseFloat(discountRes?.rows[0]?.total) || 0;
+      // Remise de pied lue sur la facture sans ligne remise dans la commande :
+      // Cosmer, remise fid 15 % déjà dans les prix (IHURKOWGW, 03/11/2026 :
+      // 2 974,65 € de lignes contre 3 499,10 € brut − 524,87 € = 2 974,23 €).
+      const docDiscount = parseFloat(order.invoice_discount_ht) || 0;
       const diff = Math.min(
         Math.abs(payloadTotal - invoiceTotal),
-        discountTotal > 0 ? Math.abs(payloadTotal - (invoiceTotal - discountTotal)) : Infinity
+        discountTotal > 0 ? Math.abs(payloadTotal - (invoiceTotal - discountTotal)) : Infinity,
+        docDiscount > 0 ? Math.abs(payloadTotal - (invoiceTotal - docDiscount)) : Infinity
       );
       const tolerance = Math.max(invoiceTotal * 0.10, 0.50); // 10 % ou 0,50 €
       // L'écart n'est PAS forcément une anomalie : commander une partie seulement du

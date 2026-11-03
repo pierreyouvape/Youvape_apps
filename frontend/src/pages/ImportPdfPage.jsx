@@ -564,6 +564,7 @@ const ImportPdfPage = () => {
         order_date: parsedData.order_date || undefined,
         // Total HT produits lu sur la facture — garde-fou de réconciliation à l'envoi BMS.
         invoice_total_ht: parsedData.invoice_total_ht ?? undefined,
+        invoice_discount_ht: parsedData.invoice_discount_ht ?? undefined,
         status: 'confirmed',
         items: [
           ...matchedItems.map(item => ({

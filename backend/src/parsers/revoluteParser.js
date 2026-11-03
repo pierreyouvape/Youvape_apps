@@ -182,6 +182,16 @@ function parseFacture(text) {
       if (Number.isFinite(n) && n > 0) invoiceProductTotalHT = n;
     }
 
+    // Remise de pied imprimée (« Total Réductions - 524,87 € » : remise fid 15 %).
+    // Le contrôle B de l'envoi BMS en a besoin : les lignes arrivent souvent déjà
+    // nettes (tarif validé BMS), à comparer au total produits MOINS cette remise.
+    let invoiceDiscountHT = null;
+    const discountMatch = text.match(/Total\s+R[ée]ductions\s+-?\s*([0-9][0-9  \u202f]*,\d{2})\s*€/);
+    if (discountMatch) {
+      const n = parseFloat(discountMatch[1].replace(/[\s  \u202f]/g, '').replace(',', '.'));
+      if (Number.isFinite(n) && n > 0) invoiceDiscountHT = n;
+    }
+
     // pdfIsPackBased : quantité en packs et prix du pack, stockés tels quels (sans conversion).
-    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, invoiceProductTotalHT, invoiceProductTotalIsGross: true };
+    return { orderNumber, orderDate, items, hasPrice: true, pdfIsPackBased: true, invoiceProductTotalHT, invoiceProductTotalIsGross: true, invoiceDiscountHT };
 }
