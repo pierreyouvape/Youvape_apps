@@ -397,7 +397,9 @@ chez nous » ou 45 jours après l'étiquette. Seules les étiquettes de l'app (`
   saisie dans `/packing/settings` → Contrats API). L'API Connect de MR ne sait PAS suivre.
 - ⚠️ **Mondial Relay n'a aucun code par évènement** : la clé est le libellé, **coupé à 30 caractères**
   (« PRISE EN CHARGE PAR LE TRANSPO »), dates `jj/mm/aa` heure de Paris. Son STAT global ne distingue
-  pas un retour d'un colis en route : ne pas s'en servir pour l'état.
+  pas un retour d'un colis en route : ne pas s'en servir pour l'état. **« RETOUR DU COLIS » n'est pas
+  un retour** (classé « Incident ») : le colis quitte le relais et peut y revenir (1266952) ; seul
+  « RETOUR A L'EXPÉDITEUR » le dit reparti vers nous.
 - Chronopost : codes complétés par des espaces (`D  `) ; La Poste : numéro inconnu = HTTP 400.
 - **Correspondance code → état** : `tracking_status_map`, réglable dans `/packing/settings` → « Suivi des
   colis » (droit `transporteurs`). Code jamais vu = « à classer », sans effet. Changer un classement

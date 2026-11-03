@@ -158,6 +158,16 @@ test('non retiré, retour à l\'expéditeur (1264965)', () => {
   assert.strictEqual(etat('mondial_relay', r.events).state, 'returning');
 });
 
+test('Mondial Relay : « RETOUR DU COLIS » n\'est pas un retour, le colis peut revenir au relais', () => {
+  // Commande 1266952 : déclaré absent, quitte le relais, y revient.
+  const ev = (event_key, jour) => ({ event_key, occurred_at: `2026-10-${jour}T10:00:00Z` });
+  const s = etat('mondial_relay', [
+    ev('DISPONIBLE AU POINT RELAIS', 20), ev('COLIS DECLARÉ ABSENT PAR LE RE', 21),
+    ev('RETOUR DU COLIS', 21), ev('EN COURS DE LIVRAISON', 23), ev('DISPONIBLE AU POINT RELAIS', 24),
+  ]);
+  assert.strictEqual(s.state, 'at_pickup_point');
+});
+
 test('STAT d\'erreur : une panne, pas un colis vide', () => {
   assert.throws(() => mr('mondialrelay-inconnu.xml'), /STAT 99/);
 });
