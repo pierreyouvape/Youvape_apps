@@ -2901,9 +2901,13 @@ function CustomerPanel({ ticket, onAssignOrder, onUnassignOrder, onMerge, mobile
     post_date: ticket.order_date,
     post_status: ticket.order_status,
     order_total: ticket.order_total,
-    tracking_number: ticket.order_tracking,
+    // Le suivi saisi sur le ticket prime ; sinon celui de la commande (comme
+    // le champ « N° de suivi » du panneau de gauche) — 209 tickets sur 238
+    // n'en portaient aucun et n'affichaient pas l'état du colis.
+    tracking_number: ticket.order_tracking || ticket.order_tracking_from_order,
     shipping_carrier: ticket.order_carrier,
     shipping_method: ticket.order_shipping_method,
+    shipping_country: ticket.order_shipping_country,
     items: ticket.order_items || [],
   } : null;
 
