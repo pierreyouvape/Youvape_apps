@@ -11,7 +11,7 @@
  *   - décision : livré / mis en relais avant 16 h, retard (RT), jamais pris en
  *     charge (PC), livraison après 16 h, code non classé ;
  *   - commentaire (commande 1273568, retard déclaré le 03/11/2026) ;
- *   - fichier : en-tête du modèle, `;`, CRLF, Windows-1252, colonnes vides
+ *   - fichier : en-tête du modèle, `;`, CRLF, UTF-8 sans BOM, colonnes vides
  *     là où la notice les interdit ;
  *   - compte-rendu d'import de la notice Chronopost.
  */
@@ -134,15 +134,17 @@ test('en-tête du modèle, CRLF, colonnes vides pour RT, F1 et contenu pour PC',
     { trackingNumber: 'XS499219722FR', object: 'RT', content: 'ignoré', comment: 'Retard ; deux lignes\nici' },
     { trackingNumber: 'XN515953758FR', object: 'PC', content: '1 x Kit Armour; 2 x Accu', comment: 'Pas vu' },
   ]);
-  const text = buf.toString('latin1');
+  const text = buf.toString('utf8');
   assert.strictEqual(text,
     'numeroColis;codeObjetDemande;codeMotif;contenuColis;codeFamilleProduit;commentaire\r\n'
     + 'XS499219722FR;RT;;;;Retard deux lignes ici\r\n'
     + 'XN515953758FR;PC;;1 x Kit Armour 2 x Accu;F1;Pas vu\r\n');
 });
-test('Windows-1252 : accents, apostrophe typographique, euro ; le reste devient « ? »', () => {
-  const b = rules.toCp1252('é’€😀');
-  assert.deepStrictEqual([...b], [0xE9, 0x92, 0x80, 0x3F]);
+test('UTF-8 sans BOM : Chronopost a affiché « livr� » avec du Windows-1252 (03/11/2026)', () => {
+  const buf = rules.buildCsv([{ trackingNumber: 'XS1', object: 'RT', comment: 'non livré à 16h, évènement' }]);
+  assert.notStrictEqual(buf[0], 0xEF, 'pas de BOM devant numeroColis');
+  assert.ok(buf.toString('utf8').endsWith('XS1;RT;;;;non livré à 16h, évènement\r\n'));
+  assert.ok(buf.includes(Buffer.from('é', 'utf8')));
 });
 
 console.log('Compte-rendu d\'import');

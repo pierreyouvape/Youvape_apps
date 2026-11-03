@@ -432,7 +432,7 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
 - Jugé sur les évènements **avant 16 h le jour dû** (rattrapage = même réponse). Relais : mis à disposition
   au relais = livré. Domicile : **présenté** suffit (absent, laissé en point de retrait). Aucun scan → **PC**,
   sinon → **RT**. Un colis n'est réclamé **qu'une fois** (`carrier_claims.UNIQUE(label_id)`).
-- Fichier au format de la notice du « Service Client en ligne » (en-tête, `;`, CRLF, **Windows-1252**) :
+- Fichier au format de la notice du « Service Client en ligne » (en-tête, `;`, CRLF, **UTF-8 sans BOM** — Chronopost lit l'UTF-8, le 1er import en Windows-1252 a donné des « � ») :
   RT sans motif/famille/contenu, PC avec F1 + contenu. Envoyé à contact@youvape.fr (SMTP, pièce jointe),
   importé **à la main** chez Chronopost ; le compte-rendu collé dans `/expeditions` → Réclamations donne
   les n° de ticket.

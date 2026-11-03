@@ -21,12 +21,12 @@ const list = async (req, res) => {
   }
 };
 
-/** Le CSV tel qu'il a été envoyé (Windows-1252). */
+/** Le CSV tel qu'il a été envoyé (UTF-8 ; le tout premier, du 03/11/2026, en Windows-1252). */
 const download = async (req, res) => {
   try {
     const file = await claimModel.getBatchFile(parseInt(req.params.batchId, 10));
     if (!file) return res.status(404).json({ error: 'Fichier introuvable' });
-    res.setHeader('Content-Type', 'text/csv; charset=windows-1252');
+    res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${file.file_name}"`);
     res.send(file.csv_data);
   } catch (err) {

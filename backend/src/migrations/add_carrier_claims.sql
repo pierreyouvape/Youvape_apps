@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS carrier_claim_batches (
 );
 
 COMMENT ON TABLE carrier_claim_batches IS
-  'Fichiers d''import de réclamations produits (Chronopost : Service Client en ligne → Import de tickets). Le CSV est gardé tel qu''envoyé, en Windows-1252.';
+  'Fichiers d''import de réclamations produits (Chronopost : Service Client en ligne → Import de tickets). Le CSV est gardé tel qu''envoyé, en UTF-8 (le premier fichier, du 03/11/2026, en Windows-1252).';
 COMMENT ON COLUMN carrier_claim_batches.created_by IS
   'NULL = contrôle automatique de 16 h ; sinon la personne qui a lancé le contrôle.';
 COMMENT ON COLUMN carrier_claim_batches.imported_at IS

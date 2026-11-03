@@ -169,7 +169,7 @@ const mailBatch = async (batch, claims) => {
     to: CONTACT_EMAIL,
     subject: `Réclamations Chronopost du ${day} : ${claims.length} colis`,
     html, text,
-    attachments: [{ filename: batch.file_name, content: batch.csv_data, contentType: 'text/csv; charset=windows-1252' }],
+    attachments: [{ filename: batch.file_name, content: batch.csv_data, contentType: 'text/csv; charset=utf-8' }],
   });
   await claimModel.markMailed(batch.id, result.success ? null : (result.error || 'Envoi refusé'));
   return result.success;

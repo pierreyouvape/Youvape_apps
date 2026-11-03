@@ -161,30 +161,16 @@ const csvRow = ({ trackingNumber, object, content, comment }) => [
   clean(comment),
 ];
 
-// Windows-1252 : ce qu'attend Excel en français. Hors latin-1, seuls ces
-// caractères existent ; le reste devient « ? » plutôt qu'un octet faux.
-const CP1252 = {
-  0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87,
-  0x02C6: 0x88, 0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C, 0x017D: 0x8E, 0x2018: 0x91,
-  0x2019: 0x92, 0x201C: 0x93, 0x201D: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02DC: 0x98,
-  0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B, 0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F,
-};
-
-const toCp1252 = (text) => {
-  const out = [];
-  for (const ch of String(text).normalize('NFC')) {
-    const cp = ch.codePointAt(0);
-    if (cp < 0x80 || (cp >= 0xA0 && cp <= 0xFF)) out.push(cp);
-    else if (CP1252[cp]) out.push(CP1252[cp]);
-    else out.push(0x3F);
-  }
-  return Buffer.from(out);
-};
-
-/** Le fichier complet : en-tête du modèle, `;`, CRLF, Windows-1252. */
+/**
+ * Le fichier complet : en-tête du modèle, `;`, CRLF, en UTF-8 SANS BOM.
+ *
+ * Chronopost lit le fichier en UTF-8 : le premier import (03/11/2026, en
+ * Windows-1252) a donné « non livr� � 16h ». Pas de BOM : il se collerait
+ * devant « numeroColis » et l'en-tête ne serait plus reconnu.
+ */
 const buildCsv = (claims) => {
   const lines = [CSV_HEADER, ...claims.map(csvRow)].map(cols => cols.join(';'));
-  return toCp1252(lines.join('\r\n') + '\r\n');
+  return Buffer.from(lines.join('\r\n').normalize('NFC') + '\r\n', 'utf8');
 };
 
 /**
@@ -210,5 +196,5 @@ const parseImportReport = (text) => {
 module.exports = {
   PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME,
   parseMethod, dueDay, parisInstant, checkInstant, decide, buildComment,
-  csvRow, toCp1252, buildCsv, parseImportReport, frDay,
+  csvRow, buildCsv, parseImportReport, frDay,
 };
