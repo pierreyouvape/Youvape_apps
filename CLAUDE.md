@@ -422,6 +422,25 @@ Les produits de type `woosb` (packs) génèrent **deux lignes** dans `order_item
 
 **Règle :** pour toute question sur les volumes d'un produit, toujours vérifier d'abord si ce produit est composant d'un bundle avec une requête sur un cas concret avant de conclure.
 
+### Réclamations Chronopost (03/11/2026)
+
+Cron `0 16 * * 1-6` → `chronopostClaimService.run`. Colis du compte Chronopost **principal** sur un
+bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Express (`17`) à **J+3 ouvrés**
+(fériés sautés, samedi seulement avec l'option `-SAMEDI`). **2Shop jamais.** Règles pures dans
+`services/claims/chronopostClaims.js` (testées : `tests/chronopostClaims.test.js`).
+
+- Jugé sur les évènements **avant 16 h le jour dû** (rattrapage = même réponse). Relais : mis à disposition
+  au relais = livré. Domicile : **présenté** suffit (absent, laissé en point de retrait). Aucun scan → **PC**,
+  sinon → **RT**. Un colis n'est réclamé **qu'une fois** (`carrier_claims.UNIQUE(label_id)`).
+- Fichier au format de la notice du « Service Client en ligne » (en-tête, `;`, CRLF, **Windows-1252**) :
+  RT sans motif/famille/contenu, PC avec F1 + contenu. Envoyé à contact@youvape.fr (SMTP, pièce jointe),
+  importé **à la main** chez Chronopost ; le compte-rendu collé dans `/expeditions` → Réclamations donne
+  les n° de ticket.
+- SAV : **toujours une note PRIVÉE, jamais de mail client**. Ticket le plus récent de la commande (hors
+  fusionné/spam) ; aucun → créé en « Attente réponse transporteur » ; `terminé` et
+  `en_attente_réponse_client` y repassent ; les autres statuts ne bougent pas.
+- **Éteint tant que `app_config.chronopost_claims_since` n'existe pas** ; aucune échéance antérieure n'est réclamée.
+
 ### Bloquer une commande (Picking, fiche commande — 30/10/2026)
 
 - Une commande en vague n'est plus dans les listes du Picking : on la bloque depuis
