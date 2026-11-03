@@ -1257,7 +1257,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                     <td>
                       {(() => {
                         // Plusieurs réfs collées (« A,B ») : une ligne et un bouton copier par réf
-                        const refs = getSupplierRef(row).split(',').map(r => r.trim()).filter(Boolean);
+                        const refs = String(getSupplierRef(row) ?? '').split(',').map(r => r.trim()).filter(Boolean);
                         if (refs.length === 0) return <span style={{ color: '#cbd5e1' }}>-</span>;
                         return (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
