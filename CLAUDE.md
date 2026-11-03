@@ -459,9 +459,9 @@ du site, géré côté agence. Toute modif déposée à la main y est effacée a
 déploiement suivant — c'est déjà arrivé (correctif posé le 03/08/2026, effacé
 le 05/08).
 
-**Yousync 2.0.0 (dépôt) : polling seul, file dans une table du site, zéro perte.**
-La prod est en 1.4.2 tant que l'agence n'a pas posé la 2.0.0 : le backend parle les deux
-(`rest_no_route` en v2 = il reste en v1). Ne jamais réintroduire d'expiration, de lecture
+**Yousync 2.0.0 : polling seul, file dans une table du site, zéro perte.**
+En prod depuis le 03/11/2026 (release agence 208). Le backend parle encore v1 et v2
+(`rest_no_route` en v2 = il reste en v1) : c'est le retour arrière si l'agence remet la 1.4.2. Ne jamais réintroduire d'expiration, de lecture
 suivie d'une réécriture, ni d'ack par (type, id) : c'est ce qui perdait des commandes.
 
 Conserver le correctif marques parent/enfant de `get_product()`, et

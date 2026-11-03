@@ -17,6 +17,12 @@ ssh youvape "ssh youvape@web1.youvape.drakkar.pro \
   'grep -m1 Version: /var/www/vhosts/youvape.fr/current/wp-content/plugins/yousync/yousync.php'"
 ```
 
+**2.0.0 en prod le 03/11/2026** (release 208, posée à 12h10 Paris) : contrôles du §10 au vert
+(v2 en 5 min, `uploads/yousync/` supprimé, file qui se vide, 0 échec, aucun code d'erreur).
+`DISABLE_WP_CRON` est actif sur le site (cron système) : le polling n'en dépend pas, la purge si.
+Une tâche `yousync_process_queue` unique, posée par la 1.4.2 avant le déploiement, a survécu au
+nettoyage (course entre deux écritures du cron WP) : sans fonction attachée, elle ne fait rien.
+
 Mesuré le 30/10/2026 : prod en **1.4.2**, WP 7.1.3, WC **11.2.1**, PHP 8.4, MariaDB 10.11,
 préfixe de tables `hJvjTIOu`, HPOS en compatibilité (`enabled=no`, `data_sync=yes`),
 Cloudflare devant le site. wp-cli : `/opt/plesk/php/8.4/bin/php /usr/local/bin/wp`.
