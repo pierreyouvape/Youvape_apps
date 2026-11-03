@@ -8,6 +8,7 @@ import { API_URL, authHeaders, C, CarrierLogo, CountryFlag, Chip } from '../comp
 import { codesTransporteurs, visuelTransporteur } from '../utils/carrierVisuals';
 import { TRACKING_STATE_OPTIONS } from '../utils/trackingStates';
 import { TrackingStateBadge, TrackingTimeline } from '../components/shipping/TrackingState';
+import CarrierClaimsTab from '../components/shipping/CarrierClaimsTab';
 
 /**
  * Historique d'expédition — groupe « Prépa de commande ».
@@ -47,6 +48,7 @@ const STATUTS = [
   { value: 'not_deposited', label: 'Pas encore déposé' },
   { value: 'cancelled', label: 'Annulées' },
   { value: 'bms', label: 'Emballés dans BMS' },
+  { value: 'claimed', label: 'Réclamés au transporteur' },
 ];
 
 /** Suivi transporteur : un état, ou les colis qui ne bougent plus. */
@@ -171,6 +173,16 @@ function Etats({ row, vide = null }) {
   return <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>{chips}</span>;
 }
 
+/** Colis réclamé au transporteur : RT retard, PC jamais pris en charge. */
+function ReclamationChip({ objet, ticket }) {
+  return (
+    <Chip color={C.white} bg={objet === 'PC' ? C.red : C.amber}
+      title={ticket ? `Ticket Chronopost ${ticket}` : 'Réclamation pas encore importée chez Chronopost'}>
+      Réclamé {objet}
+    </Chip>
+  );
+}
+
 const COULEURS_ETAPE = {
   order: C.primary, wave: C.violet, pick: C.violet, incident: C.red,
   label: TEAL, bms: C.green, deposit: C.green, cancel: C.red,
@@ -277,6 +289,19 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
               <span><TrackingStateBadge state={l.tracking_state} at={l.tracking_state_at} error={l.tracking_error} compact /></span>
               <span style={{ color: C.greyT }}>Bordereau</span>
               <span><Etats row={l} vide="—" /></span>
+              {data.claim && (
+                <>
+                  <span style={{ color: C.greyT }}>Réclamation</span>
+                  <span>
+                    <ReclamationChip objet={data.claim.object_code} ticket={data.claim.carrier_ticket} />
+                    <span style={{ fontSize: 12.5, color: C.greyT, marginLeft: 6 }}>
+                      le {fmtDateHeure(data.claim.created_at)}
+                      {data.claim.carrier_ticket ? ` — ticket Chronopost ${data.claim.carrier_ticket}` : ' — pas encore importée'}
+                      {data.claim.sav_ticket_id && <> — <Link to={`/tickets/${data.claim.sav_ticket_id}`}>SAV #{data.claim.sav_ticket_id}</Link></>}
+                    </span>
+                  </span>
+                </>
+              )}
             </div>
 
             {l.source === 'bms' && (
@@ -427,6 +452,7 @@ const ShipmentHistoryApp = () => {
   const [erreur, setErreur] = useState(null);
   const [ouvert, setOuvert] = useState(null);
   const [reimpression, setReimpression] = useState(null);
+  const [vue, setVue] = useState('colis');
 
   // La recherche part après la frappe, pas à chaque touche.
   useEffect(() => {
@@ -498,6 +524,17 @@ const ShipmentHistoryApp = () => {
             }}>Historique d'expédition</h1>
           </div>
 
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+            {[['colis', 'Colis'], ['reclamations', 'Réclamations']].map(([key, label]) => (
+              <button key={key} onClick={() => setVue(key)} style={{
+                ...champ, cursor: 'pointer', fontWeight: 700, padding: '8px 16px',
+                background: vue === key ? TEAL : C.white, color: vue === key ? '#fff' : C.dark,
+                borderColor: vue === key ? TEAL : C.greyB,
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {vue === 'reclamations' ? <CarrierClaimsTab token={token} /> : (<>
           {/* Filtres */}
           <div style={{
             background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12,
@@ -560,9 +597,11 @@ const ShipmentHistoryApp = () => {
               onClick={() => filtre(setStatus)('bms_pending')} active={status === 'bms_pending'} />
             <Kpi label="Annulées" value={totals?.cancelled} color={C.red}
               onClick={() => filtre(setStatus)('cancelled')} active={status === 'cancelled'} />
+            <Kpi label="Réclamés" value={totals?.claimed} color={C.amber}
+              onClick={() => filtre(setStatus)('claimed')} active={status === 'claimed'} />
           </div>
 
-          {data && (data.byCarrier.length > 0 || users.length > 0) && (
+          {data && data.byCarrier.length > 0 && (
             <div style={{
               display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 16, fontSize: 13,
               background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '12px 16px',
@@ -579,21 +618,6 @@ const ShipmentHistoryApp = () => {
                     }}>
                     <CarrierLogo carrier={{ carrierCode: c.carrier_code, accountCode: c.account_code }} height={16} />
                     <strong style={{ fontSize: 13.5 }}>{c.n}</strong>
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ color: C.greyT, fontWeight: 600 }}>Par préparateur</span>
-                {users.map(u => (
-                  <button key={u.id} onClick={() => filtre(setUser)(String(user) === String(u.id) ? '' : String(u.id))}
-                    title={`${u.packed} packé(s), ${u.picked} pické(s)`}
-                    style={{
-                      cursor: 'pointer', background: 'none', fontFamily: 'inherit', fontSize: 13,
-                      border: `1px solid ${String(user) === String(u.id) ? TEAL : 'transparent'}`,
-                      borderRadius: 8, padding: '2px 6px', color: C.dark,
-                    }}>
-                    {u.name} <strong>{u.packed}</strong>
-                    {u.picked > 0 && <span style={{ color: C.violet }}> · {u.picked} pické(s)</span>}
                   </button>
                 ))}
               </div>
@@ -657,8 +681,9 @@ const ShipmentHistoryApp = () => {
                       <Td>
                         {r.source === 'bms'
                           ? <span style={{ fontSize: 12, color: C.greyM }}>—</span>
-                          : <span title={r.tracking_last_label || undefined}>
+                          : <span title={r.tracking_last_label || undefined} style={{ display: 'inline-flex', flexDirection: 'column', gap: 4 }}>
                               <TrackingStateBadge state={r.tracking_state} at={r.tracking_state_at} error={r.tracking_error} compact />
+                              {r.claim_object && <ReclamationChip objet={r.claim_object} ticket={r.claim_ticket} />}
                             </span>}
                       </Td>
                       <Td align="right" color={C.greyT}>{r.weight_g ? `${r.weight_g} g` : '—'}</Td>
@@ -695,6 +720,7 @@ const ShipmentHistoryApp = () => {
               </div>
             )}
           </div>
+          </>)}
         </div>
       </main>
 

@@ -59,7 +59,7 @@ const storyRoutes = require('./routes/storyRoutes');
 const storyCollectRoutes = require('./routes/storyCollectRoutes');
 const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderReconcileCron, setupOrderDuplicatesCron, setupDishonestOrdersCron, setupTableauRemindersCron, setupShipmentTrackingCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderReconcileCron, setupOrderDuplicatesCron, setupDishonestOrdersCron, setupTableauRemindersCron, setupShipmentTrackingCron, setupChronopostClaimsCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -200,6 +200,7 @@ app.listen(PORT, async () => {
   setupOrderDuplicatesCron();
   setupDishonestOrdersCron();
   setupShipmentTrackingCron();
+  setupChronopostClaimsCron();
 
   // Rappels des tâches récurrentes de l'app Tableau (écran + email) - chaque minute
   setupTableauRemindersCron();

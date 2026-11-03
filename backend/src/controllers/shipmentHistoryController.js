@@ -10,6 +10,8 @@ const shipmentHistoryModel = require('../models/shipmentHistoryModel');
 const { getAdapter, listCarrierCodes } = require('../services/carriers');
 const { supportsDepositSlip } = require('../services/carriers/contract');
 
+const { OBJECTS: CLAIM_OBJECTS } = require('../services/claims/chronopostClaims');
+
 const LOG_TAG = 'ShipmentHistory';
 
 const INCIDENTS = {
@@ -39,7 +41,7 @@ const withCancel = (row, now) => {
  * Le parcours d'un colis, dans l'ordre du temps. Pur (testé) : une étape dont
  * on n'a pas la date n'apparaît pas, plutôt qu'avec une date inventée.
  */
-const buildTimeline = ({ label, order, wave, incidents, bordereau }) => {
+const buildTimeline = ({ label, order, wave, incidents, bordereau, claim = null }) => {
   const ev = [];
   const push = (at, kind, title, by = null, detail = null) => {
     if (at) ev.push({ at, kind, title, by, detail });
@@ -83,6 +85,12 @@ const buildTimeline = ({ label, order, wave, incidents, bordereau }) => {
 
   push(label.cancelled_at, 'cancel', 'Étiquette annulée');
 
+  if (claim) {
+    push(claim.created_at, 'incident', `Réclamation Chronopost ${claim.object_code} (${CLAIM_OBJECTS[claim.object_code] || ''})`,
+      null, [claim.carrier_ticket && `Ticket Chronopost ${claim.carrier_ticket}`,
+        claim.sav_ticket_id && `Ticket SAV #${claim.sav_ticket_id}`].filter(Boolean).join(' — ') || null);
+  }
+
   return ev.sort((a, b) => new Date(a.at) - new Date(b.at));
 };
 
@@ -115,6 +123,7 @@ const detailOf = (source) => async (req, res) => {
       otherLabels: data.otherLabels,
       timeline: buildTimeline(data),
       trackingEvents: data.trackingEvents,
+      claim: data.claim,
     });
   } catch (error) {
     console.error(`[${LOG_TAG}] Erreur detail :`, error.message);

@@ -18,6 +18,7 @@ const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const { STATES, FINAL_STATES } = require('../services/tracking/states');
 const { SOURCE_BY_CARRIER } = require('../services/tracking/readers');
 const trackingModel = require('./shipmentTrackingModel');
+const claimModel = require('./carrierClaimModel');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const PAGE_SIZE = 50;
@@ -47,11 +48,13 @@ const BASE_APP = `
          l.bordereau_id, b.bordereau_number, b.created_at AS bordereau_at,
          w.id AS wave_id, w.wave_number, w.picker_id, w.picker_name,
          inc.actions AS incidents,
+         cc.object_code AS claim_object, cc.carrier_ticket AS claim_ticket, cc.created_at AS claim_at,
          (SELECT MAX(cr.id) FROM customer_returns cr
            WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
          (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
            WHERE cr.replacement_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_origin_order
     FROM shipment_labels l
+    LEFT JOIN carrier_claims cc ON cc.label_id = l.id
     LEFT JOIN users pu ON pu.id = l.packed_by
     LEFT JOIN orders o
       ON o.wp_order_id = CASE WHEN l.order_number ~ '^[0-9]{1,18}$' THEN l.order_number::bigint END
@@ -98,6 +101,7 @@ const BASE_BMS = `
          NULL::int AS bordereau_id, NULL::varchar AS bordereau_number, NULL::timestamp AS bordereau_at,
          NULL::int AS wave_id, NULL::varchar AS wave_number, NULL::int AS picker_id, NULL::varchar AS picker_name,
          NULL::varchar[] AS incidents,
+         NULL::varchar AS claim_object, NULL::varchar AS claim_ticket, NULL::timestamptz AS claim_at,
          (SELECT MAX(cr.id) FROM customer_returns cr
            WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
          (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
@@ -158,6 +162,7 @@ const buildWhere = (f, depositCarriers, { withUser = true } = {}) => {
       conds.push(`source = 'app' AND status = 'active' AND bordereau_id IS NULL AND carrier_code = ANY(${p(depositCarriers)})`);
       break;
     case 'bms': conds.push(`source = 'bms'`); break;
+    case 'claimed': conds.push('claim_object IS NOT NULL'); break;
     default: break;
   }
 
@@ -203,7 +208,8 @@ const list = async (filters, depositCarriers) => {
               COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
               COUNT(*) FILTER (WHERE status = 'active' AND bms_ship_status = 'pending')::int AS bms_pending,
               COUNT(*) FILTER (WHERE incidents IS NOT NULL)::int AS incidents,
-              COUNT(*) FILTER (WHERE source = 'bms')::int AS bms
+              COUNT(*) FILTER (WHERE source = 'bms')::int AS bms,
+              COUNT(*) FILTER (WHERE claim_object IS NOT NULL)::int AS claimed
          FROM base ${where}`,
       params
     ),
@@ -311,6 +317,7 @@ const getDetail = async (id, source = 'app') => {
   return {
     label,
     trackingEvents: source === 'app' ? await trackingModel.eventsForLabel(label.id) : [],
+    claim: source === 'app' ? await claimModel.forLabel(label.id) : null,
     order: order.rows[0] || null,
     wave: wave.rows[0] || null,
     incidents: incidents.rows,

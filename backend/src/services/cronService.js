@@ -1208,6 +1208,7 @@ const setupTableauRemindersCron = () => {
 
 // ==================== SUIVI DES COLIS (API TRANSPORTEURS) ====================
 
+let chronopostClaimsCronJob = null;
 let shipmentTrackingCronJob = null;
 
 const setupShipmentTrackingCron = () => {
@@ -1225,6 +1226,23 @@ const setupShipmentTrackingCron = () => {
     }
   }, { timezone: 'Europe/Paris' });
   console.log('Cron suivi des colis configure: toutes les 30 min');
+};
+
+const setupChronopostClaimsCron = () => {
+  if (chronopostClaimsCronJob) {
+    chronopostClaimsCronJob.stop();
+    chronopostClaimsCronJob = null;
+  }
+  // 16 h, lundi → samedi : colis Chrono 13 / Relais / Express pas livrés le
+  // jour dû → fichier d'import Chronopost par mail + note privée SAV.
+  chronopostClaimsCronJob = cron.schedule('0 16 * * 1-6', async () => {
+    try {
+      await require('./chronopostClaimService').run();
+    } catch (error) {
+      console.error('Erreur cron réclamations Chronopost:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron réclamations Chronopost configure: 16h lun-sam');
 };
 
 
@@ -1260,6 +1278,7 @@ module.exports = {
   setupDishonestOrdersCron,
   setupTableauRemindersCron,
   setupShipmentTrackingCron,
+  setupChronopostClaimsCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,
