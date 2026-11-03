@@ -1,0 +1,421 @@
+LA POSTE – SA au capital de 6 447 643 996 euros Siège social : 9 RUE DU COLONEL PIERRE AVIA - CP A309 - 75757 PARIS
+SIREN 356000000 - RCS Paris - SIRET 35600000000048
+Membre de l'assujetti unique La Poste - article 256 C CGI - N° TVA AU FR 67921781480
+N° TVA intracommunautaire FR39356000000 - TVA acquittée sur les débits
+Facture N° CO01485180
+Du 30/09/2026
+Dépôt d'une facture de prestation de service
+Période du 01/09/2026 au 30/09/2026
+Page 1/12	
+Vos informations
+EMC
+N° COMPTE CLIENT : 906524
+N° SIREN : 789508439
+N° TVA intra : FR87789508439
+ROUTAGE FACTURE :
+789508439_78950843900013
+Vos contacts privilégiés
+LA POSTE COLISSIMO
+SERVICE ADMINISTRATION DES
+VENTES
+9 RUE DU COLONEL PIERRE AVIA - CP
+A309
+75757 PARIS
+France
+https://www.colissimo.entreprise.lapost
+e.fr
+Votre Règlement
+La somme de 10 189,21€ sera prélevée le
+22/10/2026
+N° Emetteur ICS : FR93COL111341
+Ref mandat : MOCOL00015254526
+Aucun escompte n'est accordé pour paiement anticipé
+Tout incident de paiement est passible d'une pénalité de retard
+ainsi que de l'indemnité forfaitaire pour frais de recouvrement de
+40€
+EMC
+8 BOULEVARD VICTOR HUGO
+34000 MONTPELLIER
+France
+Cher client, vous trouverez ci-après: Devise: EURO
+Votre récapitulatif HT
+FRAIS DE PORT hors options et hors suppléments 10 713,58
+COEFFICIENT AJUSTEMENT ENERGIE 1 030,02
+AJUSTEMENT SMIC 73,52
+SUPPLEMENTS 182,70
+INDEMNISATIONS -130,07
+REMISES -3 353,17
+MONTANT TOTAL HT 8 516,58
+MONTANT TOTAL NET HT 8 516,58
+MONTANT TVA 1 672,63
+MONTANT TTC 10 189,21
+MONTANT A PAYER 10 189,21
+Note de facture
+Votre facture Colissimo fait peau neuve.
+Elle adopte le format cible imposé par la réforme de l’Etat sur la facturation électronique. La vision par expéditeur est plus
+détaillée, et les listes unitaires de colis et prestations sont partagées dans les fichiers excel disponibles sur votre espace client
+Colissimo Box. Pour plus d’informations, Consulter les FAQ sur notre site internet.
+
+-- 1 of 12 --
+
+Facture N° CO01485180
+Période du 01/09/2026 au 30/09/2026
+Page 2/12
+Récapitulatif de TVA
+Base HT Montant TVA Taux de TVA Code TVA Code motif d'exonération Motif d'éxonération
+-130,07 0,00 0 % O VATEX-EU-O Non soumis à la TVA
+283,49 0,00 0 % G VATEX-EU-G Exportation hors EU
+8 363,16 1 672,63 20 % S - -
+8 516,58 1 672,63
+
+-- 2 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 3/12
+Votre récapitulatif pour le client déposant 906524 EMC
+FRAIS DE PORT HORS OPTIONS ET
+HORS SUPPLÉMENTS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+1 8Q - Colissimo Domicile Sans Sign. OM OM 5 10,86 54,30 54,30 0 % G
+2 8Q - Colissimo Domicile Sans Sign. OM OM 2 16,46 32,92 32,92 0 % G
+3 8Q - Colissimo Domicile Sans Sign. OM OM 1 20,03 20,03 20,03 0 % G
+4 CA - Colissimo Domicile Sans Sign. INT Hors EU 4 11,28 45,12 -8,68 95 36,44 0 % G
+5 CA - Colissimo Domicile Sans Sign. INT Hors EU 7 11,38 79,66 -15,26 95 64,40 0 % G
+6 CA - Colissimo Domicile Sans Sign. INT Hors EU 1 14,22 14,22 -2,73 95 11,49 0 % G
+7 CA - Colissimo Domicile Sans Sign. INT Hors EU 1 14,27 14,27 -2,74 95 11,53 0 % G
+8 CA - Colissimo Domicile Sans Sign. INT Hors EU 1 16,01 16,01 -3,07 95 12,94 0 % G
+9 6A - Colissimo Domicile Sans Sign. F France métropolitaine 220 6,84 1 504,80 -376,20 95 1 128,60 20,00 % S
+10 6A - Colissimo Domicile Sans Sign. F France métropolitaine 285 7,71 2 197,35 -550,05 95 1 647,30 20,00 % S
+11 6A - Colissimo Domicile Sans Sign. F France métropolitaine 128 8,60 1 100,80 -275,20 95 825,60 20,00 % S
+12 6A - Colissimo Domicile Sans Sign. F France métropolitaine 61 9,34 569,74 -142,74 95 427,00 20,00 % S
+13 6A - Colissimo Domicile Sans Sign. F France métropolitaine 60 10,48 628,80 -157,20 95 471,60 20,00 % S
+14 6A - Colissimo Domicile Sans Sign. F France métropolitaine 7 11,49 80,43 -20,09 95 60,34 20,00 % S
+15 6A - Colissimo Domicile Sans Sign. F France métropolitaine 3 12,54 37,62 -9,42 95 28,20 20,00 % S
+16 6C - Colissimo Domicile Sign. F France métropolitaine 11 7,89 86,79 -21,67 95 65,12 20,00 % S
+17 6C - Colissimo Domicile Sign. F France métropolitaine 6 8,76 52,56 -13,14 95 39,42 20,00 % S
+18 6C - Colissimo Domicile Sign. F France métropolitaine 6 9,65 57,90 -14,46 95 43,44 20,00 % S
+19 6C - Colissimo Domicile Sign. F France métropolitaine 2 10,39 20,78 -5,20 95 15,58 20,00 % S
+20 6C - Colissimo Domicile Sign. F France métropolitaine 2 11,53 23,06 -5,76 95 17,30 20,00 % S
+21 CA - Colissimo Domicile Sans Sign. INT EU 19 8,50 161,50 -72,77 95 88,73 20,00 % S
+22 CA - Colissimo Domicile Sans Sign. INT EU 33 8,60 283,80 -127,71 95 156,09 20,00 % S
+23 CA - Colissimo Domicile Sans Sign. INT EU 13 10,59 137,67 -62,01 95 75,66 20,00 % S
+24 CA - Colissimo Domicile Sans Sign. INT EU 7 10,61 74,27 -33,39 95 40,88 20,00 % S
+25 CA - Colissimo Domicile Sans Sign. INT EU 16 11,39 182,24 -82,08 95 100,16 20,00 % S
+26 CA - Colissimo Domicile Sans Sign. INT EU 5 12,26 61,30 -27,60 95 33,70 20,00 % S
+27 CA - Colissimo Domicile Sans Sign. INT EU 1 13,06 13,06 -5,88 95 7,18 20,00 % S
+
+-- 3 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 4/12
+Votre récapitulatif pour le client déposant 906524 EMC
+FRAIS DE PORT HORS OPTIONS ET
+HORS SUPPLÉMENTS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+28 CB - Colissimo Domicile Sign. INT EU 2 10,62 21,24 -3,38 95 17,86 20,00 % S
+29 CB - Colissimo Domicile Sign. INT EU 1 11,34 11,34 -5,10 95 6,24 20,00 % S
+30 CB - Colissimo Domicile Sign. INT EU 1 11,84 11,84 -2,27 95 9,57 20,00 % S
+31 CB - Colissimo Domicile Sign. INT EU 5 11,94 59,70 -11,45 95 48,25 20,00 % S
+32 CB - Colissimo Domicile Sign. INT EU 1 13,99 13,99 13,99 20,00 % S
+33 CB - Colissimo Domicile Sign. INT EU 2 14,78 29,56 -5,68 95 23,88 20,00 % S
+34 CB - Colissimo Domicile Sign. INT EU 3 14,84 44,52 -8,55 95 35,97 20,00 % S
+35 CB - Colissimo Domicile Sign. INT EU 1 14,94 14,94 -2,38 95 12,56 20,00 % S
+36 CB - Colissimo Domicile Sign. INT EU 3 16,60 49,80 -9,57 95 40,23 20,00 % S
+37 CB - Colissimo Domicile Sign. INT EU 5 18,09 90,45 -17,35 95 73,10 20,00 % S
+38 CB - Colissimo Domicile Sign. INT EU 1 19,91 19,91 -3,82 95 16,09 20,00 % S
+39 CB - Colissimo Domicile Sign. INT EU 1 21,76 21,76 -4,18 95 17,58 20,00 % S
+40 CF - Colissimo Domicile Expert INT EU 1 9,00 9,00 -4,05 95 4,95 20,00 % S
+41 CF - Colissimo Domicile Expert INT EU 2 9,10 18,20 -8,20 95 10,00 20,00 % S
+42 CF - Colissimo Domicile Expert INT EU 1 9,18 9,18 -4,13 95 5,05 20,00 % S
+43 CF - Colissimo Domicile Expert INT EU 1 9,33 9,33 -4,20 95 5,13 20,00 % S
+44 CF - Colissimo Domicile Expert INT EU 1 11,34 11,34 -5,10 95 6,24 20,00 % S
+45 CF - Colissimo Domicile Expert INT EU 1 12,13 12,13 -5,46 95 6,67 20,00 % S
+46 CF - Colissimo Domicile Expert INT EU 1 14,87 14,87 -2,36 95 12,51 20,00 % S
+47 CG - Colissimo Consigne INTER EU 39 6,80 265,20 -119,34 95 145,86 20,00 % S
+48 CG - Colissimo Consigne INTER EU 74 7,10 525,40 -236,80 95 288,60 20,00 % S
+49 CG - Colissimo Consigne INTER EU 29 8,11 235,19 -105,85 95 129,34 20,00 % S
+50 CG - Colissimo Consigne INTER EU 24 9,11 218,64 -98,40 95 120,24 20,00 % S
+51 CG - Colissimo Consigne INTER EU 28 9,89 276,92 -124,60 95 152,32 20,00 % S
+52 CG - Colissimo Consigne INTER EU 7 10,76 75,32 -33,88 95 41,44 20,00 % S
+53 CG - Colissimo Consigne INTER EU 2 11,26 22,52 -10,14 95 12,38 20,00 % S
+54 CG - Colissimo Consigne INTER EU 2 11,76 23,52 -10,58 95 12,94 20,00 % S
+
+-- 4 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 5/12
+Votre récapitulatif pour le client déposant 906524 EMC
+FRAIS DE PORT HORS OPTIONS ET
+HORS SUPPLÉMENTS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+55 CI - Colissimo Retrait Poste INT EU 7 6,80 47,60 -21,42 95 26,18 20,00 % S
+56 CI - Colissimo Retrait Poste INT EU 21 7,10 149,10 -67,20 95 81,90 20,00 % S
+57 CI - Colissimo Retrait Poste INT EU 7 8,11 56,77 -25,55 95 31,22 20,00 % S
+58 CI - Colissimo Retrait Poste INT EU 4 9,11 36,44 -16,40 95 20,04 20,00 % S
+59 CI - Colissimo Retrait Poste INT EU 6 9,89 59,34 -26,70 95 32,64 20,00 % S
+60 CM - Colissimo Retrait PU INT EU 20 6,80 136,00 -61,20 95 74,80 20,00 % S
+61 CM - Colissimo Retrait PU INT EU 30 7,10 213,00 -96,00 95 117,00 20,00 % S
+62 CM - Colissimo Retrait PU INT EU 11 8,11 89,21 -40,15 95 49,06 20,00 % S
+63 CM - Colissimo Retrait PU INT EU 6 9,11 54,66 -24,60 95 30,06 20,00 % S
+64 CM - Colissimo Retrait PU INT EU 15 9,89 148,35 -66,75 95 81,60 20,00 % S
+65 CM - Colissimo Retrait PU INT EU 2 10,76 21,52 -9,68 95 11,84 20,00 % S
+66 CM - Colissimo Retrait PU INT EU 1 11,26 11,26 -5,07 95 6,19 20,00 % S
+67 CM - Colissimo Retrait PU INT EU 2 11,76 23,52 -10,58 95 12,94 20,00 % S
+Total FRAIS DE PORT hors options et hors suppléments 1 278,00 10 713,58 -3 353,17 7 360,41
+COEFFICIENT AJUSTEMENT ENERGIE Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+68 CA - Colissimo Domicile Sans Sign. INT Hors EU 14.02% 4 1,28 5,12 5,12 0 % G
+69 CA - Colissimo Domicile Sans Sign. INT Hors EU 14.02% 7 1,29 9,03 9,03 0 % G
+70 CA - Colissimo Domicile Sans Sign. INT Hors EU 14.02% 1 1,61 1,61 1,61 0 % G
+71 CA - Colissimo Domicile Sans Sign. INT Hors EU 14.02% 1 1,62 1,62 1,62 0 % G
+72 CA - Colissimo Domicile Sans Sign. INT Hors EU 14.02% 1 1,81 1,81 1,81 0 % G
+73 8Q - Colissimo Domicile Sans Sign. OM OM 13.00% 5 1,41 7,05 7,05 0 % G
+74 8Q - Colissimo Domicile Sans Sign. OM OM 13.00% 2 2,14 4,28 4,28 0 % G
+75 8Q - Colissimo Domicile Sans Sign. OM OM 13.00% 1 2,60 2,60 2,60 0 % G
+76 CG - Colissimo Consigne INTER EU 14.02% 39 0,52 20,28 20,28 20,00 % S
+77 CI - Colissimo Retrait Poste INT EU 14.02% 7 0,52 3,64 3,64 20,00 % S
+78 CM - Colissimo Retrait PU INT EU 14.02% 20 0,52 10,40 10,40 20,00 % S
+
+-- 5 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 6/12
+Votre récapitulatif pour le client déposant 906524 EMC
+COEFFICIENT AJUSTEMENT ENERGIE Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+79 CG - Colissimo Consigne INTER EU 14.02% 74 0,55 40,70 40,70 20,00 % S
+80 CI - Colissimo Retrait Poste INT EU 14.02% 21 0,55 11,55 11,55 20,00 % S
+81 CM - Colissimo Retrait PU INT EU 14.02% 30 0,55 16,50 16,50 20,00 % S
+82 CG - Colissimo Consigne INTER EU 14.02% 29 0,63 18,27 18,27 20,00 % S
+83 CI - Colissimo Retrait Poste INT EU 14.02% 7 0,63 4,41 4,41 20,00 % S
+84 CM - Colissimo Retrait PU INT EU 14.02% 11 0,63 6,93 6,93 20,00 % S
+85 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 19 0,65 12,35 12,35 20,00 % S
+86 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 33 0,66 21,78 21,78 20,00 % S
+87 CF - Colissimo Domicile Expert INT EU 14.02% 1 0,69 0,69 0,69 20,00 % S
+88 CF - Colissimo Domicile Expert INT EU 14.02% 2 0,70 1,40 1,40 20,00 % S
+89 CG - Colissimo Consigne INTER EU 14.02% 24 0,70 16,80 16,80 20,00 % S
+90 CI - Colissimo Retrait Poste INT EU 14.02% 4 0,70 2,80 2,80 20,00 % S
+91 CM - Colissimo Retrait PU INT EU 14.02% 6 0,70 4,20 4,20 20,00 % S
+92 CF - Colissimo Domicile Expert INT EU 14.02% 1 0,71 0,71 0,71 20,00 % S
+93 CF - Colissimo Domicile Expert INT EU 14.02% 1 0,72 0,72 0,72 20,00 % S
+94 CG - Colissimo Consigne INTER EU 14.02% 28 0,76 21,28 21,28 20,00 % S
+95 CI - Colissimo Retrait Poste INT EU 14.02% 6 0,76 4,56 4,56 20,00 % S
+96 CM - Colissimo Retrait PU INT EU 14.02% 15 0,76 11,40 11,40 20,00 % S
+97 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 13 0,82 10,66 10,66 20,00 % S
+98 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 7 0,82 5,74 5,74 20,00 % S
+99 CG - Colissimo Consigne INTER EU 14.02% 7 0,83 5,81 5,81 20,00 % S
+100 CM - Colissimo Retrait PU INT EU 14.02% 2 0,83 1,66 1,66 20,00 % S
+101 CG - Colissimo Consigne INTER EU 14.02% 2 0,87 1,74 1,74 20,00 % S
+102 CM - Colissimo Retrait PU INT EU 14.02% 1 0,87 0,87 0,87 20,00 % S
+103 CB - Colissimo Domicile Sign. INT EU 14.02% 1 0,87 0,87 0,87 20,00 % S
+104 CF - Colissimo Domicile Expert INT EU 14.02% 1 0,87 0,87 0,87 20,00 % S
+105 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 16 0,88 14,08 14,08 20,00 % S
+
+-- 6 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 7/12
+Votre récapitulatif pour le client déposant 906524 EMC
+COEFFICIENT AJUSTEMENT ENERGIE Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+106 CG - Colissimo Consigne INTER EU 14.02% 2 0,91 1,82 1,82 20,00 % S
+107 CM - Colissimo Retrait PU INT EU 14.02% 2 0,91 1,82 1,82 20,00 % S
+108 CF - Colissimo Domicile Expert INT EU 14.02% 1 0,94 0,94 0,94 20,00 % S
+109 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 5 0,94 4,70 4,70 20,00 % S
+110 CA - Colissimo Domicile Sans Sign. INT EU 14.02% 1 1,01 1,01 1,01 20,00 % S
+111 CB - Colissimo Domicile Sign. INT EU 14.02% 2 1,25 2,50 2,50 20,00 % S
+112 CB - Colissimo Domicile Sign. INT EU 14.02% 1 1,34 1,34 1,34 20,00 % S
+113 CB - Colissimo Domicile Sign. INT EU 14.02% 5 1,35 6,75 6,75 20,00 % S
+114 CB - Colissimo Domicile Sign. INT EU 14.02% 2 1,67 3,34 3,34 20,00 % S
+115 CB - Colissimo Domicile Sign. INT EU 14.02% 3 1,68 5,04 5,04 20,00 % S
+116 CF - Colissimo Domicile Expert INT EU 14.02% 1 1,75 1,75 1,75 20,00 % S
+117 CB - Colissimo Domicile Sign. INT EU 14.02% 1 1,76 1,76 1,76 20,00 % S
+118 CB - Colissimo Domicile Sign. INT EU 13.00% 1 1,82 1,82 1,82 20,00 % S
+119 CB - Colissimo Domicile Sign. INT EU 14.02% 3 1,88 5,64 5,64 20,00 % S
+120 CB - Colissimo Domicile Sign. INT EU 14.02% 5 2,05 10,25 10,25 20,00 % S
+121 CB - Colissimo Domicile Sign. INT EU 14.02% 1 2,26 2,26 2,26 20,00 % S
+122 CB - Colissimo Domicile Sign. INT EU 14.02% 1 2,46 2,46 2,46 20,00 % S
+123 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 220 0,72 158,40 158,40 20,00 % S
+124 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 285 0,81 230,85 230,85 20,00 % S
+125 6C - Colissimo Domicile Sign. F France métropolitaine 14.02% 11 0,83 9,13 9,13 20,00 % S
+126 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 128 0,90 115,20 115,20 20,00 % S
+127 6C - Colissimo Domicile Sign. F France métropolitaine 14.02% 6 0,92 5,52 5,52 20,00 % S
+128 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 61 0,98 59,78 59,78 20,00 % S
+129 6C - Colissimo Domicile Sign. F France métropolitaine 14.02% 6 1,02 6,12 6,12 20,00 % S
+130 6C - Colissimo Domicile Sign. F France métropolitaine 14.02% 2 1,09 2,18 2,18 20,00 % S
+131 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 60 1,10 66,00 66,00 20,00 % S
+132 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 7 1,21 8,47 8,47 20,00 % S
+
+-- 7 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 8/12
+Votre récapitulatif pour le client déposant 906524 EMC
+COEFFICIENT AJUSTEMENT ENERGIE Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+133 6C - Colissimo Domicile Sign. F France métropolitaine 14.02% 2 1,21 2,42 2,42 20,00 % S
+134 6A - Colissimo Domicile Sans Sign. F France métropolitaine 14.02% 3 1,32 3,96 3,96 20,00 % S
+Total COEFFICIENT AJUSTEMENT ENERGIE 1 030,02 1 030,02
+AJUSTEMENT SMIC Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+135 CA - Colissimo Domicile Sans Sign. INT Hors EU 1.00 4 0,09 0,36 0,36 0 % G
+136 CA - Colissimo Domicile Sans Sign. INT Hors EU 1.00 7 0,09 0,63 0,63 0 % G
+137 CA - Colissimo Domicile Sans Sign. INT Hors EU 1.00 1 0,11 0,11 0,11 0 % G
+138 CA - Colissimo Domicile Sans Sign. INT Hors EU 1.00 1 0,12 0,12 0,12 0 % G
+139 CA - Colissimo Domicile Sans Sign. INT Hors EU 1.00 1 0,13 0,13 0,13 0 % G
+140 8Q - Colissimo Domicile Sans Sign. OM OM 1.00 5 0,11 0,55 0,55 0 % G
+141 8Q - Colissimo Domicile Sans Sign. OM OM 1.00 2 0,16 0,32 0,32 0 % G
+142 8Q - Colissimo Domicile Sans Sign. OM OM 1.00 1 0,20 0,20 0,20 0 % G
+143 CG - Colissimo Consigne INTER EU 1.00 39 0,04 1,56 1,56 20,00 % S
+144 CI - Colissimo Retrait Poste INT EU 1.00 7 0,04 0,28 0,28 20,00 % S
+145 CM - Colissimo Retrait PU INT EU 1.00 20 0,04 0,80 0,80 20,00 % S
+146 CG - Colissimo Consigne INTER EU 1.00 74 0,04 2,96 2,96 20,00 % S
+147 CI - Colissimo Retrait Poste INT EU 1.00 21 0,04 0,84 0,84 20,00 % S
+148 CM - Colissimo Retrait PU INT EU 1.00 30 0,04 1,20 1,20 20,00 % S
+149 CG - Colissimo Consigne INTER EU 1.00 29 0,04 1,16 1,16 20,00 % S
+150 CI - Colissimo Retrait Poste INT EU 1.00 7 0,04 0,28 0,28 20,00 % S
+151 CM - Colissimo Retrait PU INT EU 1.00 11 0,04 0,44 0,44 20,00 % S
+152 CA - Colissimo Domicile Sans Sign. INT EU 1.00 19 0,05 0,95 0,95 20,00 % S
+153 CA - Colissimo Domicile Sans Sign. INT EU 1.00 33 0,05 1,65 1,65 20,00 % S
+154 CF - Colissimo Domicile Expert INT EU 1.00 1 0,05 0,05 0,05 20,00 % S
+155 CF - Colissimo Domicile Expert INT EU 1.00 2 0,05 0,10 0,10 20,00 % S
+156 CG - Colissimo Consigne INTER EU 1.00 24 0,05 1,20 1,20 20,00 % S
+
+-- 8 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 9/12
+Votre récapitulatif pour le client déposant 906524 EMC
+AJUSTEMENT SMIC Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+157 CI - Colissimo Retrait Poste INT EU 1.00 4 0,05 0,20 0,20 20,00 % S
+158 CM - Colissimo Retrait PU INT EU 1.00 6 0,05 0,30 0,30 20,00 % S
+159 CF - Colissimo Domicile Expert INT EU 1.00 1 0,05 0,05 0,05 20,00 % S
+160 CF - Colissimo Domicile Expert INT EU 1.00 1 0,05 0,05 0,05 20,00 % S
+161 CG - Colissimo Consigne INTER EU 1.00 28 0,05 1,40 1,40 20,00 % S
+162 CI - Colissimo Retrait Poste INT EU 1.00 6 0,05 0,30 0,30 20,00 % S
+163 CM - Colissimo Retrait PU INT EU 1.00 15 0,05 0,75 0,75 20,00 % S
+164 CA - Colissimo Domicile Sans Sign. INT EU 1.00 13 0,06 0,78 0,78 20,00 % S
+165 CA - Colissimo Domicile Sans Sign. INT EU 1.00 7 0,06 0,42 0,42 20,00 % S
+166 CG - Colissimo Consigne INTER EU 1.00 7 0,06 0,42 0,42 20,00 % S
+167 CM - Colissimo Retrait PU INT EU 1.00 2 0,06 0,12 0,12 20,00 % S
+168 CG - Colissimo Consigne INTER EU 1.00 2 0,06 0,12 0,12 20,00 % S
+169 CM - Colissimo Retrait PU INT EU 1.00 1 0,06 0,06 0,06 20,00 % S
+170 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,06 0,06 0,06 20,00 % S
+171 CF - Colissimo Domicile Expert INT EU 1.00 1 0,06 0,06 0,06 20,00 % S
+172 CA - Colissimo Domicile Sans Sign. INT EU 1.00 16 0,06 0,96 0,96 20,00 % S
+173 CG - Colissimo Consigne INTER EU 1.00 2 0,06 0,12 0,12 20,00 % S
+174 CM - Colissimo Retrait PU INT EU 1.00 2 0,06 0,12 0,12 20,00 % S
+175 CF - Colissimo Domicile Expert INT EU 1.00 1 0,07 0,07 0,07 20,00 % S
+176 CA - Colissimo Domicile Sans Sign. INT EU 1.00 5 0,07 0,35 0,35 20,00 % S
+177 CA - Colissimo Domicile Sans Sign. INT EU 1.00 1 0,07 0,07 0,07 20,00 % S
+178 CB - Colissimo Domicile Sign. INT EU 1.00 2 0,09 0,18 0,18 20,00 % S
+179 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,10 0,10 0,10 20,00 % S
+180 CB - Colissimo Domicile Sign. INT EU 1.00 5 0,10 0,50 0,50 20,00 % S
+181 CB - Colissimo Domicile Sign. INT EU 1.00 2 0,12 0,24 0,24 20,00 % S
+182 CB - Colissimo Domicile Sign. INT EU 1.00 3 0,12 0,36 0,36 20,00 % S
+183 CF - Colissimo Domicile Expert INT EU 1.00 1 0,13 0,13 0,13 20,00 % S
+
+-- 9 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 10/12
+Votre récapitulatif pour le client déposant 906524 EMC
+AJUSTEMENT SMIC Lieu de destination Coefficient Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+184 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,13 0,13 0,13 20,00 % S
+185 CB - Colissimo Domicile Sign. INT EU 1.00 3 0,13 0,39 0,39 20,00 % S
+186 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,14 0,14 0,14 20,00 % S
+187 CB - Colissimo Domicile Sign. INT EU 1.00 5 0,15 0,75 0,75 20,00 % S
+188 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,16 0,16 0,16 20,00 % S
+189 CB - Colissimo Domicile Sign. INT EU 1.00 1 0,18 0,18 0,18 20,00 % S
+190 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 220 0,05 11,00 11,00 20,00 % S
+191 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 285 0,06 17,10 17,10 20,00 % S
+192 6C - Colissimo Domicile Sign. F France métropolitaine 1.00 11 0,06 0,66 0,66 20,00 % S
+193 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 128 0,06 7,68 7,68 20,00 % S
+194 6C - Colissimo Domicile Sign. F France métropolitaine 1.00 6 0,07 0,42 0,42 20,00 % S
+195 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 61 0,07 4,27 4,27 20,00 % S
+196 6C - Colissimo Domicile Sign. F France métropolitaine 1.00 6 0,07 0,42 0,42 20,00 % S
+197 6C - Colissimo Domicile Sign. F France métropolitaine 1.00 2 0,08 0,16 0,16 20,00 % S
+198 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 60 0,08 4,80 4,80 20,00 % S
+199 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 7 0,09 0,63 0,63 20,00 % S
+200 6C - Colissimo Domicile Sign. F France métropolitaine 1.00 2 0,09 0,18 0,18 20,00 % S
+201 6A - Colissimo Domicile Sans Sign. F France métropolitaine 1.00 3 0,09 0,27 0,27 20,00 % S
+Total AJUSTEMENT SMIC 73,52 73,52
+SUPPLEMENTS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+202 Supplément : sûreté internationale Hors EU 14 0,20 2,80 2,80 0 % G
+203 Article Supplément Participation à la
+décarbonation Hors EU 14 0,05 0,70 0,70 0 % G
+204 Article Supplément Participation à la
+décarbonation OM 8 0,05 0,40 0,40 0 % G
+205 Option : partenaire postal EU 4 2,00 8,00 8,00 20,00 % S
+206 Supplément : sûreté internationale EU 465 0,20 93,00 93,00 20,00 % S
+
+-- 10 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 11/12
+Votre récapitulatif pour le client déposant 906524 EMC
+SUPPLEMENTS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+207 Supplément : qualité d'annonce (Problème CP
+/ Commune) France métropolitaine 5 3,00 15,00 15,00 20,00 % S
+208 Article Supplément Participation à la
+décarbonation EU 465 0,05 23,25 23,25 20,00 % S
+209 Article Supplément Participation à la
+décarbonation France métropolitaine 791 0,05 39,55 39,55 20,00 % S
+Total SUPPLEMENTS 182,70 182,70
+INDEMNISATIONS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+210 Article IAF - Indemnisations ass. forfaitaire 1 -15,16 -15,16 -15,16 0 % O
+211 Article IN3 - Indemnisations HD (75%) 1 -10,06 -10,06 -10,06 0 % O
+212 Article IN3 - Indemnisations HD (75%) 1 -7,18 -7,18 -7,18 0 % O
+213 Article IN3 - Indemnisations HD (75%) 1 -5,25 -5,25 -5,25 0 % O
+214 Article IN3 - Indemnisations HD (75%) 1 -4,84 -4,84 -4,84 0 % O
+215 Article IN3 - Indemnisations HD (75%) 4 -4,34 -17,36 -17,36 0 % O
+216 Article IN3 - Indemnisations HD (75%) 1 -3,75 -3,75 -3,75 0 % O
+217 Article IN3 - Indemnisations HD (75%) 1 -3,71 -3,71 -3,71 0 % O
+218 Article IN4 - Indemnisations HD (100%) 1 -9,40 -9,40 -9,40 0 % O
+219 Article IN4 - Indemnisations HD (100%) 1 -5,78 -5,78 -5,78 0 % O
+220 Article IN6 - Indemnisations HD (10%) 2 -1,15 -2,30 -2,30 0 % O
+221 Article IN6 - Indemnisations HD (10%) 2 -0,92 -1,84 -1,84 0 % O
+222 Article IN6 - Indemnisations HD (10%) 1 -0,89 -0,89 -0,89 0 % O
+223 Article IN6 - Indemnisations HD (10%) 4 -0,79 -3,16 -3,16 0 % O
+224 Article IN6 - Indemnisations HD (10%) 1 -0,73 -0,73 -0,73 0 % O
+225 Article IN6 - Indemnisations HD (10%) 1 -0,72 -0,72 -0,72 0 % O
+226 Article IN6 - Indemnisations HD (10%) 1 -0,70 -0,70 -0,70 0 % O
+227 Article IN6 - Indemnisations HD (10%) 10 -0,65 -6,50 -6,50 0 % O
+228 Article IN6 - Indemnisations HD (10%) 1 -0,63 -0,63 -0,63 0 % O
+
+-- 11 of 12 --
+
+Facture N° CO01485180 Date de début de période : 01/09/2026
+Date de fin de période : 30/09/2026 Unité: 1 Devise: EURO
+Page 12/12
+Votre récapitulatif pour le client déposant 906524 EMC
+INDEMNISATIONS Lieu de destination Note de ligne de facture Quantité Prix unitaire brut Montant Brut Remise Motif de
+remise Montant net Taux de TVA Code TVA
+229 Article IN6 - Indemnisations HD (10%) 1 -0,62 -0,62 -0,62 0 % O
+230 Article IN6 - Indemnisations HD (10%) 2 -0,59 -1,18 -1,18 0 % O
+231 Article IN6 - Indemnisations HD (10%) 20 -0,58 -11,60 -11,60 0 % O
+232 Article IN6 - Indemnisations HD (10%) 1 -0,54 -0,54 -0,54 0 % O
+233 Article IN6 - Indemnisations HD (10%) 18 -0,51 -9,18 -9,18 0 % O
+234 Article IN6 - Indemnisations HD (10%) 3 -0,50 -1,50 -1,50 0 % O
+235 Article IN6 - Indemnisations HD (10%) 4 -0,47 -1,88 -1,88 0 % O
+236 Article IN6 - Indemnisations HD (10%) 2 -0,45 -0,90 -0,90 0 % O
+237 Article IN6 - Indemnisations HD (10%) 6 -0,39 -2,34 -2,34 0 % O
+238 Article IN6 - Indemnisations HD (10%) 1 -0,37 -0,37 -0,37 0 % O
+Total INDEMNISATIONS -130,07 -130,07
+
+-- 12 of 12 --
+

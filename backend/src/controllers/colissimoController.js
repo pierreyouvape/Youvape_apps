@@ -21,6 +21,7 @@ exports._parsePdf = parseColissimoPdf;
 exports._buildCountryTotals = buildCountryTotals;
 exports._analyzeBuffer = analyzeColissimoBuffer;
 exports._parseCsv = parseColissimoCsv;
+exports._totalHt = (...a) => colissimoTotalHt(...a);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -258,7 +259,97 @@ function parseColissimoPdf(text) {
   // Commit last parcel
   if (cur) commitParcel();
 
+  // PDF « format cible » (depuis août 2026) : aucun n° de suivi, la machine à états
+  // n'a rien trouvé → on lit le récapitulatif agrégé à la place.
+  if (!parcels.length && TARGET_FORMAT_RE.test(text)) {
+    return parseColissimoTargetPdf(lines, { invoiceNumber, periodStart, periodEnd, accountNumber });
+  }
+
   return { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber };
+}
+
+/* ─── PDF « FORMAT CIBLE » (réforme facturation électronique) ── */
+/*
+ * Depuis la facture d'août 2026, le PDF ne liste plus les colis : seulement un
+ * récapitulatif HT puis des lignes agrégées par produit × tranche de prix, ex.
+ *   "FRAIS DE PORT hors options et hors suppléments 10 713,58"
+ *   "REMISES -3 353,17"
+ *   "Total FRAIS DE PORT hors options et hors suppléments 1 278,00 10 713,58 -3 353,17 7 360,41"
+ *   "206 Supplément : sûreté internationale EU 465 0,20 93,00 93,00 20,00 % S"
+ *   "215 Article IN3 - Indemnisations HD (75%) 4 -4,34 -17,36 -17,36 0 % O"
+ * Un libellé long peut être coupé sur deux lignes (« … Participation à la » / « décarbonation EU 14 … »).
+ * Le détail au colis (poids, commande) n'existe que dans le ZIP CSV Colissimo Box :
+ * on renvoie donc parcels = [] mais les totaux de la facture, justes au centime.
+ */
+const TARGET_FORMAT_RE = /Votre r[ée]capitulatif HT/i;
+
+function parseColissimoTargetPdf(lines, meta) {
+  const AMT = '-?\\d{1,3}(?:[ \\u00a0]\\d{3})*,\\d{2}';
+  const num = s => parseFloat(s.replace(/[\s ]/g, '').replace(',', '.'));
+  const headerAmount = label => {
+    const re = new RegExp(`^${label}\\s+(${AMT})$`, 'i');
+    for (const l of lines) { const m = l.match(re); if (m) return num(m[1]); }
+    return null;
+  };
+
+  const globalSummary = {
+    portBrut:       headerAmount('FRAIS DE PORT hors options et hors suppl[ée]ments'),
+    remise:         headerAmount('REMISES'),
+    cae:            headerAmount('COEFFICIENT AJUSTEMENT [ÉE]NERGIE'),
+    smic:           headerAmount('AJUSTEMENT SMIC'),
+    supplements:    headerAmount('SUPPL[ÉE]MENTS'),
+    indemnizations: headerAmount('INDEMNISATIONS'),
+    totalHt:        headerAmount('MONTANT TOTAL HT'),
+  };
+  if (globalSummary.portBrut != null) {
+    globalSummary.portNet = Math.round((globalSummary.portBrut + (globalSummary.remise ?? 0)) * 100) / 100;
+  }
+
+  // Nombre de colis = quantité du total des frais de port ("1 278,00")
+  let parcelCount = null;
+  const qtyM = lines.map(l => l.match(new RegExp(`^Total FRAIS DE PORT hors options et hors suppl[ée]ments\\s+(${AMT})\\s`, 'i'))).find(Boolean);
+  if (qtyM) parcelCount = Math.round(num(qtyM[1]));
+
+  // Lignes de détail des sections SUPPLEMENTS et INDEMNISATIONS
+  // fin de ligne : quantité, PU brut, montant brut, montant net, taux TVA, code TVA
+  const ROW_RE = new RegExp(`^(\\d+)\\s+(.+?)\\s+(\\d+)\\s+(${AMT})\\s+(${AMT})\\s+(${AMT})\\s+[\\d,]+\\s*%\\s+[A-Z]$`);
+  const DEST_RE = /\s+(France métropolitaine|Hors EU|EU|OM)$/;
+  const supplements = [];
+  const indemnizations = [];
+  let section = null;
+  let pending = null; // ligne numérotée dont la fin est sur la ligne suivante
+
+  for (const raw of lines) {
+    if (/^SUPPL[ÉE]MENTS\s+Lieu de destination/i.test(raw))    { section = 'suppl'; pending = null; continue; }
+    if (/^INDEMNISATIONS\s+Lieu de destination/i.test(raw))     { section = 'indem'; pending = null; continue; }
+    if (/^(Total |COEFFICIENT |AJUSTEMENT |FRAIS DE PORT )/i.test(raw)) { if (/^Total /i.test(raw)) section = null; pending = null; continue; }
+    if (!section) continue;
+
+    let m = pending ? `${pending} ${raw}`.match(ROW_RE) : null;
+    pending = null;
+    if (!m) m = raw.match(ROW_RE);
+    if (!m) { if (/^\d+\s+\S/.test(raw)) pending = raw; continue; }
+
+    let label = m[2].trim(), destination = null;
+    const dm = label.match(DEST_RE);
+    if (dm) { destination = dm[1]; label = label.slice(0, dm.index).trim(); }
+    const quantity = parseInt(m[3], 10);
+    const unit = num(m[4]);
+    const amount = num(m[6]);
+
+    if (section === 'suppl') {
+      label = label.replace(/^Suppl[ée]ment\s*:\s*/i, '').replace(/^Article\s+Suppl[ée]ment\s+/i, '').trim();
+      supplements.push({ tracking: null, label: `${label}${destination ? ` (${destination})` : ''} × ${quantity}`, amount, quantity, unit_price: unit, destination });
+      if (/d[ée]carbonation/i.test(label) && globalSummary.decarbonationUnit == null) globalSummary.decarbonationUnit = unit;
+    } else {
+      indemnizations.push({ date: null, reference: null, tracking: null, label: label.replace(/\s+/g, ' '), amount, quantity, type: 'Diverses' });
+    }
+  }
+
+  return {
+    parcels: [], supplements, indemnizations, globalSummary,
+    ...meta, format: 'cible', parcelCount,
+  };
 }
 
 /* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
@@ -622,9 +713,11 @@ function parseColissimoCsv(prestationsText, indemnisationsText) {
       if (p.port_brut !== null || p.remise_ht !== null) {
         p.port_net = Math.round(((p.port_brut ?? 0) + (p.remise_ht ?? 0)) * 100) / 100;
       }
-      const suppTotal = p.supplements_list.reduce((s, x) => s + x.amount, 0);
+      // Hors suppléments, comme le « Total HT » d'un colis de l'ancien PDF : ils vivent dans
+      // `supplements` et sont rajoutés à part (total facture, tarif appliqué à la commande).
+      // Les inclure ici les comptait deux fois.
       p.total_ht = Math.round((
-        (p.port_net ?? 0) + (p.cae_ht ?? 0) + (p.smic_ht ?? 0) + (p.decarbonation ?? 0) + suppTotal
+        (p.port_net ?? 0) + (p.cae_ht ?? 0) + (p.smic_ht ?? 0) + (p.decarbonation ?? 0)
       ) * 100) / 100;
       parcels.push(p);
     }
@@ -730,44 +823,11 @@ exports.analyze = [
   async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ success: false, error: 'PDF requis' });
-
-      const uint8 = new Uint8Array(req.file.buffer);
-      const pdfParser = new PDFParse(uint8);
-      await pdfParser.load();
-      const pdfData = await pdfParser.getText();
-      const parsed = parseColissimoPdf(pdfData.text);
-      await enrichParcels(parsed.parcels);
-
-      const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber } = parsed;
-
-      // La "Participation à la décarbonation" (0,05€/colis) n'apparaît que dans le récapitulatif
-      // global, jamais ligne par ligne — on la reporte sur chaque colis pour qu'elle survive
-      // à l'enregistrement/rechargement et puisse être appliquée aux commandes correspondantes.
-      if (globalSummary.decarbonationUnit != null) {
-        for (const p of parcels) p.decarbonation_unit = globalSummary.decarbonationUnit;
+      const parsed = await analyzeColissimoBuffer(req.file.buffer);
+      if (!parsed.invoiceNumber) {
+        return res.status(400).json({ success: false, error: 'Facture Colissimo non reconnue dans ce PDF' });
       }
-
-      res.json({
-        success: true,
-        invoiceNumber,
-        periodStart,
-        periodEnd,
-        accountNumber,
-        parcels,
-        supplements,
-        indemnizations,
-        globalSummary,
-        stats: {
-          total_parcels: parcels.length,
-          parcels_matched: parcels.filter(p => p.order_id).length,
-          parcels_unmatched: parcels.filter(p => !p.order_id).length,
-          weight_ok: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) <= 20).length,
-          weight_ecart: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) > 200).length,
-          supplements_count: supplements.length,
-          supplements_total: supplements.reduce((s, x) => s + (x.amount || 0), 0),
-          indemnizations_total: indemnizations.reduce((s, i) => s + (i.amount || 0), 0),
-        },
-      });
+      res.json({ success: true, ...parsed });
     } catch (err) {
       console.error('[Colissimo] analyze error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -846,66 +906,10 @@ exports.saveInvoice = [
   upload.single('pdf'),
   async (req, res) => {
     try {
-      let parsed;
-      if (req.body.data) parsed = JSON.parse(req.body.data);
-      else parsed = req.body;
-
-      const { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats } = parsed;
-      if (!invoiceNumber) return res.status(400).json({ success: false, error: 'invoiceNumber requis' });
-
-      const existing = await pool.query(
-        'SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
-        ['colissimo', invoiceNumber]
-      );
-      if (existing.rows.length) {
-        if (req.file) {
-          await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [req.file.buffer, existing.rows[0].id]);
-        }
-        return res.json({ success: true, already_saved: true, id: existing.rows[0].id });
-      }
-
-      const gs = globalSummary || {};
-      const supplementsTotal = (supplements || []).reduce((s, x) => s + (x.amount || 0), 0);
-      const indemnizationsTotal = (indemnizations || []).reduce((s, i) => s + (i.amount || 0), 0);
-      const totalHt = (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
-      const pdfBuffer = req.file ? req.file.buffer : null;
-
-      const invRes = await pool.query(`
-        INSERT INTO carrier_invoices
-          (carrier, invoice_number, period_start, period_end, account_number,
-           total_parcels, parcels_matched, total_ht, port_brut, remise, port_net, cae,
-           supplements_total, indemnizations_total, indemnizations, parcels_detail, country_totals, pdf_data)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-        RETURNING id
-      `, [
-        'colissimo', invoiceNumber, periodStart || null, periodEnd || null, accountNumber || null,
-        stats?.total_parcels ?? (parcels || []).length,
-        stats?.parcels_matched ?? (parcels || []).filter(p => p.order_id).length,
-        totalHt,
-        gs.portBrut ?? null, gs.remise ?? null, gs.portNet ?? null, gs.cae ?? null,
-        supplementsTotal, indemnizationsTotal,
-        JSON.stringify(indemnizations || []),
-        JSON.stringify(parcels || []),
-        JSON.stringify(buildCountryTotals(parcels, 'total_ht')),
-        pdfBuffer,
-      ]);
-      const invoiceId = invRes.rows[0].id;
-
-      if (parcels?.length) {
-        const vals = parcels.map((_, i) => { const b = i * 8; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8})`; }).join(',');
-        const params = parcels.flatMap(p => [invoiceId, p.tracking || null, p.order_id || null, p.date || null, p.weight_colissimo ?? null, p.weight_bdd ?? null, p.diff_g ?? null, p.total_ht ?? null]);
-        await pool.query(`INSERT INTO carrier_invoice_parcels (invoice_id,tracking,order_id,date,weight_carrier,weight_bdd,diff_g,amount_ht) VALUES ${vals}`, params);
-      }
-
-      if (supplements?.length) {
-        const orderMap = {};
-        for (const p of (parcels || [])) if (p.order_id) orderMap[p.tracking] = p.order_id;
-        const vals = supplements.map((_, i) => { const b = i * 5; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5})`; }).join(',');
-        const params = supplements.flatMap(s => [invoiceId, s.tracking || null, orderMap[s.tracking] || null, s.label || null, s.amount ?? null]);
-        await pool.query(`INSERT INTO carrier_invoice_supplements (invoice_id,tracking,order_id,description,amount_ht) VALUES ${vals}`, params);
-      }
-
-      res.json({ success: true, already_saved: false, id: invoiceId });
+      const parsed = req.body.data ? JSON.parse(req.body.data) : req.body;
+      if (!parsed.invoiceNumber) return res.status(400).json({ success: false, error: 'invoiceNumber requis' });
+      const r = await persistColissimoInvoice(parsed, req.file ? req.file.buffer : null);
+      res.json({ success: true, already_saved: r.status === 'already', id: r.id });
     } catch (err) {
       console.error('[Colissimo] saveInvoice error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -996,7 +1000,8 @@ exports.getHistory = async (req, res) => {
         ci.port_brut, ci.remise, ci.port_net, ci.cae,
         ci.supplements_total, ci.indemnizations_total, ci.created_at, ci.tariffs_applied_at,
         SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) <= 20 THEN 1 ELSE 0 END) AS weight_ok,
-        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart
+        SUM(CASE WHEN cip.diff_g IS NOT NULL AND ABS(cip.diff_g) > 200 THEN 1 ELSE 0 END) AS weight_ecart,
+        COUNT(cip.id) AS parcel_rows
       FROM carrier_invoices ci
       LEFT JOIN carrier_invoice_parcels cip ON cip.invoice_id = ci.id
       WHERE ci.carrier = 'colissimo'
@@ -1078,10 +1083,14 @@ async function analyzeColissimoBuffer(buffer) {
   const pdfData = await pdfParser.getText();
   const parsed = parseColissimoPdf(pdfData.text);
   await enrichParcels(parsed.parcels);
-  const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber } = parsed;
+  const { parcels, supplements, indemnizations, globalSummary, invoiceNumber, periodStart, periodEnd, accountNumber, format, parcelCount } = parsed;
+  // La "Participation à la décarbonation" (0,05€/colis) n'apparaît que dans le récapitulatif
+  // global, jamais ligne par ligne — on la reporte sur chaque colis pour qu'elle survive
+  // à l'enregistrement/rechargement et puisse être appliquée aux commandes correspondantes.
   if (globalSummary.decarbonationUnit != null) for (const p of parcels) p.decarbonation_unit = globalSummary.decarbonationUnit;
   const stats = {
-    total_parcels: parcels.length,
+    // Format cible : pas de colis listés, le nombre vient du total des frais de port
+    total_parcels: format === 'cible' ? (parcelCount ?? 0) : parcels.length,
     parcels_matched: parcels.filter(p => p.order_id).length,
     parcels_unmatched: parcels.filter(p => !p.order_id).length,
     weight_ok: parcels.filter(p => p.diff_g !== null && Math.abs(p.diff_g) <= 20).length,
@@ -1090,22 +1099,33 @@ async function analyzeColissimoBuffer(buffer) {
     supplements_total: supplements.reduce((s, x) => s + (x.amount || 0), 0),
     indemnizations_total: indemnizations.reduce((s, i) => s + (i.amount || 0), 0),
   };
-  return { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats };
+  return { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats, format: format || 'detail' };
+}
+
+// Total HT hors indemnisations (port net + CAE + SMIC + suppléments), comme les factures détaillées.
+// Format cible : aucun colis, on part du « MONTANT TOTAL HT » du récap, qui inclut les indemnisations.
+function colissimoTotalHt(parcels, supplementsTotal, gs) {
+  if (!(parcels || []).length && gs.totalHt != null) {
+    return Math.round((gs.totalHt - (gs.indemnizations ?? 0)) * 100) / 100;
+  }
+  return (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
 }
 
 async function persistColissimoInvoice(parsed, pdfBuffer) {
   const { invoiceNumber, periodStart, periodEnd, accountNumber, parcels, supplements, indemnizations, globalSummary, stats } = parsed;
   const existing = await pool.query(
-    'SELECT id, total_parcels FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2',
+    `SELECT ci.id, (SELECT COUNT(*) FROM carrier_invoice_parcels cip WHERE cip.invoice_id = ci.id) AS parcel_rows
+     FROM carrier_invoices ci WHERE ci.carrier = $1 AND ci.invoice_number = $2`,
     ['colissimo', invoiceNumber]
   );
   if (existing.rows.length) {
     const prev = existing.rows[0];
-    // Une facture déjà enregistrée SANS aucun colis vient forcément d'un PDF
+    // Une facture déjà enregistrée SANS aucune ligne colis vient d'un PDF
     // « format cible » (agrégé, sans n° de suivi) : le CSV la remplace.
     // Sinon on ne touche à rien pour ne pas écraser un détail valide.
+    // (total_parcels ne suffit pas : le format cible y met le nombre de colis du récap.)
     const incomingHasParcels = (parcels || []).length > 0;
-    if (Number(prev.total_parcels) > 0 || !incomingHasParcels) {
+    if (Number(prev.parcel_rows) > 0 || !incomingHasParcels) {
       if (pdfBuffer) await pool.query('UPDATE carrier_invoices SET pdf_data = $1 WHERE id = $2', [pdfBuffer, prev.id]);
       return { status: 'already', id: prev.id };
     }
@@ -1116,7 +1136,7 @@ async function persistColissimoInvoice(parsed, pdfBuffer) {
   const gs = globalSummary || {};
   const supplementsTotal = (supplements || []).reduce((s, x) => s + (x.amount || 0), 0);
   const indemnizationsTotal = (indemnizations || []).reduce((s, i) => s + (i.amount || 0), 0);
-  const totalHt = (parcels || []).reduce((s, p) => s + (p.total_ht || 0), 0) + supplementsTotal;
+  const totalHt = colissimoTotalHt(parcels, supplementsTotal, gs);
   const invRes = await pool.query(`
     INSERT INTO carrier_invoices
       (carrier, invoice_number, period_start, period_end, account_number,

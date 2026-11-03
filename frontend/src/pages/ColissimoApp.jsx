@@ -538,7 +538,8 @@ export default function ColissimoApp() {
     try {
       const fd = new FormData();
       fd.append('data', JSON.stringify(result));
-      if (currentFile) fd.append('pdf', currentFile);
+      // Le ZIP Colissimo Box n'est pas conservé : seul un PDF est archivé avec la facture
+      if (currentFile && !/\.zip$/i.test(currentFile.name)) fd.append('pdf', currentFile);
       const { data } = await axios.post(`${API_URL}/colissimo/save`, fd, { headers: { Authorization: `Bearer ${token}` } });
       if (data.success) {
         setSaveState(data.already_saved ? 'already' : 'saved');
@@ -655,7 +656,10 @@ export default function ColissimoApp() {
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
       setResult(data); setTab('poids');
       if (data.invoiceNumber) {
-        const alreadySaved = history.some(h => h.invoice_number === data.invoiceNumber);
+        // Une facture enregistrée depuis le PDF agrégé (aucune ligne colis) peut être
+        // complétée par le ZIP Colissimo Box : on laisse alors le bouton Enregistrer.
+        const alreadySaved = history.some(h => h.invoice_number === data.invoiceNumber
+          && !(data.parcels?.length && Number(h.parcel_rows) === 0));
         if (alreadySaved) setSaveState('already');
       }
     } catch (e) { setError(e.response?.data?.error || e.message); }
@@ -769,7 +773,7 @@ export default function ColissimoApp() {
           <input ref={fileRef} type="file" accept=".pdf,.zip" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
           <div style={{ fontSize: 36, marginBottom: 10 }}>📦</div>
           <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture ici'}</div>
-          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>PDF (avant août 2026) ou ZIP Colissimo Box (CSV au colis) — ou cliquer pour sélectionner</div>
+          <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>PDF ou ZIP Colissimo Box (détail au colis, depuis août 2026) — ou cliquer pour sélectionner</div>
           {currentFile && !loading && <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>📎 {currentFile.name}</div>}
           {loading && <div style={{ marginTop: 12 }}><div style={{ display: 'inline-block', width: 26, height: 26, border: `3px solid ${C.accentL}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
         </div>
@@ -850,6 +854,17 @@ export default function ColissimoApp() {
                 </button>
               </div>
             </div>
+
+            {result.format === 'cible' && (
+              <div style={{ background: '#FEF3C7', border: '1px solid #F59E0B', borderRadius: 10, padding: '11px 15px', color: '#92400E', fontSize: 13, marginBottom: 18 }}>
+                <strong>PDF au nouveau format (sans détail au colis).</strong> Les totaux de la facture sont repris
+                et peuvent être enregistrés. Pour la comparaison des poids et l'application des tarifs aux commandes,
+                déposez le ZIP de la facture téléchargé sur Colissimo Box : il complètera la facture enregistrée.
+                {gs.totalHt != null && <div style={{ marginTop: 6 }}>
+                  Port brut {fmtEur(gs.portBrut || 0)} · Remises {fmtEur(gs.remise || 0)} · CAE {fmtEur(gs.cae || 0)} · SMIC {fmtEur(gs.smic || 0)} · Suppléments {fmtEur(gs.supplements || 0)} · Indemnisations {fmtEur(gs.indemnizations || 0)} · <strong>Total HT {fmtEur(gs.totalHt)}</strong>
+                </div>}
+              </div>
+            )}
 
             {/* Stats */}
             <div style={{ display: 'flex', gap: 10, marginBottom: 22, flexWrap: 'wrap' }}>
