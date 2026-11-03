@@ -165,6 +165,7 @@ const fmtColis = n => (n || 0).toLocaleString('en-US').replace(/,/g, ' ');
    Règle Chronopost : poids à la limite inférieure de tranche → tranche inférieure.
    Ex: 1.000 kg exact → tranche 0-1 kg (non 1-2 kg).
    Source : contrat My Chrono 34751303 (eff. 01/10/2025) + 2Shop 84284503 (eff. 01/04/2025)
+   Révisions annuelles ultérieures : détectées automatiquement depuis les montants facturés.
    Format : [weight_from_kg, weight_to_kg_excluded, price_ht]
    DEP = NAT = REG = même prix pour tous les services France.
    ─────────────────────────────────────────────────────────────────────────── */
@@ -215,15 +216,6 @@ const TARIF_XF = [
 function xfBracketIdx(weightKg) {
   if (weightKg == null || weightKg < 0) return -1;
   return Math.max(0, Math.ceil(weightKg / 0.5) - 1);
-}
-// Retrouve la zone Z1-Z9 d'un colis XF depuis le montant facturé + poids Chrono
-function getXfZone(amountHt, weightChrono) {
-  const idx = xfBracketIdx(weightChrono);
-  if (idx < 0 || idx >= 60) return -1;
-  for (let z = 0; z < 9; z++) {
-    if (Math.abs(TARIF_XF[z][idx] - amountHt) < 0.02) return z;
-  }
-  return -1;
 }
 
 // 2Shop Europe (XT...TS) — par pays — tranches mixtes : 0–0.5, 0.5–1, puis 1 kg jusqu'à 20 kg
@@ -287,14 +279,87 @@ function xtBracketIdx(weightKg) {
   }
   return bounds.length - 2;
 }
-// Retrouve le pays d'un colis XT depuis le montant facturé + poids Chrono
-function getXtCountryIdx(amountHt, weightChrono) {
-  const idx = xtBracketIdx(weightChrono);
-  if (idx < 0 || idx >= 21) return -1;
-  for (let c = 0; c < TARIF_XT.length; c++) {
-    if (Math.abs(TARIF_XT[c][idx] - amountHt) < 0.02) return c;
+// Chrono Relais Europe (XU...) — zones C1–C4 — tranches de 1 kg jusqu'à 20 kg (avenant 7, eff. 01/10/2025)
+const XU_ZONES = ['C1','C2','C3','C4'];
+const TARIF_XU = [
+  [4.07,4.72,5.37,6.02,6.67,7.32,7.97,8.62,9.27,9.92,10.57,11.22,11.87,12.52,13.17,13.82,14.47,15.12,15.77,16.42],
+  [4.65,5.48,6.31,7.14,7.97,8.80,9.63,10.46,11.29,12.12,12.95,13.78,14.61,15.44,16.27,17.10,17.93,18.76,19.59,20.42],
+  [5.70,6.62,7.54,8.46,9.38,10.30,11.22,12.14,13.06,13.98,14.90,15.82,16.74,17.66,18.58,19.50,20.42,21.34,22.26,23.18],
+  [5.15,6.04,6.93,7.82,8.71,9.60,10.49,11.38,12.27,13.16,14.05,14.94,15.83,16.72,17.61,18.50,19.39,20.28,21.17,22.06],
+];
+// Index de tranche XU (1 kg/tranche) — limite haute incluse (ex: 1.000 kg → tranche 0)
+function xuBracketIdx(weightKg) {
+  if (weightKg == null || weightKg < 0) return -1;
+  return Math.max(0, Math.ceil(weightKg) - 1);
+}
+
+/* ─── GRILLES À ZONE (XF / XT / XU) ─────────────────────────────────────────
+   La zone/le pays n'est pas stocké : on le retrouve depuis le montant facturé.
+   Chronopost révise ses prix chaque année (art. 9.3 / 13.2, ex. +4,5 % sur 2Shop
+   en 2026) : la grille du contrat est donc multipliée par un coefficient de
+   révision estimé sur l'ensemble des colis du même service de la facture.
+   ─────────────────────────────────────────────────────────────────────────── */
+const ZONED_SERVICES = {
+  XF: { name: 'Chrono Express', is: t => isTrackingOf(t, 'XF', 'FR'), grid: TARIF_XF, labels: XF_ZONES,     bracket: xfBracketIdx },
+  XT: { name: '2Shop Europe',   is: t => isTrackingOf(t, 'XT', 'TS'), grid: TARIF_XT, labels: XT_COUNTRIES, bracket: xtBracketIdx },
+  XU: { name: 'Chrono Relais Europe', is: t => isTrackingOf(t, 'XU'), grid: TARIF_XU, labels: XU_ZONES,     bracket: xuBracketIdx },
+};
+function isTrackingOf(tracking, prefix, suffix) {
+  if (!tracking) return false;
+  const t = tracking.toUpperCase();
+  return t.startsWith(prefix) && (!suffix || t.endsWith(suffix));
+}
+function zonedServiceOf(tracking) {
+  return Object.keys(ZONED_SERVICES).find(k => ZONED_SERVICES[k].is(tracking)) || null;
+}
+// Écart de révision accepté autour de la grille du contrat
+const REVISION_MIN = 0.97, REVISION_MAX = 1.12;
+const round2 = n => Math.round(n * 100) / 100;
+
+// Coefficient de révision par service à zone, estimé sur les colis de la facture :
+// chaque colis vote pour les ratios montant/grille plausibles, le ratio le plus voté l'emporte.
+function buildRevisionCtx(orders) {
+  const ctx = {};
+  for (const [key, svc] of Object.entries(ZONED_SERVICES)) {
+    const bins = new Map();
+    for (const o of orders || []) {
+      if (o.is_return || !(o.amount_ht > 0) || !svc.is(o.tracking)) continue;
+      const idx = svc.bracket(o.weight_chrono);
+      if (idx < 0) continue;
+      const seen = new Set();
+      for (const row of svc.grid) {
+        if (idx >= row.length) continue;
+        const r = o.amount_ht / row[idx];
+        if (r < REVISION_MIN || r > REVISION_MAX) continue;
+        const b = Math.round(r * 200); // tranches de 0,5 %
+        if (seen.has(b)) continue;
+        seen.add(b);
+        const cur = bins.get(b) || { votes: 0, sum: 0 };
+        cur.votes += 1; cur.sum += r;
+        bins.set(b, cur);
+      }
+    }
+    let best = null;
+    for (const [b, v] of bins) {
+      if (!best || v.votes > best.votes || (v.votes === best.votes && Math.abs(b - 200) < Math.abs(best.b - 200))) {
+        best = { b, ...v };
+      }
+    }
+    // Si la grille du contrat tombe juste, on la garde telle quelle
+    ctx[key] = best ? (Math.abs(best.b - 200) <= 1 ? 1 : best.sum / best.votes) : 1;
   }
-  return -1;
+  return ctx;
+}
+// Retrouve la zone/le pays d'un colis à zone : indices des lignes de grille correspondant au montant
+function matchZoneRows(order, key, ctx) {
+  const svc = ZONED_SERVICES[key];
+  const f = ctx?.[key] ?? 1;
+  const idx = svc.bracket(order.weight_chrono);
+  if (idx < 0 || !(order.amount_ht > 0)) return [];
+  const tol = Math.max(0.03, order.amount_ht * 0.005);
+  return svc.grid
+    .map((row, i) => (idx < row.length && Math.abs(row[idx] * f - order.amount_ht) <= tol ? i : -1))
+    .filter(i => i >= 0);
 }
 
 // Préfixe (2 cars) + suffixe (2 cars) → service + grille
@@ -312,63 +377,52 @@ function getTrackingService(tracking) {
 }
 function lookupContractPrice(tarif, weightKg) {
   if (weightKg == null || !tarif) return null;
+  // Limite haute incluse : 1.000 kg → tranche 0-1 kg (règle Chronopost, cf. en-tête des grilles)
   for (const [from, to, price] of tarif) {
-    if (weightKg >= from && weightKg < to) return price;
+    if (weightKg >= from && weightKg <= to) return price;
   }
   return null;
 }
-function isXfTracking(tracking) {
-  return !!tracking && tracking.slice(0,2).toUpperCase() === 'XF' && tracking.slice(-2).toUpperCase() === 'FR';
-}
-function isXtTracking(tracking) {
-  return !!tracking && tracking.slice(0,2).toUpperCase() === 'XT' && tracking.slice(-2).toUpperCase() === 'TS';
-}
+const fmtRevision = f => (Math.abs(f - 1) < 0.005 ? '' : ` — grille ${f > 1 ? '+' : ''}${((f - 1) * 100).toFixed(1).replace('.', ',')} %`);
+
 // Retourne true si le pays/zone du colis est identifiable (tarif calculable)
-function hasKnownTariff(order) {
+function hasKnownTariff(order, ctx) {
   if (getTrackingService(order.tracking)) return true;
-  if (order.amount_ht != null) {
-    if (isXfTracking(order.tracking)) return getXfZone(order.amount_ht, order.weight_chrono) >= 0;
-    if (isXtTracking(order.tracking)) return getXtCountryIdx(order.amount_ht, order.weight_chrono) >= 0;
-  }
-  return false;
+  const key = zonedServiceOf(order.tracking);
+  return !!key && order.amount_ht != null && matchZoneRows(order, key, ctx).length > 0;
 }
-function computePriceEcart(order) {
+function computePriceEcart(order, ctx) {
   if (order.is_return || order.weight_bdd == null || order.weight_chrono == null) return null;
   const svc = getTrackingService(order.tracking);
   if (svc) {
-    const priceDu  = lookupContractPrice(svc.tarif, order.weight_bdd);
-    const priceFac = lookupContractPrice(svc.tarif, order.weight_chrono);
-    if (priceDu == null || priceFac == null || priceDu === priceFac) return null;
-    return { service: svc.name, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
+    const gridDu  = lookupContractPrice(svc.tarif, order.weight_bdd);
+    const gridFac = lookupContractPrice(svc.tarif, order.weight_chrono);
+    if (gridDu == null || gridFac == null || gridDu === gridFac) return null;
+    // Révision tarifaire : le montant facturé donne le coefficient appliqué à la grille du contrat
+    const r = order.amount_ht > 0 ? order.amount_ht / gridFac : 1;
+    const f = r >= REVISION_MIN && r <= REVISION_MAX && Math.abs(r - 1) >= 0.005 ? r : 1;
+    const priceDu = round2(gridDu * f), priceFac = round2(gridFac * f);
+    return { service: svc.name + fmtRevision(f), priceDu, priceFac, ecart: round2(priceFac - priceDu) };
   }
   if (order.amount_ht == null) return null;
-  // Chrono Express (XF...FR) — reverse-lookup zone depuis amount_ht
-  if (isXfTracking(order.tracking)) {
-    const zoneIdx   = getXfZone(order.amount_ht, order.weight_chrono);
-    if (zoneIdx < 0) return null;
-    const idxBdd    = xfBracketIdx(order.weight_bdd);
-    const idxChrono = xfBracketIdx(order.weight_chrono);
-    if (idxBdd < 0 || idxChrono < 0 || idxBdd === idxChrono) return null;
-    if (idxBdd >= TARIF_XF[zoneIdx].length || idxChrono >= TARIF_XF[zoneIdx].length) return null;
-    const priceDu  = TARIF_XF[zoneIdx][idxBdd];
-    const priceFac = TARIF_XF[zoneIdx][idxChrono];
-    if (priceDu >= priceFac) return null;
-    return { service: `Chrono Express ${XF_ZONES[zoneIdx]}`, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
-  }
-  // 2Shop Europe (XT...TS) — reverse-lookup pays depuis amount_ht
-  if (isXtTracking(order.tracking)) {
-    const countryIdx = getXtCountryIdx(order.amount_ht, order.weight_chrono);
-    if (countryIdx < 0) return null;
-    const idxBdd    = xtBracketIdx(order.weight_bdd);
-    const idxChrono = xtBracketIdx(order.weight_chrono);
-    if (idxBdd < 0 || idxChrono < 0 || idxBdd === idxChrono) return null;
-    if (idxBdd >= TARIF_XT[countryIdx].length || idxChrono >= TARIF_XT[countryIdx].length) return null;
-    const priceDu  = TARIF_XT[countryIdx][idxBdd];
-    const priceFac = TARIF_XT[countryIdx][idxChrono];
-    if (priceDu >= priceFac) return null;
-    return { service: `2Shop Europe (${XT_COUNTRIES[countryIdx]})`, priceDu, priceFac, ecart: +(priceFac - priceDu).toFixed(2) };
-  }
-  return null;
+  const key = zonedServiceOf(order.tracking);
+  if (!key) return null;
+  const zsvc = ZONED_SERVICES[key];
+  const rows = matchZoneRows(order, key, ctx);
+  if (!rows.length) return null;
+  const idxBdd    = zsvc.bracket(order.weight_bdd);
+  const idxChrono = zsvc.bracket(order.weight_chrono);
+  if (idxBdd < 0 || idxChrono < 0 || idxBdd === idxChrono) return null;
+  // Plusieurs zones peuvent partager le même prix (ex. DE/LU/NL) : on garde celles dont la tranche due est connue
+  const valid = rows.filter(i => idxBdd < zsvc.grid[i].length && idxChrono < zsvc.grid[i].length);
+  if (!valid.length) return null;
+  const f = ctx?.[key] ?? 1;
+  const row = zsvc.grid[valid[0]];
+  const priceDu  = round2(row[idxBdd] * f);
+  const priceFac = round2(row[idxChrono] * f);
+  if (priceDu >= priceFac) return null;
+  const zones = valid.filter(i => zsvc.grid[i][idxBdd] === row[idxBdd]).map(i => zsvc.labels[i]).join('/');
+  return { service: `${zsvc.name} (${zones})${fmtRevision(f)}`, priceDu, priceFac, ecart: round2(priceFac - priceDu) };
 }
 
 function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
@@ -1272,13 +1326,16 @@ export default function ChronopostApp() {
   const countOk    = orders.filter(o => o.diff_g !== null && Math.abs(o.diff_g) <= 20).length;
   const countRet   = orders.filter(o => o.is_return).length;
 
+  // Coefficients de révision tarifaire (XF / XT / XU) estimés sur la facture
+  const revisionCtx = useMemo(() => buildRevisionCtx(orders), [orders]);
+
   const tarifEcarts = useMemo(
     () => orders
       .filter(o => !o.is_return)
-      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .map(o => ({ ...o, _ecart: computePriceEcart(o, revisionCtx) }))
       .filter(o => o._ecart !== null && o._ecart.ecart > 0)
       .sort((a, b) => b._ecart.ecart - a._ecart.ecart),
-    [orders],
+    [orders, revisionCtx],
   );
 
   // ── Extraction des tarifs unitaires depuis les charges globales
@@ -1316,11 +1373,11 @@ export default function ChronopostApp() {
 
     const tarifOvercharges = orders
       .filter(o => !o.is_return)
-      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .map(o => ({ ...o, _ecart: computePriceEcart(o, revisionCtx) }))
       .filter(o => o._ecart !== null && o._ecart.ecart > 0)
       .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
 
-    const bigDiffs = orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o));
+    const bigDiffs = orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o, revisionCtx));
 
     let html = `<html><body style="font-family:Arial,sans-serif;font-size:13px;color:#2C3E50;line-height:1.6">`;
     html += `<p>Bonjour Amel,</p>`;
@@ -1358,7 +1415,7 @@ export default function ChronopostApp() {
     }
 
     if (bigDiffs.length > 0) {
-      html += `<p><strong>Écarts de poids importants — tarif non calculable (Chrono Relais Europe / service inconnu)</strong></p>`;
+      html += `<p><strong>Écarts de poids importants — tarif non calculable (service ou zone non identifiés)</strong></p>`;
       html += TABLE(
         `<thead><tr>${th('N° Commande')}${th('N° Suivi')}${th('Poids déclaré',true)}${th('Poids Chrono',true)}${th('Écart',true)}</tr></thead>` +
         `<tbody>${bigDiffs.map((o, i) => {
@@ -1409,7 +1466,7 @@ export default function ChronopostApp() {
     // Surcoûts tarifaires réels (changement de tranche)
     const tarifOvercharges = orders
       .filter(o => !o.is_return)
-      .map(o => ({ ...o, _ecart: computePriceEcart(o) }))
+      .map(o => ({ ...o, _ecart: computePriceEcart(o, revisionCtx) }))
       .filter(o => o._ecart !== null && o._ecart.ecart > 0)
       .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
 
@@ -1438,9 +1495,9 @@ export default function ChronopostApp() {
     }
 
     // Écarts de poids importants sur services non analysés tarifairement (XF, XT, XU…)
-    const unknownServiceBigDiffs = bigDiffs.filter(o => !hasKnownTariff(o));
+    const unknownServiceBigDiffs = bigDiffs.filter(o => !hasKnownTariff(o, revisionCtx));
     if (unknownServiceBigDiffs.length > 0) {
-      text += '\n\nÉcarts de poids importants — tarif non calculable (Chrono Relais Europe / service inconnu)\n\n';
+      text += '\n\nÉcarts de poids importants — tarif non calculable (service ou zone non identifiés)\n\n';
       text += row(['N° Commande', 'Date', 'N° Suivi', 'Poids déclaré', 'Poids Chrono', 'Écart']) + '\n';
       text += sep([11, 12, 16, 13, 12, 8]) + '\n';
       for (const o of unknownServiceBigDiffs) {
@@ -1981,7 +2038,7 @@ export default function ChronopostApp() {
                     <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
                       Aucun changement de tranche tarifaire détecté sur cette facture.
                       <div style={{ fontSize: 12, marginTop: 8 }}>
-                        Les services analysés : Chrono 13 (XA/XN), Chrono Relais 13 (XS), 2Shop Direct (XR/XY).
+                        Services analysés : Chrono 13 (XA/XN), Chrono Relais 13 (XS), 2Shop Direct (XR/XY), Chrono Express (XF), 2Shop Europe (XT), Chrono Relais Europe (XU).
                       </div>
                     </div>
                   ) : (
@@ -2060,7 +2117,7 @@ export default function ChronopostApp() {
                         </table>
                       </div>
                       <div style={{ color: C.greyT, fontSize: 12, marginTop: 6 }}>
-                        Services analysés : Chrono 13, Relais 13, 2Shop Direct, Chrono Express (XF), 2Shop Europe (XT). Non analysé : Chrono Relais Europe (XU).
+                        Services analysés : Chrono 13, Relais 13, 2Shop Direct, Chrono Express (XF), 2Shop Europe (XT), Chrono Relais Europe (XU). Les révisions tarifaires annuelles sont détectées depuis les montants facturés.
                       </div>
                     </>
                   )}
