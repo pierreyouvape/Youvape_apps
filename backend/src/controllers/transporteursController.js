@@ -15,7 +15,9 @@ exports.getTotals = async (req, res) => {
              -- gestion) vivent dans supplements_total, qui contient aussi les suppléments
              -- déjà rattachés à un colis — d'où la soustraction. Neutre pour Colissimo,
              -- Mondial Relay et Lettre Suivie ; +32 % sur Chronopost.
-             ci.total_ht + COALESCE(ci.supplements_total, 0)
+             -- Les indemnisations (négatives, Colissimo seulement) sont déduites
+             -- de la facture : la dépense réelle est le montant facturé.
+             ci.total_ht + COALESCE(ci.supplements_total, 0) + COALESCE(ci.indemnizations_total, 0)
                - COALESCE((
                    SELECT SUM(s.amount_ht) FROM carrier_invoice_supplements s
                    WHERE s.invoice_id = ci.id

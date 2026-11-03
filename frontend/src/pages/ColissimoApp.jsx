@@ -80,7 +80,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
-          Total payé à Colissimo (port + suppléments HT), par mois et par année.
+          Total payé à Colissimo (port + suppléments − indemnisations HT, soit le montant des factures), par mois et par année. Le détail par pays est hors indemnisations.
         </p>
         <button onClick={loadTotals} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
           ↻ Actualiser
@@ -260,6 +260,7 @@ const HISTORY_SORTERS = {
   weight_ok:             inv => inv.weight_ok ?? 0,
   weight_ecart:          inv => inv.weight_ecart ?? 0,
   total_ht:              inv => parseFloat(inv.total_ht ?? 0),
+  total_facture_ht:      inv => parseFloat(inv.total_ht ?? 0) + parseFloat(inv.indemnizations_total ?? 0),
   supplements_total:     inv => parseFloat(inv.supplements_total ?? 0),
   indemnizations_total:  inv => parseFloat(inv.indemnizations_total ?? 0),
   tariffs_applied_at:    inv => inv.tariffs_applied_at ? 1 : 0,
@@ -359,7 +360,8 @@ export default function ColissimoApp() {
       if (parts.length !== 3) continue;
       const [, m, y] = parts;
       const monthKey = `${y}-${m}`;
-      const total = parseFloat(inv.total_ht || 0);
+      // Montant facturé : les indemnisations (négatives) viennent en déduction
+      const total = parseFloat(inv.total_ht || 0) + parseFloat(inv.indemnizations_total || 0);
       if (!monthMap[monthKey]) monthMap[monthKey] = { ht: 0, colis: 0 };
       monthMap[monthKey].ht += total;
       monthMap[monthKey].colis += parseInt(inv.total_parcels || 0, 10);
@@ -1075,7 +1077,7 @@ export default function ColissimoApp() {
                               { label: 'Cmdes trouvées', key: 'parcels_matched', align: 'right' },
                               { label: 'Poids OK', key: 'weight_ok', align: 'right' },
                               { label: 'Écarts', key: 'weight_ecart', align: 'right' },
-                              { label: 'Total HT', key: 'total_ht' },
+                              { label: 'Total facture HT', key: 'total_facture_ht' },
                               { label: 'Suppléments HT', key: 'supplements_total' },
                               { label: 'Indemn. HT', key: 'indemnizations_total' },
                               { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
@@ -1100,7 +1102,7 @@ export default function ColissimoApp() {
                               <Td align="right" color={C.blue}>{inv.parcels_matched}</Td>
                               <Td align="right" color={C.green}>{inv.weight_ok ?? '—'}</Td>
                               <Td align="right" color={inv.weight_ecart > 0 ? C.red : C.dark}>{inv.weight_ecart ?? '—'}</Td>
-                              <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
+                              <Td bold>{inv.total_ht != null ? fmtEur(parseFloat(inv.total_ht) + parseFloat(inv.indemnizations_total || 0)) : '—'}</Td>
                               <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
                               <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
                               <Td align="center">
@@ -1121,7 +1123,7 @@ export default function ColissimoApp() {
                             <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({history.length} factures)</td>
                             <td colSpan={5} />
                             <td style={{ padding: '10px 12px', fontWeight: 800, color: C.accent }}>
-                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
+                              {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.total_ht || 0) + parseFloat(inv.indemnizations_total || 0), 0))}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 700, color: C.orange }}>
                               {fmtEur(history.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
@@ -1170,7 +1172,7 @@ export default function ColissimoApp() {
                           { label: 'N° Facture', key: 'invoice_number' },
                           { label: 'Période', key: 'period' },
                           { label: 'Colis', key: 'total_parcels', align: 'right' },
-                          { label: 'Total HT', key: 'total_ht' },
+                          { label: 'Total facture HT', key: 'total_facture_ht' },
                           { label: 'Suppléments HT', key: 'supplements_total' },
                           { label: 'Indemn. HT', key: 'indemnizations_total' },
                           { label: 'Tarifs', key: 'tariffs_applied_at', align: 'center' },
@@ -1192,7 +1194,7 @@ export default function ColissimoApp() {
                           <Td bold color={C.accent}>🔍 {inv.invoice_number}</Td>
                           <Td color={C.greyT}>{inv.period_start ? `${inv.period_start} → ${inv.period_end}` : '—'}</Td>
                           <Td align="right">{inv.total_parcels}</Td>
-                          <Td bold>{inv.total_ht != null ? fmtEur(inv.total_ht) : '—'}</Td>
+                          <Td bold>{inv.total_ht != null ? fmtEur(parseFloat(inv.total_ht) + parseFloat(inv.indemnizations_total || 0)) : '—'}</Td>
                           <Td color={C.orange}>{inv.supplements_total != null ? fmtEur(inv.supplements_total) : '—'}</Td>
                           <Td color={C.blue}>{inv.indemnizations_total != null ? fmtEur(inv.indemnizations_total) : '—'}</Td>
                           <Td align="center">

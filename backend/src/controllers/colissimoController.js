@@ -1064,7 +1064,7 @@ exports.searchOrder = async (req, res) => {
 exports.getTotals = async (req, res) => {
   try {
     const invoices = await pool.query(`
-      SELECT id, invoice_number, period_start, total_ht, total_parcels, country_totals
+      SELECT id, invoice_number, period_start, total_ht, indemnizations_total, total_parcels, country_totals
       FROM carrier_invoices
       WHERE carrier = 'colissimo'
       ORDER BY period_start
