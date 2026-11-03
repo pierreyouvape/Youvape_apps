@@ -8,8 +8,8 @@
  *    du nôtre.
  *  - LE SURPLUS est une alerte : la marchandise est là, physiquement, mais
  *    rien ne dit qu'on la doit à ce bon de commande. Elle part dans le même
- *    mail lorsqu'il y en a un, avec la phrase qui compte : le surplus n'est
- *    pas en stock tant qu'un responsable ne l'a pas tranché.
+ *    mail lorsqu'il y en a un : le surplus est envoyé à BMS et entre en
+ *    stock, mais un responsable doit confirmer qu'il nous est bien dû.
  *
  * Le destinataire vit dans `app_config.reception_email_to`. Vide, rien ne part
  * et c'est écrit dans les journaux : une réception ne doit jamais échouer
@@ -112,8 +112,8 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
     surplus.length > 0 ? tableau(`${surplus.length} article(s) reçu(s) en trop`, surplus, false) : '',
     surplus.length > 0
       ? '<p style="margin-top:14px;padding:12px;border-left:4px solid #d97706;background:#fffbeb">'
-        + '<strong>Le surplus n\'est pas en stock.</strong> Il a bien été compté et envoyé, mais rien ne dit '
-        + 'qu\'il nous est dû sur ce bon de commande : à vérifier avec un responsable avant de le considérer acquis.</p>'
+        + '<strong>Le surplus a été mis en stock.</strong> Il a été compté et envoyé à BMS, mais rien ne dit '
+        + 'qu\'il nous est dû sur ce bon de commande : à vérifier avec un responsable (facture, erreur d\'article).</p>'
       : '',
     '<p style="margin-top:18px;color:#6b7280;font-size:13px">Envoyé automatiquement par l\'app Réception.</p>',
     '</div>',
@@ -123,7 +123,7 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
     `Réception ${nom}${cmd.supplier ? ` chez ${cmd.supplier}` : ''}.`,
     nonEnvoyes.length > 0 ? `\nREFUSÉ PAR BMS (pas en stock) :\n${nonEnvoyes.map((n) => `- ${n.ref || n.product} : ${n.envoyees}/${n.comptees} enregistrées, ${n.refusees} refusées`).join('\n')}` : '',
     manquants.length > 0 ? `\nManquants :\n${manquants.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (${LIBELLE_MOTIF[l.motif] || l.motif || 'sans motif'})`).join('\n')}` : '',
-    surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart})`).join('\n')}\nLe surplus n'est pas en stock : vérifier avec un responsable.` : '',
+    surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart})`).join('\n')}\nLe surplus a été mis en stock : vérifier avec un responsable qu'il nous est dû.` : '',
   ].filter(Boolean).join('\n');
 
   const r = await sendMail({ to, subject: sujet, html: corps, text: texte });
