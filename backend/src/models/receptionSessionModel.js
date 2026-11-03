@@ -498,7 +498,10 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
       units_sent: envoye.get(l.purchase_order_item_id) || 0,
     })),
     missing: manquants.map(decrire),
-    over: surplus.map(decrire),
+    // Ce que BMS a réellement pris, pour que le mail dise si le surplus est en
+    // stock au lieu de le supposer (364991 : « pas en stock » pour 15 pièces
+    // bel et bien entrées).
+    over: surplus.map((l) => ({ ...decrire(l), stocked: envoye.get(l.purchase_order_item_id) || 0 })),
     notSent: nonEnvoyes,
     orderCompleted: terminee,
     bmsResponse: reponse,

@@ -8,8 +8,10 @@
  *    du nôtre.
  *  - LE SURPLUS est une alerte : la marchandise est là, physiquement, mais
  *    rien ne dit qu'on la doit à ce bon de commande. Elle part dans le même
- *    mail lorsqu'il y en a un : le surplus est envoyé à BMS et entre en
- *    stock, mais un responsable doit confirmer qu'il nous est bien dû.
+ *    mail lorsqu'il y en a un. Il dit, ligne par ligne, combien de pièces
+ *    BMS a RÉELLEMENT mises en stock — il les prend en général toutes, sauf
+ *    dépassement sur une ligne déjà réceptionnée — et qu'un responsable doit
+ *    confirmer qu'elles nous sont dues.
  *
  * Le destinataire vit dans `app_config.reception_email_to`. Vide, rien ne part
  * et c'est écrit dans les journaux : une réception ne doit jamais échouer
@@ -49,16 +51,23 @@ async function entete(purchaseOrderId) {
 const echapper = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function tableau(titre, lignes, avecMotif) {
+// « Mis en stock » : ce que BMS a accepté, pas ce qui a été compté.
+const enStock = (l) => (l.stocked >= l.units
+  ? `Oui, ${l.stocked}`
+  : `<strong style="color:#dc2626">NON pour ${l.units - l.stocked}</strong> (${l.stocked} sur ${l.units})`);
+
+function tableau(titre, lignes, avecMotif, avecStock = false) {
   const entetes = ['Référence', 'Produit', 'Attendu', 'Reçu', 'Écart']
-    .concat(avecMotif ? ['Motif'] : []);
+    .concat(avecMotif ? ['Motif'] : [])
+    .concat(avecStock ? ['Mis en stock'] : []);
   const cellules = (l) => [
     echapper(l.ref || '—'),
     echapper(l.product || '—'),
     l.expected,
     l.units,
     l.ecart > 0 ? `+${l.ecart}` : l.ecart,
-  ].concat(avecMotif ? [echapper(LIBELLE_MOTIF[l.motif] || l.motif || '—')] : []);
+  ].concat(avecMotif ? [echapper(LIBELLE_MOTIF[l.motif] || l.motif || '—')] : [])
+    .concat(avecStock ? [enStock(l)] : []);
 
   return `<h3 style="font:600 15px/1.4 Arial,sans-serif;color:#1f2937;margin:22px 0 8px">${titre}</h3>
 <table cellpadding="8" cellspacing="0" style="border-collapse:collapse;font:14px/1.4 Arial,sans-serif;width:100%">
@@ -81,6 +90,11 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
     console.log('[reception] écart constaté mais aucun destinataire configuré (app_config.reception_email_to) — mail non envoyé.');
     return { sent: false, reason: 'aucun_destinataire' };
   }
+
+  // Sans `stocked` (appelant ancien), on ne prétend rien : on le tient pour
+  // inconnu plutôt que d'affirmer une mise en stock.
+  surplus = surplus.map((l) => ({ ...l, stocked: Number.isFinite(l.stocked) ? l.stocked : 0 }));
+  const surplusToutEnStock = surplus.every((l) => l.stocked >= l.units);
 
   const cmd = await entete(purchaseOrderId);
   const nom = cmd.order_number || `commande ${purchaseOrderId}`;
@@ -109,11 +123,14 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
         + 'était faux, soit la marchandise appartient à une autre commande.</p></div>'
       : '',
     manquants.length > 0 ? tableau(`${manquants.length} article(s) manquant(s)`, manquants, true) : '',
-    surplus.length > 0 ? tableau(`${surplus.length} article(s) reçu(s) en trop`, surplus, false) : '',
+    surplus.length > 0 ? tableau(`${surplus.length} article(s) reçu(s) en trop`, surplus, false, true) : '',
     surplus.length > 0
       ? '<p style="margin-top:14px;padding:12px;border-left:4px solid #d97706;background:#fffbeb">'
-        + '<strong>Le surplus a été mis en stock.</strong> Il a été compté et envoyé à BMS, mais rien ne dit '
-        + 'qu\'il nous est dû sur ce bon de commande : à vérifier avec un responsable (facture, erreur d\'article).</p>'
+        + (surplusToutEnStock
+          ? '<strong>Le surplus EST en stock</strong> : BMS a accepté toutes les pièces comptées. '
+          : '<strong>Une partie du surplus N\'EST PAS en stock</strong> (colonne « Mis en stock »). ')
+        + 'Rien ne dit en revanche qu\'il nous est dû sur ce bon de commande : à vérifier avec un '
+        + 'responsable (facture, erreur d\'expédition du fournisseur).</p>'
       : '',
     '<p style="margin-top:18px;color:#6b7280;font-size:13px">Envoyé automatiquement par l\'app Réception.</p>',
     '</div>',
@@ -123,7 +140,7 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
     `Réception ${nom}${cmd.supplier ? ` chez ${cmd.supplier}` : ''}.`,
     nonEnvoyes.length > 0 ? `\nREFUSÉ PAR BMS (pas en stock) :\n${nonEnvoyes.map((n) => `- ${n.ref || n.product} : ${n.envoyees}/${n.comptees} enregistrées, ${n.refusees} refusées`).join('\n')}` : '',
     manquants.length > 0 ? `\nManquants :\n${manquants.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (${LIBELLE_MOTIF[l.motif] || l.motif || 'sans motif'})`).join('\n')}` : '',
-    surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart})`).join('\n')}\nLe surplus a été mis en stock : vérifier avec un responsable qu'il nous est dû.` : '',
+    surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart}) — en stock : ${l.stocked >= l.units ? `oui, ${l.stocked}` : `NON pour ${l.units - l.stocked} (${l.stocked}/${l.units})`}`).join('\n')}\n${surplusToutEnStock ? 'Le surplus EST en stock' : 'Une partie du surplus N\'EST PAS en stock'} : vérifier avec un responsable qu'il nous est dû.` : '',
   ].filter(Boolean).join('\n');
 
   const r = await sendMail({ to, subject: sujet, html: corps, text: texte });
