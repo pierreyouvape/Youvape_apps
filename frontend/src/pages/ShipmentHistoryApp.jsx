@@ -273,7 +273,9 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
               <span>{l.shipping_method || l.method_code || '—'}</span>
               <span style={{ color: C.greyT }}>N° de suivi</span>
               <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{l.tracking_number || '—'}</span>
-              <span style={{ color: C.greyT }}>État</span>
+              <span style={{ color: C.greyT }}>Suivi</span>
+              <span><TrackingStateBadge state={l.tracking_state} at={l.tracking_state_at} error={l.tracking_error} compact /></span>
+              <span style={{ color: C.greyT }}>Bordereau</span>
               <span><Etats row={l} vide="—" /></span>
             </div>
 
@@ -620,7 +622,7 @@ const ShipmentHistoryApp = () => {
                     <Th align="right">Poids</Th>
                     <Th>Pické par</Th>
                     <Th>Packé par</Th>
-                    <Th>État</Th>
+                    <Th>Bordereau</Th>
                     <Th align="right"> </Th>
                   </tr>
                 </thead>
