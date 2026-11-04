@@ -1,12 +1,16 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { API_URL, authHeaders, C } from '../components/picking/pickingUi';
+import { C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 import { pdaBtn as bigBtn } from '../components/pda/pdaStyles';
 import { beep, useScanner } from '../components/pda/pdaScan';
 import CameraScanner from '../components/boutique/CameraScanner';
+import { SpotHome, SpotPassScreen } from '../components/inventory/PdaSpot';
+import {
+  setOnUnauthorized, api, errorText, BLUE, locLabel, pct, card, smallBtn, input,
+} from '../components/inventory/pdaInventoryApi';
+import { Photo, CameraButton, Sheet, QtySheet, ProgressBar, CodeSheet } from '../components/inventory/pdaInventoryUi';
 
 /**
  * Inventaire au PDA — /pda/inventaire, ouvert depuis l'accueil PDA (/pda).
@@ -25,101 +29,7 @@ import CameraScanner from '../components/boutique/CameraScanner';
  * serveur : un PDA qu'on change ne perd rien.
  */
 
-let onUnauthorized = null;
-const unauthorized = (err) => {
-  if (err.response?.status === 401) onUnauthorized?.();
-  throw err;
-};
-
-const api = (token) => {
-  const base = `${API_URL}/inventaire/pda`;
-  const h = authHeaders(token);
-  return {
-    get: (url) => axios.get(base + url, h).then(r => r.data, unauthorized),
-    post: (url, body = {}) => axios.post(base + url, body, h).then(r => r.data, unauthorized),
-    put: (url, body = {}) => axios.put(base + url, body, h).then(r => r.data, unauthorized),
-    del: (url) => axios.delete(base + url, h).then(r => r.data, unauthorized),
-  };
-};
-
-const errorText = (err) => err.response?.data?.error || (err.response?.status === 403
-  ? 'Vous n\'avez pas le droit Picking : demandez-le à un responsable.'
-  : err.message);
-
-const BLUE = '#0369A1';
-const locLabel = (l) => l || 'Sans emplacement';
 const INVENTORY_KEY = 'pdaInventaire.inventory';
-const pct = (n, total) => (total ? Math.floor((n / total) * 100) : 0);
-
-const card = { background: C.white, borderRadius: 14, border: `1px solid ${C.greyB}`, padding: 14 };
-const smallBtn = { ...bigBtn(C.white, C.dark), border: `1px solid ${C.greyB}`, fontSize: 14, padding: '9px 12px' };
-const input = {
-  width: '100%', boxSizing: 'border-box', padding: 14, fontSize: 26, fontWeight: 800, borderRadius: 10,
-  border: `2px solid ${C.greyB}`, fontFamily: 'inherit', textAlign: 'center',
-};
-
-const Photo = ({ url, size }) => (url
-  ? <img src={url} alt="" loading="lazy" style={{
-    width: size, height: size, objectFit: 'contain', borderRadius: 10, background: C.white, flexShrink: 0,
-  }} />
-  : <div style={{
-    width: size, height: size, borderRadius: 10, background: C.greyB, flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.greyM, fontSize: size / 3,
-  }}>?</div>);
-
-const CameraButton = ({ onClick }) => (
-  <button type="button" onClick={onClick} title="Scanner avec l'appareil photo" style={{
-    ...smallBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px',
-  }}>
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 8h3l2-3h6l2 3h3v11H4z" />
-      <circle cx="12" cy="13" r="3.5" />
-    </svg>
-  </button>
-);
-
-const Sheet = ({ title, onClose, children }) => (
-  <div style={{
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30,
-    display: 'flex', alignItems: 'flex-start', padding: 12, paddingTop: 64, overflowY: 'auto',
-  }}>
-    <div style={{ background: C.white, borderRadius: 14, padding: 16, width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 10 }}>
-        <span style={{ fontWeight: 900, fontSize: 19, flex: 1 }}>{title}</span>
-        <button type="button" onClick={onClose} style={{ ...smallBtn, padding: '6px 12px' }}>Fermer</button>
-      </div>
-      {children}
-    </div>
-  </div>
-);
-
-/** Saisie d'une quantité au pavé numérique. */
-function QtySheet({ title, subtitle, initial, onSave, onClose, extra }) {
-  const [value, setValue] = useState(initial == null ? '' : String(initial));
-  const n = Number(value);
-  const valid = value.trim() !== '' && Number.isInteger(n) && n >= 0;
-  return (
-    <Sheet title={title} onClose={onClose}>
-      {subtitle && <div style={{ fontSize: 15, color: C.greyT, marginBottom: 10 }}>{subtitle}</div>}
-      <form onSubmit={(e) => { e.preventDefault(); if (valid) onSave(n); }}>
-        <input
-          autoFocus type="number" inputMode="numeric" min="0" value={value}
-          onChange={(e) => setValue(e.target.value)} style={input}
-        />
-        <button type="submit" disabled={!valid} style={{ ...bigBtn(valid ? BLUE : C.greyB), width: '100%', marginTop: 12, fontSize: 19 }}>
-          Enregistrer
-        </button>
-      </form>
-      {extra}
-    </Sheet>
-  );
-}
-
-const ProgressBar = ({ done, total }) => (
-  <div style={{ height: 10, borderRadius: 999, background: C.greyB, overflow: 'hidden' }}>
-    <div style={{ width: `${pct(done, total)}%`, height: '100%', background: C.green }} />
-  </div>
-);
 
 const STATUS = {
   free: { label: 'À compter', bg: C.white, fg: C.greyT },
@@ -130,9 +40,10 @@ const STATUS = {
 
 // ── Écran 1 : les emplacements ──────────────────────────────────────────────
 
-function HomeScreen({ token, data, inventoryId, onChoose, reload, onOpenLocation, onRecounts, showFlash, onScanRef, onCamera }) {
+function HomeScreen({ token, data, inventoryId, choosing, onChoose, onChange, reload, onOpenLocation, onRecounts, showFlash, onScanRef, onCamera }) {
   const [filter, setFilter] = useState('todo');
   const [confirmDay, setConfirmDay] = useState(false);
+  const [creating, setCreating] = useState(null);   // nom du nouvel inventaire par emplacement
 
   onScanRef.current = async (code) => {
     try {
@@ -156,28 +67,54 @@ function HomeScreen({ token, data, inventoryId, onChoose, reload, onOpenLocation
     }
   };
 
-  if (!data) return <p style={{ color: C.greyT, padding: 20 }}>Chargement…</p>;
-  if (!data.inventory) {
-    if (!data.inventories?.length) {
-      return (
-        <p style={{ color: C.greyT, textAlign: 'center', padding: 30, fontSize: 16 }}>
-          Aucun inventaire en cours. Il se crée au bureau, dans l'app Inventaire.
-        </p>
-      );
+  const createSpot = async () => {
+    try {
+      const v = await api(token).post('/spot', { name: creating.trim() });
+      setCreating(null);
+      onChoose(v.id);
+    } catch (err) {
+      showFlash('error', errorText(err));
     }
-    // Plusieurs inventaires en cours : on choisit d'abord lequel on compte.
+  };
+
+  if (!data) return <p style={{ color: C.greyT, padding: 20 }}>Chargement…</p>;
+  if (!data.inventory || choosing) {
+    // On choisit l'inventaire qu'on compte, ou on en ouvre un par emplacement.
     return (
       <div style={{ padding: 14, display: 'grid', gap: 10 }}>
-        <p style={{ margin: '4px 2px', color: C.greyT, fontSize: 15 }}>Quel inventaire comptez-vous ?</p>
-        {data.inventories.map(v => (
+        {data.inventories?.length > 0
+          ? <p style={{ margin: '4px 2px', color: C.greyT, fontSize: 15 }}>Quel inventaire comptez-vous ?</p>
+          : <p style={{ color: C.greyT, textAlign: 'center', padding: '20px 10px', fontSize: 16, margin: 0 }}>
+            Aucun inventaire en cours. Un inventaire classique se crée au bureau, dans l'app Inventaire.
+          </p>}
+        {(data.inventories || []).map(v => (
           <button key={v.id} onClick={() => onChoose(v.id)} style={{
-            ...card, textAlign: 'left', width: '100%', fontFamily: 'inherit', color: C.dark, border: `2px solid ${C.greyB}`,
+            ...card, textAlign: 'left', width: '100%', fontFamily: 'inherit', color: C.dark,
+            border: `2px solid ${v.id === inventoryId ? BLUE : C.greyB}`,
           }}>
             <div style={{ fontWeight: 900, fontSize: 17 }}>{v.name}</div>
-            <div style={{ fontSize: 14, color: C.greyT, margin: '6px 0' }}>{v.done} / {v.total} réfs · {pct(v.done, v.total)} %</div>
-            <ProgressBar done={v.done} total={v.total} />
+            {v.kind === 'location' ? (
+              <div style={{ fontSize: 14, color: C.greyT, marginTop: 6 }}>Par emplacement · {v.passes} emplacement(s) validé(s)</div>
+            ) : (
+              <>
+                <div style={{ fontSize: 14, color: C.greyT, margin: '6px 0' }}>{v.done} / {v.total} réfs · {pct(v.done, v.total)} %</div>
+                <ProgressBar done={v.done} total={v.total} />
+              </>
+            )}
           </button>
         ))}
+        <button onClick={() => setCreating('')} style={{ ...bigBtn(C.white, BLUE), border: `2px dashed ${BLUE}`, width: '100%', fontSize: 17 }}>
+          Nouvel inventaire par emplacement
+        </button>
+        {creating !== null && (
+          <Sheet title="Inventaire par emplacement" onClose={() => setCreating(null)}>
+            <form onSubmit={(e) => { e.preventDefault(); createSpot(); }}>
+              <input autoFocus value={creating} onChange={(e) => setCreating(e.target.value)}
+                placeholder="Nom (facultatif)" style={{ ...input, fontSize: 18, fontWeight: 600 }} />
+              <button type="submit" style={{ ...bigBtn(BLUE), width: '100%', marginTop: 12, fontSize: 19 }}>Créer et commencer</button>
+            </form>
+          </Sheet>
+        )}
       </div>
     );
   }
@@ -200,9 +137,7 @@ function HomeScreen({ token, data, inventoryId, onChoose, reload, onOpenLocation
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontWeight: 900, fontSize: 18, flex: 1 }}>{data.inventory.name}</div>
-          {data.inventories?.length > 1 && (
-            <button onClick={() => onChoose(null)} style={{ ...smallBtn, fontSize: 13, padding: '6px 10px' }}>Changer</button>
-          )}
+          <button onClick={onChange} style={{ ...smallBtn, fontSize: 13, padding: '6px 10px' }}>Changer</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '8px 0' }}>
           <span style={{ fontSize: 30, fontWeight: 900, color: C.green }}>{pct(progress.done, progress.total)} %</span>
@@ -506,20 +441,6 @@ function LocationScreen({ token, locationId, onDone, showFlash, onScanRef, onCam
   );
 }
 
-/** Code tapé à la main (SKU, code-barres illisible). */
-function CodeSheet({ onCode, onClose }) {
-  const [value, setValue] = useState('');
-  return (
-    <Sheet title="Saisir un code" onClose={onClose}>
-      <form onSubmit={(e) => { e.preventDefault(); if (value.trim()) onCode(value.trim()); }}>
-        <input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="SKU ou code-barres"
-          style={{ ...input, fontSize: 20, fontWeight: 600 }} />
-        <button type="submit" disabled={!value.trim()} style={{ ...bigBtn(BLUE), width: '100%', marginTop: 12 }}>Compter</button>
-      </form>
-    </Sheet>
-  );
-}
-
 // ── Écran 3 : à recompter ───────────────────────────────────────────────────
 
 function RecountList({ token, inventoryId, onOpen, showFlash }) {
@@ -686,10 +607,11 @@ export default function PdaInventaire() {
   const [inventoryId, setInventoryId] = useState(() => {
     try { return Number(localStorage.getItem(INVENTORY_KEY)) || null; } catch { return null; }
   });
+  const [choosing, setChoosing] = useState(false);
   const [flash, setFlash] = useState(null);
   const [camera, setCamera] = useState(false);
   const onScanRef = useRef(null);
-  onUnauthorized = logout;
+  setOnUnauthorized(logout);
 
   const showFlash = useCallback((kind, text) => {
     setFlash({ kind, text });
@@ -714,7 +636,8 @@ export default function PdaInventaire() {
     } catch { /* stockage indisponible : on redemandera */ }
   }, [inventoryId]);
 
-  const choose = useCallback((id) => { setData(null); setInventoryId(id); }, []);
+  const choose = useCallback((id) => { setData(null); setChoosing(false); setInventoryId(id); }, []);
+  const change = useCallback(() => setChoosing(true), []);
 
   useEffect(() => {
     if (screen.kind !== 'home') return undefined;
@@ -744,6 +667,7 @@ export default function PdaInventaire() {
     location: [home, 'Emplacements'],
     recounts: [home, 'Emplacements'],
     recount: [recounts, 'À recompter'],
+    spotPass: [home, 'Emplacements'],
   }[screen.kind];
 
   if (screen.kind === 'recounts') onScanRef.current = null;
@@ -751,11 +675,24 @@ export default function PdaInventaire() {
   return (
     <PdaLayout title="Inventaire" onBack={back[0]} backLabel={back[1]}>
       <div onClick={releaseButton}>
-        {screen.kind === 'home' && (
+        {screen.kind === 'home' && data?.inventory?.kind === 'location' && !choosing && (
+          <SpotHome
+            key={data.inventory.id} token={token} inventory={data.inventory} onChange={change}
+            showFlash={showFlash} onScanRef={onScanRef} onCamera={openCamera}
+            onOpenPass={(id) => setScreen({ kind: 'spotPass', id })}
+          />
+        )}
+        {screen.kind === 'home' && !(data?.inventory?.kind === 'location' && !choosing) && (
           <HomeScreen
-            token={token} data={data} inventoryId={inventoryId} onChoose={choose}
+            token={token} data={data} inventoryId={inventoryId} choosing={choosing} onChoose={choose} onChange={change}
             reload={reload} showFlash={showFlash} onScanRef={onScanRef} onCamera={openCamera}
             onOpenLocation={(id) => setScreen({ kind: 'location', id })} onRecounts={recounts}
+          />
+        )}
+        {screen.kind === 'spotPass' && (
+          <SpotPassScreen
+            key={screen.id} token={token} passId={screen.id} onDone={home}
+            showFlash={showFlash} onScanRef={onScanRef} onCamera={openCamera}
           />
         )}
         {screen.kind === 'location' && (

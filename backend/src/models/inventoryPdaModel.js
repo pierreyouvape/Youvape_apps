@@ -59,12 +59,18 @@ const current = async (userId, inventoryId) => {
     `SELECT v.id, v.name, v.kind,
             (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id) AS total,
             (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id
-                AND i.status IN ('counted', 'recounted')) AS done
+                AND i.status IN ('counted', 'recounted')) AS done,
+            (SELECT count(*)::int FROM inventory_spot_passes sp WHERE sp.inventory_id = v.id
+                AND sp.status = 'validated') AS passes
        FROM inventories v WHERE v.status = 'open' ORDER BY v.created_at`
   );
-  const inventories = open.map(r => ({ id: r.id, name: r.name, kind: r.kind, total: r.total, done: r.done }));
+  const inventories = open.map(r => ({
+    id: r.id, name: r.name, kind: r.kind, total: r.total, done: r.done, passes: r.passes,
+  }));
   const v = inventoryId ? open.find(r => r.id === Number(inventoryId)) : (open.length === 1 ? open[0] : null);
   if (!v) return { inventory: null, inventories };
+  // Inventaire par emplacement : son accueil est inventorySpotModel.home.
+  if (v.kind === 'location') return { inventory: { id: v.id, name: v.name, kind: v.kind }, inventories };
 
   const { rows } = await pool.query(
     `SELECT l.id, l.location, l.status, l.assigned_to, l.closed_by, u.name AS assigned_name,
@@ -544,6 +550,7 @@ const finishRecount = async (itemId, userId) => {
 module.exports = {
   current,
   findLocation,
+  lookupCode,
   getLocation,
   take,
   scan,

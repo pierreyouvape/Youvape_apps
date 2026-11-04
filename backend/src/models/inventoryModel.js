@@ -208,7 +208,9 @@ const list = async () => {
     `SELECT v.id, v.name, v.kind, v.filters, v.status, v.created_at, v.cancelled_at, u.name AS created_by_name,
             (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id) AS total,
             (SELECT count(*)::int FROM inventory_items i WHERE i.inventory_id = v.id
-                AND i.status IN ('counted', 'recounted')) AS done
+                AND i.status IN ('counted', 'recounted')) AS done,
+            (SELECT count(*)::int FROM inventory_spot_passes sp WHERE sp.inventory_id = v.id
+                AND sp.status = 'validated') AS passes
        FROM inventories v
        LEFT JOIN users u ON u.id = v.created_by
       ORDER BY (v.status = 'open') DESC, v.created_at DESC`
@@ -216,7 +218,7 @@ const list = async () => {
   return rows.map(r => ({
     id: r.id, name: r.name, kind: r.kind, filters: r.filters, status: r.status,
     createdAt: r.created_at, cancelledAt: r.cancelled_at, createdBy: r.created_by_name,
-    total: r.total, done: r.done,
+    total: r.total, done: r.done, passes: r.passes,
   }));
 };
 

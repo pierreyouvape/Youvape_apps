@@ -160,4 +160,4 @@ const kick = () => {
   processPending().catch(error => console.error('[Inventaire] File des relevés :', error.message));
 };
 
-module.exports = { processPending, kick, evaluate };
+module.exports = { processPending, kick, evaluate, pickedOutByProduct };

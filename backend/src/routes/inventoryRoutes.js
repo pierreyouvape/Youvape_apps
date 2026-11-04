@@ -27,6 +27,18 @@ pda.post('/recounts/:itemId/take', c.takeRecount);
 pda.post('/recounts/:itemId/scan', c.scanRecount);
 pda.put('/recounts/:itemId', c.setRecountQty);
 pda.post('/recounts/:itemId/finish', c.finishRecount);
+// Inventaire par emplacement (04/11/2026) : créé au PC ou ici.
+pda.post('/spot', c.spotCreate);
+pda.get('/spot/:id', c.spotHome);
+pda.post('/spot/:id/passes', c.spotOpen);
+pda.get('/spot-passes/:passId', c.spotGet);
+pda.post('/spot-passes/:passId/scan', c.spotScan);
+pda.post('/spot-passes/:passId/add', c.spotAdd);
+pda.put('/spot-passes/:passId/lines/:lineId', c.spotSetQty);
+pda.post('/spot-passes/:passId/lines/:lineId/move', c.spotMove);
+pda.delete('/spot-passes/:passId/lines/:lineId', c.spotRemove);
+pda.post('/spot-passes/:passId/validate', c.spotValidate);
+pda.post('/spot-passes/:passId/abandon', c.spotAbandonMine);
 router.use('/pda', pda);
 
 // PC : droit propre `inventaire` (création, suivi, libérations).
@@ -49,5 +61,9 @@ router.post('/:id/gaps/unignore', write, c.unignoreGaps);
 router.post('/:id/items/:itemId/recount', write, c.requestRecount);
 router.post('/:id/items/:itemId/location', write, c.fixLocation);
 router.post('/:id/close', write, c.closeInventory);
+// Inventaire par emplacement.
+router.post('/:id/spot-passes/:passId/abandon', write, c.spotAbandon);
+router.post('/:id/spot-lines/retry', write, c.spotRetry);
+router.post('/:id/spot-lines/ignore', write, c.spotIgnore);
 
 module.exports = router;

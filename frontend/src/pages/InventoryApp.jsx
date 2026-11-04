@@ -14,8 +14,11 @@ import { formatDateUTC } from '../utils/dateUtils';
  * global, et on suit son avancement : par allée, par emplacement, par
  * compteur, et les recomptages. Le comptage se fait au PDA (/pda/inventaire).
  *
- * L'écran ne montre pas encore les écarts : leur revue et leur envoi à BMS
- * sont le lot 2.
+ * Lot 2 (23/10/2026) : onglet Écarts, envoi à BMS, clôture.
+ *
+ * Inventaire PAR EMPLACEMENT (04/11/2026) : un dossier sans filtre, où le PDA
+ * scanne des emplacements ; chaque emplacement validé part aussitôt dans BMS.
+ * Sa fiche (SpotDetailView) liste les passages, qui les a validés et quand.
  */
 
 const BLUE = '#0369A1';
@@ -96,6 +99,7 @@ const Kpi = ({ label, value, sub, color }) => (
 
 const filtersText = (inv) => {
   if (inv.kind === 'global') return 'Tout le catalogue';
+  if (inv.kind === 'location') return 'Par emplacement';
   const f = inv.filters || {};
   return [
     f.categories?.length && `Catégories : ${f.categories.map(decode).join(', ')}`,
@@ -193,16 +197,17 @@ function CreateView({ token, onCreated, onCancel }) {
   }), [cats, subs, brands, subBrands]);
   const picked = [...cats, ...[...subs].map(k => k.split(SEP)[1]), ...brands, ...[...subBrands].map(k => k.split(SEP)[1])];
   const empty = kind === 'partial' && picked.length === 0;
+  const spot = kind === 'location';
 
   useEffect(() => {
-    if (empty) { setPreview(null); return undefined; }
+    if (empty || spot) { setPreview(null); return undefined; }
     const t = setTimeout(() => {
       axios.post(`${API_URL}/inventaire/preview`, { kind, filters }, authHeaders(token))
         .then(r => setPreview(r.data))
         .catch(err => setError(err.response?.data?.error || err.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [token, kind, filters, empty]);
+  }, [token, kind, filters, empty, spot]);
 
   const toggle = (setter) => (value) => setter(prev => {
     const next = new Set(prev);
@@ -210,8 +215,8 @@ function CreateView({ token, onCreated, onCancel }) {
     return next;
   });
 
-  const autoName = kind === 'global'
-    ? `Inventaire global du ${today}`
+  const autoName = kind === 'global' ? `Inventaire global du ${today}`
+    : spot ? `Inventaire par emplacement du ${today}`
     : `Inventaire ${picked.map(decode).slice(0, 3).join(', ')}${picked.length > 3 ? '…' : ''} du ${today}`;
 
   const create = async () => {
@@ -285,7 +290,11 @@ function CreateView({ token, onCreated, onCancel }) {
       {error && <Banner kind="error" onClose={() => setError(null)}>{error}</Banner>}
       <div style={{ ...panel, display: 'grid', gap: 14 }}>
         <div style={{ display: 'flex', gap: 10 }}>
-          {[['partial', 'Partiel', 'Catégories, marques, sous-marques'], ['global', 'Global', 'Tout le catalogue en stock']].map(([k, label, hint]) => (
+          {[
+            ['partial', 'Partiel', 'Catégories, marques, sous-marques'],
+            ['global', 'Global', 'Tout le catalogue en stock'],
+            ['location', 'Par emplacement', 'On scanne des emplacements au PDA, corrigés aussitôt dans BMS'],
+          ].map(([k, label, hint]) => (
             <button key={k} onClick={() => setKind(k)} style={{
               flex: 1, textAlign: 'left', padding: 14, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
               border: `2px solid ${kind === k ? BLUE : C.greyB}`, background: kind === k ? BLUE_L : C.white,
@@ -323,9 +332,15 @@ function CreateView({ token, onCreated, onCancel }) {
 
       <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, fontSize: 15 }}>
-          {empty && <span style={{ color: C.greyT }}>Choisissez au moins une catégorie, sous-catégorie ou marque.</span>}
-          {!empty && !preview && <span style={{ color: C.greyT }}>Calcul…</span>}
-          {!empty && preview && (
+          {spot && (
+            <span style={{ color: C.greyT }}>
+              Au PDA, on scanne un emplacement : ses produits s'affichent avec leur quantité BMS, qu'on corrige.
+              Chaque emplacement validé part aussitôt dans BMS.
+            </span>
+          )}
+          {!spot && empty && <span style={{ color: C.greyT }}>Choisissez au moins une catégorie, sous-catégorie ou marque.</span>}
+          {!spot && !empty && !preview && <span style={{ color: C.greyT }}>Calcul…</span>}
+          {!spot && !empty && preview && (
             <span>
               <strong>{nf.format(preview.refs)}</strong> références à compter sur <strong>{nf.format(preview.locations)}</strong> emplacements
               {preview.withoutLocation > 0 && <span style={{ color: C.amber }}> — dont {nf.format(preview.withoutLocation)} sans emplacement</span>}
@@ -338,7 +353,7 @@ function CreateView({ token, onCreated, onCancel }) {
           )}
         </div>
         <button onClick={onCancel} style={btn('ghost')}>Annuler</button>
-        <button onClick={create} disabled={empty || !preview?.refs || saving} style={{ ...btn(), opacity: empty || !preview?.refs || saving ? 0.5 : 1 }}>
+        <button onClick={create} disabled={(!spot && (empty || !preview?.refs)) || saving} style={{ ...btn(), opacity: (!spot && (empty || !preview?.refs)) || saving ? 0.5 : 1 }}>
           {saving ? 'Création…' : 'Créer l\'inventaire'}
         </button>
       </div>
@@ -392,6 +407,9 @@ function DetailView({ token, id, canWrite, onBack, setMessage }) {
   }, [locations]);
 
   if (!inv) return <p style={{ color: C.greyT }}>Chargement…</p>;
+  if (inv.kind === 'location') {
+    return <SpotDetailView token={token} inv={inv} canWrite={canWrite} onBack={onBack} setMessage={setMessage} reload={load} />;
+  }
 
   const s = inv.stats;
   const done = s.counted + s.recounted;
@@ -849,6 +867,239 @@ function GapsView({ token, id, canWrite, setMessage, onChanged }) {
   );
 }
 
+// ── Inventaire par emplacement ──────────────────────────────────────────────
+
+const PASS_STATUS = {
+  counting: { label: 'En cours', color: C.amber, bg: C.amberL },
+  validated: { label: 'Validé', color: C.green, bg: C.greenL },
+  abandoned: { label: 'Abandonné', color: C.greyT, bg: C.grey },
+};
+const PUSH_STATE = {
+  queued: { label: 'En file', color: C.blue, bg: C.blueL },
+  sending: { label: 'Envoi…', color: C.blue, bg: C.blueL },
+  sent: { label: 'Envoyé', color: C.green, bg: C.greenL },
+  error: { label: 'Erreur', color: C.red, bg: C.redL },
+  ignored: { label: 'Laissé tombé', color: C.greyT, bg: C.grey },
+};
+
+/** Ce qui est arrivé à la ligne, en clair. */
+const spotOutcome = (l) => {
+  if (l.lockedBy) return `Inventaire « ${l.lockedBy} »`;
+  if (l.refError) return l.refError;
+  if (l.outcome === 'moved') return `Rangé ailleurs → ${l.movedTo}`;
+  if (l.added) return `Ajouté ici${l.fromLocation ? ` (était en ${l.fromLocation})` : ''}`;
+  if (l.qty == null) return l.shownQty === 0 ? 'À 0, pas touché' : 'Pas vu';
+  if (l.qty === 0 && l.shownQty > 0) return 'Mis à 0';
+  return l.qty === l.shownQty ? 'Vu' : 'Corrigé';
+};
+
+function SpotDetailView({ token, inv, canWrite, onBack, setMessage, reload }) {
+  const [openId, setOpenId] = useState(null);
+  const [filter, setFilter] = useState('');
+  const open = inv.status === 'open';
+  const st = INV_STATUS[inv.status];
+
+  // Envois en cours : on suit la file de près.
+  const inFlight = inv.passes.some(p => p.lines.some(l => l.pushStatus === 'queued' || l.pushStatus === 'sending'));
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const t = setInterval(reload, 4000);
+    return () => clearInterval(t);
+  }, [inFlight, reload]);
+
+  const act = async (url, body, confirmText, done) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    try {
+      await axios.post(`${API_URL}/inventaire/${inv.id}${url}`, body, authHeaders(token));
+      if (done) setMessage({ kind: 'ok', text: done });
+      reload();
+    } catch (err) {
+      setMessage({ kind: 'error', text: err.response?.data?.error || err.message });
+    }
+  };
+
+  const stats = (p) => {
+    const gaps = p.lines.filter(l => l.gap);
+    return {
+      gaps: gaps.length,
+      pieces: gaps.reduce((a, l) => a + l.gap, 0),
+      value: gaps.reduce((a, l) => a + (l.value || 0), 0),
+      errors: p.lines.filter(l => l.pushStatus === 'error').length,
+      sending: p.lines.filter(l => l.pushStatus === 'queued' || l.pushStatus === 'sending').length,
+    };
+  };
+  const validated = inv.passes.filter(p => p.status === 'validated');
+  const all = validated.map(stats);
+  const sum = (k) => all.reduce((a, x) => a + x[k], 0);
+  const shown = inv.passes.filter(p => {
+    const x = stats(p);
+    if (filter === 'gaps') return x.gaps > 0;
+    if (filter === 'errors') return x.errors > 0;
+    if (filter === 'counting') return p.status === 'counting';
+    return true;
+  });
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <strong style={{ fontSize: 18 }}>{inv.name}</strong>
+            <Chip color={st.color} bg={st.bg}>{st.label}</Chip>
+          </div>
+          <div style={{ fontSize: 13, color: C.greyT, marginTop: 4 }}>
+            Par emplacement · créé le {formatDateUTC(inv.createdAt, { time: false })}{inv.createdBy ? ` par ${inv.createdBy}` : ''}
+          </div>
+        </div>
+        <button onClick={onBack} style={btn('ghost')}>Tous les inventaires</button>
+        {open && canWrite && (
+          <button
+            onClick={() => act('/close', {}, `Clôturer « ${inv.name} » ? On ne pourra plus y compter.`, 'Inventaire clôturé.')}
+            disabled={!inv.closing?.closable}
+            title={inv.closing?.closable ? '' : `Pas encore : ${inv.closing?.reasons.join(', ')}`}
+            style={{ ...btn(), background: C.green, opacity: inv.closing?.closable ? 1 : 0.45 }}
+          >
+            Clôturer
+          </button>
+        )}
+        {open && canWrite && (
+          <button onClick={() => act('/cancel', {}, `Annuler « ${inv.name} » ? Les emplacements en cours sont abandonnés ; ce qui est validé reste envoyé à BMS.`, 'Inventaire annulé.')} style={btn('danger')}>
+            Annuler l'inventaire
+          </button>
+        )}
+      </div>
+
+      {open && inv.closing && !inv.closing.closable && (
+        <div style={{ fontSize: 13, color: C.greyT, marginTop: -8 }}>Avant de clôturer : {inv.closing.reasons.join(' · ')}.</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <Kpi label="Emplacements validés" value={nf.format(validated.length)}
+          sub={`${inv.passes.filter(p => p.status === 'counting').length} en cours`} />
+        <Kpi label="Lignes corrigées" value={nf.format(sum('gaps'))} sub={`${signed(sum('pieces'))} pièce(s) au total`} />
+        <Kpi label="Valeur des écarts" value={eur.format(sum('value'))} sub="HT, au coût de revient" />
+        <Kpi label="Envois BMS" value={sum('errors') ? `${sum('errors')} erreur(s)` : sum('sending') ? `${sum('sending')} en cours` : 'À jour'}
+          color={sum('errors') ? C.red : undefined} />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} style={field}>
+          <option value="">Tous les emplacements</option>
+          <option value="gaps">Avec écart</option>
+          <option value="errors">Avec erreur BMS</option>
+          <option value="counting">En cours</option>
+        </select>
+        <span style={{ fontSize: 13, color: C.greyT }}>{shown.length} passage(s) · cliquez sur une ligne pour le détail</span>
+      </div>
+
+      <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              <th style={th}>Emplacement</th><th style={th}>Statut</th><th style={th}>Par</th><th style={th}>Validé le</th>
+              <th style={th}>Produits</th><th style={th}>Écarts</th><th style={th}>Valeur</th><th style={th}>BMS</th><th style={th}>Mail</th>
+              {canWrite && open && <th style={th} />}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 && <tr><td style={{ ...td, color: C.greyT }} colSpan={10}>Aucun emplacement pour l'instant.</td></tr>}
+            {shown.map(p => {
+              const x = stats(p);
+              const ps = PASS_STATUS[p.status];
+              const expanded = openId === p.id;
+              return [
+                <tr key={p.id} onClick={() => setOpenId(expanded ? null : p.id)} style={{ cursor: 'pointer', background: expanded ? BLUE_L : undefined }}>
+                  <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700 }}>{p.location}</td>
+                  <td style={td}><Chip color={ps.color} bg={ps.bg}>{ps.label}</Chip></td>
+                  <td style={td}>{p.validatedBy || p.startedBy}</td>
+                  <td style={td}>{p.validatedAt ? formatDateUTC(p.validatedAt) : p.abandonedAt ? `abandonné ${formatDateUTC(p.abandonedAt)}` : ''}</td>
+                  <td style={td}>{p.lines.length}</td>
+                  <td style={td}>{x.gaps ? `${x.gaps} (${signed(x.pieces)})` : ''}</td>
+                  <td style={td}>{x.gaps ? eur.format(x.value) : ''}</td>
+                  <td style={td}>
+                    {x.errors > 0 && <Chip color={C.red} bg={C.redL}>{x.errors} erreur(s)</Chip>}
+                    {!x.errors && x.sending > 0 && <Chip color={C.blue} bg={C.blueL}>Envoi…</Chip>}
+                    {!x.errors && !x.sending && p.status === 'validated' && <Chip color={C.green} bg={C.greenL}>Envoyé</Chip>}
+                  </td>
+                  <td style={{ ...td, fontSize: 12.5 }}>
+                    {p.mailDoneAt ? (p.mailRows ? `${p.mailRows} produit(s)` : 'Rien à signaler') : p.mailError ? <span style={{ color: C.red }}>Échec</span> : ''}
+                  </td>
+                  {canWrite && open && (
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      {p.status === 'counting' && (
+                        <button onClick={(e) => { e.stopPropagation(); act(`/spot-passes/${p.id}/abandon`, {}, `Libérer ${p.location} (pris par ${p.startedBy}) ? Rien de ce passage ne sera envoyé.`, `${p.location} libéré.`); }}
+                          style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}>
+                          Libérer
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>,
+                expanded && (
+                  <tr key={`${p.id}-lines`}>
+                    <td colSpan={10} style={{ padding: 0, background: C.grey }}>
+                      <SpotLines pass={p} canWrite={canWrite && open} act={act} />
+                    </td>
+                  </tr>
+                ),
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SpotLines({ pass, canWrite, act }) {
+  const sub = { ...th, background: C.grey, fontSize: 11 };
+  return (
+    <div style={{ padding: '6px 12px 12px' }}>
+      {pass.mailError && <div style={{ fontSize: 12.5, color: C.red, margin: '6px 0' }}>Mail non envoyé : {pass.mailError}</div>}
+      <table style={{ width: '100%', borderCollapse: 'collapse', background: C.white }}>
+        <thead>
+          <tr>
+            <th style={sub}>Produit</th><th style={sub}>SKU</th><th style={sub}>Affiché</th><th style={sub}>Compté</th>
+            <th style={sub}>Théorique à l'envoi</th><th style={sub}>Écart</th><th style={sub}>Valeur</th><th style={sub}>Ce qui s'est passé</th>
+            <th style={sub}>BMS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pass.lines.length === 0 && <tr><td style={{ ...td, color: C.greyT }} colSpan={9}>Aucun produit.</td></tr>}
+          {pass.lines.map(l => {
+            const ps = l.pushStatus && PUSH_STATE[l.pushStatus];
+            return (
+              <tr key={l.id}>
+                <td style={td}>{l.name}{l.notPublished && <span style={{ color: C.greyT, fontSize: 12 }}> · non publié</span>}</td>
+                <td style={{ ...td, fontFamily: 'monospace' }}>{l.sku}</td>
+                <td style={td}>{l.shownQty ?? '—'}</td>
+                <td style={td}>{l.qty ?? '—'}</td>
+                <td style={td}>{l.theoretical ?? ''}</td>
+                <td style={{ ...td, fontWeight: 700, color: l.gap > 0 ? C.green : l.gap < 0 ? C.red : C.dark }}>{l.gap ? signed(l.gap) : ''}</td>
+                <td style={td}>{l.gap ? eur.format(l.value) : ''}</td>
+                <td style={td}>{spotOutcome(l)}</td>
+                <td style={td}>
+                  {ps && <Chip color={ps.color} bg={ps.bg}>{ps.label}</Chip>}
+                  {l.bmsMovementId && <span style={{ fontSize: 12, color: C.greyT }}> n° {l.bmsMovementId}</span>}
+                  {l.pushError && <div style={{ fontSize: 12, color: C.red, marginTop: 3 }}>{l.pushError}</div>}
+                  {canWrite && l.pushStatus === 'error' && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button onClick={() => act('/spot-lines/retry', { lineIds: [l.id] }, l.pushError?.includes('VÉRIFIEZ') ? 'Avez-vous vérifié dans BMS que le mouvement n\'est pas passé ?' : null, 'Envoi relancé.')}
+                        style={{ ...btn('ghost'), padding: '4px 8px', fontSize: 12 }}>Réessayer</button>
+                      <button onClick={() => act('/spot-lines/ignore', { lineIds: [l.id] }, 'Laisser tomber cet envoi ? Rien ne partira dans BMS pour cette ligne.', 'Envoi laissé de côté.')}
+                        style={{ ...btn('ghost'), padding: '4px 8px', fontSize: 12 }}>Laisser tomber</button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Liste ───────────────────────────────────────────────────────────────────
 
 function ListView({ list, canWrite, onOpen, onCreate }) {
@@ -879,12 +1130,18 @@ function ListView({ list, canWrite, onOpen, onCreate }) {
                 {filtersText(i)} · {formatDateUTC(i.createdAt, { time: false })}{i.createdBy ? ` · ${i.createdBy}` : ''}
               </div>
             </div>
-            <div style={{ width: 200 }}>
-              <div style={{ fontSize: 13, color: C.greyT, marginBottom: 4, textAlign: 'right' }}>
-                {nf.format(i.done)} / {nf.format(i.total)} réfs · {pct(i.done, i.total)} %
+            {i.kind === 'location' ? (
+              <div style={{ width: 200, fontSize: 13, color: C.greyT, textAlign: 'right' }}>
+                {nf.format(i.passes)} emplacement(s) validé(s)
               </div>
-              <Bar value={i.done} total={i.total} />
-            </div>
+            ) : (
+              <div style={{ width: 200 }}>
+                <div style={{ fontSize: 13, color: C.greyT, marginBottom: 4, textAlign: 'right' }}>
+                  {nf.format(i.done)} / {nf.format(i.total)} réfs · {pct(i.done, i.total)} %
+                </div>
+                <Bar value={i.done} total={i.total} />
+              </div>
+            )}
           </button>
         );
       })}

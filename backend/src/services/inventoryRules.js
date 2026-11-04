@@ -67,6 +67,32 @@ const movementFor = (gap) => {
   return { direction: gap > 0 ? 'in' : 'out', qty: Math.abs(gap) };
 };
 
+// ── Inventaire par emplacement (04/11/2026) ─────────────────────────────────
+
+/** Ce qui doit être en rayon : physique BMS − prélevé non expédié, jamais négatif. */
+const theoreticalOf = (physical, picked) => Math.max(0, (Number(physical) || 0) - (Number(picked) || 0));
+
+/**
+ * Une ligne attendue qu'il faut avoir vue avant de valider l'emplacement :
+ * elle avait du stock (les produits à 0 restent à 0 si on n'y touche pas),
+ * n'est pas engagée dans un inventaire classique, et BMS la connaît.
+ */
+const mustBeSeen = (line) => !line.added && !line.locked_by_inventory && !line.ref_error
+  && Number(line.shown_qty) > 0 && line.qty == null && line.outcome !== 'moved';
+
+/**
+ * Le mail de l'emplacement ne retient que deux cas (décision Pierre du
+ * 04/11/2026) : tombé à 0, ou trouvé alors qu'il était à 0.
+ * @returns {'to_zero'|'from_zero'|null}
+ */
+const zeroChange = (theoretical, qty) => {
+  if (theoretical == null || qty == null) return null;
+  if (theoretical > 0 && qty === 0) return 'to_zero';
+  if (theoretical === 0 && qty > 0) return 'from_zero';
+  return null;
+};
+
 module.exports = {
   RECOUNT_MIN_PIECES, RECOUNT_MIN_RATIO, needsRecount, aisleOf, compareLocations, pickedNotShipped, gapOf, movementFor,
+  theoreticalOf, mustBeSeen, zeroChange,
 };

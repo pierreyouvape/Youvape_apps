@@ -5,11 +5,14 @@
  *   - la règle de recomptage (5 pièces ET plus de 15 % du théorique) ;
  *   - l'allée d'un emplacement et le tri des emplacements ;
  *   - le prélevé non expédié d'une vague, déduit du physique BMS ;
- *   - l'écart (recomptage prioritaire) et le mouvement BMS qui le corrige.
+ *   - l'écart (recomptage prioritaire) et le mouvement BMS qui le corrige ;
+ *   - l'inventaire par emplacement : lignes à voir, cas retenus pour le mail.
  */
 
 const assert = require('assert');
-const { needsRecount, aisleOf, compareLocations, pickedNotShipped, gapOf, movementFor } = require('../src/services/inventoryRules');
+const {
+  needsRecount, aisleOf, compareLocations, pickedNotShipped, gapOf, movementFor, theoreticalOf, mustBeSeen, zeroChange,
+} = require('../src/services/inventoryRules');
 
 // ── Recomptage ──────────────────────────────────────────────────────────────
 assert.strictEqual(needsRecount(10, 10), false, 'aucun écart');
@@ -60,5 +63,26 @@ assert.deepStrictEqual(gapOf({ status: 'recounted', counted: 25, recount_qty: 14
 assert.deepStrictEqual(gapOf({ status: 'recounted', counted: 25, recount_qty: 0, ref_physical: 6, ref_picked: 0 }).gap, -6);
 assert.deepStrictEqual(movementFor(-6), { direction: 'out', qty: 6 });
 assert.strictEqual(movementFor(0), null);
+
+// ── Inventaire par emplacement ──────────────────────────────────────────────
+assert.strictEqual(theoreticalOf(10, 2), 8);
+assert.strictEqual(theoreticalOf(1, 3), 0, 'jamais négatif');
+assert.strictEqual(theoreticalOf(null, null), 0);
+
+const line = (extra) => ({ added: false, locked_by_inventory: null, ref_error: null, shown_qty: 5, qty: null, outcome: null, ...extra });
+assert.strictEqual(mustBeSeen(line()), true, 'attendu avec du stock, pas vu');
+assert.strictEqual(mustBeSeen(line({ qty: 5, outcome: 'count' })), false, 'vu');
+assert.strictEqual(mustBeSeen(line({ qty: 0, outcome: 'count' })), false, 'mis à 0');
+assert.strictEqual(mustBeSeen(line({ outcome: 'moved' })), false, 'rangé ailleurs');
+assert.strictEqual(mustBeSeen(line({ shown_qty: 0 })), false, 'à 0 : reste à 0 si on n\'y touche pas');
+assert.strictEqual(mustBeSeen(line({ locked_by_inventory: 'Inventaire X' })), false, 'engagé ailleurs : lecture seule');
+assert.strictEqual(mustBeSeen(line({ ref_error: 'Inconnu de BMS' })), false, 'inconnu de BMS');
+assert.strictEqual(mustBeSeen(line({ added: true, qty: 3 })), false, 'ajouté : sa quantité est saisie');
+
+assert.strictEqual(zeroChange(4, 0), 'to_zero');
+assert.strictEqual(zeroChange(0, 2), 'from_zero');
+assert.strictEqual(zeroChange(12, 9), null, 'les autres écarts ne vont pas dans le mail');
+assert.strictEqual(zeroChange(0, 0), null);
+assert.strictEqual(zeroChange(null, 0), null, 'théorique inconnu');
 
 console.log('inventory.test.js : OK');

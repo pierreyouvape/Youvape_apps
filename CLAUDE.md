@@ -458,6 +458,27 @@ HEXASMAL figée dans `assets/postcodes/`, rafraîchie par `node src/scripts/upda
   `add_postcode_city_confirmed.sql`), valable pour CE couple CP/ville seulement.
 - Mesuré sur 90 jours (4 155 colis domicile) : 4 014 ok, 113 corrigés, 28 signalés.
 
+### Inventaire par emplacement (04/11/2026)
+
+Troisième type d'inventaire (`inventories.kind = 'location'`), créé au PC (`/inventaire`) ou au PDA.
+Pas de liste figée : on scanne n'importe quel emplacement BMS, c'est un **passage**
+(`inventory_spot_passes`, une personne à la fois par emplacement, tous dossiers confondus), qui garde
+qui l'a validé et quand. Code : `inventorySpotModel.js`, `services/inventorySpotService.js`, `PdaSpot.jsx`.
+
+- **Pas à l'aveugle** : le PDA affiche physique BMS − prélevé non expédié, lu à l'ouverture (file
+  `ref_needed`), corrigé en absolu. Pas de recomptage, pas de revue au bureau.
+- Produit **à 0** non touché : reste à 0, rien n'est demandé. Produit avec du stock : doit être **vu**
+  (scan = vu à la quantité affichée), sinon la validation demande « Quantité 0 » ou « Rangé ailleurs ».
+- **Ajouter un produit** : sa quantité devient son stock **TOTAL** (BMS : un emplacement par produit)
+  et il est rangé ici. « Rangé ailleurs » change l'emplacement, la quantité n'est pas touchée.
+- Produit engagé dans un **inventaire classique ouvert** : lecture seule (revérifié à la validation).
+- Validation → file d'envoi : stock **relu à l'envoi**, écart = saisi − (physique − prélevé), puis
+  emplacement (`setLocation`, rejouable) et mouvement `adjustment` de l'écart. Mêmes règles que
+  `inventoryPushService` (`sending` posé avant l'appel, « VÉRIFIEZ » si réponse incertaine).
+- **Mail à contact@** par emplacement, une fois ses envois finis : seulement les produits **tombés à 0**
+  et ceux **trouvés alors qu'ils étaient à 0** (`inventoryRules.zeroChange`). Rien d'autre, aucun mail
+  s'il n'y en a pas. 5 essais max (`mail_attempts`).
+
 ### Bloquer une commande (Picking, fiche commande — 30/10/2026)
 
 - Une commande en vague n'est plus dans les listes du Picking : on la bloque depuis

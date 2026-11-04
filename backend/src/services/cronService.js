@@ -1034,6 +1034,7 @@ const setupBmsShipmentSyncCron = () => {
 
 const inventoryRefService = require('./inventoryRefService');
 const inventoryPushService = require('./inventoryPushService');
+const inventorySpotService = require('./inventorySpotService');
 
 let inventoryRefCronJob = null;
 
@@ -1048,6 +1049,8 @@ const setupInventoryRefCron = () => {
     await inventoryRefService.processPending().catch(error => console.error('Erreur cron inventaire (relevés BMS):', error.message));
     // Puis les écarts validés au bureau, envoyés à BMS (lot 2).
     await inventoryPushService.processQueue().catch(error => console.error('Erreur cron inventaire (envois BMS):', error.message));
+    // Inventaire par emplacement : relevés, envois et mails « passés à 0 / trouvés ».
+    await inventorySpotService.processAll().catch(error => console.error('Erreur cron inventaire par emplacement:', error.message));
   }, { timezone: 'Europe/Paris' });
   console.log('Cron inventaire configure: relevés et envois BMS chaque minute, 7h-21h');
 };
