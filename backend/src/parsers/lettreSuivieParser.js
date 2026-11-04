@@ -12,6 +12,10 @@
  *   B — Contrat API AFF Entreprise (D-1153498-1): groupé par « Date de prestation »
  *   C — Service (Collecte annuelle, Frais de dossier renouvellement) : 1 ligne
  *
+ *   D — Facture électronique (depuis octobre 2026) : « Facture N° PFxxx du … »,
+ *       chaque ligne du tableau sort entière sur une ligne de texte → lecture directe
+ *       (voir parseTargetFormat).
+ *
  * Distinction des montants dans le texte extrait :
  *   "13,48€"   (€ collé)          → montant d'une LIGNE
  *   "136,59 €" (espace avant €)   → total d'un bloc (commande / contrat)
@@ -38,9 +42,90 @@ function bracketForGrams(g) {
 
 function round2(n) { return Math.round(n * 100) / 100; }
 
+const TARGET_INVOICE_RE = /^Facture N[°º]\s*(\S+)\s+du\s+(\d{2}\/\d{2}\/\d{4})/i;
+// « Lettre verte suivie 0 A 20 G 20.0G 12 XUN 1.8000 21,60 E 0,00 % »
+//   libellé · quantité · unité · prix unitaire · montant HT · code TVA · taux TVA
+const TARGET_ROW_RE = /^(?:\d+\s+\d{4,6}\s+)?(.+?)\s+(\d+(?:[.,]\d+)?)\s+([A-Z0-9]{2,3})\s+(\d+(?:[.,]\d+)?)\s+(-?\d[\d\s]*,\d{2})\s+([A-Z]{1,2})\s+([\d,]+)\s*%$/;
+
+// Format D : facture électronique La Poste (réforme facturation, octobre 2026).
+function parseTargetFormat(nonEmpty) {
+  let invoiceNumber = null, invoiceDate = null, periodStart = null, periodEnd = null;
+  let contractNumber = null, contractType = null, clientNumber = null;
+  let totalHT = null, totalTVA = null, totalTTC = null, tvaRate = 0;
+  const prestationDates = [];
+  const recon = [];
+  let serviceLabel = null;
+  let isLettre = false;
+
+  for (const l of nonEmpty) {
+    let m;
+    if (!invoiceNumber && (m = l.match(TARGET_INVOICE_RE))) { invoiceNumber = m[1]; invoiceDate = m[2]; continue; }
+    if (!periodStart && (m = l.match(/D[ée]tail de vos consommations du\s+(\d{2}\/\d{2}\/\d{4})\s+au\s+(\d{2}\/\d{2}\/\d{4})/i))) {
+      periodStart = m[1]; periodEnd = m[2]; continue;
+    }
+    if (!contractType && (m = l.match(/^Contrat\s+(.+?)\s+n[°º]\s*(D-[\d-]+)/i))) { contractType = m[1].trim(); contractNumber = m[2]; continue; }
+    if (!contractNumber && (m = l.match(/^Contrat\s*:\s*(D-[\d-]+)/i))) { contractNumber = m[1]; continue; }
+    if (!clientNumber && (m = l.match(/^N[°º]\s*client\s*:\s*([\d-]+)/i))) { clientNumber = m[1]; continue; }
+    if (totalHT == null && (m = l.match(/^Montant total net HT\s+(-?[\d\s]+,\d{2})$/i))) { totalHT = parseFrNum(m[1]); continue; }
+    if (totalTVA == null && (m = l.match(/^Montant total TVA de la facture\s+(-?[\d\s]+,\d{2})$/i))) { totalTVA = parseFrNum(m[1]); continue; }
+    if (totalTTC == null && (m = l.match(/^Montant total TTC\s+(-?[\d\s]+,\d{2})$/i))) { totalTTC = parseFrNum(m[1]); continue; }
+    if ((m = l.match(/^Date de prestation\s*:\s*(\d{4})-(\d{2})-(\d{2})/i))) { prestationDates.push(`${m[3]}/${m[2]}/${m[1]}`); continue; }
+
+    if ((m = l.match(TARGET_ROW_RE))) {
+      const label = m[1].replace(/\s+/g, ' ').trim();
+      const qty = parseFrNum(m[2]);
+      const pu = round2(parseFloat(m[4].replace(',', '.')));
+      const montant = round2(parseFrNum(m[5]));
+      const rate = parseFrNum(m[7]);
+      if (rate > tvaRate) tvaRate = rate;
+      const g = label.match(/Lettre verte suivie\s+\d+\s*A\s*(\d+)\s*G/i);
+      let tier;
+      if (g) { isLettre = true; tier = bracketForGrams(parseInt(g[1], 10)).label; }
+      else { tier = label; if (!serviceLabel) serviceLabel = label; }
+      if (montant === 0) continue;
+      recon.push({ tier, pu, qty, montant, date: prestationDates[prestationDates.length - 1] || null, lettre: !!g });
+    }
+  }
+
+  const tierMap = {};
+  for (const r of recon) {
+    if (!tierMap[r.tier]) tierMap[r.tier] = { tier: r.tier, pu: r.pu, qty: 0, montant: 0, count: 0 };
+    const t = tierMap[r.tier];
+    t.qty += r.qty || 0; t.montant = round2(t.montant + r.montant); t.count += 1; t.pu = r.pu;
+  }
+  const tierSummary = Object.values(tierMap).sort((a, b) => (a.pu || 0) - (b.pu || 0));
+  const linesTotal = round2(recon.reduce((s, r) => s + r.montant, 0));
+  const nbLettres = recon.filter(r => r.lettre).reduce((s, r) => s + (r.qty || 0), 0);
+  const uniqDates = [...new Set(prestationDates)];
+
+  return {
+    invoiceNumber, invoiceDate,
+    periodDate: periodEnd, periodRange: periodStart ? `${periodStart} → ${periodEnd}` : null,
+    periodStart, periodEnd,
+    contractNumber, contractType, clientNumber,
+    tvaRate, exonerated: tvaRate === 0, totalHT, totalTVA, totalTTC,
+    format: isLettre ? 'B' : 'service',
+    lines: recon,
+    tierSummary,
+    commands: [],
+    prestationDates: uniqDates,
+    stats: {
+      nb_lines: recon.length,
+      nb_lettres: nbLettres,
+      nb_commands: 0,
+      nb_prestation_dates: uniqDates.length,
+      lines_total: linesTotal,
+      reconcile_ok: totalHT != null && Math.abs(linesTotal - totalHT) < 0.05,
+    },
+  };
+}
+
 function parseLettreSuiviePdf(text) {
   const lines = text.split('\n').map(l => l.trim());
   const nonEmpty = lines.filter(l => l.length > 0);
+  if (nonEmpty.some(l => TARGET_INVOICE_RE.test(l)) && !nonEmpty.some(l => /Votre facture n[°º]/i.test(l))) {
+    return parseTargetFormat(nonEmpty);
+  }
   const fullText = nonEmpty.join('\n');
 
   /* ─── Métadonnées ──────────────────────────────────────────── */
