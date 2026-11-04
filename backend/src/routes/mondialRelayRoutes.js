@@ -16,4 +16,11 @@ router.get('/totals',          c.getTotals);
 router.get('/fees-detail',     c.getFeesDetail);
 router.post('/debug-text',     ...c.debugText);
 
+// Avoirs
+router.post('/analyze-credit',     ...c.analyzeCredit);
+router.post('/save-credit',        ...c.saveCredit);
+router.get('/credits',             c.getCredits);
+router.delete('/credits/:number',  c.deleteCredit);
+router.get('/credits/:number/pdf', c.downloadCreditPdf);
+
 module.exports = router;

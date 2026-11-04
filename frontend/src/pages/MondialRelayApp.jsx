@@ -260,6 +260,19 @@ function TotalsView({ totals, totalsLoading, loadTotals, onOpenInvoice }) {
       paysYearMap[pays][y] = paysYearMap[pays][y] || { ttc: 0, colis: 0 };
       paysYearMap[pays][y].ttc += ttc; paysYearMap[pays][y].colis += colis;
     }
+    // Avoirs : HT négatif, rangé au mois de l'avoir ; TVA à 20 % (Mondial Relay facture toujours en France)
+    for (const c of (totals?.credits || [])) {
+      const parts = (c.credit_date || '').split('/');
+      if (parts.length !== 3) continue;
+      const ht = parseFloat(c.amount_ht || 0);
+      const ttc = Math.round(ht * 120) / 100;
+      const key = `${parts[2]}-${parts[1]}`;
+      monthMap[key] = monthMap[key] || { ht: 0, ttc: 0, colis: 0 };
+      monthMap[key].ht += ht; monthMap[key].ttc += ttc;
+      yearMap[parts[2]] = yearMap[parts[2]] || { ht: 0, ttc: 0 };
+      yearMap[parts[2]].ht += ht; yearMap[parts[2]].ttc += ttc;
+      yearMap[parts[2]].avoirs = (yearMap[parts[2]].avoirs || 0) + ht;
+    }
     const months = Object.entries(monthMap).map(([key, v]) => { const [yy, m] = key.split('-'); return { key, label: `${MONTH_NAMES[parseInt(m, 10) - 1]} ${yy}`, ...v }; }).sort((a, b) => b.key.localeCompare(a.key));
     const years = Object.entries(yearMap).map(([yy, v]) => ({ key: yy, label: yy, ...v })).sort((a, b) => b.key.localeCompare(a.key));
     const byPays = Object.entries(paysMap).map(([p, v]) => ({ pays: p, ...v })).sort((a, b) => b.ttc - a.ttc);
@@ -284,7 +297,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, onOpenInvoice }) {
   return (
     <div style={{ padding: 20 }}>
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>Total payé à Mondial Relay, par mois, par année et par pays de livraison.</p>
+        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>Total payé à Mondial Relay, par mois, par année et par pays de livraison. Les avoirs sont déduits au mois de l'avoir (pas dans « Par pays »).</p>
         <button onClick={loadTotals} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>↻ Actualiser</button>
       </div>
       {totalsLoading ? <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
@@ -313,8 +326,8 @@ function TotalsView({ totals, totalsLoading, loadTotals, onOpenInvoice }) {
             <div style={{ flex: 1, minWidth: 220 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: C.dark, marginBottom: 10 }}>Par année</h3>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead><tr><Th label="Année" /><Th label="HT" align="right" /><Th label="TTC" align="right" /></tr></thead>
-                <tbody>{years.map((y, i) => (<tr key={y.key} style={{ background: i % 2 === 0 ? C.white : C.grey }}><Td bold>{y.label}</Td><Td align="right">{fmtEur(y.ht)}</Td><Td align="right" bold color={C.accent}>{fmtEur(y.ttc)}</Td></tr>))}</tbody>
+                <thead><tr><Th label="Année" /><Th label="dont avoirs HT" align="right" /><Th label="HT" align="right" /><Th label="TTC" align="right" /></tr></thead>
+                <tbody>{years.map((y, i) => (<tr key={y.key} style={{ background: i % 2 === 0 ? C.white : C.grey }}><Td bold>{y.label}</Td><Td align="right" color={y.avoirs ? C.green : C.greyT}>{y.avoirs ? fmtEur(y.avoirs) : '—'}</Td><Td align="right">{fmtEur(y.ht)}</Td><Td align="right" bold color={C.accent}>{fmtEur(y.ttc)}</Td></tr>))}</tbody>
               </table>
             </div>
           </div>
@@ -736,6 +749,120 @@ const DELIV_SORTERS = {
   poids: d => d.poids || 0, qty: d => d.qty || 0, pu: d => d.pu || 0, montant: d => d.montant || 0,
 };
 
+// Lignes d'un avoir : chacune vise une facture (remise oubliée) ou un colis
+// (erreur de poids). Montants imprimés positifs, affichés en déduction.
+function AvoirLines({ lines, onOpenInvoice }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <thead><tr><Th label="Description" /><Th label="Facture concernée" /><Th label="Colis / commande" /><Th label="Montant HT" align="right" /></tr></thead>
+      <tbody>
+        {lines.map((l, i) => (
+          <tr key={i} style={{ background: i % 2 === 0 ? C.white : C.grey }}>
+            <Td>{l.label}</Td>
+            <Td>
+              {l.invoice_id
+                ? <button onClick={() => onOpenInvoice({ id: l.invoice_id })} title="Ouvrir la facture" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: C.accent, fontWeight: 700, fontSize: 13 }}>🔍 {l.invoice_number}</button>
+                : l.invoice_number
+                  ? <span title="Facture pas encore enregistrée" style={{ color: C.greyT }}>{l.invoice_number} (non enregistrée)</span>
+                  : <span style={{ color: C.greyT }}>—</span>}
+            </Td>
+            <Td>
+              {l.tracking ? <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{l.tracking}</span> : null}
+              {l.order_id
+                ? <a href={`/orders/${l.order_id}`} target="_blank" rel="noreferrer" style={{ color: C.accent, fontWeight: 700, textDecoration: 'none', marginLeft: l.tracking ? 8 : 0 }}>#{l.order_id}</a>
+                : !l.tracking && <span style={{ color: C.greyT }}>—</span>}
+            </Td>
+            <Td align="right" bold color={C.green}>{l.montant != null ? fmtEur(-Math.abs(l.montant)) : '—'}</Td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function AvoirsView({ avoir, avoirSaveState, avoirSaving, onSaveAvoir, onCloseAvoir, credits, creditsLoading, loadCredits, onDeleteCredit, onDownloadCredit, onOpenInvoice }) {
+  const [open, setOpen] = useState(null);
+  const totalHT = credits.reduce((s, c) => s + parseFloat(c.total_ht || 0), 0);
+  return (
+    <div style={{ padding: 20 }}>
+      {avoir && (
+        <div style={{ border: `1px solid ${C.accent}`, borderRadius: 12, marginBottom: 24, overflow: 'hidden' }}>
+          <div style={{ background: C.accentL, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <span style={{ fontWeight: 800, color: C.accent, fontSize: 14 }}>Avoir {avoir.creditNumber}</span>
+              {avoir.creditDate && <span style={{ color: C.greyT, fontSize: 12.5, marginLeft: 10 }}>{avoir.creditDate}</span>}
+              {avoir.title && <div style={{ color: C.dark, fontSize: 13, marginTop: 3 }}>{avoir.title}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ background: avoir.reconcileOk ? C.greenL : C.redL, color: avoir.reconcileOk ? C.green : C.red, border: `1px solid ${avoir.reconcileOk ? C.green : C.red}`, borderRadius: 8, padding: '5px 12px', fontSize: 12.5, fontWeight: 700 }}>
+                {avoir.reconcileOk ? '✓ Lignes = total' : `⚠ Lignes ${fmtEur(avoir.linesTotal)} ≠ total ${fmtEur(avoir.totalHT)}`}
+              </span>
+              {avoirSaveState === 'saved' && <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Avoir enregistré</span>}
+              {avoirSaveState === 'already' && <span style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #F59E0B', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600 }}>⚠ Déjà enregistré</span>}
+              {avoirSaveState === null && <button onClick={onSaveAvoir} disabled={avoirSaving} style={{ background: C.green, color: C.white, border: 'none', borderRadius: 8, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: avoirSaving ? 'wait' : 'pointer', opacity: avoirSaving ? .7 : 1 }}>{avoirSaving ? '⏳ Enregistrement…' : "💾 Enregistrer l'avoir"}</button>}
+              <button onClick={onCloseAvoir} title="Fermer" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 10px', cursor: 'pointer', color: C.greyT }}>✕</button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, padding: 14, flexWrap: 'wrap' }}>
+            <StatCard value={fmtEur(-Math.abs(avoir.totalHT || 0))} label="Total HT" color={C.green} />
+            <StatCard value={fmtEur(-Math.abs(avoir.totalTVA || 0))} label={`TVA${avoir.tvaRate != null ? ` (${avoir.tvaRate}%)` : ''}`} color={C.greyT} />
+            <StatCard value={fmtEur(-Math.abs(avoir.totalTTC || 0))} label="Total TTC" color={C.blue} />
+            <StatCard value={avoir.lines.length} label="Lignes" color={C.dark} />
+          </div>
+          <div style={{ padding: '0 14px 14px', overflowX: 'auto' }}><AvoirLines lines={avoir.lines} onOpenInvoice={onOpenInvoice} /></div>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>Avoirs Mondial Relay enregistrés (remise oubliée, erreur de poids…). Dépose le PDF d'un avoir dans la zone ci-dessus pour l'ajouter.</p>
+        <button onClick={loadCredits} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT, whiteSpace: 'nowrap' }}>↻ Actualiser</button>
+      </div>
+      {creditsLoading ? <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>
+        : credits.length === 0 ? <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Aucun avoir enregistré.</div>
+        : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr><Th label="N° Avoir" /><Th label="Date" /><Th label="Motif" /><Th label="Lignes" align="right" /><Th label="Total HT" align="right" /><Th label="Total TTC" align="right" /><Th label="Enregistré le" /><Th label="" /></tr></thead>
+            <tbody>
+              {credits.map((c, i) => {
+                const isOpen = open === c.credit_number;
+                return (
+                  <Fragment key={c.credit_number}>
+                    <tr onClick={() => setOpen(isOpen ? null : c.credit_number)} style={{ background: isOpen ? C.accentL : i % 2 === 0 ? C.white : C.grey, cursor: 'pointer' }}>
+                      <Td bold color={C.accent}><span style={{ display: 'inline-block', width: 12 }}>{isOpen ? '▾' : '▸'}</span>{c.credit_number}</Td>
+                      <Td color={C.greyT}>{c.credit_date || '—'}</Td>
+                      <Td>{c.title || '—'}</Td>
+                      <Td align="right">{c.lines_count}</Td>
+                      <Td align="right" bold color={C.green}>{fmtEur(c.total_ht)}</Td>
+                      <Td align="right" color={C.blue}>{c.total_ttc != null ? fmtEur(-Math.abs(c.total_ttc)) : '—'}</Td>
+                      <Td color={C.greyT}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</Td>
+                      <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap', borderBottom: `1px solid ${C.greyB}` }}>
+                        {c.has_pdf && <button onClick={e => onDownloadCredit(c, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: 4 }}>⬇️</button>}
+                        <button onClick={e => onDeleteCredit(c, e)} title="Supprimer" style={{ background: 'none', border: '1px solid #FECACA', borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, color: C.red }}>🗑️</button>
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr><td colSpan={8} style={{ padding: '10px 14px 16px', borderBottom: `1px solid ${C.greyB}` }}>
+                        {c.lines.length ? <AvoirLines lines={c.lines} onOpenInvoice={onOpenInvoice} /> : <span style={{ color: C.greyT }}>Détail indisponible (PDF absent ou illisible).</span>}
+                      </td></tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+            <tfoot><tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
+              <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({credits.length})</td>
+              <td colSpan={3} />
+              <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: C.green }}>{fmtEur(totalHT)}</td>
+              <td colSpan={3} />
+            </tr></tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MondialRelayApp() {
   const { token } = useContext(AuthContext);
   const fileRef = useRef(null);
@@ -760,6 +887,12 @@ export default function MondialRelayApp() {
   const [applying, setApplying] = useState(false);
   const [colisFee, setColisFee] = useState(null); // filtre « supplément » de l'onglet Colis
   const [applyResult, setApplyResult] = useState(null);
+  const [credits, setCredits] = useState([]);
+  const [creditsLoading, setCreditsLoading] = useState(false);
+  const [avoir, setAvoir] = useState(null);          // avoir analysé, pas encore enregistré
+  const [avoirFile, setAvoirFile] = useState(null);
+  const [avoirSaving, setAvoirSaving] = useState(false);
+  const [avoirSaveState, setAvoirSaveState] = useState(null);
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -771,7 +904,12 @@ export default function MondialRelayApp() {
     try { const { data } = await axios.get(`${API_URL}/mondial-relay/totals`, { headers: { Authorization: `Bearer ${token}` } }); if (data.success) setTotals(data); }
     catch { /* */ } finally { setTotalsLoading(false); }
   }
-  useEffect(() => { loadHistory(); loadTotals(); }, []);
+  async function loadCredits() {
+    setCreditsLoading(true);
+    try { const { data } = await axios.get(`${API_URL}/mondial-relay/credits`, { headers: { Authorization: `Bearer ${token}` } }); if (data.success) setCredits(data.credits); }
+    catch { /* */ } finally { setCreditsLoading(false); }
+  }
+  useEffect(() => { loadHistory(); loadTotals(); loadCredits(); }, []);
 
   async function handleFile(file) {
     if (file && /\.csv$/i.test(file.name)) { handleCsv(file); return; }
@@ -782,6 +920,12 @@ export default function MondialRelayApp() {
       const fd = new FormData(); fd.append('pdf', file);
       const { data } = await axios.post(`${API_URL}/mondial-relay/analyze`, fd, { headers: { Authorization: `Bearer ${token}` } });
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
+      if (data.kind === 'avoir') {
+        // Un avoir s'ouvre dans l'onglet Avoirs de l'accueil, pas comme une facture
+        setCurrentFile(null); setAvoir(data); setAvoirFile(file);
+        setAvoirSaveState(data.alreadySaved ? 'already' : null); setHomeTab('avoirs');
+        return;
+      }
       setResult(data); setTab('livraisons');
       if (data.invoiceNumber && history.some(h => h.invoice_number === data.invoiceNumber)) setSaveState('already');
     } catch (e) { setError(e.response?.data?.error || e.message); } finally { setLoading(false); }
@@ -836,7 +980,7 @@ export default function MondialRelayApp() {
       const { data } = await axios.post(`${API_URL}/mondial-relay/import-zip`, fd, { headers: { Authorization: `Bearer ${token}` }, timeout: 600000 });
       if (!data.success) throw new Error(data.error);
       setImportResult(data);
-      loadHistory(); loadTotals();
+      loadHistory(); loadTotals(); loadCredits();
     } catch (e) { setError(e.response?.data?.error || e.message); }
     finally { setImportingZip(false); if (zipRef.current) zipRef.current.value = ''; }
   }
@@ -849,6 +993,34 @@ export default function MondialRelayApp() {
       const { data } = await axios.post(`${API_URL}/mondial-relay/save`, fd, { headers: { Authorization: `Bearer ${token}` } });
       if (data.success) { setSaveState(data.already_saved ? 'already' : 'saved'); if (!data.already_saved) { loadHistory(); loadTotals(); } }
     } catch (e) { setError(e.response?.data?.error || "Erreur lors de l'enregistrement"); } finally { setSaving(false); }
+  }
+
+  async function handleSaveAvoir() {
+    if (!avoir || !avoirFile) return;
+    setAvoirSaving(true);
+    try {
+      const fd = new FormData(); fd.append('pdf', avoirFile);
+      const { data } = await axios.post(`${API_URL}/mondial-relay/save-credit`, fd, { headers: { Authorization: `Bearer ${token}` } });
+      if (!data.success) throw new Error(data.error);
+      setAvoirSaveState(data.already_saved ? 'already' : 'saved');
+      loadCredits(); loadTotals();
+    } catch (e) { setError(e.response?.data?.error || e.message || "Erreur lors de l'enregistrement de l'avoir"); } finally { setAvoirSaving(false); }
+  }
+  async function handleDeleteCredit(c, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Supprimer l'avoir ${c.credit_number} ?`)) return;
+    try {
+      await axios.delete(`${API_URL}/mondial-relay/credits/${encodeURIComponent(c.credit_number)}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (avoir?.creditNumber === c.credit_number) setAvoirSaveState(null);
+      loadCredits(); loadTotals();
+    } catch { setError("Erreur lors de la suppression de l'avoir"); }
+  }
+  function handleDownloadCredit(c, e) {
+    e.stopPropagation();
+    fetch(`${API_URL}/mondial-relay/credits/${encodeURIComponent(c.credit_number)}/pdf`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(blob => { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Avoir_MondialRelay_${c.credit_number}.pdf`; a.click(); URL.revokeObjectURL(url); })
+      .catch(() => setError('PDF non disponible'));
   }
 
   async function handleDeleteInvoice(inv, e) {
@@ -916,7 +1088,7 @@ export default function MondialRelayApp() {
           style={{ border: `2px dashed ${dragging ? C.accent : C.greyB}`, borderRadius: 14, background: dragging ? C.accentL : C.grey, padding: '36px 24px', textAlign: 'center', cursor: 'pointer', marginBottom: 22 }}>
           <input ref={fileRef} type="file" accept=".pdf,.csv,.zip" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
           <div style={{ fontSize: 36, marginBottom: 10 }}>📍</div>
-          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture PDF, son annexe CSV ou le ZIP Primobox ici'}</div>
+          <div style={{ fontWeight: 700, fontSize: 14.5, color: C.dark }}>{loading ? 'Analyse en cours…' : 'Déposer la facture PDF, son annexe CSV, un avoir PDF ou le ZIP Primobox ici'}</div>
           <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 5 }}>ou cliquer pour sélectionner — l'annexe CSV donne le coût de chaque commande et les écarts de pesée</div>
           {currentFile && !loading && <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>📎 {currentFile.name}</div>}
           {loading && <div style={{ marginTop: 12 }}><div style={{ display: 'inline-block', width: 26, height: 26, border: `3px solid ${C.accentL}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin .8s linear infinite' }} /><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
@@ -937,6 +1109,7 @@ export default function MondialRelayApp() {
             ✓ Import terminé : <strong>{importResult.imported}</strong> facture(s) ajoutée(s)
             {importResult.already > 0 && <>, {importResult.already} déjà présente(s)</>}
             {importResult.csvImported > 0 && <>, <strong>{importResult.csvImported}</strong> annexe(s) CSV rattachée(s)</>}
+            {importResult.creditsImported > 0 && <>, <strong>{importResult.creditsImported}</strong> avoir(s) ajouté(s)</>}
             {importResult.failed?.length > 0 && <>, <span style={{ color: C.red }}>{importResult.failed.length} en échec</span></>}
             {' '}sur {importResult.total}.
             {importResult.failed?.length > 0 && (
@@ -1160,9 +1333,15 @@ export default function MondialRelayApp() {
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
             <div style={{ display: 'flex', borderBottom: `1px solid ${C.greyB}`, padding: '0 16px', flexWrap: 'wrap' }}>
               <TabBtn label="Historique des factures" active={homeTab === 'historique'} onClick={() => setHomeTab('historique')} badge={history.length} />
+              <TabBtn label="Avoirs" active={homeTab === 'avoirs'} onClick={() => setHomeTab('avoirs')} badge={credits.length} />
               <TabBtn label="Totaux" active={homeTab === 'totaux'} onClick={() => setHomeTab('totaux')} />
             </div>
-            {homeTab === 'totaux'
+            {homeTab === 'avoirs'
+              ? <AvoirsView avoir={avoir} avoirSaveState={avoirSaveState} avoirSaving={avoirSaving} onSaveAvoir={handleSaveAvoir}
+                  onCloseAvoir={() => { setAvoir(null); setAvoirFile(null); setAvoirSaveState(null); }}
+                  credits={credits} creditsLoading={creditsLoading} loadCredits={loadCredits}
+                  onDeleteCredit={handleDeleteCredit} onDownloadCredit={handleDownloadCredit} onOpenInvoice={inv => handleLoadFromHistory(inv)} />
+              : homeTab === 'totaux'
               ? <TotalsView totals={totals} totalsLoading={totalsLoading} loadTotals={loadTotals} onOpenInvoice={(inv, fee) => handleLoadFromHistory(inv, 'colis', fee)} />
               : <div style={{ padding: 20 }}>
                   {historyLoading ? <div style={{ textAlign: 'center', padding: 20, color: C.greyT }}>Chargement…</div>

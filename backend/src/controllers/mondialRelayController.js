@@ -7,6 +7,7 @@ const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceO
 const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
 const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, annotateParcelFees, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
+const { parseMondialRelayAvoir, isMondialRelayAvoir } = require('../parsers/mondialRelayAvoirParser');
 
 const CARRIER = 'mondial_relay';
 
@@ -63,11 +64,119 @@ const uploadCsv = multer({
   },
 });
 
-async function parsePdfBuffer(buffer) {
+async function pdfText(buffer) {
   const parser = new PDFParse(new Uint8Array(buffer));
   await parser.load();
   const data = await parser.getText();
-  return parseMondialRelayPdf(data.text);
+  return data.text;
+}
+
+async function parsePdfBuffer(buffer) {
+  return parseMondialRelayPdf(await pdfText(buffer));
+}
+
+/* ─── AVOIRS ─────────────────────────────────────────────────── */
+// Stockés comme ceux de Chronopost : le document (et son PDF) dans
+// carrier_credit_documents, une ligne par poste dans carrier_invoice_credits,
+// montant HT NÉGATIF (il vient en déduction). Le libellé des lignes n'a pas de
+// colonne : on le relit dans le PDF enregistré.
+
+// Rattache chaque ligne à sa facture (« REMISE 1% LGYOUVAP26… ») ou à son colis
+// (« ERREUR POIDS COLIS 657030 » → n° d'expédition 00657030 de l'annexe CSV).
+async function resolveAvoirLines(avoir) {
+  const invoiceNumbers = [...new Set(avoir.lines.map(l => l.relatedInvoice).filter(Boolean))];
+  const trackings = [...new Set(avoir.lines.map(l => l.tracking).filter(Boolean))];
+  const invoices = {}, parcels = {};
+  if (invoiceNumbers.length) {
+    const { rows } = await pool.query(
+      'SELECT id, invoice_number FROM carrier_invoices WHERE carrier = $1 AND invoice_number = ANY($2::text[])',
+      [CARRIER, invoiceNumbers]
+    );
+    for (const r of rows) invoices[r.invoice_number] = r.id;
+  }
+  if (trackings.length) {
+    const { rows } = await pool.query(`
+      SELECT DISTINCT ON (cip.tracking) cip.tracking, cip.order_id, ci.id AS invoice_id, ci.invoice_number
+      FROM carrier_invoice_parcels cip
+      JOIN carrier_invoices ci ON ci.id = cip.invoice_id
+      WHERE ci.carrier = $1 AND cip.tracking = ANY($2::text[])
+      ORDER BY cip.tracking, cip.order_id IS NULL, ci.id DESC
+    `, [CARRIER, trackings]);
+    for (const r of rows) parcels[r.tracking] = r;
+    const missing = trackings.filter(t => !parcels[t]?.order_id);
+    if (missing.length) {
+      const o = await pool.query(
+        'SELECT wp_order_id::int AS id, tracking_number FROM orders WHERE tracking_number = ANY($1::text[])', [missing]
+      );
+      for (const r of o.rows) parcels[r.tracking_number] = { ...parcels[r.tracking_number], order_id: r.id };
+    }
+  }
+  for (const l of avoir.lines) {
+    const p = l.tracking ? parcels[l.tracking] : null;
+    l.order_id = p?.order_id ?? null;
+    l.invoice_number = l.relatedInvoice || p?.invoice_number || null;
+    l.invoice_id = l.relatedInvoice ? (invoices[l.relatedInvoice] ?? null) : (p?.invoice_id ?? null);
+  }
+  return avoir;
+}
+
+async function analyzeAvoirText(text) {
+  const avoir = parseMondialRelayAvoir(text);
+  if (!avoir.creditNumber) return null;
+  await resolveAvoirLines(avoir);
+  const existing = await pool.query(
+    'SELECT 1 FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2', [CARRIER, avoir.creditNumber]
+  );
+  return { kind: 'avoir', ...avoir, alreadySaved: existing.rows.length > 0 };
+}
+
+// Enregistre un avoir analysé + son PDF. Renvoie { status: 'inserted'|'already' }.
+async function insertAvoir(avoir, pdfBuffer) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      'SELECT 1 FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2', [CARRIER, avoir.creditNumber]
+    );
+    if (existing.rows.length) {
+      if (pdfBuffer) await client.query('UPDATE carrier_credit_documents SET pdf_data = $1 WHERE carrier = $2 AND credit_number = $3', [pdfBuffer, CARRIER, avoir.creditNumber]);
+      await client.query('COMMIT');
+      return { status: 'already' };
+    }
+    // Facture concernée : seulement quand l'avoir n'en vise qu'une
+    const related = [...new Set(avoir.lines.map(l => l.invoice_number).filter(Boolean))];
+    await client.query(
+      'INSERT INTO carrier_credit_documents (carrier, credit_number, credit_date, related_invoice_number, pdf_data) VALUES ($1,$2,$3,$4,$5)',
+      [CARRIER, avoir.creditNumber, avoir.creditDate || null, related.length === 1 ? related[0] : null, pdfBuffer || null]
+    );
+    for (const l of avoir.lines) {
+      await client.query(
+        'INSERT INTO carrier_invoice_credits (carrier, credit_number, credit_date, order_id, tracking, amount_ht) VALUES ($1,$2,$3,$4,$5,$6)',
+        [CARRIER, avoir.creditNumber, avoir.creditDate || null, l.order_id || null, l.tracking || null, l.montant != null ? -Math.abs(l.montant) : null]
+      );
+    }
+    await client.query('COMMIT');
+    return { status: 'inserted' };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// Avoir relu depuis son PDF enregistré (libellés, motif, TVA). La lecture du PDF
+// est mise en cache (un avoir enregistré ne change plus), pas le rattachement :
+// la facture visée peut être importée après l'avoir.
+const avoirCache = new Map();
+async function readStoredAvoir(creditNumber, pdfData) {
+  let parsed = avoirCache.get(creditNumber);
+  if (!parsed) {
+    if (!pdfData) return null;
+    parsed = parseMondialRelayAvoir(await pdfText(pdfData));
+    avoirCache.set(creditNumber, parsed);
+  }
+  return resolveAvoirLines({ ...parsed, lines: parsed.lines.map(l => ({ ...l })) });
 }
 
 /* ─── ANNEXE CSV : détail au colis ───────────────────────────── */
@@ -265,9 +374,12 @@ exports.analyze = [
   async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
-      const parsed = await parsePdfBuffer(req.file.buffer);
+      const text = await pdfText(req.file.buffer);
+      const parsed = parseMondialRelayPdf(text);
       if (!parsed.invoiceNumber) {
-        return res.status(400).json({ success: false, error: "Ce PDF ne semble pas être une facture Mondial Relay (référence introuvable)." });
+        const avoir = isMondialRelayAvoir(text) ? await analyzeAvoirText(text) : null;
+        if (avoir) return res.json({ success: true, ...avoir });
+        return res.status(400).json({ success: false, error: "Ce PDF ne semble pas être une facture ni un avoir Mondial Relay (référence introuvable)." });
       }
       res.json({ success: true, ...parsed });
     } catch (err) {
@@ -443,7 +555,14 @@ exports.getTotals = async (req, res) => {
       const { collecte, retourPCI, complements, surcharges, participations, ...rest } = r;
       return { ...rest, autres_frais: total, autres_frais_detail: detail };
     });
-    res.json({ success: true, invoices: rows });
+    // Avoirs : montants HT négatifs, rangés à la date de l'avoir
+    const credits = await pool.query(`
+      SELECT credit_date, SUM(amount_ht) AS amount_ht
+      FROM carrier_invoice_credits
+      WHERE carrier = $1
+      GROUP BY credit_date
+    `, [CARRIER]);
+    res.json({ success: true, invoices: rows, credits: credits.rows });
   } catch (err) {
     console.error('[MondialRelay] getTotals error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -515,13 +634,21 @@ exports.importZip = [
       const csvEntries = entries.filter(f => /\.csv$/i.test(f.name));
       if (!pdfEntries.length && !csvEntries.length) return res.status(400).json({ success: false, error: 'Aucun PDF ni CSV trouvé dans le ZIP' });
 
-      let imported = 0, already = 0, csvImported = 0;
+      let imported = 0, already = 0, csvImported = 0, creditsImported = 0;
       const failed = [];
       for (const entry of pdfEntries) {
         const name = entry.name.split('/').pop();
         try {
           const buf = await entry.async('nodebuffer');
-          const parsed = await parsePdfBuffer(buf);
+          const text = await pdfText(buf);
+          const parsed = parseMondialRelayPdf(text);
+          if (!parsed.invoiceNumber && isMondialRelayAvoir(text)) {
+            const avoir = await analyzeAvoirText(text);
+            if (!avoir) { failed.push({ name, error: 'Avoir Mondial Relay non reconnu' }); continue; }
+            const r = await insertAvoir(avoir, buf);
+            if (r.status === 'inserted') creditsImported++; else already++;
+            continue;
+          }
           if (!parsed.invoiceNumber) { failed.push({ name, error: 'Facture Mondial Relay non reconnue' }); continue; }
           const r = await insertParsed(parsed, buf);
           if (r.status === 'inserted') imported++; else already++;
@@ -538,7 +665,7 @@ exports.importZip = [
           failed.push({ name, error: e.message });
         }
       }
-      res.json({ success: true, total: pdfEntries.length + csvEntries.length, imported, already, csvImported, failed });
+      res.json({ success: true, total: pdfEntries.length + csvEntries.length, imported, already, csvImported, creditsImported, failed });
     } catch (err) {
       console.error('[MondialRelay] importZip error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -607,3 +734,112 @@ exports.debugText = [
     res.json({ lines: data.text.split('\n').map((l, i) => `${i}: ${l}`) });
   },
 ];
+
+/* ─── AVOIRS : routes ────────────────────────────────────────── */
+
+// POST /api/mondial-relay/analyze-credit — lit un PDF d'avoir sans l'enregistrer
+exports.analyzeCredit = [
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: 'Fichier PDF requis' });
+      const avoir = await analyzeAvoirText(await pdfText(req.file.buffer));
+      if (!avoir) return res.status(400).json({ success: false, error: "Ce PDF ne semble pas être un avoir Mondial Relay (numéro d'avoir introuvable)." });
+      res.json({ success: true, ...avoir });
+    } catch (err) {
+      console.error('[MondialRelay] analyzeCredit error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
+// POST /api/mondial-relay/save-credit — enregistre un avoir. Le PDF fait foi :
+// il est relu ici plutôt que de croire l'analyse renvoyée par le navigateur.
+exports.saveCredit = [
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ success: false, error: "Le PDF de l'avoir est requis" });
+      const avoir = await analyzeAvoirText(await pdfText(req.file.buffer));
+      if (!avoir) return res.status(400).json({ success: false, error: "Ce PDF ne semble pas être un avoir Mondial Relay." });
+      const r = await insertAvoir(avoir, req.file.buffer);
+      res.json({ success: true, already_saved: r.status === 'already', creditNumber: avoir.creditNumber });
+    } catch (err) {
+      console.error('[MondialRelay] saveCredit error:', err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+];
+
+// GET /api/mondial-relay/credits — avoirs enregistrés, avec leurs lignes
+exports.getCredits = async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT d.credit_number, d.credit_date, d.related_invoice_number, d.created_at,
+             (d.pdf_data IS NOT NULL) AS has_pdf,
+             (SELECT COUNT(*)::int FROM carrier_invoice_credits c WHERE c.carrier = d.carrier AND c.credit_number = d.credit_number) AS lines_count,
+             (SELECT SUM(c.amount_ht) FROM carrier_invoice_credits c WHERE c.carrier = d.carrier AND c.credit_number = d.credit_number) AS total_ht
+      FROM carrier_credit_documents d
+      WHERE d.carrier = $1
+      ORDER BY COALESCE(CASE WHEN d.credit_date ~ '^\\d{2}/\\d{2}/\\d{4}$' THEN to_date(d.credit_date, 'DD/MM/YYYY') END,
+                        d.created_at::date) DESC, d.credit_number DESC
+      LIMIT ${HISTORY_LIMIT}
+    `, [CARRIER]);
+    const credits = [];
+    for (const r of rows) {
+      let avoir = null;
+      if (r.has_pdf) {
+        try {
+          const pdf = avoirCache.has(r.credit_number) ? null
+            : (await pool.query('SELECT pdf_data FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2', [CARRIER, r.credit_number])).rows[0]?.pdf_data;
+          avoir = await readStoredAvoir(r.credit_number, pdf);
+        } catch { /* PDF illisible : l'avoir reste listé, sans détail */ }
+      }
+      credits.push({
+        ...r,
+        title: avoir?.title || null,
+        total_tva: avoir?.totalTVA ?? null,
+        total_ttc: avoir?.totalTTC ?? null,
+        lines: avoir?.lines || [],
+      });
+    }
+    res.json({ success: true, credits });
+  } catch (err) {
+    console.error('[MondialRelay] getCredits error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// DELETE /api/mondial-relay/credits/:number
+exports.deleteCredit = async (req, res) => {
+  try {
+    const { number } = req.params;
+    await pool.query('DELETE FROM carrier_invoice_credits WHERE carrier = $1 AND credit_number = $2', [CARRIER, number]);
+    const result = await pool.query(
+      'DELETE FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2 RETURNING credit_number', [CARRIER, number]
+    );
+    avoirCache.delete(number);
+    if (!result.rows.length) return res.status(404).json({ success: false, error: 'Avoir non trouvé' });
+    res.json({ success: true, deleted: result.rows[0].credit_number });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/mondial-relay/credits/:number/pdf
+exports.downloadCreditPdf = async (req, res) => {
+  try {
+    const { number } = req.params;
+    const result = await pool.query(
+      'SELECT credit_number, pdf_data FROM carrier_credit_documents WHERE carrier = $1 AND credit_number = $2', [CARRIER, number]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Avoir non trouvé' });
+    const { credit_number, pdf_data } = result.rows[0];
+    if (!pdf_data) return res.status(404).json({ error: 'PDF non disponible pour cet avoir' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Avoir_MondialRelay_${credit_number}.pdf"`);
+    res.send(pdf_data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
