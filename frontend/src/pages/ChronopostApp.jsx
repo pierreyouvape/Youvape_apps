@@ -685,15 +685,21 @@ function invoiceTariffLines(inv) {
   const { supplBaseByTracking, supplFlatByTracking } = computeSupplMaps(supplements);
   return orders
     .filter(o => o.amount_ht != null)
-    .map(o => ({ order_id: o.order_id, tracking: o.tracking, tarif: computeTarif(o, params, supplBaseByTracking, supplFlatByTracking) }));
+    .map(o => ({ order_id: o.order_id, tracking: o.tracking, is_return: o.is_return, tarif: computeTarif(o, params, supplBaseByTracking, supplFlatByTracking) }));
 }
 
 // Coût net par commande = facture d'origine + avoirs (négatifs) + rectificatives.
 // L'avoir annule la ligne contestée, la rectificative la refacture au bon poids.
-function netGroupTariffs(group) {
+// onlyCorrected : la facture d'origine a déjà été appliquée → ne réécrire que les
+// commandes corrigées (un coût posé depuis par une autre facture reste intact).
+function netGroupTariffs(group, { onlyCorrected = false } = {}) {
   const trackingToOrder = {};
   const net = {};      // order_id -> tarif
   const corrected = new Set();
+  // Commandes dont le colis ALLER est dans le groupe. Une commande présente seulement
+  // par un retour expéditeur a son aller sur une autre facture : son coût n'est pas
+  // celui du retour (sinon un avoir sur frais de retour la ramenait à 0 €).
+  const hasOutbound = new Set();
   const add = (orderId, amt, isCorrection) => {
     if (!orderId || amt == null) return;
     net[orderId] = (net[orderId] || 0) + amt;
@@ -702,14 +708,16 @@ function netGroupTariffs(group) {
   const invoices = [group.invoice, ...(group.rectificatives || [])];
   for (const inv of invoices)
     for (const p of inv.parcels || []) if (p.order_id && p.tracking) trackingToOrder[p.tracking.toUpperCase()] = p.order_id;
-  for (const l of invoiceTariffLines(group.invoice)) add(l.order_id, l.tarif, false);
+  for (const l of invoiceTariffLines(group.invoice)) { add(l.order_id, l.tarif, false); if (!l.is_return && l.order_id) hasOutbound.add(l.order_id); }
   for (const r of group.rectificatives || [])
-    for (const l of invoiceTariffLines(r)) add(l.order_id, l.tarif, true);
+    for (const l of invoiceTariffLines(r)) { add(l.order_id, l.tarif, true); if (!l.is_return && l.order_id) hasOutbound.add(l.order_id); }
   for (const c of group.credits || [])
     add(c.order_id || trackingToOrder[(c.tracking || '').toUpperCase()], c.amount_ht != null ? parseFloat(c.amount_ht) : null, true);
   // Un avoir calculé à la ligne peut laisser quelques centimes négatifs : plancher à 0
-  const tariffs = Object.entries(net).map(([order_id, t]) => ({ order_id: Number(order_id), tarif: Math.max(0, Math.round(t * 100) / 100) }));
-  return { tariffs, correctedCount: corrected.size };
+  const tariffs = Object.entries(net)
+    .filter(([id]) => hasOutbound.has(Number(id)) && (!onlyCorrected || corrected.has(Number(id))))
+    .map(([order_id, t]) => ({ order_id: Number(order_id), tarif: Math.max(0, Math.round(t * 100) / 100) }));
+  return { tariffs, correctedCount: tariffs.filter(t => corrected.has(t.order_id)).length };
 }
 
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
@@ -1254,7 +1262,7 @@ export default function ChronopostApp() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!data.success) throw new Error(data.error);
-      const { tariffs, correctedCount } = netGroupTariffs(data);
+      const { tariffs, correctedCount } = netGroupTariffs(data, { onlyCorrected: !!head.tariffs_applied_at });
       if (!tariffs.length) { setError('Aucune commande avec un tarif calculé.'); return; }
       const rect = data.rectificatives.map(r => r.invoice_number);
       const avoirs = [...new Set(data.credits.map(c => c.credit_number))];
