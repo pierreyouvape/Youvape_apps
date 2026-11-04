@@ -130,7 +130,15 @@ const checkPostcodeCity = ({ postcode, city, country } = {}) => {
   // Toutes les écritures admises pour ce code postal, avec le libellé à imprimer.
   const connus = [];
   for (const [nom, acheminement, ligne5] of communes) {
-    for (const v of [nom, acheminement, ligne5]) if (v) connus.push({ k: cle(v), libelle: acheminement });
+    for (const v of [nom, acheminement, ligne5]) {
+      if (!v) continue;
+      const kv = cle(v);
+      connus.push({ k: kv, libelle: acheminement });
+      // « Houat » pour ILE D HOUAT, « Hoedic » pour ILE DE HOEDIC (commande 1140680).
+      const ile = kv.replace(/^ILE (D|DE|DU|DES) /, '');
+      // Écriture admise, pas officielle : l'étiquette prend le libellé.
+      if (ile !== kv) connus.push({ k: ile, libelle: acheminement, alias: true });
+    }
   }
 
   const candidats = [...new Set([k, sansSuffixe(k)])].filter(Boolean);
@@ -139,7 +147,8 @@ const checkPostcodeCity = ({ postcode, city, country } = {}) => {
 
   // Même commune, à la ponctuation près — y compris « LISLE » pour « L ISLE ».
   const egale = (x) => connus.find((c) => c.k === x || compact(c.k) === compact(x));
-  if (egale(k)) return verdict('ok');
+  const exacte = egale(k);
+  if (exacte) return exacte.alias ? verdict('corrige', exacte.libelle) : verdict('ok');
   // Même commune une fois retiré ce qui l'entoure : on imprime le libellé
   // officiel, pas « VANNES 56000 ».
   const nettoyee = egale(sansSuffixe(k));

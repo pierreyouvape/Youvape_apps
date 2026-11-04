@@ -176,7 +176,8 @@ test('fautes de frappe et ajouts autour de la commune : libellé officiel (adres
     ['75018', 'Paris 18e Arrondissement', 'PARIS'],
     ['62520', 'Le TOUQUET', 'LE TOUQUET PARIS PLAGE'],
     ['17290', 'Aigrefeuille', 'AIGREFEUILLE D AUNIS'],
-    ['13800', '18 Ronde des Gargouilles, Istres, France', 'ISTRES']
+    ['13800', '18 Ronde des Gargouilles, Istres, France', 'ISTRES'],
+    ['56170', 'Houat', 'ILE D HOUAT']
   ];
   for (const [cp, saisie, attendu] of cas) {
     const r = cpVille(cp, saisie);
