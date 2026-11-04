@@ -90,7 +90,17 @@ export const AuthProvider = ({ children }) => {
   // device = 'pda' : session fermée par le serveur ce soir 19h30 (PDA partagés).
   const login = async (email, password, rememberMe = false, device = null) => {
     const response = await axios.post(`${API_URL}/login`, { email, password, rememberMe, device });
-    const { token, user } = response.data;
+    return openSession(response.data);
+  };
+
+  // Badge employé scanné sur le PDA : même session PDA (fermée à 19h30).
+  const loginWithBadge = async (barcode) => {
+    const response = await axios.post(`${API_URL}/badge`, { barcode });
+    return openSession(response.data);
+  };
+
+  const openSession = async (data) => {
+    const { token, user } = data;
 
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
@@ -100,7 +110,7 @@ export const AuthProvider = ({ children }) => {
     // Charger les permissions après le login
     await loadPermissions(token);
 
-    return response.data;
+    return data;
   };
 
   const logout = () => {
@@ -126,6 +136,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!token,
     register,
     login,
+    loginWithBadge,
     logout
   };
 

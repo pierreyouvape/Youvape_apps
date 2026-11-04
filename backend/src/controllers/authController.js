@@ -1,7 +1,10 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { secondsUntilPdaCutoff } = require('../utils/pdaSession');
+const { normalizeBadge, createFailureLimiter } = require('../utils/badgeLogin');
 const pool = require('../config/database');
+
+const badgeFailures = createFailureLimiter();
 
 const authController = {
   // Inscription
@@ -100,6 +103,58 @@ const authController = {
 
     } catch (error) {
       console.error('Erreur lors de la connexion:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+
+  // Connexion du PDA par le badge employé (Gestion employé → Code barre).
+  // Toujours une session PDA : fermée ce soir 19h30, quel que soit l'appareil.
+  badgeLogin: async (req, res) => {
+    const ip = req.headers['cf-connecting-ip'] || req.headers['x-real-ip'] || req.ip || 'inconnue';
+    try {
+      if (badgeFailures.isBlocked(ip)) {
+        return res.status(429).json({ error: 'Trop d\'essais, réessayez dans quelques minutes ou connectez-vous par identifiant' });
+      }
+
+      const badge = normalizeBadge(req.body?.barcode);
+      if (!badge) {
+        badgeFailures.recordFailure(ip);
+        return res.status(400).json({ error: 'Ce code n\'est pas un badge employé' });
+      }
+
+      const { rows } = await pool.query(
+        `SELECT e.active AS employee_active, u.id, u.email, u.name, u.disabled_at
+           FROM employees e
+           LEFT JOIN users u ON u.id = e.user_id
+          WHERE e.barcode = $1`,
+        [badge]
+      );
+      const row = rows[0];
+      if (!row) {
+        badgeFailures.recordFailure(ip);
+        return res.status(401).json({ error: 'Badge inconnu' });
+      }
+      if (!row.employee_active || row.disabled_at) {
+        badgeFailures.recordFailure(ip);
+        return res.status(403).json({ error: 'Ce compte est désactivé' });
+      }
+      if (!row.id) {
+        badgeFailures.recordFailure(ip);
+        return res.status(403).json({ error: 'Badge sans compte : le relier à un compte dans Gestion employé' });
+      }
+
+      const token = jwt.sign(
+        { id: row.id, email: row.email, name: row.name },
+        process.env.JWT_SECRET,
+        { expiresIn: secondsUntilPdaCutoff() }
+      );
+      res.json({
+        message: 'Connexion réussie',
+        token,
+        user: { id: row.id, email: row.email, name: row.name }
+      });
+    } catch (error) {
+      console.error('Erreur lors de la connexion par badge:', error);
       res.status(500).json({ error: 'Erreur serveur' });
     }
   }
