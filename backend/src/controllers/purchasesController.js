@@ -459,6 +459,16 @@ const purchasesController = {
         return res.status(404).json({ success: false, error: 'Commande non trouvée' });
       }
 
+      // Terminée (ou rouverte) à la main : ce qui reste non livré devient soldé
+      // (ou de nouveau attendu), et les factures de la commande doivent le
+      // refléter — cf. receptionController.validateSession.
+      try {
+        const { recontrolerFacturesDe } = require('./supplierInvoicesController');
+        await recontrolerFacturesDe(Number(order.id));
+      } catch (e) {
+        console.error('[purchases] recontrôle des factures :', e.message);
+      }
+
       res.json({ success: true, data: order });
     } catch (error) {
       console.error('Erreur updateOrderStatus:', error);

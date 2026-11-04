@@ -1029,4 +1029,5 @@ module.exports = {
   deleteVoucher,
   applyVoucherPrices,
   applyAgreedPrices,
+  recontrolerFacturesDe,
 };

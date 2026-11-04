@@ -242,7 +242,11 @@ const storagePct = (ordered, received, closed = 0) => {
   // Les pièces SOLDÉES à la réception (ni livrées, ni facturées) ne sont plus
   // attendues : les compter comme un manque fait douter la personne qui règle
   // entre payer et réclamer (LCA F2610418125, « 97 % » pour une commande soldée).
-  return Math.min(100, Math.round((((Number(received) || 0) + (Number(closed) || 0)) / cmd) * 100));
+  const fait = (Number(received) || 0) + (Number(closed) || 0);
+  // Tant qu'il manque une pièce, jamais « 100 % » : 999 sur 1 000 s'arrondissait
+  // à 100. Même lecture que l'onglet Commandes (OrdersTab.pctRecu).
+  if (fait < cmd) return Math.min(99, Math.floor((fait / cmd) * 100));
+  return 100;
 };
 const StorageBadge = ({ ordered, received, closed = 0 }) => {
   const pct = storagePct(ordered, received, closed);
@@ -2176,7 +2180,7 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
  * ──────────────────────────────────────────────────────────── */
 const SESSION_LABELS = { counting: 'comptage en cours', validated: 'comptage validé', abandoned: 'comptage abandonné' };
 
-function ReceptionState({ orders }) {
+function ReceptionState({ orders, factureesNonRecues = 0 }) {
   const ids = (orders || []).map((o) => o.id).join(',');
   const [fils, setFils] = useState(null);
 
@@ -2209,15 +2213,24 @@ function ReceptionState({ orders }) {
     return cadre(<div style={{ fontSize: 13, color: C.greyT }}>État de réception indisponible.</div>);
   }
 
+  // Les pièces soldées que la facture fait payer quand même ne sont pas
+  // « rien d'attendu » : elles manquent, et un avoir est dû (Cigaccess
+  // FA129681 : 10 facturées, 9 reçues, affichée « Entièrement reçue · 100 % »).
+  // Même règle que la colonne de la liste. Une seule commande rapprochée dans
+  // l'immense majorité des cas : la déduction porte sur la première.
+  let aDeduire = Math.max(Number(factureesNonRecues) || 0, 0);
   return cadre(fils.map((f) => {
     const cmd = Number(f.order.units_ordered) || 0;
     const recu = Number(f.order.units_received) || 0;
-    const soldees = Number(f.order.units_closed) || 0;
+    const soldeesBrut = Number(f.order.units_closed) || 0;
+    const dues = Math.min(aDeduire, soldeesBrut);
+    aDeduire -= dues;
+    const soldees = soldeesBrut - dues;
     const manque = Math.max(cmd - recu - soldees, 0);
     const pct = storagePct(cmd, recu, soldees);
-    const etat = f.summary.fullyReceived
+    const etat = recu + soldees >= cmd && cmd > 0
       ? { tone: 'green', label: soldees > 0 ? 'Reçue, reste soldé' : 'Entièrement reçue' }
-      : (f.summary.partiallyReceived
+      : (recu > 0
         ? { tone: 'orange', label: 'Partiellement reçue' }
         : { tone: 'red', label: 'Rien reçu' });
     return (
@@ -2228,6 +2241,7 @@ function ReceptionState({ orders }) {
             <strong>{recu}</strong> pièce{recu > 1 ? 's' : ''} reçue{recu > 1 ? 's' : ''} sur {cmd} commandée{cmd > 1 ? 's' : ''}
             {soldees > 0 && <> · <strong>{soldees}</strong> soldée{soldees > 1 ? 's' : ''} à la réception (non livrée{soldees > 1 ? 's' : ''}, rien d'attendu)</>}
             {manque > 0 && <> · il en manque <strong>{manque}</strong></>}
+            {dues > 0 && <> dont <strong>{dues}</strong> facturée{dues > 1 ? 's' : ''} : avoir à obtenir</>}
           </span>
           {f.summary.openSession && <Badge tone="blue">comptage en cours</Badge>}
           <span style={{ color: C.greyM, fontSize: 12.5 }}>
@@ -2385,7 +2399,12 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
           </div>
         )}
 
-        <ReceptionState orders={detail.orders} />
+        <ReceptionState
+          orders={detail.orders}
+          factureesNonRecues={(detail.lines || [])
+            .filter((l) => ['qty', 'qty_price'].includes(l.verdict) && l.material && l.expected_qty != null)
+            .reduce((s, l) => s + Math.max(Number(l.qty) - Number(l.expected_qty), 0), 0)}
+        />
 
         {(detail.doc_type === 'invoice' || detail.vouchers?.length > 0) && (
           <VoucherSection detail={detail} onChanged={onChanged} />

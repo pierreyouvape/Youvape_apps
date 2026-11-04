@@ -504,6 +504,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     over: surplus.map((l) => ({ ...decrire(l), stocked: envoye.get(l.purchase_order_item_id) || 0 })),
     notSent: nonEnvoyes,
     orderCompleted: terminee,
+    purchaseOrderId: session.purchase_order_id,
     bmsResponse: reponse,
   };
 

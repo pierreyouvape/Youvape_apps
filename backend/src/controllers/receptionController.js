@@ -323,6 +323,21 @@ exports.validateSession = async (req, res) => {
       req.user && req.user.id,
       req.body && req.body.motifs,
     );
+    // Les factures déjà enregistrées de cette commande ont été contrôlées
+    // contre ce qui était COMMANDÉ. Une pièce soldée ou manquante à la
+    // réception change ce qu'elles doivent porter : on les rejoue. Cigaccess
+    // FA129681, contrôlée le 03/11, Grosse Fraise reçue à 9 sur 10 le 04/11 :
+    // la ligne restait « ok » et rien ne disait qu'un avoir était dû.
+    // Un échec ici ne défait pas la réception, déjà partie dans BMS.
+    try {
+      const orderId = resultat && resultat.purchaseOrderId;
+      if (orderId) {
+        const { recontrolerFacturesDe } = require('./supplierInvoicesController');
+        resultat.recontroles = await recontrolerFacturesDe(Number(orderId));
+      }
+    } catch (e) {
+      console.error('[reception] recontrôle des factures :', e.message);
+    }
     res.json(resultat);
   } catch (e) {
     console.error('[reception] validation :', e.message);

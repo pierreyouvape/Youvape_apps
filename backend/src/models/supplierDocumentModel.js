@@ -390,11 +390,26 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
               WHERE o.document_id = d.id) AS units_received,
             -- Pièces soldées à la réception (cf. orderLifecycleModel) : plus
             -- attendues, elles ne doivent pas faire croire à un manque.
-            (SELECT COALESCE(SUM(${piecesSoldeesSql('poi', 'po')}), 0)::int
-               FROM supplier_document_orders o
-               JOIN purchase_orders po ON po.id = o.purchase_order_id
-               JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
-              WHERE o.document_id = d.id) AS units_closed,
+            --
+            -- SAUF celles que la facture nous fait payer quand même : elles
+            -- manquent ET sont dues, c'est un avoir à obtenir. Cigaccess
+            -- FA129681 : 10 Grosse Fraise facturées, 9 reçues, la 10e notée
+            -- « manquant » et la commande terminée — l'écran disait 100 %.
+            -- Une fois l'avoir reçu (ligne compensée), plus rien n'est dû.
+            GREATEST(
+              (SELECT COALESCE(SUM(${piecesSoldeesSql('poi', 'po')}), 0)
+                 FROM supplier_document_orders o
+                 JOIN purchase_orders po ON po.id = o.purchase_order_id
+                 JOIN purchase_order_items poi ON poi.purchase_order_id = o.purchase_order_id
+                WHERE o.document_id = d.id)
+              - (SELECT COALESCE(SUM(GREATEST(l.qty - l.expected_qty, 0)), 0)
+                   FROM supplier_document_lines l
+                  WHERE l.document_id = d.id
+                    AND l.verdict IN ('qty', 'qty_price')
+                    AND l.expected_qty IS NOT NULL
+                    AND l.material
+                    AND NOT ${COMPENSEE_SQL}),
+              0)::int AS units_closed,
             -- Le tarif facturé est-il celui de la commande ? Une alerte, jamais
             -- un blocage : une facture au tarif différent se contrôle et se
             -- règle, elle demande seulement qu'on le sache avant de payer.
