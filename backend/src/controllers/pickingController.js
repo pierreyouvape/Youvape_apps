@@ -6,6 +6,7 @@ const pickingSyncService = require('../services/pickingSyncService');
 const { buildWavePdf, buildWavesPdf } = require('../services/pickingPdf');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const { expectedNetwork, relayNetworks } = require('../services/carriers/relayPoints');
+const { checkPostcodeCity } = require('../services/carriers/postcodeCheck');
 
 const handle = (fn) => async (req, res) => {
   try {
@@ -67,6 +68,26 @@ const unblock = handle(async (req, res) => {
 });
 
 /** Ce qu'il faut pour la fenêtre « Corriger » : adresse, point relais, réseau attendu. */
+/**
+ * « Adresse vérifiée, garder telle quelle » : lève le tag
+ * « Code postal / ville incohérents » pour le code postal et la ville ACTUELS
+ * de la commande. Toute modification ultérieure relance le contrôle.
+ */
+const confirmPostcodeCity = handle(async (req, res) => {
+  const { rows: [o] } = await pool.query(
+    `UPDATE orders
+        SET postcode_city_confirmed = jsonb_build_object(
+              'postcode', shipping_postcode, 'city', shipping_city,
+              'by', $2::int, 'by_name', $3::text, 'at', to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
+      WHERE wp_order_id::text = $1
+      RETURNING postcode_city_confirmed`,
+    [req.params.orderNumber, req.user?.id || null, req.user?.name || req.user?.email || null]
+  );
+  if (!o) return res.status(404).json({ error: 'Commande introuvable' });
+  console.log(`[Picking] Adresse ${o.postcode_city_confirmed.postcode} ${o.postcode_city_confirmed.city} validée telle quelle sur la commande ${req.params.orderNumber} par ${o.postcode_city_confirmed.by_name || '?'}`);
+  res.json({ confirmed: o.postcode_city_confirmed });
+});
+
 const getCorrection = handle(async (req, res) => {
   const { rows: [o] } = await pool.query(
     `SELECT wp_order_id, shipping_method,
@@ -95,6 +116,9 @@ const getCorrection = handle(async (req, res) => {
       country: o.shipping_country || o.billing_country,
       phone: o.shipping_phone || o.billing_phone
     },
+    // Communes du code postal et codes postaux de la ville saisie, proposés à l'écran.
+    postcodeCheck: checkPostcodeCity({ postcode: o.shipping_postcode, city: o.shipping_city,
+      country: o.shipping_country || o.billing_country }),
     relayPoint: o.relay_point_manual || o.relay_point,
     relayExpected: carrier.status === 'mapped' ? expectedNetwork(carrier.carrierCode, carrier.deliveryMode) : null,
     relayNetworks: relayNetworks()
@@ -296,6 +320,7 @@ module.exports = {
   block,
   unblock,
   getCorrection,
+  confirmPostcodeCity,
   listRules,
   saveRule,
   deleteRule,

@@ -25,6 +25,7 @@ const { getAccount } = require('../services/carriers/accounts');
 const { stampOrderNumber } = require('../services/carriers/labelPdf');
 const { buildUserMessage } = require('../services/carriers/errors');
 const { customsDocumentFileName } = require('../services/carriers/contract');
+const { checkPostcodeCity } = require('../services/carriers/postcodeCheck');
 
 /**
  * Cœur de la génération : appel du transporteur, tamponnage du n° de commande
@@ -164,6 +165,20 @@ const loadOrderForLabel = async (orderNumber) => {
   return rows[0] || null;
 };
 
+/**
+ * Ville à imprimer : celle de la commande, ou le libellé officiel La Poste
+ * quand le contrôle CP / commune a reconnu la commune malgré la saisie
+ * (« Roqemaure », « VANNES (56000) », « Le Touquet »). Colissimo facture 3 € HT
+ * une commune qui ne correspond pas au code postal (commande 1257705).
+ * Une ville douteuse n'est jamais remplacée ici : le Picking la signale.
+ */
+const shippingCity = (order) => {
+  const check = checkPostcodeCity({
+    postcode: order.shipping_postcode, city: order.shipping_city, country: order.shipping_country
+  });
+  return check?.status === 'corrige' ? check.city : order.shipping_city;
+};
+
 /** Destinataire, dans la forme attendue par le contrat transporteur. */
 const receiverFromOrder = (order) => ({
   name: `${order.shipping_first_name || ''} ${order.shipping_last_name || ''}`.trim(),
@@ -173,7 +188,7 @@ const receiverFromOrder = (order) => ({
   address: order.shipping_address_1,
   address_2: order.shipping_address_2,
   postcode: order.shipping_postcode,
-  city: order.shipping_city,
+  city: shippingCity(order),
   country: order.shipping_country,
   phone: order.shipping_phone,
   // Champ À PART, pas un repli de `phone` : les payloads La Poste et Mondial

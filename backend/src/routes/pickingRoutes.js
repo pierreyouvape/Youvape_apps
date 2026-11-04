@@ -20,6 +20,8 @@ router.delete('/orders/:orderNumber/block', canWrite, pickingController.unblock)
 router.get('/orders/:orderNumber/correction', canWrite, pickingController.getCorrection);
 // Même correction d'adresse que le packing, avec le droit du picking.
 router.put('/orders/:orderNumber/shipping', canWrite, packingController.updateShipping);
+// « Adresse vérifiée, garder telle quelle » (tag « Code postal / ville incohérents »).
+router.post('/orders/:orderNumber/postcode-city-confirm', canWrite, pickingController.confirmPostcodeCity);
 
 router.get('/rules', canRead, pickingController.listRules);
 router.post('/rules', canWrite, pickingController.saveRule);

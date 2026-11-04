@@ -137,6 +137,81 @@ test('null et undefined traversent sans conversion', () => {
   assert.strictEqual(sanitizeAddressField(undefined), undefined);
 });
 
+test('les entités nommées en majuscules sont décodées (commande 1257705)', () => {
+  // Inconnue, « &RSQUO; » devenait « L et RSQUO ISLE-SUR-LA-SORGUE » chez
+  // Colissimo : 3 € HT de « qualité d'annonce » (problème CP / commune).
+  assert.strictEqual(sanitizeAddressField('L&RSQUO;ISLE-SUR-LA-SORGUE'), "L'ISLE-SUR-LA-SORGUE");
+  assert.strictEqual(sanitizeAddressField('L&rsquo;Isle-sur-la-Sorgue'), "L'Isle-sur-la-Sorgue");
+  assert.strictEqual(sanitizeAddressField('Durand &AMP; Fils'), 'Durand & Fils');
+  assert.strictEqual(sanitizeAddressField('&Eacute;TAMPES'), 'ÉTAMPES');
+  assert.strictEqual(sanitizeAddressField('&EACUTE;TAMPES'), 'ÉTAMPES');
+  assert.strictEqual(sanitizeAddressField('&inconnue;'), '&inconnue;');
+});
+
+// ── Contrôle code postal / commune (base La Poste) ───────────────────────────
+console.log('\nCode postal / commune');
+
+const { checkPostcodeCity } = require('../src/services/carriers/postcodeCheck');
+const cpVille = (postcode, city, country = 'FR') => checkPostcodeCity({ postcode, city, country });
+
+test('la commune est reconnue malgré ponctuation, accents et casse', () => {
+  for (const v of ['L&rsquo;Isle-sur-la-Sorgue', 'L&RSQUO;ISLE-SUR-LA-SORGUE', "l'isle sur la sorgue", 'Lisle sur la Sorgue']) {
+    const r = cpVille('84800', v);
+    assert.strictEqual(r.status, 'ok', v);
+    assert.strictEqual(r.city, v, 'une ville juste n\'est pas réécrite');
+  }
+  assert.strictEqual(cpVille('06220', 'Golfe-Juan').status, 'corrige', 'lieu-dit : libellé d\'acheminement');
+  assert.strictEqual(cpVille('06220', 'Golfe-Juan').city, 'VALLAURIS');
+  assert.strictEqual(cpVille('83120', 'Ste Maxime').status, 'ok');
+});
+
+test('fautes de frappe et ajouts autour de la commune : libellé officiel (adresses réelles)', () => {
+  const cas = [
+    ['30150', 'Roqemaure', 'ROQUEMAURE'],
+    ['93110', 'Rosny sous boid ', 'ROSNY SOUS BOIS'],
+    ['56000', 'VANNES (56000)', 'VANNES'],
+    ['30127', '30127 - BELLEGARDE', 'BELLEGARDE'],
+    ['42620', 'FR &#8211; ST MARTIN D ESTREAUX', 'ST MARTIN D ESTREAUX'],
+    ['31100', 'Toulouse &#8211; Haute-Garonne (31)', 'TOULOUSE'],
+    ['75018', 'Paris 18e Arrondissement', 'PARIS'],
+    ['62520', 'Le TOUQUET', 'LE TOUQUET PARIS PLAGE'],
+    ['17290', 'Aigrefeuille', 'AIGREFEUILLE D AUNIS'],
+    ['13800', '18 Ronde des Gargouilles, Istres, France', 'ISTRES']
+  ];
+  for (const [cp, saisie, attendu] of cas) {
+    const r = cpVille(cp, saisie);
+    assert.deepStrictEqual([r.status, r.city], ['corrige', attendu], `${cp} ${saisie}`);
+  }
+});
+
+test('ville d\'un autre code postal : signalée, jamais remplacée', () => {
+  // Caudebec-lès-Elbeuf est au 76320 : la remplacer par ELBEUF (76500) aurait
+  // envoyé le colis ailleurs.
+  const r = cpVille('76500', 'caudebec les elbeuf');
+  assert.strictEqual(r.status, 'a_choisir');
+  assert.deepStrictEqual(r.otherPostcodes, ['76320']);
+  assert.deepStrictEqual(cpVille('34000', 'Castelnau le lez').otherPostcodes, ['34170']);
+  assert.strictEqual(cpVille('83000', 'Paris').status, 'a_choisir');
+  assert.ok(cpVille('84800', 'Avignon').suggestions.includes('L ISLE SUR LA SORGUE'));
+});
+
+test('code postal inconnu, pays étranger, champs vides', () => {
+  assert.strictEqual(cpVille('94275', 'Le Kremlin-Bicêtre').status, 'cp_inconnu');
+  assert.strictEqual(cpVille('1000', 'Bruxelles', 'BE'), null);
+  assert.strictEqual(cpVille('', 'Paris'), null);
+  assert.strictEqual(cpVille('84800', '').status, 'a_choisir');
+});
+
+test('adresse validée telle quelle : valable pour ce code postal et cette ville seulement', () => {
+  const { isConfirmed } = require('../src/services/carriers/postcodeCheck');
+  const validee = { postcode: '94275', city: 'Le Kremlin-Bicêtre', by: 1, at: '2026-11-04T11:20:00Z' };
+  assert.strictEqual(isConfirmed(validee, { postcode: '94275', city: 'Le Kremlin-Bicêtre' }), true);
+  assert.strictEqual(isConfirmed(validee, { postcode: '94 275', city: 'LE KREMLIN BICETRE' }), true, 'même adresse, autre écriture');
+  assert.strictEqual(isConfirmed(validee, { postcode: '94270', city: 'Le Kremlin-Bicêtre' }), false, 'code postal changé');
+  assert.strictEqual(isConfirmed(validee, { postcode: '94275', city: 'Villejuif' }), false, 'ville changée');
+  assert.strictEqual(isConfirmed(null, { postcode: '94275', city: 'Le Kremlin-Bicêtre' }), false);
+});
+
 // ── Fenêtre d'annulation ─────────────────────────────────────────────────────
 console.log('\nFenêtre d\'annulation La Poste');
 

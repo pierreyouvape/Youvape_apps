@@ -441,6 +441,22 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
   `en_attente_réponse_client` y repassent ; les autres statuts ne bougent pas.
 - **Éteint tant que `app_config.chronopost_claims_since` n'existe pas** ; aucune échéance antérieure n'est réclamée.
 
+### Contrôle code postal / commune (04/11/2026)
+
+Colissimo facture 3 € HT de « qualité d'annonce » (Problème CP / Commune) une commune absente du
+code postal (1257705 : `L&rsquo;Isle-sur-la-Sorgue` passée par BMS). Référence : base La Poste
+HEXASMAL figée dans `assets/postcodes/`, rafraîchie par `node src/scripts/updatePostcodes.js`
+(un passage par trimestre suffit). Logique : `services/carriers/postcodeCheck.js`.
+
+- `corrige` (faute de frappe, CP recopié dans la ville, nom incomplet) : l'étiquette prend le
+  libellé officiel (`shipmentController.shippingCity`), tous transporteurs. La commande n'est pas modifiée.
+- `a_choisir` / `cp_inconnu` : tag Picking `cp_ville_incoherents`, à corriger dans « Corriger »
+  (communes du CP et bon CP proposés). **Une ville qui existe sous un autre CP n'est jamais
+  remplacée** : c'est le CP qui est faux (« 76500 Caudebec-lès-Elbeuf » serait devenu ELBEUF).
+- « Adresse vérifiée, garder telle quelle » → `orders.postcode_city_confirmed` (migration
+  `add_postcode_city_confirmed.sql`), valable pour CE couple CP/ville seulement.
+- Mesuré sur 90 jours (4 155 colis domicile) : 4 014 ok, 113 corrigés, 28 signalés.
+
 ### Bloquer une commande (Picking, fiche commande — 30/10/2026)
 
 - Une commande en vague n'est plus dans les listes du Picking : on la bloque depuis

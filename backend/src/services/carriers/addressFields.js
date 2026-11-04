@@ -66,7 +66,17 @@ const sanitizeAddressField = (value) => {
     ccedil: 'ç', ugrave: 'ù', ucirc: 'û', icirc: 'î', ocirc: 'ô',
     ndash: '–', mdash: '—', rsquo: '’', lsquo: '‘', laquo: '«', raquo: '»'
   };
-  s = s.replace(/&([a-zA-Z]+);/g, (m, name) => (name in named ? named[name] : m));
+  // Insensible à la casse : une adresse saisie ou recopiée en majuscules porte
+  // « &RSQUO; ». Inconnue, l'entité devenait « et RSQUO » chez Colissimo
+  // (« L&RSQUO;ISLE-SUR-LA-SORGUE », 3 € HT de « qualité d'annonce »). Une
+  // entité écrite avec une majuscule (« &Eacute; », « &EACUTE; ») rend la
+  // lettre majuscule.
+  s = s.replace(/&([a-zA-Z]+);/g, (m, name) => {
+    if (name in named) return named[name];
+    const lower = name.toLowerCase();
+    if (!(lower in named)) return m;
+    return name[0] === name[0].toUpperCase() ? named[lower].toUpperCase() : named[lower];
+  });
 
   // Normalisation typographique vers ASCII acceptés par La Poste
   s = s

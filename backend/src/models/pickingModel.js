@@ -15,6 +15,7 @@ const { REFUNDED_QTY_SQL } = require('../services/refundLinesService');
 const { partialReplacementOrders } = require('../services/returnPartialService');
 const orderDuplicateModel = require('./orderDuplicateModel');
 const dishonestCustomerModel = require('./dishonestCustomerModel');
+const { checkPostcodeCity, isConfirmed } = require('../services/carriers/postcodeCheck');
 
 const BLOCKED = 'bloquee';
 const MANUAL_PREFIX_KEY = 'picking_manual_prefix';
@@ -25,6 +26,7 @@ const TAGS = Object.freeze({
   CARRIER_UNKNOWN: 'transporteur_inconnu',
   RELAY_MISSING: 'point_relais_manquant',
   ADDRESS_INCOMPLETE: 'adresse_incomplete',
+  POSTCODE_CITY: 'cp_ville_incoherents',
   NOT_SYNCED: 'commande_absente'
 });
 
@@ -54,7 +56,16 @@ const correctionTags = (o, carrier) => {
   }
   const incomplete = [o.shipping_address_1, o.shipping_postcode, o.shipping_city,
     o.shipping_country || o.billing_country].some(blank);
-  return incomplete ? [TAGS.ADDRESS_INCOMPLETE] : [];
+  if (incomplete) return [TAGS.ADDRESS_INCOMPLETE];
+
+  // Commune absente du code postal : Colissimo facture 3 € HT de « qualité
+  // d'annonce ». Une simple faute de frappe ne bloque pas, l'étiquette prend
+  // le libellé officiel (`shipmentController.shippingCity`). Une adresse
+  // validée telle quelle (code CEDEX, commune nouvelle) ne l'est plus.
+  if (isConfirmed(o.postcode_city_confirmed, { postcode: o.shipping_postcode, city: o.shipping_city })) return [];
+  const check = checkPostcodeCity({ postcode: o.shipping_postcode, city: o.shipping_city,
+    country: o.shipping_country || o.billing_country });
+  return check && (check.status === 'a_choisir' || check.status === 'cp_inconnu') ? [TAGS.POSTCODE_CITY] : [];
 };
 
 /**
@@ -123,6 +134,8 @@ const getOrdersView = async () => {
              o.shipping_first_name, o.shipping_last_name, o.billing_first_name, o.billing_last_name,
              o.shipping_address_1, o.shipping_postcode, o.shipping_city,
              o.shipping_country, o.billing_country,
+             -- Lu par to_jsonb : la requête tient avant la migration add_postcode_city_confirmed.
+             to_jsonb(o) -> 'postcode_city_confirmed' AS postcode_city_confirmed,
              COALESCE(o.relay_point_manual, o.relay_point) ->> 'id' AS relay_point_id,
              pb.reason AS block_reason, pb.blocked_at, u.name AS blocked_by_name,
              (SELECT COALESCE(json_agg(json_build_object('id', t.id, 'status', t.sav_status) ORDER BY t.id), '[]')

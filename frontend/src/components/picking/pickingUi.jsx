@@ -19,6 +19,7 @@ export const CORRECTION_TAGS = {
   transporteur_inconnu: 'Transporteur non reconnu',
   point_relais_manquant: 'Point relais manquant',
   adresse_incomplete: 'Adresse incomplète',
+  cp_ville_incoherents: 'Code postal / ville incohérents',
   commande_absente: 'Pas encore synchronisée',
 };
 
