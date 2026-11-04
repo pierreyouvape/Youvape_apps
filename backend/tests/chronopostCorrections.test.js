@@ -37,6 +37,7 @@ TOTAL AVOIR -83,58 -16,72 -100,30`;
 const CLASSIQUE = `Compte 34751303
 Facture 13761419
 Date 30/09/2026
+FACTURATION DU MOIS DE SEPTEMBRE
 Facture commerciale / Prestation de service
 11 09/09/2026 XF148868036FR 128000068272 34170 4450 DK Z2 V 1,600 12,99 S EXPRE Z2 1259607 N
 TOTAL FACTURE 489,91 97,98 587,89`;
@@ -58,6 +59,11 @@ test('rectificative reconnue, colis et TTC lus', () => {
   assert.strictEqual(r.orders[0].tracking, 'XF148868036FR');
   assert.strictEqual(r.orders[0].order_id, 1259607);
   assert.strictEqual(r.orders[0].amount_ht, 8.47);
+});
+
+test("rectificative sans la mention : reconnue à l'en-tête FACTURATION PRESTATIONS", () => {
+  const r = _parsePdf(RECTIF.replace('Facture rectificative / Prestation de service\n', ''));
+  assert.strictEqual(r.isRectificative, true);
 });
 
 test('facture classique : pas rectificative', () => {

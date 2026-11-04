@@ -219,8 +219,11 @@ function parseChronopostPdf(text) {
   let totalTtc = null;
   let creditTotalHt = null;
   let creditTotalTtc = null;
-  // Facture rectificative : refacture au bon poids les colis d'une réclamation acceptée
-  const isRectificative = lines.some(l => /Facture rectificative/i.test(l));
+  // Facture rectificative : refacture au bon poids les colis d'une réclamation acceptée.
+  // Repère fiable : l'en-tête « FACTURATION PRESTATIONS » (les mensuelles portent
+  // « FACTURATION DU MOIS ») — la mention « Facture rectificative » n'est pas toujours
+  // dans le texte extrait (absente des 4 rectificatives en base au 04/11/2026).
+  const isRectificative = lines.some(l => /Facture rectificative|^FACTURATION PRESTATIONS/i.test(l));
   const frNum = v => parseFloat(v.replace(/[\s.]/g, '').replace(',', '.'));
 
   // Extract invoice metadata
