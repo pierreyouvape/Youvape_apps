@@ -98,6 +98,28 @@ async function recontrolerFacturesDe(orderId, saufDocumentId = null) {
   return faits;
 }
 
+/**
+ * Les avoirs déposés AVANT leur facture d'origine n'avaient pas de commande :
+ * l'avoir LCA ne cite que « Facture d'origine : F… ». Dès que cette facture est
+ * enregistrée et rapprochée, on les rattache à sa commande et on les rejoue.
+ */
+async function rattacherAvoirsEnAttente(supplierId, invoiceNumber, orderId) {
+  const faits = [];
+  if (!invoiceNumber || !orderId) return faits;
+  for (const id of await supplierDocumentModel.listOrphanCreditNotesFor(supplierId, invoiceNumber)) {
+    try {
+      await supplierDocumentModel.linkOrder(id, orderId, 'origin_invoice');
+      const document = await supplierDocumentModel.getDocument(id);
+      const analysis = await reanalyse(document);
+      await supplierDocumentModel.replaceLines(id, analysis.comparison, undefined, analysis.vouchersUsed);
+      faits.push({ id, number: document.number });
+    } catch (e) {
+      console.error(`[supplier-invoices] rattachement de l'avoir ${id} :`, e.message);
+    }
+  }
+  return faits;
+}
+
 /** GET /api/supplier-invoices/orders — commandes à proposer au rapprochement. */
 async function listCandidateOrders(req, res) {
   try {
@@ -205,6 +227,9 @@ async function uploadDocument(req, res) {
     if (analysis.order && analysis.order.id && analysis.invoice.docType !== 'credit_note') {
       await recontrolerFacturesDe(analysis.order.id, saved.document && saved.document.id);
     }
+    const avoirsRattaches = analysis.order && analysis.order.id && analysis.invoice.docType !== 'credit_note'
+      ? await rattacherAvoirsEnAttente(supplierId, analysis.invoice.number, analysis.order.id)
+      : [];
 
     return res.status(201).json({
       document: saved.document,
@@ -215,6 +240,7 @@ async function uploadDocument(req, res) {
       needsManualOrder: analysis.needsManualOrder,
       comparison: analysis.comparison,
       differences: analysis.differences,
+      creditNotesLinked: avoirsRattaches,
     });
   } catch (error) {
     if (stored) docStore.removeDocument(stored.filePath);
@@ -540,6 +566,15 @@ async function recheckDocument(req, res) {
     if (!document) return res.status(404).json({ error: 'Document introuvable' });
 
     const analysis = await reanalyse(document);
+    // Un avoir enregistré sans commande la retrouve si sa facture d'origine a
+    // été déposée depuis (ou s'il précède la lecture de « Facture d'origine »).
+    if (document.orders.length === 0 && analysis.order && analysis.order.id) {
+      await supplierDocumentModel.linkOrder(id, analysis.order.id, analysis.matchedBy || 'reference', analysis.invoice.correctsInvoice);
+    } else if (analysis.invoice.correctsInvoice && !(document.analysis || {}).correctsInvoice) {
+      // Pas encore de commande : retenir au moins la facture d'origine, pour le
+      // rattachement au dépôt de celle-ci.
+      await supplierDocumentModel.linkOrder(id, null, null, analysis.invoice.correctsInvoice);
+    }
     await supplierDocumentModel.replaceLines(id, analysis.comparison, undefined, analysis.vouchersUsed);
     const rafraichi = await supplierDocumentModel.getDocument(id);
     return res.json({ document: rafraichi, differences: analysis.differences, tariffs: analysis.tariffs });

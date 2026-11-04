@@ -1453,7 +1453,9 @@ function ControlTab({ suppliers, mobile, onSaved }) {
                 {result.supplier.name} · {date(result.invoice.date)}
                 {result.order ? (
                   <> · commande <OrderLink order={result.order}>{result.order.bms_reference}</OrderLink>
-                    {' '}({result.matchedBy === 'manual' ? 'désignée' : 'retrouvée par sa référence'})</>
+                    {' '}({result.matchedBy === 'manual' ? 'désignée'
+                      : result.matchedBy === 'origin_invoice' ? `retrouvée par la facture d'origine ${result.invoice.correctsInvoice}`
+                      : 'retrouvée par sa référence'})</>
                 ) : ' · aucune commande retrouvée'}
               </div>
             </div>
@@ -1472,7 +1474,13 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           {result.needsManualOrder && (
             <div style={{ padding: 14, background: C.orangeL, color: C.orange, borderRadius: 10, fontSize: 13 }}>
-              {result.invoice.orderRefOnDoc ? (
+              {result.invoice.correctsInvoice ? (
+                <>
+                  Cet avoir corrige la facture <strong>{result.invoice.correctsInvoice}</strong>, qui n'est pas encore
+                  déposée ici (ou pas rapprochée d'une commande). Enregistre-le tel quel : il sera rattaché à la
+                  commande dès le dépôt de cette facture. Ou désigne la commande ci-dessous.
+                </>
+              ) : result.invoice.orderRefOnDoc ? (
                 <>
                   La référence <strong>{result.invoice.orderRefOnDoc}</strong> imprimée sur ce document ne correspond à
                   aucune commande. Chez GFC et MG&nbsp;Vape, c'est le numéro interne du fournisseur, jamais le nôtre.
@@ -2336,6 +2344,7 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
               {detail.orders?.[0] && (
                 <> · commande <OrderLink order={detail.orders[0]}>{detail.orders[0].bms_reference}</OrderLink></>
               )}
+              {detail.analysis?.correctsInvoice && <> · corrige la facture {detail.analysis.correctsInvoice}</>}
             </div>
           </div>
           <Btn variant="ghost" small onClick={onClose}>Fermer</Btn>

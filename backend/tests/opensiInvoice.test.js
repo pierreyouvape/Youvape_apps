@@ -232,6 +232,25 @@ test('un avoir peut n\'être rattaché à aucune commande', () => {
   assert.strictEqual(lcaAvoir.lines[0].ref, 'regul');
 });
 
+test('un avoir LCA désigne sa facture d\'origine', () => {
+  // A2611421302 et A2611421306 : pas de « Réf. Commande », seulement « Facture
+  // d'origine : F… ». C'est par elle que l'avoir retrouve sa commande.
+  const a1302 = parseInvoice(fixture('lca-avoir-A2611421302.txt'));
+  const a1306 = parseInvoice(fixture('lca-avoir-A2611421306.txt'));
+  assert.strictEqual(a1302.orderRefOnDoc, null);
+  assert.strictEqual(a1302.correctsInvoice, 'F2610418127');
+  assert.strictEqual(a1306.correctsInvoice, 'F2605388291');
+  // Lignes intactes : la ligne « Facture d'origine » n'entre pas dans un article.
+  assert.strictEqual(a1302.lines.length, 1);
+  assert.strictEqual(a1302.lines[0].ref, '#REF16088-52411');
+  assert.ok(close(a1302.lines[0].lineTotalHt, -3.90));
+  assert.strictEqual(a1306.lines[0].ref, '#REF16455-53900');
+  assert.ok(close(a1306.lines[0].lineTotalHt, -2.09));
+  assert.strictEqual(a1302.warnings.length + a1306.warnings.length, 0);
+  // Une facture n'a pas de facture d'origine.
+  assert.strictEqual(lcaAvoir.correctsInvoice, null);
+});
+
 test('une désignation finissant par un chiffre collé ne mange pas sa ligne', () => {
   // « … Melo EC2 0,30 3 0.03 0.09 » : le « 2 » de EC2 passait pour une colonne.
   // Trois lignes, et le total qui retombe — c'est tout le contrôle.

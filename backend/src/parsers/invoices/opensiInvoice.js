@@ -52,6 +52,7 @@ const NOISE = [
   /^Avoir N°/i,
   /^A\s+V\s+O\s+I\s+R\b/i,
   /^Avoir constitué/i,
+  /^Facture d['’]origine/i,
   /^Sous-total/i,
   /^Référence\s+Désignation/i,
   /^Base HT/i,
@@ -181,6 +182,12 @@ function parseHeader(text) {
     // numéro interne du fournisseur, qui ne retrouve aucune commande. On le
     // remonte quand même : c'est à l'écran de dire qu'il ne matche pas.
     orderRefOnDoc: grab(/Réf\.\s*Commande\s*:\s*(\S+)/i),
+    // Un avoir LCA ne porte pas de « Réf. Commande », mais la facture qu'il
+    // corrige : « Facture d'origine : F2610418127 » (A2611421302). C'est par
+    // elle qu'on retrouve la commande (cf. analyseInvoice), et c'est elle que
+    // l'avoir éteint (cf. AVOIR_DESIGNE_SQL) — même rôle que l'« Extourne de »
+    // de JoshNoa.
+    correctsInvoice: isCreditNote ? grab(/Facture d['’]origine\s*:\s*([A-Z]*\d+)/i) : null,
     statedPaymentMethod: grab(/Mode de règlement\s*:\s*([^\n]+)/i),
     totalHt: amount(/Total HT\s*:\s*([\d  .,]+)\s*€/i),
     totalTva: amount(/Total TVA\s*:\s*([\d  .,]+)\s*€/i),

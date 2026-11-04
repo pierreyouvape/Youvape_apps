@@ -137,6 +137,30 @@ async function findOrderByRef(supplierId, orderRef, db = pool) {
 }
 
 /**
+ * La commande d'une facture déjà déposée, désignée par son numéro.
+ *
+ * Un avoir LCA ne cite que sa « Facture d'origine » : la commande est celle à
+ * laquelle cette facture a été rapprochée. Rien si la facture n'est pas encore
+ * déposée — l'avoir attendra (cf. rattacherAvoirsEnAttente).
+ */
+async function findOrderByInvoice(supplierId, invoiceNumber, db = pool) {
+  if (!invoiceNumber) return null;
+  const { rows } = await db.query(
+    `SELECT po.id, po.bms_po_id, po.bms_reference, po.order_number, po.order_date, po.total_amount, po.verified
+       FROM supplier_documents d
+       JOIN supplier_document_orders o ON o.document_id = d.id
+       JOIN purchase_orders po ON po.id = o.purchase_order_id
+      WHERE d.supplier_id = $1
+        AND d.number = $2
+        AND d.doc_type <> 'credit_note'
+      ORDER BY o.created_at
+      LIMIT 1`,
+    [supplierId, String(invoiceNumber).trim()],
+  );
+  return rows[0] || null;
+}
+
+/**
  * Lignes de la commande telles que le VPS les connaît (cf. parti pris 1).
  *
  * Même forme que la lecture BMS qu'elle remplace : `qty × price` est le montant
@@ -258,6 +282,10 @@ async function analyseInvoice({ buffer, supplierId, orderId = null, documentId =
   } else {
     order = await findOrderByRef(supplierId, invoice.orderRefOnDoc, db);
     matchedBy = order ? 'reference' : null;
+    if (!order && invoice.correctsInvoice) {
+      order = await findOrderByInvoice(supplierId, invoice.correctsInvoice, db);
+      matchedBy = order ? 'origin_invoice' : null;
+    }
   }
 
   if (!order) {
@@ -391,6 +419,7 @@ module.exports = {
   readManualInvoice,
   analyseInvoice,
   findOrderByRef,
+  findOrderByInvoice,
   findRefProducts,
   findSkuProducts,
   extractText,

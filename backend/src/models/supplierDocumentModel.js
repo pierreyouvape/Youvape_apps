@@ -284,7 +284,14 @@ async function createDocument({ supplier, invoice, order, comparison, filePath, 
               statedPayments: invoice.payments || [],
             })
           // `manual` : saisie à la main, sans PDF lu — rien à recontrôler.
-          : JSON.stringify({ warnings: invoice.warnings || [], originalName, ...(invoice.manual ? { manual: true } : {}) }),
+          // La facture corrigée est gardée même sans commande : c'est elle qui
+          // rattachera l'avoir quand la facture d'origine sera déposée.
+          : JSON.stringify({
+              warnings: invoice.warnings || [],
+              originalName,
+              ...(invoice.correctsInvoice ? { correctsInvoice: invoice.correctsInvoice } : {}),
+              ...(invoice.manual ? { manual: true } : {}),
+            }),
         userId || null,
       ],
     );
@@ -1033,6 +1040,45 @@ async function replaceLines(documentId, comparison, db = pool, vouchersUsed = nu
   }
 }
 
+/**
+ * Rattacher après coup un document à une commande (avoir dont la facture
+ * d'origine vient d'être déposée, ou retrouvée au re-contrôle). Mémorise aussi
+ * la facture corrigée, qu'un avoir enregistré avant sa lecture n'avait pas.
+ */
+async function linkOrder(documentId, orderId, matchedBy, correctsInvoice = null, db = pool) {
+  if (orderId) await db.query(
+    `INSERT INTO supplier_document_orders (document_id, purchase_order_id, matched_by)
+     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+    [documentId, orderId, matchedBy],
+  );
+  if (correctsInvoice) {
+    await db.query(
+      `UPDATE supplier_documents
+          SET analysis = COALESCE(analysis, '{}'::jsonb) || jsonb_build_object('correctsInvoice', $2::text),
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1`,
+      [documentId, correctsInvoice],
+    );
+  }
+}
+
+/**
+ * Les avoirs enregistrés SANS commande qui citent cette facture comme origine.
+ * Les avoirs d'avant la lecture de « Facture d'origine » n'ont pas le champ :
+ * ils se rattachent au re-contrôle.
+ */
+async function listOrphanCreditNotesFor(supplierId, invoiceNumber, db = pool) {
+  const { rows } = await db.query(
+    `SELECT d.id FROM supplier_documents d
+      WHERE d.supplier_id = $1
+        AND d.doc_type = 'credit_note'
+        AND d.analysis->>'correctsInvoice' = $2
+        AND NOT EXISTS (SELECT 1 FROM supplier_document_orders o WHERE o.document_id = d.id)`,
+    [supplierId, invoiceNumber],
+  );
+  return rows.map((r) => r.id);
+}
+
 /** Les documents enregistrés rattachés à une commande (pour les recontrôler). */
 async function listDocumentIdsForOrder(orderId, db = pool) {
   const { rows } = await db.query(
@@ -1059,6 +1105,8 @@ async function listFilesForArchive(ids, db = pool) {
 }
 
 module.exports = {
+  linkOrder,
+  listOrphanCreditNotesFor,
   listFilesForArchive,
   replaceLines,
   listDocumentIdsForOrder,
