@@ -442,6 +442,27 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
   `en_attente_réponse_client` y repassent ; les autres statuts ne bougent pas.
 - **Éteint tant que `app_config.chronopost_claims_since` n'existe pas** ; aucune échéance antérieure n'est réclamée.
 
+### Coût de livraison réel d'une commande (04/11/2026)
+
+`orders.shipping_cost_calculated` = **somme de TOUTES les lignes facturées de la commande**,
+tous transporteurs (aller + retours Chronopost, Colissimo, Mondial Relay), avoirs déduits —
+vue `order_carrier_costs` (`add_order_carrier_costs.sql`), écrite par `services/orderShippingCost.js`.
+
+- Chaque colis porte `carrier_invoice_parcels.cost_ht` = coût complet de la ligne (charges de la
+  facture réparties), calculé **côté serveur** quand on applique les tarifs. Formules identiques
+  aux écrans d'analyse ; le front n'envoie plus de montant.
+- ⚠️ **Ne jamais réécrire le coût d'une commande avec la seule ligne d'une facture** : un retour
+  expéditeur facturé le mois suivant écrasait l'aller (1264731 : 2,48 € au lieu de 5,19 €).
+- **Rectificative** (`is_rectificative`, en-tête « FACTURATION PRESTATIONS ») : sa ligne **remplace**
+  celle de la facture d'origine pour le même n° de suivi, et l'avoir de ce colis est ignoré.
+  Sinon les colis refacturés comptent deux fois (176 sur 40852941, avoirs absents de la base).
+- L'**estimation** (`applyShippingCosts`, `applyShippingCostToOrder` à chaque synchro WC) ne touche
+  jamais une commande qui a un `cost_ht` (`HAS_REAL_COST_SQL`). Avant, un changement de statut
+  effaçait le coût réel.
+- Rattrapage complet : `node src/scripts/recomputeOrderShippingCosts.js [--apply]` (simulation
+  par défaut, transaction annulée). Passé le 04/11/2026 : 14 022 commandes, +50,7 k€ HT, dont
+  ≈ 49 k€ de 7 212 commandes Colissimo qui n'avaient jamais reçu de coût.
+
 ### Contrôle code postal / commune (04/11/2026)
 
 Colissimo facture 3 € HT de « qualité d'annonce » (Problème CP / Commune) une commune absente du
