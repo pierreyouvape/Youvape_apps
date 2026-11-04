@@ -12,7 +12,7 @@ const PERM_KEY = 'tableau';
 
 /** Onglets de l'app, dans l'ordre d'affichage. */
 const TABS = [
-  { key: 'epingle', label: 'Épinglé', subtitle: 'Vos post-its, à placer où vous voulez. Vous seul les voyez.' },
+  { key: 'epingle', label: 'Épinglé', subtitle: 'Vos post-its, à placer où vous voulez. Vous seul les voyez, sauf ceux que vous partagez.' },
   { key: 'recurrentes', label: 'Récurrentes', subtitle: 'Vos tâches qui reviennent, avec rappel si besoin.' },
 ];
 
@@ -44,7 +44,7 @@ export default function TableauApp() {
 
   // Pastilles d'onglet : post-its reçus et réponses côté Épinglé, rappels côté Récurrentes
   const badges = {
-    epingle: inbox.incoming.length + inbox.answers.length + inbox.noteReminders.length,
+    epingle: inbox.incoming.length + inbox.answers.length + inbox.noteReminders.length + inbox.shares.length,
     recurrentes: inbox.reminders.length,
   };
 

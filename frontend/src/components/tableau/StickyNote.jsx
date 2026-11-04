@@ -13,8 +13,23 @@ const SAVE_DELAY_MS = 700;
  * lâcher (onSave), une seule requête par geste. Le texte (images comprises)
  * s'enregistre seul, 0,7 s après la dernière modification.
  */
-export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onColor, onError, onReminder, flash }) {
+export default function StickyNote({ note, onLocalChange, onSave, onFront, onDelete, onSend, onShare, onColor, onError, onReminder, flash }) {
   const c = noteColor(note.color);
+  const isOwner = note.is_owner !== false;
+  const members = note.shared_with || [];
+  const accepted = members.filter((m) => !m.pending);
+  // Bandeau : avec qui le post-it est partagé, sinon d'où il vient
+  let barLabel = note.received_from_name ? `De ${note.received_from_name}` : '';
+  if (!isOwner) {
+    // `accepted` me compte : les autres participants sont accepted.length - 1
+    barLabel = `👥 Partagé par ${note.owner_name}`;
+    if (accepted.length > 1) barLabel += ` (+${accepted.length - 1})`;
+  } else if (members.length) {
+    barLabel = `👥 ${accepted.map((m) => m.name).join(', ') || 'En attente'}${members.length > accepted.length ? ' …' : ''}`;
+  }
+  const barTitle = members.length
+    ? `Partagé : ${isOwner ? 'vous' : note.owner_name}, ${members.map((m) => `${m.name}${m.pending ? ' (en attente)' : ''}`).join(', ')}`
+    : barLabel;
   const [menu, setMenu] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -110,11 +125,11 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
           cursor: 'grab', touchAction: 'none', userSelect: 'none', position: 'relative',
         }}
       >
-        <span style={{
+        <span title={barTitle} style={{
           flex: 1, minWidth: 0, fontSize: 11, fontWeight: 700, color: c.ink, opacity: 0.75,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
-          {note.received_from_name ? `De ${note.received_from_name}` : ''}
+          {barLabel}
         </span>
         {note.remind_at && (
           <button onPointerDown={(e) => e.stopPropagation()} onClick={onReminder}
@@ -167,10 +182,19 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
                 ))}
               </div>
               <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image ou un PDF…</button>
-              <button style={menuItem} onClick={() => { flush(); setMenu(false); onReminder(); }}>{note.remind_at ? 'Modifier le rappel…' : 'Rappel…'}</button>
-              <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('move'); }}>Envoyer à…</button>
+              {isOwner && (
+                <button style={menuItem} onClick={() => { flush(); setMenu(false); onReminder(); }}>{note.remind_at ? 'Modifier le rappel…' : 'Rappel…'}</button>
+              )}
+              <button style={menuItem} onClick={() => { flush(); setMenu(false); onShare(); }}>
+                {members.length ? 'Partage…' : 'Partager avec…'}
+              </button>
+              {isOwner && !members.length && (
+                <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('move'); }}>Envoyer à…</button>
+              )}
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('copy'); }}>Envoyer une copie à…</button>
-              <button style={{ ...menuItem, color: '#B91C1C' }} onClick={() => { setMenu(false); onDelete(); }}>Supprimer</button>
+              <button style={{ ...menuItem, color: '#B91C1C' }} onClick={() => { setMenu(false); onDelete(); }}>
+                {isOwner ? 'Supprimer' : 'Retirer de mon tableau'}
+              </button>
             </div>
           </>
         )}

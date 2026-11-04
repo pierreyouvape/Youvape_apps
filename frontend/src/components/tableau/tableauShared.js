@@ -47,6 +47,11 @@ export const tableauApi = {
   // Rappel d'un post-it : { remind_at: 'YYYY-MM-DD HH:MM', screen, email }
   setReminder: (id, body) => axios.put(`${API_URL}/tableau/notes/${id}/reminder`, body).then((r) => r.data),
   clearReminder: (id) => axios.delete(`${API_URL}/tableau/notes/${id}/reminder`).then((r) => r.data),
+  // Partage : un seul post-it sur plusieurs tableaux, contenu commun
+  share: (noteId, toUserId) => post(`/notes/${noteId}/shares`, { to_user_id: toUserId }),
+  unshare: (noteId, userId) => axios.delete(`${API_URL}/tableau/notes/${noteId}/shares/${userId}`).then((r) => r.data),
+  acceptShare: (noteId) => post(`/notes/${noteId}/shares/accept`),
+  refuseShare: (noteId) => post(`/notes/${noteId}/shares/refuse`),
   send: (noteId, toUserId, mode) => post('/transfers', { note_id: noteId, to_user_id: toUserId, mode }),
   accept: (id) => post(`/transfers/${id}/accept`),
   refuse: (id) => post(`/transfers/${id}/refuse`),

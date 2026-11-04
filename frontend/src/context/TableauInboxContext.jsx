@@ -6,7 +6,7 @@ import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError, previewText 
 
 /**
  * Notifications de l'app Tableau, visibles depuis TOUTES les apps :
- *   - post-it reçu (à accepter ou refuser) ;
+ *   - post-it reçu ou partagé (à accepter ou refuser) ;
  *   - réponse à un envoi (accepté / refusé) ;
  *   - rappel d'une tâche récurrente arrivé à son heure.
  *
@@ -21,11 +21,11 @@ import { tableauApi, noteColor, formatDue, TABLEAU_COLOR, apiError, previewText 
  * répondrait 403.
  */
 
-const EMPTY = { incoming: [], answers: [], sent: [], reminders: [], noteReminders: [] };
+const EMPTY = { incoming: [], answers: [], sent: [], reminders: [], noteReminders: [], shares: [] };
 const POLL_MS = 60 * 1000;
 const MAX_TOASTS = 3;
 
-const TableauInboxContext = createContext({ inbox: EMPTY, count: 0, refresh: () => {} });
+const TableauInboxContext = createContext({ inbox: EMPTY, count: 0, refresh: () => {}, notesTick: 0 });
 
 export const useTableauInbox = () => useContext(TableauInboxContext);
 
@@ -33,6 +33,8 @@ export function TableauInboxProvider({ children }) {
   const { token, permissions, isSuperAdmin } = useContext(AuthContext);
   const enabled = !!token && (isSuperAdmin || permissions?.tableau?.read === true);
   const [inbox, setInbox] = useState(EMPTY);
+  // Change quand un post-it partagé a bougé chez un autre : le tableau se relit
+  const [notesTick, setNotesTick] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!enabled) { setInbox(EMPTY); return; }
@@ -56,17 +58,23 @@ export function TableauInboxProvider({ children }) {
   useEffect(() => {
     if (!enabled) return undefined;
     const es = openSavStream('/api/tableau/stream', { tokenUrl: '/api/tableau/stream-token' });
-    const onChange = () => refresh();
+    const onChange = (e) => {
+      refresh();
+      try {
+        if (JSON.parse(e.data || '{}').reason === 'notes') setNotesTick((t) => t + 1);
+      } catch { /* signal sans données */ }
+    };
     es.addEventListener('change', onChange);
     // Reconnexion après une coupure : des changements ont pu passer entre-temps
-    es.addEventListener('hello', onChange);
+    es.addEventListener('hello', () => { refresh(); setNotesTick((t) => t + 1); });
     return () => es.close();
   }, [enabled, refresh]);
 
-  const count = inbox.incoming.length + inbox.answers.length + inbox.reminders.length + inbox.noteReminders.length;
+  const count = inbox.incoming.length + inbox.answers.length + inbox.reminders.length + inbox.noteReminders.length
+    + inbox.shares.length;
 
   return (
-    <TableauInboxContext.Provider value={{ inbox, count, refresh }}>
+    <TableauInboxContext.Provider value={{ inbox, count, refresh, notesTick }}>
       {children}
       {enabled && <TableauToasts inbox={inbox} refresh={refresh} />}
     </TableauInboxContext.Provider>
@@ -117,6 +125,14 @@ function TableauToasts({ inbox, refresh }) {
         ? `Il est revenu sur votre tableau. « ${preview(t.content)} »`
         : `« ${preview(t.content)} »`,
       actions: [{ label: 'OK', primary: true, onClick: run(() => tableauApi.seen(t.id)) }],
+    })),
+    ...inbox.shares.map((s) => ({
+      key: `share-${s.note_id}`, color: s.color,
+      title: `${s.from_name || s.owner_name} partage un post-it avec vous`,
+      body: preview(s.content),
+      actions: [
+        { label: 'Voir', primary: true, onClick: () => navigate('/tableau/epingle') },
+      ],
     })),
     ...inbox.noteReminders.map((n) => ({
       key: `note-rem-${n.id}-${n.remind_at}`, color: n.color,

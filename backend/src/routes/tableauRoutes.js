@@ -46,6 +46,11 @@ router.post('/notes/image', uploadImage, tableauController.createImage);
 router.post('/media', uploadImage, tableauController.uploadMedia);
 router.patch('/notes/:id', tableauController.updateNote);
 router.delete('/notes/:id', tableauController.deleteNote);
+// Partage : un seul post-it sur plusieurs tableaux, contenu commun ({ to_user_id })
+router.post('/notes/:id/shares', tableauController.shareNote);
+router.delete('/notes/:id/shares/:userId', tableauController.unshareNote);
+router.post('/notes/:id/shares/accept', tableauController.acceptShare);
+router.post('/notes/:id/shares/refuse', tableauController.refuseShare);
 // Rappel unique d'un post-it : { remind_at, screen, email } ; DELETE = retirer, ou « OK »
 router.put('/notes/:id/reminder', tableauController.setNoteReminder);
 router.delete('/notes/:id/reminder', tableauController.clearNoteReminder);

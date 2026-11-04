@@ -48,10 +48,34 @@ async function getRecipients(userId) {
 
 /* ─── Post-its ──────────────────────────────────────────── */
 
-const NOTE_COLUMNS = `n.id, n.kind, n.content, n.color, n.x, n.y, n.width, n.height, n.z, n.image_file,
-  to_char(n.remind_at, 'YYYY-MM-DD HH24:MI') AS remind_at, n.remind_screen, n.remind_email,
-  (n.remind_at IS NOT NULL AND n.remind_screen AND n.remind_at <= ${PARIS_NOW}) AS remind_due,
-  ${USER_NAME('rf')} AS received_from_name`;
+/*
+ * Post-its PARTAGÉS (tableau_note_shares) : un seul post-it, visible sur le
+ * tableau du propriétaire et de chaque participant qui a accepté. Le contenu
+ * (texte, images, PDF) et la couleur sont communs ; la place sur le tableau
+ * (x, y, taille, plan) est propre à chacun — celle du propriétaire sur
+ * tableau_notes, celle d'un participant sur sa ligne de partage. Le rappel reste
+ * au propriétaire. `s` = la ligne de partage du compte qui lit (NULL s'il est
+ * propriétaire).
+ */
+const MINE = '(n.owner_id = $1)';
+const NOTE_COLUMNS = `n.id, n.kind, n.content, n.color, n.owner_id,
+  COALESCE(s.x, n.x) AS x, COALESCE(s.y, n.y) AS y,
+  COALESCE(s.width, n.width) AS width, COALESCE(s.height, n.height) AS height, COALESCE(s.z, n.z) AS z,
+  n.image_file, ${MINE} AS is_owner, ${USER_NAME('ow')} AS owner_name,
+  CASE WHEN ${MINE} THEN to_char(n.remind_at, 'YYYY-MM-DD HH24:MI') END AS remind_at,
+  ${MINE} AND n.remind_screen AS remind_screen, ${MINE} AND n.remind_email AS remind_email,
+  (${MINE} AND n.remind_at IS NOT NULL AND n.remind_screen AND n.remind_at <= ${PARIS_NOW}) AS remind_due,
+  ${USER_NAME('rf')} AS received_from_name,
+  COALESCE((SELECT json_agg(json_build_object('id', su.id, 'name', ${USER_NAME('su')},
+                                              'pending', sh.accepted_at IS NULL) ORDER BY sh.created_at)
+              FROM tableau_note_shares sh JOIN users su ON su.id = sh.user_id
+             WHERE sh.note_id = n.id), '[]') AS shared_with`;
+
+const NOTE_FROM = `tableau_notes n
+  LEFT JOIN tableau_note_shares s ON s.note_id = n.id AND s.user_id = $1 AND s.accepted_at IS NOT NULL
+  LEFT JOIN users rf ON rf.id = n.received_from
+  JOIN users ow ON ow.id = n.owner_id`;
+const VISIBLE = `(n.owner_id = $1 OR s.user_id IS NOT NULL) AND NOT n.in_transit`;
 
 /**
  * kind = 'note' : post-it, `content` en HTML (images comprises).
@@ -66,11 +90,9 @@ const toClient = ({ image_file: file, ...n }) => ({
 
 async function getNotes(userId) {
   const { rows } = await pool.query(
-    `SELECT ${NOTE_COLUMNS}
-       FROM tableau_notes n
-       LEFT JOIN users rf ON rf.id = n.received_from
-      WHERE n.owner_id = $1 AND NOT n.in_transit
-      ORDER BY n.z, n.id`,
+    `SELECT ${NOTE_COLUMNS} FROM ${NOTE_FROM}
+      WHERE ${VISIBLE}
+      ORDER BY COALESCE(s.z, n.z), n.id`,
     [userId],
   );
   return rows.map(toClient);
@@ -78,20 +100,47 @@ async function getNotes(userId) {
 
 async function getNote(userId, id) {
   const { rows } = await pool.query(
-    `SELECT ${NOTE_COLUMNS}
-       FROM tableau_notes n
-       LEFT JOIN users rf ON rf.id = n.received_from
-      WHERE n.id = $1 AND n.owner_id = $2 AND NOT n.in_transit`,
-    [id, userId],
+    `SELECT ${NOTE_COLUMNS} FROM ${NOTE_FROM}
+      WHERE n.id = $2 AND ${VISIBLE}`,
+    [userId, id],
   );
   if (!rows[0]) throw httpError(404, 'Post-it introuvable');
   return toClient(rows[0]);
 }
 
-/** Plan au-dessus de tous les post-its du compte. */
+/**
+ * Accès d'un compte à un post-it : 'owner', 'member' (partage accepté) ou 404.
+ * Renvoie aussi la liste de tous les participants (propriétaire compris), pour
+ * les prévenir d'un changement.
+ */
+async function noteAccess(client, userId, id, { lock = false } = {}) {
+  const { rows } = await client.query(
+    `SELECT n.id, n.kind, n.content, n.color, n.owner_id, n.width, n.height,
+            (n.owner_id = $2) AS is_owner,
+            EXISTS (SELECT 1 FROM tableau_note_shares s
+                     WHERE s.note_id = n.id AND s.user_id = $2 AND s.accepted_at IS NOT NULL) AS is_member
+       FROM tableau_notes n
+      WHERE n.id = $1 AND NOT n.in_transit${lock ? ' FOR UPDATE OF n' : ''}`,
+    [id, userId],
+  );
+  const note = rows[0];
+  if (!note || (!note.is_owner && !note.is_member)) throw httpError(404, 'Post-it introuvable');
+  const shares = await client.query('SELECT user_id, accepted_at FROM tableau_note_shares WHERE note_id = $1', [id]);
+  note.shares = shares.rows;
+  note.participants = [note.owner_id, ...shares.rows.filter((r) => r.accepted_at).map((r) => r.user_id)];
+  return note;
+}
+
+/** Prévient les AUTRES participants d'un post-it partagé : leur tableau se relit. */
+const notifyOthers = (participants, userId) =>
+  notify(participants.filter((p) => Number(p) !== Number(userId)), 'notes');
+
+/** Plan au-dessus de tous les post-its du compte (les siens et ceux partagés avec lui). */
 async function topZ(client, userId) {
   const { rows } = await client.query(
-    'SELECT COALESCE(MAX(z), 0) + 1 AS z FROM tableau_notes WHERE owner_id = $1',
+    `SELECT GREATEST(
+              (SELECT COALESCE(MAX(z), 0) FROM tableau_notes WHERE owner_id = $1),
+              (SELECT COALESCE(MAX(z), 0) FROM tableau_note_shares WHERE user_id = $1)) + 1 AS z`,
     [userId],
   );
   return rows[0].z;
@@ -129,30 +178,44 @@ async function uploadMedia(file) {
   return { url: media.signedUrl(filename), kind, name: name || (kind === 'pdf' ? 'document.pdf' : '') };
 }
 
-/** Mise à jour partielle : seuls les champs fournis sont écrits. */
+/**
+ * Mise à jour partielle : seuls les champs fournis sont écrits. Contenu et
+ * couleur sont communs à tous les participants d'un post-it partagé (prévenus
+ * aussitôt) ; la place est propre à chacun.
+ */
 async function updateNote(userId, id, input) {
-  const sets = [];
-  const params = [id, userId];
-  const set = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+  const note = await noteAccess(pool, userId, id);
+  const shared = [];
+  const layout = [];
+  const params = [id];
+  const set = (list, col, val) => { params.push(val); list.push(`${col} = $${params.length}`); };
 
-  if (input.content !== undefined) set('content', media.stripSignatures(input.content));
+  if (input.content !== undefined) set(shared, 'content', media.stripSignatures(input.content));
   if (input.color !== undefined) {
     if (!COLORS.includes(input.color)) throw httpError(400, 'Couleur inconnue');
-    set('color', input.color);
+    set(shared, 'color', input.color);
   }
-  if (input.x !== undefined) set('x', clampInt(input.x, 0, 20000));
-  if (input.y !== undefined) set('y', clampInt(input.y, 0, 20000));
-  if (input.width !== undefined) set('width', clampInt(input.width, 40, 2000));
-  if (input.height !== undefined) set('height', clampInt(input.height, 40, 2000));
-  if (input.z !== undefined) set('z', clampInt(input.z, 0, 1000000));
-  if (!sets.length) return getNote(userId, id);
+  if (input.x !== undefined) set(layout, 'x', clampInt(input.x, 0, 20000));
+  if (input.y !== undefined) set(layout, 'y', clampInt(input.y, 0, 20000));
+  if (input.width !== undefined) set(layout, 'width', clampInt(input.width, 40, 2000));
+  if (input.height !== undefined) set(layout, 'height', clampInt(input.height, 40, 2000));
+  if (input.z !== undefined) set(layout, 'z', clampInt(input.z, 0, 1000000));
 
-  const { rowCount } = await pool.query(
-    `UPDATE tableau_notes SET ${sets.join(', ')}, updated_at = ${PARIS_NOW}
-      WHERE id = $1 AND owner_id = $2 AND NOT in_transit`,
-    params,
-  );
-  if (!rowCount) throw httpError(404, 'Post-it introuvable');
+  const noteSets = note.is_owner ? [...shared, ...layout] : shared;
+  if (noteSets.length) {
+    await pool.query(
+      `UPDATE tableau_notes SET ${noteSets.join(', ')}, updated_at = ${PARIS_NOW} WHERE id = $1`,
+      params,
+    );
+  }
+  if (!note.is_owner && layout.length) {
+    params.push(userId);
+    await pool.query(
+      `UPDATE tableau_note_shares SET ${layout.join(', ')} WHERE note_id = $1 AND user_id = $${params.length}`,
+      params,
+    );
+  }
+  if (shared.length) notifyOthers(note.participants, userId);
   return getNote(userId, id);
 }
 
@@ -193,7 +256,17 @@ async function clearNoteReminder(userId, id) {
   return getNote(userId, id);
 }
 
+/**
+ * Propriétaire : supprime le post-it, de tous les tableaux s'il est partagé.
+ * Participant : le retire seulement de son tableau (il quitte le partage).
+ */
 async function deleteNote(userId, id) {
+  const note = await noteAccess(pool, userId, id);
+  if (!note.is_owner) {
+    await pool.query('DELETE FROM tableau_note_shares WHERE note_id = $1 AND user_id = $2', [id, userId]);
+    notifyOthers(note.participants, userId);
+    return;
+  }
   const { rows } = await pool.query(
     `DELETE FROM tableau_notes WHERE id = $1 AND owner_id = $2 AND NOT in_transit
      RETURNING content, image_file`,
@@ -201,6 +274,74 @@ async function deleteNote(userId, id) {
   );
   if (!rows[0]) throw httpError(404, 'Post-it introuvable');
   media.removeFiles([rows[0].image_file, ...media.htmlFiles(rows[0].content)]);
+  // Partage en attente compris : la proposition disparaît de sa boîte
+  notify(note.shares.map((r) => r.user_id), 'notes');
+}
+
+/* ─── Partage ───────────────────────────────────────────── */
+
+/**
+ * Propose un post-it en partage. Le propriétaire comme un participant peuvent
+ * inviter ; le destinataire accepte ou refuse depuis sa boîte de réception.
+ */
+async function shareNote(userId, id, toUserId) {
+  const to = Number(toUserId);
+  const recipients = await getRecipients(userId);
+  if (!recipients.some((r) => r.id === to)) throw httpError(400, 'Destinataire inconnu ou sans accès à l\'app Tableau');
+  const note = await noteAccess(pool, userId, id);
+  if (note.kind !== 'note') throw httpError(400, 'Seuls les post-its se partagent');
+  if (note.owner_id === to || note.shares.some((r) => r.user_id === to)) {
+    throw httpError(400, 'Ce post-it est déjà partagé avec cette personne');
+  }
+  await pool.query(
+    `INSERT INTO tableau_note_shares (note_id, user_id, shared_by, width, height)
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING`,
+    [id, to, userId, note.width, note.height],
+  );
+  notify([to, ...note.participants], 'notes');
+  return getNote(userId, id);
+}
+
+/** Accepter un partage : le post-it se pose en haut à gauche, au premier plan. */
+async function acceptShare(userId, id) {
+  const z = await topZ(pool, userId);
+  const { rowCount } = await pool.query(
+    `UPDATE tableau_note_shares SET accepted_at = ${PARIS_NOW}, x = 40, y = 40, z = $3
+      WHERE note_id = $1 AND user_id = $2 AND accepted_at IS NULL`,
+    [id, userId, z],
+  );
+  if (!rowCount) throw httpError(404, 'Partage introuvable, déjà traité ou annulé');
+  const note = await noteAccess(pool, userId, id);
+  notify(note.participants, 'notes');
+}
+
+/** Refuser un partage en attente. */
+async function refuseShare(userId, id) {
+  const { rows } = await pool.query(
+    `DELETE FROM tableau_note_shares s USING tableau_notes n
+      WHERE s.note_id = $1 AND s.user_id = $2 AND s.accepted_at IS NULL AND n.id = s.note_id
+      RETURNING n.owner_id`,
+    [id, userId],
+  );
+  if (!rows[0]) throw httpError(404, 'Partage introuvable, déjà traité ou annulé');
+  const others = await pool.query(
+    'SELECT user_id FROM tableau_note_shares WHERE note_id = $1 AND accepted_at IS NOT NULL',
+    [id],
+  );
+  notify([userId, rows[0].owner_id, ...others.rows.map((r) => r.user_id)], 'notes');
+}
+
+/** Le propriétaire retire quelqu'un du partage (ou annule une proposition). */
+async function unshareNote(userId, id, memberId) {
+  const note = await noteAccess(pool, userId, id);
+  if (!note.is_owner) throw httpError(403, 'Seul le propriétaire du post-it peut retirer quelqu\'un');
+  const { rowCount } = await pool.query(
+    'DELETE FROM tableau_note_shares WHERE note_id = $1 AND user_id = $2',
+    [id, Number(memberId)],
+  );
+  if (!rowCount) throw httpError(404, 'Cette personne n\'a pas ce post-it');
+  notify([...note.participants, Number(memberId)], 'notes');
+  return getNote(userId, id);
 }
 
 /* ─── Envois ────────────────────────────────────────────── */
@@ -215,14 +356,14 @@ async function sendNote(userId, { note_id: noteId, to_user_id: toUserId, mode })
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query(
-      `SELECT id, kind, content, color FROM tableau_notes
-        WHERE id = $1 AND owner_id = $2 AND NOT in_transit FOR UPDATE`,
-      [noteId, userId],
-    );
-    const note = rows[0];
-    if (!note) throw httpError(404, 'Post-it introuvable');
+    // Un participant peut en envoyer une copie ; seul le propriétaire le déplace,
+    // et jamais tant qu'il est partagé (il quitterait le tableau des autres).
+    const note = await noteAccess(client, userId, noteId, { lock: true });
     if (note.kind !== 'note') throw httpError(400, 'Seuls les post-its s\'envoient');
+    if (mode === 'move' && !note.is_owner) throw httpError(403, 'Seul le propriétaire peut envoyer ce post-it');
+    if (mode === 'move' && note.shares.length) {
+      throw httpError(400, 'Post-it partagé : retirez le partage, ou envoyez une copie');
+    }
     // Copie : ses propres exemplaires des images, dès l'envoi — l'original peut
     // être modifié ou supprimé avant la réponse.
     const content = mode === 'copy' ? media.copyHtmlImages(note.content).html : note.content;
@@ -688,7 +829,7 @@ async function sendEmailReminders(sendMail) {
 /* ─── Boîte de réception (interrogée toutes les minutes) ── */
 
 async function getInbox(userId) {
-  const [incoming, answers, sent, reminders, noteReminders] = await Promise.all([
+  const [incoming, answers, sent, reminders, noteReminders, shares] = await Promise.all([
     pool.query(
       `SELECT t.id, t.mode, t.content, t.color, ${USER_NAME('u')} AS from_name,
               to_char(t.created_at, 'YYYY-MM-DD HH24:MI') AS created_at
@@ -732,6 +873,17 @@ async function getInbox(userId) {
         ORDER BY n.remind_at`,
       [userId],
     ),
+    pool.query(
+      `SELECT n.id AS note_id, n.content, n.color, ${USER_NAME('u')} AS from_name, ${USER_NAME('ow')} AS owner_name,
+              to_char(s.created_at, 'YYYY-MM-DD HH24:MI') AS created_at
+         FROM tableau_note_shares s
+         JOIN tableau_notes n ON n.id = s.note_id AND NOT n.in_transit
+         JOIN users ow ON ow.id = n.owner_id
+         LEFT JOIN users u ON u.id = s.shared_by
+        WHERE s.user_id = $1 AND s.accepted_at IS NULL
+        ORDER BY s.created_at`,
+      [userId],
+    ),
   ]);
   return {
     incoming: incoming.rows,
@@ -739,6 +891,7 @@ async function getInbox(userId) {
     sent: sent.rows,
     reminders: reminders.rows,
     noteReminders: noteReminders.rows,
+    shares: shares.rows,
   };
 }
 
@@ -746,6 +899,7 @@ module.exports = {
   COLORS,
   getRecipients,
   getNotes, createNote, createImage, uploadMedia, updateNote, deleteNote, sweepMedia,
+  shareNote, acceptShare, refuseShare, unshareNote,
   setNoteReminder, clearNoteReminder,
   sendNote, answerTransfer, cancelTransfer, markTransferSeen,
   getTasks, createTask, updateTask, deleteTask, completeTask, undoTask, dismissReminder,

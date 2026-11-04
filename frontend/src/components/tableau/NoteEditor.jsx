@@ -40,6 +40,10 @@ function ensureStyles() {
   document.head.appendChild(el);
 }
 
+// Sans frappe depuis ce délai (> enregistrement à 0,7 s), le texte reçu d'un
+// autre participant remplace celui affiché, même curseur dedans.
+const EXTERNAL_UPDATE_GRACE_MS = 2500;
+
 // Les liens d'images sont re-signés à chaque lecture : on compare sans la signature
 const unsigned = (html) => (html || '').replace(/\?exp=\d+&amp;sig=[0-9a-f]+/g, '');
 
@@ -48,6 +52,7 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
   const cb = useRef({});
   cb.current = { onChange, onUpload, onFocusChange, onImageSelect, onError };
   const editorRef = useRef(null);
+  const lastLocalEdit = useRef(0);
 
   const insertFiles = async (files, pos) => {
     const ed = editorRef.current;
@@ -105,7 +110,10 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
         return false;
       },
     },
-    onUpdate: ({ editor: ed }) => cb.current.onChange(ed.isEmpty ? '' : ed.getHTML()),
+    onUpdate: ({ editor: ed }) => {
+      lastLocalEdit.current = Date.now();
+      cb.current.onChange(ed.isEmpty ? '' : ed.getHTML());
+    },
     onFocus: () => cb.current.onFocusChange?.(true),
     onBlur: () => cb.current.onFocusChange?.(false),
     onSelectionUpdate: ({ editor: ed }) => {
@@ -117,11 +125,20 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
 
   useImperativeHandle(ref, () => ({ insertFiles: (files) => insertRef.current(files) }), []);
 
-  // Relecture du tableau : on ne remplace pas un texte en cours de frappe
+  // Relecture du tableau (post-it partagé modifié par un autre, notamment) : on
+  // ne remplace pas un texte en cours de frappe. Curseur dans le post-it mais
+  // sans frappe depuis quelques secondes : on prend la version reçue, curseur gardé.
   useEffect(() => {
-    if (!editor || editor.isFocused) return;
+    if (!editor) return;
+    if (editor.isFocused && Date.now() - lastLocalEdit.current < EXTERNAL_UPDATE_GRACE_MS) return;
     const current = editor.isEmpty ? '' : editor.getHTML();
-    if (unsigned(value) !== unsigned(current)) editor.commands.setContent(value || '', { emitUpdate: false });
+    if (unsigned(value) === unsigned(current)) return;
+    const { from, to } = editor.state.selection;
+    editor.commands.setContent(value || '', { emitUpdate: false });
+    if (editor.isFocused) {
+      const max = editor.state.doc.content.size;
+      editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
+    }
   }, [value, editor]);
 
   return (

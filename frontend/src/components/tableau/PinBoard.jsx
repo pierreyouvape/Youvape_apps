@@ -37,13 +37,14 @@ const preview = (html) => previewText(html);
 
 /** Onglet Épinglé : surface libre de post-its et d'images + boîte de réception des envois. */
 export default function PinBoard() {
-  const { inbox, refresh } = useTableauInbox();
+  const { inbox, refresh, notesTick } = useTableauInbox();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sending, setSending] = useState(null); // { note, mode }
   const [selectedId, setSelectedId] = useState(null); // image seule sélectionnée
   const [reminderFor, setReminderFor] = useState(null); // post-it dont on règle le rappel
+  const [sharingId, setSharingId] = useState(null); // post-it dont on règle le partage
   const [flashId, setFlashId] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const notesRef = useRef(notes);
@@ -68,6 +69,9 @@ export default function PinBoard() {
   // réponse arrive dans la boîte.
   const answersKey = inbox.answers.map((a) => a.id).join(',');
   useEffect(() => { if (answersKey) load(); }, [answersKey, load]);
+
+  // Post-it partagé modifié, partagé, accepté ou retiré chez un autre : on relit
+  useEffect(() => { if (notesTick) load(); }, [notesTick, load]);
 
   // Rappel arrivé (ou fermé ailleurs) : le cadre rouge du post-it suit
   const remindersKey = inbox.noteReminders.map((r) => r.id).join(',');
@@ -107,7 +111,16 @@ export default function PinBoard() {
   };
 
   const removeNote = async (note) => {
-    if (note.kind === 'note' && note.content.trim() && !window.confirm('Supprimer ce post-it ?')) return;
+    const members = (note.shared_with || []).filter((m) => !m.pending).map((m) => m.name);
+    let question = null;
+    if (note.kind === 'note' && note.is_owner === false) {
+      question = `Retirer ce post-it de votre tableau ?\nIl reste chez ${note.owner_name}${members.length > 1 ? ' et les autres' : ''}.`;
+    } else if (note.kind === 'note' && members.length) {
+      question = `Supprimer ce post-it pour tout le monde ?\nIl disparaîtra aussi du tableau de ${members.join(', ')}.`;
+    } else if (note.kind === 'note' && note.content.trim()) {
+      question = 'Supprimer ce post-it ?';
+    }
+    if (question && !window.confirm(question)) return;
     try {
       await tableauApi.deleteNote(note.id);
       setNotes((ns) => ns.filter((n) => n.id !== note.id));
@@ -307,6 +320,7 @@ export default function PinBoard() {
               onColor={(color) => { patchLocal(n.id, { color }); save(n.id, { color }); }}
               onDelete={() => removeNote(n)}
               onSend={(mode) => setSending({ note: n, mode })}
+              onShare={() => setSharingId(n.id)}
               onReminder={() => setReminderFor(n)}
               flash={flashId === n.id}
               onError={setError}
@@ -320,6 +334,14 @@ export default function PinBoard() {
           note={notes.find((n) => n.id === reminderFor.id) || reminderFor}
           onClose={() => setReminderFor(null)}
           onSaved={(note) => { setReminderFor(null); setNotes((ns) => ns.map((n) => (n.id === note.id ? note : n))); refresh(); }}
+        />
+      )}
+
+      {sharingId && notes.some((n) => n.id === sharingId) && (
+        <ShareDialog
+          note={notes.find((n) => n.id === sharingId)}
+          onClose={() => setSharingId(null)}
+          onChanged={(note) => setNotes((ns) => ns.map((n) => (n.id === note.id ? note : n)))}
         />
       )}
 
@@ -396,6 +418,86 @@ function SendDialog({ note, mode, onClose, onSent }) {
   );
 }
 
+/* ─── Partage ───────────────────────────────────────────── */
+
+function ShareDialog({ note, onClose, onChanged }) {
+  const [recipients, setRecipients] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    tableauApi.recipients().then(setRecipients).catch((e) => setError(apiError(e)));
+  }, []);
+
+  const run = async (fn) => {
+    setBusy(true);
+    setError(null);
+    try {
+      onChanged(await fn());
+    } catch (e) {
+      setError(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const members = note.shared_with || [];
+  const taken = new Set([note.owner_id, ...members.map((m) => m.id)]);
+  const available = (recipients || []).filter((r) => !taken.has(r.id));
+
+  return (
+    <TableauModal title="Partager ce post-it" onClose={onClose}>
+      <p style={{ fontSize: 13, color: '#6B7280', margin: '0 0 14px' }}>
+        Le même post-it apparaît sur son tableau, une fois accepté : texte, images et PDF ajoutés
+        par l'un se voient aussitôt chez l'autre. Chacun le place où il veut ; le rappel reste à son propriétaire.
+      </p>
+
+      <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', margin: '0 0 6px' }}>
+        Partagé avec
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, color: '#374151', padding: '6px 2px' }}>
+          {note.is_owner ? 'Vous' : note.owner_name} <span style={{ color: '#9CA3AF' }}>(propriétaire)</span>
+        </div>
+        {members.map((m) => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#374151', padding: '2px' }}>
+            <span style={{ flex: 1 }}>
+              {m.name}{m.pending && <span style={{ color: '#9CA3AF' }}> — en attente de sa réponse</span>}
+            </span>
+            {note.is_owner && (
+              <button disabled={busy} onClick={() => run(() => tableauApi.unshare(note.id, m.id))}
+                style={{ ...btn(false), padding: '5px 10px', fontSize: 12.5 }}>
+                {m.pending ? 'Annuler' : 'Retirer'}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', margin: '0 0 6px' }}>
+        Ajouter
+      </div>
+      {recipients === null && !error && <div style={{ fontSize: 13, color: '#9CA3AF' }}>Chargement…</div>}
+      {recipients && available.length === 0 && (
+        <div style={{ fontSize: 13, color: '#6B7280' }}>Personne d'autre à ajouter.</div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {available.map((r) => (
+          <button
+            key={r.id}
+            disabled={busy}
+            onClick={() => run(() => tableauApi.share(note.id, r.id))}
+            style={{ ...btn(false), textAlign: 'left', padding: '10px 14px', fontSize: 14, cursor: busy ? 'wait' : 'pointer' }}
+          >
+            + {r.name}
+          </button>
+        ))}
+      </div>
+      {error && <div style={{ fontSize: 13, color: '#B91C1C', marginTop: 10 }}>{error}</div>}
+    </TableauModal>
+  );
+}
+
 /* ─── Boîte de réception ────────────────────────────────── */
 
 function InboxCard({ color, title, body, children }) {
@@ -420,11 +522,22 @@ function InboxCard({ color, title, body, children }) {
 }
 
 function InboxPanel({ inbox, act }) {
-  const { incoming, answers, sent } = inbox;
-  if (!incoming.length && !answers.length && !sent.length) return null;
+  const { incoming, answers, sent, shares = [] } = inbox;
+  if (!incoming.length && !answers.length && !sent.length && !shares.length) return null;
 
   return (
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      {shares.map((s) => (
+        <InboxCard
+          key={`share-${s.note_id}`}
+          color={s.color}
+          title={`${s.from_name || s.owner_name} partage un post-it avec vous`}
+          body={preview(s.content)}
+        >
+          <button style={btn(false)} onClick={act(() => tableauApi.refuseShare(s.note_id))}>Refuser</button>
+          <button style={btn(true)} onClick={act(() => tableauApi.acceptShare(s.note_id))}>Accepter</button>
+        </InboxCard>
+      ))}
       {incoming.map((t) => (
         <InboxCard
           key={`in-${t.id}`}

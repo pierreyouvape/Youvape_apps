@@ -26,6 +26,10 @@ exports.createImage = handle((req) => tableauModel.createImage(uid(req), req.fil
 exports.uploadMedia = handle((req) => tableauModel.uploadMedia(req.file));
 exports.updateNote = handle((req) => tableauModel.updateNote(uid(req), id(req), req.body || {}));
 exports.deleteNote = handle((req) => tableauModel.deleteNote(uid(req), id(req)));
+exports.shareNote = handle((req) => tableauModel.shareNote(uid(req), id(req), (req.body || {}).to_user_id));
+exports.unshareNote = handle((req) => tableauModel.unshareNote(uid(req), id(req), req.params.userId));
+exports.acceptShare = handle((req) => tableauModel.acceptShare(uid(req), id(req)));
+exports.refuseShare = handle((req) => tableauModel.refuseShare(uid(req), id(req)));
 exports.setNoteReminder = handle((req) => tableauModel.setNoteReminder(uid(req), id(req), req.body || {}));
 exports.clearNoteReminder = handle((req) => tableauModel.clearNoteReminder(uid(req), id(req)));
 
