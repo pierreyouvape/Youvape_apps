@@ -106,6 +106,7 @@ const lineOut = (l) => {
     outcome: l.outcome,
     movedTo: l.moved_to,
     seen: l.qty != null || l.outcome === 'moved',
+    countedAt: l.counted_at,
     mustSee: mustBeSeen(l),
     theoretical,
     gap,

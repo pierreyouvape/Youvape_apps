@@ -12,6 +12,8 @@ import { Photo, CameraButton, Sheet, QtySheet, CodeSheet } from './pdaInventoryU
  *     s'affiche avec leur quantité (physique BMS − prélevé), qu'on corrige en
  *     absolu ;
  *   - un produit avec du stock doit être VU (scanné, ou quantité saisie) ;
+ *     l'écran se centre sur le produit scanné, qui reste à sa place : il ne
+ *     descend en bas, avec les produits vus, qu'au scan suivant ;
  *     les produits à 0, grisés en bas, restent à 0 si on n'y touche pas ;
  *   - un produit trouvé ici et rangé ailleurs s'ajoute : sa quantité devient
  *     son stock total, et il est rangé ici ;
@@ -153,6 +155,28 @@ const PUSH = {
   ignored: ['Laissé tombé', C.greyT, C.grey],
 };
 
+/**
+ * Ordre de la liste : à voir, puis à 0 (grisés), puis hors inventaire, puis
+ * les vus, le dernier vu tout en bas. Le produit qu'on vient de voir reste à
+ * sa place (`current`) jusqu'au geste suivant.
+ */
+const orderLines = (lines, current) => {
+  const keep = (l) => current && l.id === current.id && !current.wasSeen;
+  const group = (l) => {
+    if (l.lockedBy || l.refError) return 2;
+    if (l.seen && !keep(l)) return 3;
+    if (!l.added && l.shownQty === 0) return 1;
+    return 0;
+  };
+  return lines.slice().sort((a, b) => {
+    const ga = group(a);
+    const gb = group(b);
+    if (ga !== gb) return ga - gb;
+    if (ga === 3) return String(a.countedAt || '').localeCompare(String(b.countedAt || '')) || a.id - b.id;
+    return a.name.localeCompare(b.name, 'fr');
+  });
+};
+
 /** Ce que la ligne affiche à droite : la quantité retenue, ou celle de BMS en attendant. */
 function LineQty({ l }) {
   if (l.outcome === 'moved') {
@@ -183,8 +207,17 @@ export function SpotPassScreen({ token, passId, onDone, showFlash, onScanRef, on
   const [ask, setAsk] = useState(null);           // { kind: 'choice' | 'add' | 'waitAdd' | 'move' | 'unseen' | 'abandon', ... }
   const [addQty, setAddQty] = useState('');
   const [typing, setTyping] = useState(null);     // 'product' | 'location'
-  const [lastId, setLastId] = useState(null);
+  const [current, setCurrent] = useState(null);   // { id, wasSeen, tick } : le dernier produit vu ou corrigé
+  const lineRefs = useRef(new Map());
   const busy = useRef(false);
+  const lastId = current?.id;
+  const show = (id, wasSeen) => setCurrent(c => ({ id, wasSeen, tick: (c?.tick || 0) + 1 }));
+
+  // L'écran se centre sur le produit qu'on vient de scanner ou de corriger.
+  const tick = current?.tick;
+  useEffect(() => {
+    if (lastId) lineRefs.current.get(lastId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [lastId, tick]);
 
   const load = useCallback(async () => {
     try {
@@ -225,7 +258,7 @@ export function SpotPassScreen({ token, passId, onDone, showFlash, onScanRef, on
       const data = await api(token).post(`/spot-passes/${passId}/scan`, { code, productId });
       setPass(data);
       setAsk(null);
-      setLastId(data.scanned.lineId);
+      show(data.scanned.lineId, !!pass?.lines.find(x => x.id === data.scanned.lineId)?.seen);
       beep(true);
       const l = data.lines.find(x => x.id === data.scanned.lineId);
       showFlash('ok', `Vu : ${l?.name || ''}${l?.qty != null ? ` (${l.qty})` : ''}`);
@@ -256,7 +289,7 @@ export function SpotPassScreen({ token, passId, onDone, showFlash, onScanRef, on
   const saveQty = (line, qty) => run(async () => {
     setEdit(null);
     setPass(await api(token).put(`/spot-passes/${passId}/lines/${line.id}`, { qty }));
-    setLastId(line.id);
+    show(line.id, line.seen);
   });
   const remove = (line) => run(async () => {
     setEdit(null);
@@ -268,7 +301,7 @@ export function SpotPassScreen({ token, passId, onDone, showFlash, onScanRef, on
     setAsk(null);
     setPass(data);
     const l = data.lines.find(x => x.productId === p.productId);
-    if (l) setLastId(l.id);
+    if (l) show(l.id, false);
     showFlash('ok', `${p.name} ajouté ici.`);
   });
   const validate = () => run(async () => {
@@ -334,13 +367,14 @@ export function SpotPassScreen({ token, passId, onDone, showFlash, onScanRef, on
       {pass.lines.length === 0 && (
         <p style={{ color: C.greyT, textAlign: 'center', padding: 20 }}>Aucun produit rangé ici.</p>
       )}
-      {pass.lines.map(l => {
+      {orderLines(pass.lines, current).map(l => {
         const isLast = l.id === lastId;
         const dimmed = l.lockedBy || (!l.seen && !l.added && l.shownQty === 0);
         const push = l.pushStatus && PUSH[l.pushStatus];
         return (
           <button
             key={l.id}
+            ref={(el) => { if (el) lineRefs.current.set(l.id, el); else lineRefs.current.delete(l.id); }}
             onClick={() => pass.canCount && !l.lockedBy && setEdit(l)}
             style={{
               display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: 10,
