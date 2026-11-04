@@ -166,7 +166,7 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
                   />
                 ))}
               </div>
-              <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image…</button>
+              <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image ou un PDF…</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onReminder(); }}>{note.remind_at ? 'Modifier le rappel…' : 'Rappel…'}</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('move'); }}>Envoyer à…</button>
               <button style={menuItem} onClick={() => { flush(); setMenu(false); onSend('copy'); }}>Envoyer une copie à…</button>
@@ -175,7 +175,7 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
           </>
         )}
         <input
-          ref={fileRef} type="file" accept="image/*,.heic,.heif" multiple hidden
+          ref={fileRef} type="file" accept="image/*,.heic,.heif,application/pdf,.pdf" multiple hidden
           onChange={(e) => { editorRef.current?.insertFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
         />
       </div>

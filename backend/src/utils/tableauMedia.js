@@ -4,8 +4,9 @@ const crypto = require('crypto');
 const { isHeic } = require('./heicConvert');
 
 /**
- * Images de l'app Tableau : posées seules sur le tableau, ou dans le texte d'un
- * post-it (<img src="/api/tableau/media/<fichier>">).
+ * Fichiers de l'app Tableau : images posées seules sur le tableau, ou dans le
+ * texte d'un post-it (<img src="/api/tableau/media/<fichier>">), et PDF joints à
+ * un post-it (<div data-type="pdf" data-src="/api/tableau/media/<fichier>">).
  *
  * Volume Docker `tableau_uploads` (cf. docker-compose.yml) : le contenu survit
  * aux rebuilds. Un seul dossier : un post-it change de propriétaire quand il est
@@ -19,6 +20,8 @@ const { isHeic } = require('./heicConvert');
 
 const UPLOAD_ROOT = '/usr/src/app/uploads/tableau';
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024; // 15 Mo, comme l'app Process
+const MAX_PDF_SIZE = 25 * 1024 * 1024; // sous la limite nginx (30 Mo)
+const MAX_UPLOAD_SIZE = Math.max(MAX_IMAGE_SIZE, MAX_PDF_SIZE);
 // Long : un onglet Tableau reste ouvert toute la journée, et les liens ne sont
 // re-signés qu'à la relecture du tableau.
 const MEDIA_URL_TTL = 7 * 24 * 60 * 60;
@@ -27,13 +30,25 @@ const MEDIA_URL_TTL = 7 * 24 * 60 * 60;
 const EXT_BY_MIME = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
 };
-const FILENAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+const FILENAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif|pdf)$/;
 const MEDIA_PREFIX = '/api/tableau/media/';
+
+const fail = (msg) => { const e = new Error(msg); e.statusCode = 400; throw e; };
+const mb = (n) => Math.round(n / 1048576);
+
+const isPdf = (file) => file?.buffer?.subarray(0, 5).toString('latin1') === '%PDF-';
+
+function writeUpload(buffer, ext) {
+  fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
+  const filename = `${crypto.randomUUID()}.${ext}`;
+  fs.writeFileSync(path.join(UPLOAD_ROOT, filename), buffer);
+  return filename;
+}
 
 /** Accepte une image multer (memoryStorage). Lève une erreur 400 sinon. */
 async function saveImage(file) {
-  const fail = (msg) => { const e = new Error(msg); e.statusCode = 400; throw e; };
   if (!file?.buffer) fail('Image requise');
+  if (file.buffer.length > MAX_IMAGE_SIZE) fail(`Image trop lourde (${mb(MAX_IMAGE_SIZE)} Mo maximum)`);
 
   let { buffer } = file;
   let mime = (file.mimetype || '').toLowerCase();
@@ -44,11 +59,21 @@ async function saveImage(file) {
   }
   const ext = EXT_BY_MIME[mime];
   if (!ext) fail('Format d\'image non pris en charge (JPG, PNG, WebP, GIF ou HEIC)');
+  return writeUpload(buffer, ext);
+}
 
-  fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
-  const filename = `${crypto.randomUUID()}.${ext}`;
-  fs.writeFileSync(path.join(UPLOAD_ROOT, filename), buffer);
-  return filename;
+/**
+ * Fichier joint au texte d'un post-it : image, ou PDF (reconnu à son contenu,
+ * pas au type annoncé par le navigateur).
+ * → { filename, kind: 'image' | 'pdf' }
+ */
+async function saveMedia(file) {
+  if (!file?.buffer) fail('Fichier requis');
+  const claimsPdf = (file.mimetype || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
+  if (!claimsPdf) return { filename: await saveImage(file), kind: 'image' };
+  if (!isPdf(file)) fail('Ce fichier n\'est pas un PDF valide');
+  if (file.buffer.length > MAX_PDF_SIZE) fail(`PDF trop lourd (${mb(MAX_PDF_SIZE)} Mo maximum)`);
+  return { filename: writeUpload(file.buffer, 'pdf'), kind: 'pdf' };
 }
 
 /** Double un fichier (copie de post-it : chacun son exemplaire). */
@@ -97,11 +122,12 @@ function verify(filename, exp, sig) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-/* ─── Images dans le texte d'un post-it ─────────────────── */
+/* ─── Fichiers dans le texte d'un post-it ───────────────── */
 
-// L'éditeur encode le « & » de la signature en « &amp; » : on capture la query
-// jusqu'au guillemet. L'origine éventuelle (https://apps…) est retirée.
-const BODY_SRC = /(<img\b[^>]*?\bsrc=")(?:https?:\/\/[^/"]+)?\/api\/tableau\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif))(?:\?[^"]*)?"/g;
+// Images (<img src>) et PDF (<div data-type="pdf" data-src>). L'éditeur encode
+// le « & » de la signature en « &amp; » : on capture la query jusqu'au
+// guillemet. L'origine éventuelle (https://apps…) est retirée.
+const BODY_SRC = /(<(?:img\b[^>]*?\bsrc|div\b[^>]*?\bdata-src)=")(?:https?:\/\/[^/"]+)?\/api\/tableau\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif|pdf))(?:\?[^"]*)?"/g;
 
 const stripSignatures = (html) => String(html || '').replace(BODY_SRC, `$1${MEDIA_PREFIX}$2"`);
 const signHtml = (html) =>
@@ -144,7 +170,7 @@ function sweep(referenced) {
 }
 
 module.exports = {
-  MAX_IMAGE_SIZE,
-  saveImage, removeFiles, resolvePath, signedUrl, verify,
+  MAX_IMAGE_SIZE, MAX_UPLOAD_SIZE,
+  saveImage, saveMedia, removeFiles, resolvePath, signedUrl, verify,
   stripSignatures, signHtml, htmlFiles, copyHtmlImages, asHtml, sweep,
 };

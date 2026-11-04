@@ -40,7 +40,7 @@ export const tableauApi = {
   createNote: (body) => post('/notes', body),
   // Image collée seule : { x, y, width, height } = place et taille d'affichage
   createImage: (file, box) => post('/notes/image', imageForm(file, box)),
-  // Image insérée dans le texte d'un post-it → { url } signée
+  // Image ou PDF inséré dans le texte d'un post-it → { url signée, kind: 'image' | 'pdf', name }
   uploadMedia: (file) => post('/media', imageForm(file)),
   updateNote: (id, body) => axios.patch(`${API_URL}/tableau/notes/${id}`, body).then((r) => r.data),
   deleteNote: (id) => axios.delete(`${API_URL}/tableau/notes/${id}`).then((r) => r.data),
@@ -65,12 +65,23 @@ export const apiError = (e) => e?.response?.data?.error || e?.message || 'Erreur
 
 /* ─── Images ─── */
 
-/** Fichiers image d'un presse-papiers ou d'un dépôt (DataTransfer). */
-export const imageFilesOf = (dataTransfer) =>
+const filesOf = (dataTransfer) =>
   Array.from(dataTransfer?.items || [])
     .filter((it) => it.kind === 'file')
     .map((it) => it.getAsFile())
-    .filter((f) => f && (f.type.startsWith('image/') || /\.hei[cf]$/i.test(f.name)));
+    .filter(Boolean);
+
+export const isImageFile = (f) => f.type.startsWith('image/') || /\.hei[cf]$/i.test(f.name);
+export const isPdfFile = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+
+/** Fichiers image d'un presse-papiers ou d'un dépôt (DataTransfer). */
+export const imageFilesOf = (dataTransfer) => filesOf(dataTransfer).filter(isImageFile);
+
+/** Fichiers PDF d'un presse-papiers ou d'un dépôt. */
+export const pdfFilesOf = (dataTransfer) => filesOf(dataTransfer).filter(isPdfFile);
+
+/** Ce qu'un post-it accepte dans son texte : images et PDF. */
+export const mediaFilesOf = (dataTransfer) => filesOf(dataTransfer).filter((f) => isImageFile(f) || isPdfFile(f));
 
 /**
  * Remet une image dans le presse-papiers, pour la coller ailleurs (mail, SAV…).
@@ -92,16 +103,17 @@ export async function copyImageToClipboard(url) {
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': toPng() })]);
 }
 
-/** Aperçu texte d'un post-it (HTML) : son texte, et le nombre d'images. */
+/** Aperçu texte d'un post-it (HTML) : son texte, et le nombre d'images et de PDF. */
 export function previewText(html, max = 140) {
   const doc = new DOMParser().parseFromString(html || '', 'text/html');
   const images = doc.querySelectorAll('img').length;
+  const pdfs = doc.querySelectorAll('div[data-type="pdf"]').length;
   doc.querySelectorAll('br').forEach((el) => el.replaceWith(' '));
   doc.querySelectorAll('p, li').forEach((el) => el.append(' '));
   const text = (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
   const cut = text.length > max ? `${text.slice(0, max)}…` : text;
-  const imgs = images ? `(${images} image${images > 1 ? 's' : ''})` : '';
-  return [cut, imgs].filter(Boolean).join(' ') || '(post-it vide)';
+  const att = [images ? `${images} image${images > 1 ? 's' : ''}` : '', pdfs ? `${pdfs} PDF` : ''].filter(Boolean).join(', ');
+  return [cut, att ? `(${att})` : ''].filter(Boolean).join(' ') || '(post-it vide)';
 }
 
 /* ─── Dates (chaînes 'YYYY-MM-DD', jamais new Date(chaîne)) ─── */

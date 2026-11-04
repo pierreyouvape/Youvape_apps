@@ -3,20 +3,22 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
-import { imageFilesOf, copyImageToClipboard, TABLEAU_COLOR } from './tableauShared';
+import { mediaFilesOf, copyImageToClipboard, TABLEAU_COLOR } from './tableauShared';
+import { PdfNode } from './PdfAttachment';
 
 /**
- * Texte enrichi d'un post-it, images comprises (au milieu du texte).
+ * Texte enrichi d'un post-it, images et PDF compris (au milieu du texte).
  *
  * Volontairement sans barre d'outils, pour que le post-it reste un post-it :
  * raccourcis seulement (Cmd+B gras, « - » ou « 1. » en début de ligne pour une
- * liste). Une image collée (Cmd+V) ou déposée part sur le serveur et s'insère
- * au curseur — jamais de base64 dans le HTML.
+ * liste). Une image ou un PDF collé (Cmd+V) ou déposé part sur le serveur et
+ * s'insère au curseur — jamais de base64 dans le HTML. Un PDF devient une
+ * pastille : clic = aperçu, ⬇ = téléchargement (cf. PdfAttachment).
  *
  * Une image cliquée est sélectionnée : Cmd+C la remet dans le presse-papiers
  * (en vraie image, collable ailleurs), Suppr la retire du texte.
  *
- * `ref` expose insertFiles(files), pour le menu « Ajouter une image ».
+ * `ref` expose insertFiles(files), pour le menu « Ajouter une image ou un PDF ».
  */
 
 const STYLE_ID = 'yv-tableau-note-editor';
@@ -53,14 +55,14 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
     let at = pos;
     for (const file of files) {
       try {
-        const { url } = await cb.current.onUpload(file);
+        const { url, kind, name } = await cb.current.onUpload(file);
         if (ed.isDestroyed) return;
         const target = Math.min(at ?? ed.state.selection.to, ed.state.doc.content.size);
         const before = ed.state.doc.content.size;
-        ed.chain().focus().insertContentAt(target, [
-          { type: 'image', attrs: { src: url, alt: '' } },
-          { type: 'paragraph' },
-        ]).run();
+        const node = kind === 'pdf'
+          ? { type: 'pdfFile', attrs: { src: url, name: name || file.name || 'document.pdf' } }
+          : { type: 'image', attrs: { src: url, alt: '' } };
+        ed.chain().focus().insertContentAt(target, [node, { type: 'paragraph' }]).run();
         at = target + (ed.state.doc.content.size - before);
       } catch (e) {
         cb.current.onError?.(e);
@@ -73,20 +75,21 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false, code: false }),
-      Placeholder.configure({ placeholder: 'Écrire… (Cmd+V colle une image)' }),
+      Placeholder.configure({ placeholder: 'Écrire… (Cmd+V colle une image ou un PDF)' }),
       Image.configure({ inline: false, allowBase64: false }),
+      PdfNode,
     ],
     content: value || '',
     editorProps: {
       handlePaste: (view, event) => {
-        const files = imageFilesOf(event.clipboardData);
+        const files = mediaFilesOf(event.clipboardData);
         if (!files.length) return false;
         insertRef.current(files, view.state.selection.to);
         return true;
       },
       handleDrop: (view, event, _slice, moved) => {
         if (moved) return false;
-        const files = imageFilesOf(event.dataTransfer);
+        const files = mediaFilesOf(event.dataTransfer);
         if (!files.length) return false;
         event.preventDefault();
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });

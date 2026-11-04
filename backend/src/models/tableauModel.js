@@ -103,7 +103,7 @@ async function createNote(userId, input) {
   const { rows } = await pool.query(
     `INSERT INTO tableau_notes (owner_id, content, color, x, y, z)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [userId, String(input.content || ''), color, clampInt(input.x, 0, 20000), clampInt(input.y, 0, 20000), z],
+    [userId, media.stripSignatures(String(input.content || '')), color, clampInt(input.x, 0, 20000), clampInt(input.y, 0, 20000), z],
   );
   return getNote(userId, rows[0].id);
 }
@@ -121,10 +121,12 @@ async function createImage(userId, file, input) {
   return getNote(userId, rows[0].id);
 }
 
-/** Image insérée dans le texte d'un post-it : l'éditeur reçoit son lien signé. */
+/** Image ou PDF inséré dans le texte d'un post-it : l'éditeur reçoit son lien signé. */
 async function uploadMedia(file) {
-  const filename = await media.saveImage(file);
-  return { url: media.signedUrl(filename) };
+  const { filename, kind } = await media.saveMedia(file);
+  // multer lit le nom en latin1 : « Reçu.pdf » arriverait en « ReÃ§u.pdf »
+  const name = Buffer.from(file.originalname || '', 'latin1').toString('utf8').replace(/[<>"]/g, '').slice(0, 200);
+  return { url: media.signedUrl(filename), kind, name: name || (kind === 'pdf' ? 'document.pdf' : '') };
 }
 
 /** Mise à jour partielle : seuls les champs fournis sont écrits. */
@@ -570,9 +572,10 @@ async function pushDueReminders() {
   notify(rows.map((r) => r.owner_id), 'reminder');
 }
 
-/** Texte d'un post-it (HTML) pour un email : sans balises, images comptées. */
+/** Texte d'un post-it (HTML) pour un email : sans balises, images et PDF comptés. */
 function plainText(html) {
   const images = (String(html || '').match(/<img\b/g) || []).length;
+  const pdfs = (String(html || '').match(/<div\b[^>]*data-type="pdf"/g) || []).length;
   const text = String(html || '')
     .replace(/<br\s*\/?>|<\/(p|li)>/g, '\n')
     .replace(/<[^>]+>/g, '')
@@ -580,7 +583,7 @@ function plainText(html) {
     .replace(/&#39;/g, "'").replace(/&amp;/g, '&')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return { text, images };
+  return { text, images, pdfs };
 }
 
 /**
@@ -602,8 +605,11 @@ async function sendNoteEmailReminders(sendMail) {
                 to_char(n.remind_at, 'DD/MM/YYYY à HH24"h"MI') AS at_label, u.email`,
   );
   for (const n of rows) {
-    const { text, images } = plainText(n.content);
-    const imgs = images ? `(${images} image${images > 1 ? 's' : ''})` : '';
+    const { text, images, pdfs } = plainText(n.content);
+    const imgs = [
+      images ? `${images} image${images > 1 ? 's' : ''}` : '',
+      pdfs ? `${pdfs} PDF` : '',
+    ].filter(Boolean).join(', ').replace(/^(.+)$/, '($1)');
     const firstLine = (text.split('\n')[0] || 'Post-it').slice(0, 70);
     const result = await sendMail({
       to: n.email,
