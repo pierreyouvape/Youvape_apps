@@ -409,6 +409,21 @@ async function getPeriodParams(pool, carrier, method, period, cache) {
     if (rows.length && rows[0].fuel != null) {
       // Le CAE remplace le taux de zone ; les forfaits fixes restent ceux de la zone.
       params = { fuel: parseFloat(rows[0].fuel), source: 'facture' };
+    } else {
+      // Mois pas encore facturé : CAE de la dernière facture antérieure, plus
+      // proche du réel que le taux de zone (0). Remplacé par le vrai taux dès
+      // que la facture du mois est importée et la période recalculée.
+      const { rows: prev } = await pool.query(`
+        SELECT 100.0 * cae / NULLIF(port_net, 0) AS fuel
+        FROM carrier_invoices
+        WHERE carrier = 'colissimo' AND port_net > 0 AND cae IS NOT NULL
+          AND to_char(to_date(NULLIF(period_start, ''), 'DD/MM/YYYY'), 'YYYY-MM') < $1
+        ORDER BY to_date(NULLIF(period_start, ''), 'DD/MM/YYYY') DESC, total_parcels DESC
+        LIMIT 1
+      `, [period]);
+      if (prev.length && prev[0].fuel != null) {
+        params = { fuel: parseFloat(prev[0].fuel), source: 'facture_precedente' };
+      }
     }
   }
 
