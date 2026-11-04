@@ -6,6 +6,7 @@ import Register from './components/Register';
 import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
 import VersionWatcher from './components/VersionWatcher';
+import StationLock from './components/StationLock';
 import EcranIndisponible from './components/EcranIndisponible';
 import { page } from './utils/lazyPage';
 import { TableauInboxProvider } from './context/TableauInboxContext';
@@ -150,6 +151,8 @@ function App() {
             code de départ tant qu'on ne le recharge pas, et passer d'un écran à
             l'autre ne recharge rien dans une SPA. */}
         <VersionWatcher />
+        {/* Poste de préparation (marqué dans /settings) : verrou d'inactivité, tous onglets */}
+        <StationLock />
         {/* Post-its reçus et rappels de l'app Tableau : pastilles + toasts dans toutes les apps */}
         <TableauInboxProvider>
         {/* Écrans chargés à la demande : un écran qui ne vient pas (réseau,

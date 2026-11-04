@@ -7,7 +7,7 @@ const wcSyncService = require('../services/wcSyncService');
 const yousyncClient = require('../services/yousyncClient');
 const yousyncTokenService = require('../services/yousyncTokenService');
 const { LAST_RUN_KEY } = require('../services/orderReconcileService');
-const { PDA_IDLE_KEY, validatePdaIdle } = require('../utils/pdaIdle');
+const { PDA_IDLE_KEY, STATION_IDLE_KEY, validateIdle } = require('../utils/pdaIdle');
 
 /*
  * Clés accessibles depuis l'app : la liste est FERMÉE, exprès.
@@ -25,8 +25,10 @@ const EXPOSED_SETTINGS = {
     const seconds = Number(value);
     return Number.isInteger(seconds) && seconds >= 0 && seconds <= 3600 ? String(seconds) : null;
   },
-  // Minutes sans activité avant verrouillage du PDA (0 = jamais). Lu par les PDA via /api/users/me/pda-settings.
-  [PDA_IDLE_KEY]: validatePdaIdle,
+  // Minutes sans activité avant verrouillage (0 = jamais), PDA et postes de
+  // préparation. Lus par les postes via /api/users/me/pda-settings.
+  [PDA_IDLE_KEY]: validateIdle,
+  [STATION_IDLE_KEY]: validateIdle,
 };
 
 const isExposed = (key) => Object.prototype.hasOwnProperty.call(EXPOSED_SETTINGS, key);

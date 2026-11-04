@@ -483,6 +483,14 @@ HEXASMAL figée dans `assets/postcodes/`, rafraîchie par `node src/scripts/upda
 - ⚠️ Le lecteur du verrou écoute `keydown` en **capture sur `window` et arrête la touche** : sinon
   le badge scanné partait aussi au lecteur de la page dessous (le Picking l'aurait pris pour un article).
 - `PdaSignIn` est dans le socle (via `Login`) : n'y importer ni `pickingUi` ni la caméra en dur.
+- **Postes de préparation** (même mécanisme, `StationLock` dans `App.jsx`) : ordinateur marqué par la
+  case de `/settings` → Gestion utilisateurs, gardée dans CE navigateur (`yv.station`). Délai
+  `station_idle_minutes` (défaut 10). Tous les onglets se verrouillent ensemble (`storage`) ; au
+  déverrouillage chacun **reste sur sa page**, seul l'utilisateur change. Connexion sur un poste =
+  `device: 'station'` → fermée à 19h30. Bureaux personnels jamais marqués : rien n'y change.
+- ⚠️ Pour que le changement de personne soit sûr, **chaque appel vers notre API part avec la session en
+  cours** (`main.jsx` remplace un `Bearer` posé à la main s'il diffère du jeton de localStorage), et
+  `AuthContext` suit la session des autres onglets : une déconnexion dans un onglet déconnecte les autres.
 
 ### Client ayant été malhonnête (fiche client — 02/11/2026)
 

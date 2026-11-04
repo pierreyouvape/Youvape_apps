@@ -3,6 +3,7 @@ import { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import PdaSignIn from './pda/PdaSignIn';
+import { isStation } from './pda/pdaIdle';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -15,10 +16,10 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Venu d'une page PDA : badge (douchette ou appareil photo) ou identifiants,
-  // session PDA fermée ce soir 19h30.
+  // Venu d'une page PDA, ou sur un poste de préparation (marqué dans /settings) :
+  // badge (douchette ou appareil photo) ou identifiants, session fermée ce soir 19h30.
   const from = location.state?.from || '';
-  const isPda = from.startsWith('/pda');
+  const device = from.startsWith('/pda') ? 'pda' : (isStation() ? 'station' : null);
 
   const validateEmail = (email) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -73,7 +74,7 @@ const Login = () => {
           boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
         }}>
           <h2 style={{ textAlign: 'center', color: '#135E84', marginBottom: '30px' }}>Connexion</h2>
-          {isPda ? <PdaSignIn onSignedIn={() => navigate(from)} /> : (
+          {device ? <PdaSignIn device={device} onSignedIn={() => navigate(from || '/home')} /> : (
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: '15px' }}>
               <input

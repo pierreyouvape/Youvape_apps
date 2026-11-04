@@ -2,7 +2,7 @@ import { useContext, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { C } from '../picking/pickingUi';
 import { pdaBtn } from './pdaStyles';
-import { usePdaIdleLock } from './pdaIdle';
+import { msUntilCutoff, useIdleLock } from './pdaIdle';
 import PdaLockScreen from './PdaLockScreen';
 
 /**
@@ -18,22 +18,10 @@ import PdaLockScreen from './PdaLockScreen';
  * (pdaIdle, PdaLockScreen) : la page reste ouverte sous le voile.
  */
 
-const CUTOFF = { hour: 19, minute: 30 };
-
-/** Millisecondes jusqu'à la prochaine 19h30 à Paris. */
-const msUntilCutoff = () => {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date()).map(p => [p.type, p.value]));
-  const now = Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second);
-  const diff = CUTOFF.hour * 3600 + CUTOFF.minute * 60 - now;
-  return (diff > 0 ? diff : diff + 24 * 3600) * 1000;
-};
-
 
 export default function PdaLayout({ title, onBack, backLabel, children }) {
   const { user, logout } = useContext(AuthContext);
-  const [locked, unlock] = usePdaIdleLock();
+  const [locked, unlock] = useIdleLock('pda');
 
   // Le manifeste est dans index.html (Chrome doit le trouver sans exécuter la
   // page) ; seule la couleur de barre est propre aux pages PDA.
@@ -72,7 +60,11 @@ export default function PdaLayout({ title, onBack, backLabel, children }) {
         </button>
       </div>
       {children}
-      {locked && <PdaLockScreen user={user} onUnlock={unlock} />}
+      {/* Autre personne : rechargement complet, rien de la page précédente ne doit
+          survivre (vague, produit ouvert, données chargées avec l'autre compte). */}
+      {locked && (
+        <PdaLockScreen user={user} onUnlock={unlock} onOtherUser={() => window.location.replace('/pda')} />
+      )}
     </div>
   );
 }

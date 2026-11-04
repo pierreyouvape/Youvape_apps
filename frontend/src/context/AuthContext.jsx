@@ -82,6 +82,37 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  // Les autres onglets du navigateur : connexion, changement de personne sur
+  // un poste de préparation, déconnexion. Sans ça, chaque onglet gardait la
+  // session qu'il avait lue à son ouverture.
+  useEffect(() => {
+    const SESSION_KEYS = ['token', 'user', 'permissions', 'isAdmin', 'isSuperAdmin'];
+    const read = (key, fallback) => {
+      try { return JSON.parse(localStorage.getItem(key)) ?? fallback; }
+      catch { return fallback; }
+    };
+    const onStorage = (e) => {
+      if (e.key !== null && !SESSION_KEYS.includes(e.key)) return;
+      const savedToken = localStorage.getItem('token');
+      const savedUser = read('user', null);
+      if (!savedToken || !savedUser) {
+        setToken(null);
+        setUser(null);
+        setPermissions(null);
+        setIsAdmin(false);
+        setIsSuperAdmin(false);
+        return;
+      }
+      setToken(savedToken);
+      setUser(savedUser);
+      setPermissions(read('permissions', {}));
+      setIsAdmin(read('isAdmin', false));
+      setIsSuperAdmin(read('isSuperAdmin', false));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   const register = async (email, password, name) => {
     const response = await axios.post(`${API_URL}/register`, { email, password, name });
     return response.data;

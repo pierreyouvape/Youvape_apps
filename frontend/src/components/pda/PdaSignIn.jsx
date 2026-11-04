@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { beep } from './pdaScan';
-import { markPdaActive } from './pdaIdle';
+import { markActive } from './pdaIdle';
 
 // Chargé au toucher du bouton seulement : l'écran de connexion est dans le socle.
 const CameraScanner = lazy(() => import('../boutique/CameraScanner'));
@@ -11,17 +11,19 @@ const field = { width: '100%', padding: '12px', border: '1px solid #ddd', border
 const isBadge = (s) => /^\d{13}$/.test(s);
 
 /**
- * Connexion PDA : badge employé (douchette ou appareil photo) ou identifiants.
- * Session PDA dans tous les cas (fermée à 19h30).
+ * Connexion d'un appareil partagé — PDA ou poste de préparation : badge employé
+ * (douchette ou appareil photo) ou identifiants. Session fermée à 19h30 dans
+ * tous les cas.
  *
- * Sert à l'écran de connexion venu d'une page /pda et à l'écran de verrouillage
- * (PdaLockScreen). Là, `capture` : la page reste ouverte dessous avec son propre
+ * Sert à l'écran de connexion (venu d'une page /pda, ou sur un poste de
+ * préparation) et à l'écran de verrouillage (PdaLockScreen). Là, `capture` : la page reste ouverte dessous avec son propre
  * lecteur de scans, le badge ne doit pas lui parvenir (le Picking le prendrait
  * pour un article). On écoute donc avant tout le monde et on arrête la touche.
  *
  * @param {(data: {token, user}) => void} onSignedIn  session ouverte
+ * @param {'pda'|'station'} device
  */
-export default function PdaSignIn({ onSignedIn, capture = false }) {
+export default function PdaSignIn({ onSignedIn, capture = false, device = 'pda' }) {
   const { login, loginWithBadge } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,7 +37,7 @@ export default function PdaSignIn({ onSignedIn, capture = false }) {
     try {
       const data = await call();
       beep(true);
-      markPdaActive();
+      markActive(device);
       onSignedIn(data);
     } catch (err) {
       beep(false);
@@ -92,7 +94,7 @@ export default function PdaSignIn({ onSignedIn, capture = false }) {
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError('Email invalide');
     if (password.length < 6) return setError('Le mot de passe doit contenir au moins 6 caractères');
-    signIn(() => login(email, password, false, 'pda'));
+    signIn(() => login(email, password, false, device));
   };
 
   return (

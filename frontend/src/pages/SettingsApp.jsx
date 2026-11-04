@@ -7,6 +7,7 @@ import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import { APPS as LAUNCHER_APPS } from '../components/AppIcons';
 import PluginLogistiqueSection from '../components/settings/PluginLogistiqueSection';
+import { isStation, setStation } from '../components/pda/pdaIdle';
 
 // Apps qui distinguent Lecture / Écriture (les autres n'ont qu'un droit d'accès).
 // Réception : Lecture = consulter les PO attendus ; Écriture = valider une
@@ -52,9 +53,12 @@ const SettingsApp = () => {
   const [savingAll, setSavingAll] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [justSavedIds, setJustSavedIds] = useState([]);
-  // Verrouillage du PDA après inactivité (minutes, 0 = jamais)
+  // Verrouillage après inactivité (minutes, 0 = jamais) : PDA et postes de préparation
   const [pdaIdleMinutes, setPdaIdleMinutes] = useState('');
-  const [savingPdaIdle, setSavingPdaIdle] = useState(false);
+  const [stationIdleMinutes, setStationIdleMinutes] = useState('');
+  const [savingIdle, setSavingIdle] = useState(null);
+  // Marquage propre à CE navigateur, pas un réglage partagé.
+  const [thisIsStation, setThisIsStation] = useState(isStation);
 
   // Onglet WooCommerce
   const [wcSyncInterval, setWcSyncInterval] = useState('');
@@ -129,34 +133,44 @@ const SettingsApp = () => {
     loadSyncHealth();
   };
 
-  // Jamais enregistré = 1 minute, la valeur appliquée par les PDA (utils/pdaIdle côté backend).
+  // Jamais enregistré = les valeurs appliquées par défaut (utils/pdaIdle côté backend).
   const loadPdaIdle = async () => {
     try {
       const response = await axios.get(`${API_URL}/settings`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPdaIdleMinutes(response.data.settings?.pda_idle_minutes ?? '1');
+      setStationIdleMinutes(response.data.settings?.station_idle_minutes ?? '10');
     } catch (err) {
-      console.error('Erreur lors du chargement du délai PDA:', err);
+      console.error('Erreur lors du chargement des délais de verrouillage:', err);
     }
   };
 
-  const savePdaIdle = async () => {
-    setSavingPdaIdle(true);
+  const saveIdle = async (key, value, label) => {
+    setSavingIdle(key);
     try {
       await axios.put(
-        `${API_URL}/settings/pda_idle_minutes`,
-        { value: pdaIdleMinutes },
+        `${API_URL}/settings/${key}`,
+        { value },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      setSuccessMessage('Durée avant déconnexion PDA mise à jour');
+      setSuccessMessage(`${label} mise à jour`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       setError(err.response?.status === 400 ? 'Durée invalide : un nombre entier de minutes, de 0 à 240' : 'Erreur lors de la sauvegarde');
       setTimeout(() => setError(null), 5000);
     } finally {
-      setSavingPdaIdle(false);
+      setSavingIdle(null);
     }
+  };
+
+  const toggleStation = (on) => {
+    setStation(on);
+    setThisIsStation(on);
+    setSuccessMessage(on
+      ? 'Cet ordinateur est désormais un poste de préparation'
+      : 'Cet ordinateur n\'est plus un poste de préparation');
+    setTimeout(() => setSuccessMessage(null), 3000);
   };
 
   const loadSyncHealth = async () => {
@@ -477,16 +491,46 @@ const SettingsApp = () => {
               />
               <span>minutes</span>
               <button
-                onClick={savePdaIdle}
-                disabled={savingPdaIdle || pdaIdleMinutes === ''}
+                onClick={() => saveIdle('pda_idle_minutes', pdaIdleMinutes, 'Durée avant déconnexion PDA')}
+                disabled={savingIdle !== null || pdaIdleMinutes === ''}
                 className="btn btn-save"
               >
-                {savingPdaIdle ? 'Sauvegarde...' : 'Sauvegarder'}
+                {savingIdle === 'pda_idle_minutes' ? 'Sauvegarde...' : 'Sauvegarder'}
               </button>
             </div>
-            <p className="field-hint" style={{ marginBottom: '24px' }}>
+            <p className="field-hint">
               Sans activité pendant ce délai, le PDA se verrouille : on le rouvre en scannant son badge
               (même personne = on reprend où on en était). 0 = jamais. Appliqué au prochain chargement de page du PDA.
+            </p>
+
+            <div className="wc-sync-row" style={{ marginTop: '16px' }}>
+              <label style={{ fontWeight: '500' }}>Durée avant déconnexion postes de préparation</label>
+              <input
+                type="number"
+                min="0"
+                max="240"
+                value={stationIdleMinutes}
+                onChange={(e) => setStationIdleMinutes(e.target.value)}
+                className="settings-input settings-input-short"
+              />
+              <span>minutes</span>
+              <button
+                onClick={() => saveIdle('station_idle_minutes', stationIdleMinutes, 'Durée avant déconnexion postes de préparation')}
+                disabled={savingIdle !== null || stationIdleMinutes === ''}
+                className="btn btn-save"
+              >
+                {savingIdle === 'station_idle_minutes' ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', cursor: 'pointer', fontWeight: '500' }}>
+              <input type="checkbox" checked={thisIsStation} onChange={(e) => toggleStation(e.target.checked)} />
+              Cet ordinateur est un poste de préparation
+            </label>
+            <p className="field-hint" style={{ marginBottom: '24px' }}>
+              À cocher sur chaque poste de préparation, depuis le poste lui-même : le choix est gardé dans ce
+              navigateur (à refaire si on change de navigateur ou si on vide ses données). Sur un poste coché, tous
+              les onglets se verrouillent ensemble après ce délai, on les rouvre par badge ou identifiants et chacun
+              reste sur sa page ; la session se ferme à 19h30. Les bureaux personnels, jamais cochés, ne changent pas.
             </p>
 
             <h2>Gestion des utilisateurs</h2>

@@ -3,20 +3,20 @@ import { C } from '../picking/pickingUi';
 import PdaSignIn from './PdaSignIn';
 
 /**
- * PDA verrouillé après inactivité (usePdaIdleLock). La page reste ouverte
- * dessous, intacte :
+ * Appareil verrouillé après inactivité (useIdleLock) : PDA ou poste de
+ * préparation. La page reste ouverte dessous, intacte :
  *   - la même personne se reconnecte → on retire le voile, elle reprend où elle était ;
- *   - quelqu'un d'autre → sa session remplace la précédente, retour à l'accueil.
- *     Rechargement complet : rien de la page précédente ne doit survivre
- *     (vague, produit ouvert, données chargées avec l'autre compte).
+ *   - quelqu'un d'autre → sa session remplace la précédente, puis `onOtherUser`
+ *     (le PDA recharge sur l'accueil ; un poste garde ses pages, seul
+ *     l'utilisateur change).
  */
-export default function PdaLockScreen({ user, onUnlock }) {
+export default function PdaLockScreen({ user, onUnlock, onOtherUser, title = 'PDA verrouillé', device = 'pda' }) {
   // Figé à l'ouverture du verrou : la connexion va remplacer `user` dans le contexte.
   const lockedUserId = useRef(user?.id);
 
   const onSignedIn = (data) => {
-    if (data?.user?.id === lockedUserId.current) onUnlock();
-    else window.location.replace('/pda');
+    if (data?.user?.id === lockedUserId.current || !onOtherUser) onUnlock();
+    else onOtherUser();
   };
 
   return (
@@ -28,7 +28,7 @@ export default function PdaLockScreen({ user, onUnlock }) {
         height: 56, display: 'flex', alignItems: 'center', padding: '0 12px',
         background: C.violet, color: C.white, fontWeight: 900, fontSize: 20,
       }}>
-        PDA verrouillé
+        {title}
       </div>
       <div style={{ padding: 16, display: 'flex', justifyContent: 'center' }}>
         <div style={{
@@ -40,7 +40,7 @@ export default function PdaLockScreen({ user, onUnlock }) {
               Session en cours : <strong>{user.name || user.email}</strong>
             </p>
           )}
-          <PdaSignIn capture onSignedIn={onSignedIn} />
+          <PdaSignIn capture device={device} onSignedIn={onSignedIn} />
         </div>
       </div>
     </div>

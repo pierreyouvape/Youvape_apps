@@ -125,13 +125,23 @@ const server = app.listen(0, '127.0.0.1', async () => {
     assert.strictEqual((await call('PUT', '/api/settings/pda_idle_minutes', { as: ADMIN, body: { value: 0 } })).status, 200);
     assert.strictEqual(store.pda_idle_minutes, '0');
   });
-  await test('/api/users/me/pda-settings : lisible par tout compte, 1 min par défaut', async () => {
+  await test('PUT station_idle_minutes : même contrôle que le PDA', async () => {
+    assert.strictEqual((await call('PUT', '/api/settings/station_idle_minutes', { as: ADMIN, body: { value: 241 } })).status, 400);
+    assert.strictEqual((await call('PUT', '/api/settings/station_idle_minutes', { as: ADMIN, body: { value: 15 } })).status, 200);
+    assert.strictEqual(store.station_idle_minutes, '15');
+  });
+  await test('/api/users/me/pda-settings : lisible par tout compte, 1 min (PDA) et 10 min (postes) par défaut', async () => {
     delete store.pda_idle_minutes;
-    assert.strictEqual((await call('GET', '/api/users/me/pda-settings', { as: SALARIE })).json.idle_minutes, 1);
+    delete store.station_idle_minutes;
+    const defaults = (await call('GET', '/api/users/me/pda-settings', { as: SALARIE })).json;
+    assert.strictEqual(defaults.idle_minutes, 1);
+    assert.strictEqual(defaults.station_idle_minutes, 10);
     store.pda_idle_minutes = '3';
+    store.station_idle_minutes = '0';
     const { status, json, text } = await call('GET', '/api/users/me/pda-settings', { as: SALARIE });
     assert.strictEqual(status, 200);
     assert.strictEqual(json.idle_minutes, 3);
+    assert.strictEqual(json.station_idle_minutes, 0);
     assert.ok(!text.includes('JETON-SECRET') && !text.includes('MOT-DE-PASSE'));
     assert.strictEqual((await call('GET', '/api/users/me/pda-settings')).status, 401);
   });

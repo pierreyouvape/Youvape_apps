@@ -3,7 +3,7 @@ const userPermissionsModel = require('../models/userPermissionsModel');
 const { allPermissions } = require('../config/apps');
 const bmsApiModel = require('../models/bmsApiModel');
 const appConfigModel = require('../models/appConfigModel');
-const { PDA_IDLE_KEY, readPdaIdle } = require('../utils/pdaIdle');
+const { PDA_IDLE_KEY, PDA_IDLE_DEFAULT, STATION_IDLE_KEY, STATION_IDLE_DEFAULT, readIdle } = require('../utils/pdaIdle');
 
 const SUPER_ADMIN_EMAIL = 'youvape34@gmail.com';
 
@@ -74,12 +74,19 @@ const usersController = {
     }
   },
 
-  // Réglages lus par le PDA (tout compte connecté) : le délai de verrouillage
-  // seulement, /api/settings étant réservé aux admins.
+  // Réglages lus par les PDA et les postes de préparation (tout compte connecté) :
+  // les délais de verrouillage seulement, /api/settings étant réservé aux admins.
   getMyPdaSettings: async (req, res) => {
     try {
-      const config = await appConfigModel.get(PDA_IDLE_KEY);
-      res.json({ success: true, idle_minutes: readPdaIdle(config?.config_value) });
+      const [pda, station] = await Promise.all([
+        appConfigModel.get(PDA_IDLE_KEY),
+        appConfigModel.get(STATION_IDLE_KEY),
+      ]);
+      res.json({
+        success: true,
+        idle_minutes: readIdle(pda?.config_value, PDA_IDLE_DEFAULT),
+        station_idle_minutes: readIdle(station?.config_value, STATION_IDLE_DEFAULT),
+      });
     } catch (error) {
       console.error('Erreur lors de la lecture des réglages PDA:', error);
       res.status(500).json({ error: 'Erreur serveur' });

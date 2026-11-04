@@ -79,10 +79,11 @@ const authController = {
         return res.status(403).json({ error: 'Ce compte est désactivé' });
       }
 
-      // Générer le token JWT. Depuis un PDA, la session se ferme ce soir 19h30
-      // (les PDA changent de mains) ; ailleurs, durée habituelle.
+      // Générer le token JWT. Depuis un PDA ou un poste de préparation, la
+      // session se ferme ce soir 19h30 (ils changent de mains) ; ailleurs,
+      // durée habituelle.
       const { rememberMe, device } = req.body;
-      const expiresIn = device === 'pda'
+      const expiresIn = device === 'pda' || device === 'station'
         ? secondsUntilPdaCutoff()
         : (rememberMe ? '30d' : '24h');
       const token = jwt.sign(
