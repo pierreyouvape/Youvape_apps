@@ -433,7 +433,8 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
   au relais = livré. Domicile : **présenté** suffit (absent, laissé en point de retrait). Aucun scan → **PC**,
   sinon → **RT**. Un colis n'est réclamé **qu'une fois** (`carrier_claims.UNIQUE(label_id)`).
 - Fichier au format de la notice du « Service Client en ligne » (en-tête, `;`, CRLF, **UTF-8 sans BOM** — Chronopost lit l'UTF-8, le 1er import en Windows-1252 a donné des « � ») :
-  RT sans motif/famille/contenu, PC avec F1 + contenu. Envoyé à contact@youvape.fr (SMTP, pièce jointe),
+  RT sans motif/famille/contenu, PC avec F1 + contenu. Le commentaire **demande toujours le remboursement des
+  frais de livraison** (`REFUND_REQUEST`, placé avant le dernier évènement pour survivre à une coupure, 400 car. max). Envoyé à contact@youvape.fr (SMTP, pièce jointe),
   importé **à la main** chez Chronopost ; le compte-rendu collé dans `/expeditions` → Réclamations donne
   les n° de ticket.
 - SAV : **toujours une note PRIVÉE, jamais de mail client**. Ticket le plus récent de la commande (hors

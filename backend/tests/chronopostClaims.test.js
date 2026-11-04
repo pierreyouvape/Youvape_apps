@@ -115,17 +115,27 @@ test('retard Chrono Relais : produit, bordereau, échéance, dernier évènement
     lastEvent: ev('CR', '2026-11-03T10:03:00Z', { label: 'Colis retardé durant l\'acheminement', location: 'HUB CHILLY MAZARIN CHRONOPOST' }),
   });
   assert.strictEqual(c, 'Chrono Relais remis au chauffeur le 02/11/2026 (bordereau CH-20261102-02), livraison due le '
-    + '03/11/2026 avant 13h, non livré à 16h. Dernier évènement : 03/11 11:03 Colis retardé durant l\'acheminement '
-    + '(HUB CHILLY MAZARIN CHRONOPOST).');
+    + '03/11/2026 avant 13h, non livré à 16h. Nous demandons le remboursement des frais de livraison de ce colis. '
+    + 'Dernier évènement : 03/11 11:03 Colis retardé durant l\'acheminement (HUB CHILLY MAZARIN CHRONOPOST).');
 });
 test('Express : pas de « avant 13h »', () => {
   const c = rules.buildComment({ object: 'RT', label: { method_code: '17' }, depositDay: '2026-11-05', bordereauNumber: null, day: '2026-11-10', lastEvent: null });
-  assert.strictEqual(c, 'Chrono Express remis au chauffeur le 05/11/2026, livraison due le 10/11/2026, non livré à 16h.');
+  assert.strictEqual(c, 'Chrono Express remis au chauffeur le 05/11/2026, livraison due le 10/11/2026, non livré à 16h. '
+    + 'Nous demandons le remboursement des frais de livraison de ce colis.');
 });
 test('jamais pris en charge', () => {
   const c = rules.buildComment({ object: 'PC', label: C13, depositDay: '2026-11-02', bordereauNumber: 'CH-20261102-02', day: DAY });
   assert.strictEqual(c, 'Chrono 13 remis au chauffeur le 02/11/2026 (bordereau CH-20261102-02), aucune prise en charge '
-    + 'enregistrée depuis. Merci de localiser le colis.');
+    + 'enregistrée depuis. Merci de localiser le colis. Nous demandons le remboursement des frais de livraison de ce colis.');
+});
+test('commentaire trop long : coupé dans le dernier évènement, jamais dans la demande de remboursement', () => {
+  const c = rules.buildComment({
+    object: 'RT', label: RELAIS, depositDay: '2026-11-02', bordereauNumber: 'CH-20261102-02', day: DAY,
+    lastEvent: ev('CR', '2026-11-03T10:03:00Z', { label: 'x'.repeat(400), location: 'HUB' }),
+  });
+  const cell = rules.csvRow({ trackingNumber: 'XS1', object: 'RT', comment: c })[5];
+  assert.ok(cell.length <= 400);
+  assert.ok(cell.includes(rules.REFUND_REQUEST));
 });
 
 console.log('Fichier d\'import');

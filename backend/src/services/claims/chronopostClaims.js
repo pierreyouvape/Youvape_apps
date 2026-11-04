@@ -121,28 +121,34 @@ const frStamp = (date) => new Intl.DateTimeFormat('fr-FR', {
 }).format(new Date(date)).replace(',', '').replace(' à ', ' ');
 
 /**
+ * Toujours demandé (Pierre, 04/11/2026). Placé AVANT le dernier évènement :
+ * si le commentaire est coupé, c'est l'évènement qui saute, pas la demande.
+ */
+const REFUND_REQUEST = 'Nous demandons le remboursement des frais de livraison de ce colis.';
+
+/**
  * Le commentaire envoyé à Chronopost (obligatoire). Factuel : produit, dépôt,
- * échéance, ce que dit le suivi.
+ * échéance, demande de remboursement du port, ce que dit le suivi.
  */
 const buildComment = ({ object, label, depositDay, bordereauNumber, day, lastEvent }) => {
   const product = PRODUCTS[parseMethod(label.method_code).code];
   const depot = `${product.label} remis au chauffeur le ${frDay(depositDay)}`
     + (bordereauNumber ? ` (bordereau ${bordereauNumber})` : '');
   if (object === 'PC') {
-    return `${depot}, aucune prise en charge enregistrée depuis. Merci de localiser le colis.`;
+    return `${depot}, aucune prise en charge enregistrée depuis. Merci de localiser le colis. ${REFUND_REQUEST}`;
   }
   const due = `livraison due le ${frDay(day)}${product.before13 ? ' avant 13h' : ''}`;
   const last = lastEvent
     ? ` Dernier évènement : ${frStamp(lastEvent.occurred_at)} ${lastEvent.label || lastEvent.event_key}`
       + `${lastEvent.location ? ` (${lastEvent.location})` : ''}.`
     : '';
-  return `${depot}, ${due}, non livré à 16h.${last}`;
+  return `${depot}, ${due}, non livré à 16h. ${REFUND_REQUEST}${last}`;
 };
 
 // ── Fichier d'import ────────────────────────────────────────────────────────
 
 /** Le séparateur et les retours à la ligne n'ont pas leur place dans un champ. */
-const clean = (v, max = 250) => String(v ?? '')
+const clean = (v, max = 400) => String(v ?? '')
   .replace(/[;\r\n\t]+/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
@@ -194,7 +200,7 @@ const parseImportReport = (text) => {
 };
 
 module.exports = {
-  PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME,
+  PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME, REFUND_REQUEST,
   parseMethod, dueDay, parisInstant, checkInstant, decide, buildComment,
   csvRow, buildCsv, parseImportReport, frDay,
 };
