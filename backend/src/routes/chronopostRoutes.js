@@ -9,6 +9,7 @@ router.post('/import-zip',        ...c.importZip);
 router.post('/apply-tariffs',     c.applyTariffs);
 router.get('/history',            c.getHistory);
 router.get('/history/:id',        c.getInvoiceDetail);
+router.get('/history/:id/group',  c.getInvoiceGroup);
 router.get('/history/:id/pdf',    c.downloadPdf);
 router.delete('/history/:id',     c.deleteInvoice);
 router.post('/debug-text',   ...c.debugText);

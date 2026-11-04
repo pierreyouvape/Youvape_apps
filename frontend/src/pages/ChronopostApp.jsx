@@ -436,6 +436,7 @@ function TotalsView({ totals, totalsLoading, loadTotals, totalsByPeriod }) {
       <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
           Total payé à Chronopost (colis + suppléments + charges globales − avoirs HT), par mois et par année.
+          Factures rectificatives et avoirs sont comptés au mois de la facture qu'ils corrigent.
         </p>
         <button onClick={loadTotals} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
           ↻ Actualiser
@@ -666,6 +667,51 @@ function computeTarif(order, params, supplBaseByTracking, supplFlatByTracking) {
   return (base + supplBase + redevanceUnit) * (1 + carburantRate) + ecoUnit + (fraisGestionTotal / nbSûreté) + supplFlat;
 }
 
+/* ─── FACTURE CORRIGÉE (origine + rectificatives + avoirs) ───── */
+// Tarifs par ligne d'une facture enregistrée (même calcul que l'écran d'analyse)
+function invoiceTariffLines(inv) {
+  const orders = (inv.parcels || []).map(p => ({
+    tracking: p.tracking,
+    order_id: p.order_id,
+    amount_ht: p.amount_ht != null ? parseFloat(p.amount_ht) : null,
+    is_return: p.is_return || false,
+  }));
+  const supplements = (inv.supplements || []).map(s => ({
+    description: s.description,
+    amount_ht: s.amount_ht != null ? parseFloat(s.amount_ht) : null,
+    related_tracking: s.tracking,
+  }));
+  const params = computeTarifParams(orders, Array.isArray(inv.global_charges) ? inv.global_charges : []);
+  const { supplBaseByTracking, supplFlatByTracking } = computeSupplMaps(supplements);
+  return orders
+    .filter(o => o.amount_ht != null)
+    .map(o => ({ order_id: o.order_id, tracking: o.tracking, tarif: computeTarif(o, params, supplBaseByTracking, supplFlatByTracking) }));
+}
+
+// Coût net par commande = facture d'origine + avoirs (négatifs) + rectificatives.
+// L'avoir annule la ligne contestée, la rectificative la refacture au bon poids.
+function netGroupTariffs(group) {
+  const trackingToOrder = {};
+  const net = {};      // order_id -> tarif
+  const corrected = new Set();
+  const add = (orderId, amt, isCorrection) => {
+    if (!orderId || amt == null) return;
+    net[orderId] = (net[orderId] || 0) + amt;
+    if (isCorrection) corrected.add(orderId);
+  };
+  const invoices = [group.invoice, ...(group.rectificatives || [])];
+  for (const inv of invoices)
+    for (const p of inv.parcels || []) if (p.order_id && p.tracking) trackingToOrder[p.tracking.toUpperCase()] = p.order_id;
+  for (const l of invoiceTariffLines(group.invoice)) add(l.order_id, l.tarif, false);
+  for (const r of group.rectificatives || [])
+    for (const l of invoiceTariffLines(r)) add(l.order_id, l.tarif, true);
+  for (const c of group.credits || [])
+    add(c.order_id || trackingToOrder[(c.tracking || '').toUpperCase()], c.amount_ht != null ? parseFloat(c.amount_ht) : null, true);
+  // Un avoir calculé à la ligne peut laisser quelques centimes négatifs : plancher à 0
+  const tariffs = Object.entries(net).map(([order_id, t]) => ({ order_id: Number(order_id), tarif: Math.max(0, Math.round(t * 100) / 100) }));
+  return { tariffs, correctedCount: corrected.size };
+}
+
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
 export default function ChronopostApp() {
   const { token } = useContext(AuthContext);
@@ -794,7 +840,30 @@ export default function ChronopostApp() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [historyQuery, token]);
 
-  const visibleHistory = historyMatches ? sortedHistory.filter(inv => historyMatches[inv.id]) : sortedHistory;
+  // Facture d'origine suivie de ses rectificatives et de ses avoirs (même mois, lignes collées)
+  const historyGroups = useMemo(() => {
+    const ids = new Set(history.map(h => h.id));
+    const isChild = h => h.corrects_invoice_id && ids.has(h.corrects_invoice_id);
+    const rectifs = {};
+    for (const h of history) if (isChild(h)) (rectifs[h.corrects_invoice_id] ||= []).push(h);
+    const credits = {};
+    for (const c of creditsHistory) if (c.related_invoice_number) (credits[c.related_invoice_number] ||= []).push(c);
+    return sortedHistory.filter(h => !isChild(h)).map(head => {
+      const g = { head, rectifs: rectifs[head.id] || [], credits: credits[head.invoice_number] || [] };
+      const lastCorrection = [...g.rectifs, ...g.credits].reduce((m, x) => Math.max(m, new Date(x.created_at).getTime() || 0), 0);
+      g.hasCorrections = g.rectifs.length + g.credits.length > 0;
+      // Correction reçue après le dernier « appliquer » : les coûts commandes sont périmés
+      g.needsReapply = g.hasCorrections && (!head.tariffs_applied_at || new Date(head.tariffs_applied_at).getTime() < lastCorrection);
+      return g;
+    });
+  }, [history, creditsHistory, sortedHistory]);
+
+  const visibleGroups = historyMatches
+    ? historyGroups.filter(g => historyMatches[g.head.id] || g.rectifs.some(r => historyMatches[r.id]))
+    : historyGroups;
+  const visibleHistory = visibleGroups.flatMap(g => [g.head, ...g.rectifs]);
+  const visibleCredits = visibleGroups.flatMap(g => g.credits);
+  const creditHt = c => parseFloat(c.doc_total_ht ?? c.total_ht ?? 0);
 
   async function openHistoryRow(inv) {
     const match = historyMatches?.[inv.id]?.[0]; // absent si la facture a été trouvée par son n°
@@ -829,6 +898,79 @@ export default function ChronopostApp() {
     </div>
   );
 
+  // Colonne « Tarifs » d'une facture d'origine : bouton de réapplication si elle a été corrigée
+  function tariffsCell(inv, g) {
+    if (!g.hasCorrections) {
+      return inv.tariffs_applied_at
+        ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
+        : <Badge label="Non appliqués" color={C.greyT} bg={C.greyB} />;
+    }
+    return (
+      <button
+        onClick={e => handleReapplyGroup(inv, e)}
+        disabled={applying}
+        title="Coût livraison des commandes = facture d'origine + avoir + facture rectificative"
+        style={{
+          background: g.needsReapply ? C.orange : 'none',
+          color: g.needsReapply ? C.white : C.green,
+          border: `1px solid ${g.needsReapply ? C.orange : C.green}`,
+          borderRadius: 6, padding: '3px 8px', fontSize: 11.5, fontWeight: 700,
+          cursor: applying ? 'wait' : 'pointer', whiteSpace: 'nowrap',
+        }}
+      >
+        {g.needsReapply ? '↻ Réappliquer les tarifs' : '✓ Appliqués · ↻'}
+      </button>
+    );
+  }
+
+  // Lignes collées sous la facture d'origine : rectificatives puis avoirs
+  function correctionRows(g, head, i, compact) {
+    const bg = i % 2 === 0 ? C.white : C.grey;
+    const pad = compact ? '6px 12px' : '7px 12px';
+    const cell = (content, extra = {}) => ({ content, extra });
+    const render = (key, cells, onClick) => (
+      <tr key={key} onClick={onClick}
+        style={{ background: bg, borderBottom: `1px solid ${C.greyB}`, cursor: onClick ? 'pointer' : 'default', fontSize: 12.5 }}>
+        {cells.map((c, k) => (
+          <td key={k} style={{ padding: pad, ...(k === 0 ? { paddingLeft: 28, borderLeft: `3px solid ${C.orange}` } : {}), ...c.extra }}>{c.content}</td>
+        ))}
+      </tr>
+    );
+    const created = x => cell(new Date(x.created_at).toLocaleDateString('fr-FR'), { color: C.greyT, fontSize: 12 });
+    const btn = (label, title, onClick, danger) => (
+      <button onClick={onClick} title={title} style={{ background: 'none', border: `1px solid ${danger ? '#FECACA' : C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: danger ? 0 : 4, color: danger ? C.red : undefined }}>{label}</button>
+    );
+    const rows = g.rectifs.map(r => render(`r-${r.id}`, [
+      cell(<><span style={{ fontWeight: 700, color: C.primary }}>↳ {r.invoice_number}</span> <span style={{ color: C.orange, fontWeight: 600 }}>facture rectificative</span>{historyMatchLines(r)}</>),
+      cell(r.invoice_date || '—', { color: C.greyT }),
+      cell(r.total_parcels, { textAlign: 'center' }),
+      ...(compact ? [] : [
+        cell(r.parcels_matched, { textAlign: 'center', color: C.accent }),
+        cell(r.weight_ok ?? '—', { textAlign: 'center', color: C.green }),
+        cell(r.weight_ecart ?? '—', { textAlign: 'center' }),
+      ]),
+      cell(fmtEur(r.total_ht), { fontWeight: 600 }),
+      cell(fmtEur(r.supplements_total), { color: C.orange }),
+      cell(r.total_ttc != null ? fmtEur(r.total_ttc) : '—', { fontWeight: 700 }),
+      cell(<span style={{ fontSize: 11, color: C.greyT }}>avec {head.invoice_number}</span>, { textAlign: 'center' }),
+      created(r),
+      cell(<>{btn('⬇️', 'Télécharger le PDF', e => handleDownloadPdf(r, e))}{btn('🗑️', 'Supprimer', e => handleDeleteInvoice(r, e), true)}</>, { textAlign: 'center', whiteSpace: 'nowrap' }),
+    ], () => openHistoryRow(r)));
+    for (const c of g.credits) rows.push(render(`c-${c.credit_number}`, [
+      cell(<><span style={{ fontWeight: 700, color: C.red }}>↳ Avoir {c.credit_number}</span></>),
+      cell(c.credit_date || '—', { color: C.greyT }),
+      cell(c.lines_count, { textAlign: 'center' }),
+      ...(compact ? [] : [cell(''), cell(''), cell('')]),
+      cell(fmtEur(creditHt(c)), { fontWeight: 600, color: C.red }),
+      cell('—', { color: C.greyT }),
+      cell(c.total_ttc != null ? fmtEur(c.total_ttc) : '—', { fontWeight: 700, color: C.red }),
+      cell(''),
+      created(c),
+      cell(<>{btn('⬇️', "Télécharger le PDF de l'avoir", e => handleDownloadCreditPdf(c, e))}{btn('🗑️', "Supprimer l'avoir", e => handleDeleteCredit(c, e), true)}</>, { textAlign: 'center', whiteSpace: 'nowrap' }),
+    ]));
+    return rows;
+  }
+
   function historyMatchLines(inv) {
     const matches = historyMatches?.[inv.id];
     if (!matches) return null;
@@ -849,18 +991,21 @@ export default function ChronopostApp() {
     const yearsSet = new Set();
     const mAdd = (k, ht, colis) => { if (!monthMap[k]) monthMap[k] = { ht: 0, colis: 0 }; monthMap[k].ht += ht; monthMap[k].colis += colis; };
     for (const inv of (totals?.invoices || [])) {
-      const parts = (inv.invoice_date || '').split('/');
+      // Rectificative : rattachée au mois de sa facture d'origine
+      const parts = (inv.period_date || inv.invoice_date || '').split('/');
       if (parts.length !== 3) continue;
       const [, m, y] = parts;
       const monthKey = `${y}-${m}`;
       // total_ht inclut déjà les suppléments ; global_total (charges globales) s'ajoute en plus
       const total = parseFloat(inv.total_ht || 0) + parseFloat(inv.global_total || 0);
-      mAdd(monthKey, total, parseInt(inv.total_parcels || 0, 10));
+      // Les colis d'une rectificative sont déjà comptés sur la facture d'origine
+      const rectif = inv.is_rectificative && inv.period_date && inv.period_date !== inv.invoice_date;
+      mAdd(monthKey, total, rectif ? 0 : parseInt(inv.total_parcels || 0, 10));
       yearMap[y] = (yearMap[y] || 0) + total;
       yearsSet.add(y);
       const ct = inv.country_totals || {};
       for (const [code, v] of Object.entries(ct)) {
-        const ht = parseFloat(v?.ht || 0), colis = parseInt(v?.colis || 0, 10);
+        const ht = parseFloat(v?.ht || 0), colis = rectif ? 0 : parseInt(v?.colis || 0, 10);
         if (!paysYearMap[code]) paysYearMap[code] = {};
         if (!paysYearMap[code][y]) paysYearMap[code][y] = { ht: 0, colis: 0 };
         paysYearMap[code][y].ht += ht; paysYearMap[code][y].colis += colis;
@@ -870,7 +1015,8 @@ export default function ChronopostApp() {
       }
     }
     for (const c of (totals?.credits || [])) {
-      const parts = (c.credit_date || '').split('/');
+      // Avoir : rattaché au mois de la facture qu'il corrige
+      const parts = (c.period_date || c.credit_date || '').split('/');
       if (parts.length !== 3) continue;
       const [, m, y] = parts;
       const monthKey = `${y}-${m}`;
@@ -1059,6 +1205,8 @@ export default function ChronopostApp() {
   }
 
   async function handleApplyTariffs() {
+    // Facture corrigée : appliquer la seule facture affichée écraserait la correction
+    if (currentGroup) return handleReapplyGroup(currentGroup.head);
     const matchedOrders = orders.filter(o => o.order_id && o.amount_ht != null);
     if (!matchedOrders.length) { setError('Aucune commande avec un tarif calculé.'); return; }
 
@@ -1096,6 +1244,48 @@ export default function ChronopostApp() {
     }
     finally { setApplying(false); }
   }
+
+  // Réapplique aux commandes le coût net d'une facture corrigée (origine + avoirs + rectificatives)
+  async function handleReapplyGroup(head, e) {
+    e?.stopPropagation();
+    setError(null);
+    try {
+      const { data } = await axios.get(`${API_URL}/chronopost/history/${head.id}/group`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!data.success) throw new Error(data.error);
+      const { tariffs, correctedCount } = netGroupTariffs(data);
+      if (!tariffs.length) { setError('Aucune commande avec un tarif calculé.'); return; }
+      const rect = data.rectificatives.map(r => r.invoice_number);
+      const avoirs = [...new Set(data.credits.map(c => c.credit_number))];
+      const detail = [
+        rect.length ? `rectificative ${rect.join(', ')}` : null,
+        avoirs.length ? `avoir ${avoirs.join(', ')}` : null,
+      ].filter(Boolean).join(' + ') || 'aucune correction';
+      if (!window.confirm(
+        `Facture ${head.invoice_number} corrigée (${detail}).\n\n` +
+        `Mettre à jour le coût livraison de ${tariffs.length} commande(s), dont ${correctedCount} corrigée(s) ?\n` +
+        `Coût = facture d'origine + avoir + facture rectificative.`
+      )) return;
+      setApplying(true);
+      const res = await axios.post(`${API_URL}/chronopost/apply-tariffs`, {
+        tariffs, invoiceIds: [head.id, ...data.rectificatives.map(r => r.id)],
+      }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 });
+      if (!res.data.success) throw new Error(res.data.error);
+      setApplyResult(res.data);
+      if (currentInvoiceId === head.id || data.rectificatives.some(r => r.id === currentInvoiceId)) {
+        setTariffsAppliedAt(res.data.tariffsAppliedAt || new Date().toISOString());
+      }
+      loadHistory();
+    } catch (err) {
+      setError(err.response?.data?.error || err.message);
+    } finally { setApplying(false); }
+  }
+
+  // Groupe de la facture affichée, si elle a été corrigée (ou si c'est une rectificative)
+  const currentGroup = currentInvoiceId
+    ? historyGroups.find(g => g.hasCorrections && (g.head.id === currentInvoiceId || g.rectifs.some(r => r.id === currentInvoiceId)))
+    : null;
 
   function handleDownloadPdf(inv, e) {
     e.stopPropagation(); // ne pas déclencher le clic de ligne
@@ -1252,6 +1442,8 @@ export default function ChronopostApp() {
         creditNumber: creditResult.creditNumber,
         creditDate: creditResult.creditDate,
         relatedInvoiceNumber: creditResult.relatedInvoiceNumber,
+        creditTotalHt: creditResult.creditTotalHt ?? null,
+        creditTotalTtc: creditResult.creditTotalTtc ?? null,
         credits,
       }));
       if (creditFile) fd.append('pdf', creditFile);
@@ -1261,7 +1453,7 @@ export default function ChronopostApp() {
       });
       if (data.success) {
         setCreditSaveState(data.already_saved ? 'already' : 'saved');
-        if (!data.already_saved) loadCreditsHistory();
+        if (!data.already_saved) { loadCreditsHistory(); loadTotals(); }
       }
     } catch (e) {
       setCreditError(e.response?.data?.error || "Erreur lors de l'enregistrement");
@@ -1279,6 +1471,7 @@ export default function ChronopostApp() {
         setCreditResult(null); setCreditSaveState(null); setCreditFile(null);
       }
       loadCreditsHistory();
+      loadTotals();
     } catch (e) {
       setCreditError("Erreur lors de la suppression");
     }
@@ -1720,6 +1913,13 @@ export default function ChronopostApp() {
                         padding: '4px 10px', fontSize: 12, fontWeight: 600,
                       }}>
                         ✓ Tarifs déjà appliqués le {new Date(tariffsAppliedAt).toLocaleString('fr-FR')}
+                      </span>
+                    )}
+                    {currentGroup && (
+                      <span style={{ fontSize: 12, color: C.greyT }}>
+                        Facture corrigée : le coût appliqué = {currentGroup.head.invoice_number}
+                        {currentGroup.rectifs.map(r => ` + rectificative ${r.invoice_number}`).join('')}
+                        {currentGroup.credits.map(c => ` + avoir ${c.credit_number}`).join('')}
                       </span>
                     )}
                     <button
@@ -2465,14 +2665,14 @@ export default function ChronopostApp() {
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleHistory.map((inv, i) => (
+                          {visibleGroups.map(({ head: inv, ...g }, i) => [
                             <tr key={inv.id}
                               onClick={() => openHistoryRow(inv)}
                               style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer', transition: 'background .1s' }}
                               onMouseEnter={e => e.currentTarget.style.background = C.accentL}
                               onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
                             >
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{historyMatchLines(inv)}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{g.hasCorrections && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: C.orange }}>· corrigée</span>}{historyMatchLines(inv)}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center', color: C.accent }}>{inv.parcels_matched}</td>
@@ -2482,9 +2682,7 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
                               <td style={{ padding: '9px 12px', fontWeight: 700 }}>{inv.total_ttc != null ? fmtEur(inv.total_ttc) : '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                                {inv.tariffs_applied_at
-                                  ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
-                                  : <Badge label="Non appliqués" color={C.greyT} bg={C.greyB} />}
+                                {tariffsCell(inv, g)}
                               </td>
                               <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>
                                 {new Date(inv.created_at).toLocaleDateString('fr-FR')}
@@ -2493,12 +2691,15 @@ export default function ChronopostApp() {
                                 <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
                                 <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer la facture" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, color: C.red }}>🗑️</button>
                               </td>
-                            </tr>
-                          ))}
+                            </tr>,
+                            ...correctionRows(g, inv, i, false),
+                          ])}
                         </tbody>
                         <tfoot>
                           <tr style={{ borderTop: `2px solid ${C.greyB}`, background: C.grey }}>
-                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>TOTAL ({visibleHistory.length} factures)</td>
+                            <td style={{ padding: '10px 12px', fontWeight: 700 }}>
+                              TOTAL ({visibleHistory.length} factures{visibleCredits.length > 0 && ` + ${visibleCredits.length} avoirs`})
+                            </td>
                             <td colSpan={5} />
                             <td style={{ padding: '10px 12px', fontWeight: 800, color: C.primary }}>
                               {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.total_ht || 0), 0))}
@@ -2507,7 +2708,8 @@ export default function ChronopostApp() {
                               {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.supplements_total || 0), 0))}
                             </td>
                             <td style={{ padding: '10px 12px', fontWeight: 800 }}>
-                              {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.total_ttc || 0), 0))}
+                              {fmtEur(visibleHistory.reduce((s, inv) => s + parseFloat(inv.total_ttc || 0), 0)
+                                + visibleCredits.reduce((s, c) => s + parseFloat(c.total_ttc || 0), 0))}
                             </td>
                             <td />
                           </tr>
@@ -2566,31 +2768,30 @@ export default function ChronopostApp() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleHistory.map((inv, i) => (
+                      {visibleGroups.map(({ head: inv, ...g }, i) => [
                         <tr key={inv.id}
                           onClick={() => openHistoryRow(inv)}
                           style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}`, cursor: 'pointer' }}
                           onMouseEnter={e => e.currentTarget.style.background = C.accentL}
                           onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? C.white : C.grey}
                         >
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{historyMatchLines(inv)}</td>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: C.primary }}>🔍 {inv.invoice_number}{g.hasCorrections && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: C.orange }}>· corrigée</span>}{historyMatchLines(inv)}</td>
                           <td style={{ padding: '8px 12px', color: C.greyT }}>{inv.invoice_date || '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>{inv.total_parcels}</td>
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{fmtEur(inv.total_ht)}</td>
                           <td style={{ padding: '8px 12px', color: C.orange }}>{fmtEur(inv.supplements_total)}</td>
                           <td style={{ padding: '8px 12px', fontWeight: 700 }}>{inv.total_ttc != null ? fmtEur(inv.total_ttc) : '—'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                            {inv.tariffs_applied_at
-                              ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
-                              : <Badge label="Non appliqués" color={C.greyT} bg={C.greyB} />}
+                            {tariffsCell(inv, g)}
                           </td>
                           <td style={{ padding: '8px 12px', color: C.greyT, fontSize: 12 }}>{new Date(inv.created_at).toLocaleDateString('fr-FR')}</td>
                           <td style={{ padding: '8px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                             <button onClick={e => handleDownloadPdf(inv, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, marginRight: 4 }}>⬇️</button>
                             <button onClick={e => handleDeleteInvoice(inv, e)} title="Supprimer" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '3px 7px', cursor: 'pointer', fontSize: 13, color: C.red }}>🗑️</button>
                           </td>
-                        </tr>
-                      ))}
+                        </tr>,
+                        ...correctionRows(g, inv, i, true),
+                      ])}
                     </tbody>
                   </table>
                 </div>
