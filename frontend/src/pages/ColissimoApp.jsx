@@ -588,7 +588,7 @@ export default function ColissimoApp() {
     if (!matchedParcels.length) { setError('Aucun colis avec un tarif et une commande identifiée.'); return; }
 
     const ok = window.confirm(
-      `Mettre à jour le coût livraison HT pour ${matchedParcels.length} commande(s) ?\n\nCette action remplace le coût actuel par le Total HT de la facture Colissimo, majoré des suppléments correspondants et de la participation décarbonation (0,05€/colis).`
+      `Mettre à jour le coût livraison HT pour ${matchedParcels.length} commande(s) ?\n\nCoût réel = toutes les lignes facturées de la commande (aller, retours, tous transporteurs), avoirs déduits. Ligne Colissimo = Total HT + suppléments du colis + participation décarbonation.`
     );
     if (!ok) return;
 

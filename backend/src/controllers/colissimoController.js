@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { applyInvoices } = require('../services/orderShippingCost');
 const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
 
@@ -934,41 +935,20 @@ exports.saveInvoice = [
   },
 ];
 
-// POST /api/colissimo/apply-tariffs — met à jour shipping_cost_calculated avec le Total HT par colis
+// POST /api/colissimo/apply-tariffs — coût réel des commandes de la facture { invoiceId }
+// (Total HT + suppléments + décarbonation, calculé côté serveur ; la commande reçoit la
+// somme de toutes ses lignes, tous transporteurs, retours compris).
 exports.applyTariffs = async (req, res) => {
   try {
-    const { tariffs, invoiceId } = req.body;
-    if (!Array.isArray(tariffs) || !tariffs.length) {
-      return res.status(400).json({ success: false, error: 'tariffs[] requis' });
-    }
-
-    const valid = tariffs.filter(t => t.order_id && t.tarif != null);
-    const skipped = tariffs.length - valid.length;
-    if (!valid.length) return res.json({ success: true, updated: 0, skipped });
-
-    const valueRows = valid.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::numeric)`).join(', ');
-    const params = valid.flatMap(t => [t.order_id, parseFloat(t.tarif.toFixed(4))]);
-
-    const result = await pool.query(`
-      UPDATE orders
-      SET shipping_cost_calculated = c.tarif
-      FROM (VALUES ${valueRows}) AS c(order_id, tarif)
-      WHERE orders.wp_order_id::int = c.order_id
-    `, params);
-
-    let appliedAt = null;
-    if (invoiceId) {
-      const upd = await pool.query(
-        `UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = $1 AND carrier = 'colissimo' RETURNING tariffs_applied_at`,
-        [invoiceId]
-      );
-      appliedAt = upd.rows[0]?.tariffs_applied_at || null;
-    }
-
-    res.json({ success: true, updated: result.rowCount, skipped, tariffsAppliedAt: appliedAt });
+    const id = Number(req.body.invoiceId);
+    if (!id) return res.status(400).json({ success: false, error: "Enregistre d'abord la facture : le coût se calcule depuis la facture enregistrée." });
+    const own = await pool.query(`SELECT id FROM carrier_invoices WHERE id = $1 AND carrier = 'colissimo'`, [id]);
+    if (!own.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+    const r = await applyInvoices(pool, [id]);
+    res.json({ success: true, updated: r.updated, skipped: 0, tariffsAppliedAt: r.tariffsAppliedAt });
   } catch (err) {
     console.error('[Colissimo] applyTariffs error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
 };
 

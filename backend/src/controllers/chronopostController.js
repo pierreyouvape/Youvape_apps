@@ -5,6 +5,7 @@ const JSZip = require('jszip');
 const pool = require('../config/database');
 const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
+const { applyInvoices } = require('../services/orderShippingCost');
 
 const PACKAGING_KG = 0.011; // 11g
 
@@ -763,48 +764,22 @@ exports.getInvoiceGroup = async (req, res) => {
 };
 
 // DELETE /api/chronopost/history/:id — supprimer une facture enregistrée
-// POST /api/chronopost/apply-tariffs — met à jour shipping_cost_calculated en une seule requête batch
+// POST /api/chronopost/apply-tariffs — coût réel des commandes des factures données
+// { invoiceIds } (ou { invoiceId }) : facture d'origine + ses rectificatives. Le coût
+// est calculé côté serveur sur TOUTES les lignes de la commande, tous transporteurs
+// (aller + retours + avoirs) — cf. services/orderShippingCost.js.
 exports.applyTariffs = async (req, res) => {
   try {
-    const { tariffs, invoiceId, invoiceIds } = req.body;
-    if (!Array.isArray(tariffs) || !tariffs.length) {
-      return res.status(400).json({ success: false, error: 'tariffs[] requis' });
-    }
-
-    // Filtrer les entrées valides
-    const valid = tariffs.filter(t => t.order_id && t.tarif != null);
-    const skipped = tariffs.length - valid.length;
-
-    if (!valid.length) return res.json({ success: true, updated: 0, skipped });
-
-    // Une seule requête batch avec VALUES multiples
-    // UPDATE orders SET shipping_cost_calculated = c.tarif FROM (VALUES ...) AS c(order_id, tarif)
-    // WHERE orders.wp_order_id::int = c.order_id
-    const valueRows = valid.map((_, i) => `($${i * 2 + 1}::int, $${i * 2 + 2}::numeric)`).join(', ');
-    const params = valid.flatMap(t => [t.order_id, parseFloat(t.tarif.toFixed(4))]);
-
-    const result = await pool.query(`
-      UPDATE orders
-      SET shipping_cost_calculated = c.tarif
-      FROM (VALUES ${valueRows}) AS c(order_id, tarif)
-      WHERE orders.wp_order_id::int = c.order_id
-    `, params);
-
-    let appliedAt = null;
-    // invoiceIds : une facture d'origine et ses rectificatives, appliquées ensemble
-    const markIds = (Array.isArray(invoiceIds) ? invoiceIds : [invoiceId]).map(Number).filter(Boolean);
-    if (markIds.length) {
-      const upd = await pool.query(
-        `UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = ANY($1::int[]) AND carrier = 'chronopost' RETURNING tariffs_applied_at`,
-        [markIds]
-      );
-      appliedAt = upd.rows[0]?.tariffs_applied_at || null;
-    }
-
-    res.json({ success: true, updated: result.rowCount, skipped, tariffsAppliedAt: appliedAt });
+    const { invoiceId, invoiceIds } = req.body;
+    const ids = (Array.isArray(invoiceIds) ? invoiceIds : [invoiceId]).map(Number).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ success: false, error: "Enregistre d'abord la facture : le coût se calcule depuis la facture enregistrée." });
+    const own = await pool.query(`SELECT id FROM carrier_invoices WHERE id = ANY($1::int[]) AND carrier = 'chronopost'`, [ids]);
+    if (own.rows.length !== ids.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
+    const r = await applyInvoices(pool, ids);
+    res.json({ success: true, updated: r.updated, skipped: 0, tariffsAppliedAt: r.tariffsAppliedAt });
   } catch (err) {
     console.error('[Chronopost] applyTariffs error:', err);
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
 };
 

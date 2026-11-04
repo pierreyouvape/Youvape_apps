@@ -3,6 +3,7 @@ const { PDFParse } = require('pdf-parse');
 const ExcelJS = require('exceljs');
 const JSZip = require('jszip');
 const pool = require('../config/database');
+const { applyInvoices } = require('../services/orderShippingCost');
 const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { parseMondialRelayPdf, computeAutresFrais, applyGridCheck } = require('../parsers/mondialRelayParser');
 const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, annotateParcelFees, cgvForInvoice, CLAIMABLE_KINDS } = require('../parsers/mondialRelayCsvParser');
@@ -244,7 +245,7 @@ async function resolveCsvContext(csv) {
 /**
  * Rattache une annexe CSV à sa facture PDF déjà enregistrée et remplace ses
  * colis. Les coûts par commande alimentent aussitôt /financier (coût réel =
- * Σ carrier_invoice_parcels.amount_ht) ; orders.shipping_cost_calculated n'est
+ * vue order_carrier_costs) ; orders.shipping_cost_calculated n'est
  * touché que par « Mettre à jour les coûts » (applyTariffs).
  */
 async function importCsvBuffer(buffer, fileName) {
@@ -689,35 +690,15 @@ exports.importCsv = [
 ];
 
 // POST /api/mondial-relay/history/:id/apply-tariffs
-// Coût de livraison des commandes de la facture = somme de TOUS leurs colis
-// facturés (aller + retours, toutes factures confondues), net de remise —
-// la même somme que le coût réel de /financier.
+// Coût de livraison des commandes de la facture = somme de TOUTES leurs lignes
+// facturées, tous transporteurs (aller + retours) + avoirs — services/orderShippingCost.
 exports.applyTariffs = async (req, res) => {
   try {
     const { id } = req.params;
     const inv = await pool.query('SELECT id FROM carrier_invoices WHERE id = $1 AND carrier = $2', [id, CARRIER]);
     if (!inv.rows.length) return res.status(404).json({ success: false, error: 'Facture non trouvée' });
-
-    const result = await pool.query(`
-      WITH cmd AS (
-        SELECT DISTINCT order_id FROM carrier_invoice_parcels
-        WHERE invoice_id = $1 AND order_id IS NOT NULL
-      ), cout AS (
-        SELECT cip.order_id, SUM(cip.amount_ht) AS tarif
-        FROM carrier_invoice_parcels cip
-        JOIN cmd ON cmd.order_id = cip.order_id
-        WHERE cip.amount_ht IS NOT NULL
-        GROUP BY cip.order_id
-      )
-      UPDATE orders o
-      SET shipping_cost_calculated = cout.tarif
-      FROM cout
-      WHERE o.wp_order_id::int = cout.order_id
-    `, [id]);
-    const upd = await pool.query(
-      'UPDATE carrier_invoices SET tariffs_applied_at = NOW() WHERE id = $1 RETURNING tariffs_applied_at', [id]
-    );
-    res.json({ success: true, updated: result.rowCount, tariffsAppliedAt: upd.rows[0].tariffs_applied_at });
+    const r = await applyInvoices(pool, [Number(id)]);
+    res.json({ success: true, updated: r.updated, tariffsAppliedAt: r.tariffsAppliedAt });
   } catch (err) {
     console.error('[MondialRelay] applyTariffs error:', err);
     res.status(500).json({ success: false, error: err.message });

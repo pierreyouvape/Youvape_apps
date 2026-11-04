@@ -667,59 +667,6 @@ function computeTarif(order, params, supplBaseByTracking, supplFlatByTracking) {
   return (base + supplBase + redevanceUnit) * (1 + carburantRate) + ecoUnit + (fraisGestionTotal / nbSûreté) + supplFlat;
 }
 
-/* ─── FACTURE CORRIGÉE (origine + rectificatives + avoirs) ───── */
-// Tarifs par ligne d'une facture enregistrée (même calcul que l'écran d'analyse)
-function invoiceTariffLines(inv) {
-  const orders = (inv.parcels || []).map(p => ({
-    tracking: p.tracking,
-    order_id: p.order_id,
-    amount_ht: p.amount_ht != null ? parseFloat(p.amount_ht) : null,
-    is_return: p.is_return || false,
-  }));
-  const supplements = (inv.supplements || []).map(s => ({
-    description: s.description,
-    amount_ht: s.amount_ht != null ? parseFloat(s.amount_ht) : null,
-    related_tracking: s.tracking,
-  }));
-  const params = computeTarifParams(orders, Array.isArray(inv.global_charges) ? inv.global_charges : []);
-  const { supplBaseByTracking, supplFlatByTracking } = computeSupplMaps(supplements);
-  return orders
-    .filter(o => o.amount_ht != null)
-    .map(o => ({ order_id: o.order_id, tracking: o.tracking, is_return: o.is_return, tarif: computeTarif(o, params, supplBaseByTracking, supplFlatByTracking) }));
-}
-
-// Coût net par commande = facture d'origine + avoirs (négatifs) + rectificatives.
-// L'avoir annule la ligne contestée, la rectificative la refacture au bon poids.
-// onlyCorrected : la facture d'origine a déjà été appliquée → ne réécrire que les
-// commandes corrigées (un coût posé depuis par une autre facture reste intact).
-function netGroupTariffs(group, { onlyCorrected = false } = {}) {
-  const trackingToOrder = {};
-  const net = {};      // order_id -> tarif
-  const corrected = new Set();
-  // Commandes dont le colis ALLER est dans le groupe. Une commande présente seulement
-  // par un retour expéditeur a son aller sur une autre facture : son coût n'est pas
-  // celui du retour (sinon un avoir sur frais de retour la ramenait à 0 €).
-  const hasOutbound = new Set();
-  const add = (orderId, amt, isCorrection) => {
-    if (!orderId || amt == null) return;
-    net[orderId] = (net[orderId] || 0) + amt;
-    if (isCorrection) corrected.add(orderId);
-  };
-  const invoices = [group.invoice, ...(group.rectificatives || [])];
-  for (const inv of invoices)
-    for (const p of inv.parcels || []) if (p.order_id && p.tracking) trackingToOrder[p.tracking.toUpperCase()] = p.order_id;
-  for (const l of invoiceTariffLines(group.invoice)) { add(l.order_id, l.tarif, false); if (!l.is_return && l.order_id) hasOutbound.add(l.order_id); }
-  for (const r of group.rectificatives || [])
-    for (const l of invoiceTariffLines(r)) { add(l.order_id, l.tarif, true); if (!l.is_return && l.order_id) hasOutbound.add(l.order_id); }
-  for (const c of group.credits || [])
-    add(c.order_id || trackingToOrder[(c.tracking || '').toUpperCase()], c.amount_ht != null ? parseFloat(c.amount_ht) : null, true);
-  // Un avoir calculé à la ligne peut laisser quelques centimes négatifs : plancher à 0
-  const tariffs = Object.entries(net)
-    .filter(([id]) => hasOutbound.has(Number(id)) && (!onlyCorrected || corrected.has(Number(id))))
-    .map(([order_id, t]) => ({ order_id: Number(order_id), tarif: Math.max(0, Math.round(t * 100) / 100) }));
-  return { tariffs, correctedCount: tariffs.filter(t => corrected.has(t.order_id)).length };
-}
-
 /* ─── MAIN COMPONENT ─────────────────────────────────────────── */
 export default function ChronopostApp() {
   const { token } = useContext(AuthContext);
@@ -1217,9 +1164,10 @@ export default function ChronopostApp() {
     if (currentGroup) return handleReapplyGroup(currentGroup.head);
     const matchedOrders = orders.filter(o => o.order_id && o.amount_ht != null);
     if (!matchedOrders.length) { setError('Aucune commande avec un tarif calculé.'); return; }
+    if (!currentInvoiceId) { setError("Enregistre d'abord la facture : le coût se calcule depuis la facture enregistrée."); return; }
 
     const confirm = window.confirm(
-      `Mettre à jour le coût livraison HT pour ${matchedOrders.length} commande(s) ?\n\nCette action remplace le coût actuel par le tarif réel calculé depuis la facture.`
+      `Mettre à jour le coût livraison réel de ${matchedOrders.length} commande(s) ?\n\nCoût = toutes les lignes facturées de la commande (aller, retours, tous transporteurs), avoirs déduits.`
     );
     if (!confirm) return;
 
@@ -1233,8 +1181,7 @@ export default function ChronopostApp() {
     }, 300);
 
     try {
-      const tariffs = matchedOrders.map(o => ({ order_id: o.order_id, tarif: getTarif(o) }));
-      const { data } = await axios.post(`${API_URL}/chronopost/apply-tariffs`, { tariffs, invoiceId: currentInvoiceId }, {
+      const { data } = await axios.post(`${API_URL}/chronopost/apply-tariffs`, { invoiceIds: [currentInvoiceId] }, {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         timeout: 60000,
       });
@@ -1253,7 +1200,9 @@ export default function ChronopostApp() {
     finally { setApplying(false); }
   }
 
-  // Réapplique aux commandes le coût net d'une facture corrigée (origine + avoirs + rectificatives)
+  // Réapplique le coût réel aux commandes d'une facture corrigée : le serveur additionne
+  // toutes les lignes de chaque commande (aller, retours, tous transporteurs) et ses avoirs,
+  // la rectificative remplaçant la ligne d'origine.
   async function handleReapplyGroup(head, e) {
     e?.stopPropagation();
     setError(null);
@@ -1262,8 +1211,6 @@ export default function ChronopostApp() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!data.success) throw new Error(data.error);
-      const { tariffs, correctedCount } = netGroupTariffs(data, { onlyCorrected: !!head.tariffs_applied_at });
-      if (!tariffs.length) { setError('Aucune commande avec un tarif calculé.'); return; }
       const rect = data.rectificatives.map(r => r.invoice_number);
       const avoirs = [...new Set(data.credits.map(c => c.credit_number))];
       const detail = [
@@ -1271,13 +1218,13 @@ export default function ChronopostApp() {
         avoirs.length ? `avoir ${avoirs.join(', ')}` : null,
       ].filter(Boolean).join(' + ') || 'aucune correction';
       if (!window.confirm(
-        `Facture ${head.invoice_number} corrigée (${detail}).\n\n` +
-        `Mettre à jour le coût livraison de ${tariffs.length} commande(s), dont ${correctedCount} corrigée(s) ?\n` +
-        `Coût = facture d'origine + avoir + facture rectificative.`
+        `Facture ${head.invoice_number} (${detail}).\n\n` +
+        `Recalculer le coût livraison réel de ses commandes ?\n` +
+        `Coût = toutes les lignes facturées de la commande (aller, retours, tous transporteurs) − avoirs.`
       )) return;
       setApplying(true);
       const res = await axios.post(`${API_URL}/chronopost/apply-tariffs`, {
-        tariffs, invoiceIds: [head.id, ...data.rectificatives.map(r => r.id)],
+        invoiceIds: [head.id, ...data.rectificatives.map(r => r.id)],
       }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 });
       if (!res.data.success) throw new Error(res.data.error);
       setApplyResult(res.data);
@@ -1933,7 +1880,7 @@ export default function ChronopostApp() {
                     <button
                       onClick={handleApplyTariffs}
                       disabled={applying || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
-                      title="Remplace le Coût livraison HT de chaque commande par le tarif réel calculé"
+                      title="Coût livraison réel de chaque commande : toutes ses lignes facturées (aller, retours, tous transporteurs), avoirs déduits"
                       style={{
                         background: '#7C3AED', color: C.white,
                         border: 'none', borderRadius: 8,

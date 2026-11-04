@@ -157,20 +157,14 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     const where = 'WHERE ' + conditions.join(' AND ');
 
     // ─── COÛT TRANSPORT RÉEL (factures transporteurs) ─────────────────────
-    // Coût d'expédition « réel » d'une commande = somme des colis facturés par le
-    // transporteur (carrier_invoice_parcels.amount_ht), réconciliés via order_id.
-    // Tant qu'une commande n'a AUCUN colis facturé (> 0 €), on retombe sur le coût
-    // ESTIMÉ configuré (orders.shipping_cost_calculated). La jointure est 1:1 par
-    // commande (agrégation par order_id) → pas de fan-out sur les autres agrégats.
-    // amount_ht > 0 : on ignore les colis sans tarif encore appliqué (NULL/0).
+    // Coût d'expédition « réel » d'une commande = vue order_carrier_costs : toutes ses
+    // lignes facturées, tous transporteurs (aller + retours), charges réparties
+    // (cost_ht), avoirs déduits, rectificatives à la place des lignes d'origine.
+    // Sans ligne facturée, on retombe sur le coût ESTIMÉ (orders.shipping_cost_calculated).
+    // Jointure 1:1 par commande → pas de fan-out sur les autres agrégats.
     const shipJoin = `
-      LEFT JOIN (
-        SELECT order_id, SUM(amount_ht) AS real_cost
-        FROM carrier_invoice_parcels
-        WHERE order_id IS NOT NULL AND amount_ht > 0
-        GROUP BY order_id
-      ) ship ON ship.order_id = o.wp_order_id`;
-    const shipCostExpr = `COALESCE(ship.real_cost, o.shipping_cost_calculated)`;
+      LEFT JOIN order_carrier_costs ship ON ship.order_id = o.wp_order_id`;
+    const shipCostExpr = `COALESCE(GREATEST(0, ship.cost), o.shipping_cost_calculated)`;
 
     // ─── COÛT PRODUIT UNITAIRE — jamais 0 si un coût existe quelque part ────
     // Priorité : computed_cost (PMP FIFO achats) → wc_cog_cost du produit →
