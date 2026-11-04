@@ -16,6 +16,9 @@ router.get('/', checkAdmin, usersController.getAllUsers);
 // Récupérer mes permissions
 router.get('/me/permissions', usersController.getMyPermissions);
 
+// Délai de verrouillage du PDA (réglé dans /settings, lu par tout compte)
+router.get('/me/pda-settings', usersController.getMyPdaSettings);
+
 // Mettre à jour le mot de passe BMS de l'utilisateur connecté
 router.put('/me/bms-password', usersController.updateMyBmsPassword);
 

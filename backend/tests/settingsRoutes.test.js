@@ -51,6 +51,7 @@ app.use(express.json());
 app.use('/api/settings', require('../src/routes/settingsRoutes'));
 app.use('/api/reviews', require('../src/routes/reviewsRoutes'));
 app.use('/api/rewards', require('../src/routes/rewardsRoutes'));
+app.use('/api/users', require('../src/routes/usersRoutes'));
 
 const tokenFor = (id) => jwt.sign({ id, email: `u${id}@test` }, process.env.JWT_SECRET);
 let base;
@@ -114,6 +115,25 @@ const server = app.listen(0, '127.0.0.1', async () => {
     assert.strictEqual((await call('PUT', '/api/settings/wc_sync_interval', { as: ADMIN, body: { value: -1 } })).status, 400);
     assert.strictEqual((await call('PUT', '/api/settings/wc_sync_interval', { as: ADMIN })).status, 400);
     assert.strictEqual(store.wc_sync_interval, '60');
+  });
+  await test('PUT pda_idle_minutes : 0 à 240 minutes entières, sinon refusé', async () => {
+    for (const value of ['abc', -1, 1.5, 241, '']) {
+      assert.strictEqual((await call('PUT', '/api/settings/pda_idle_minutes', { as: ADMIN, body: { value } })).status, 400, `valeur ${value}`);
+    }
+    assert.strictEqual((await call('PUT', '/api/settings/pda_idle_minutes', { as: SALARIE, body: { value: 5 } })).status, 403);
+    assert.strictEqual(store.pda_idle_minutes, undefined);
+    assert.strictEqual((await call('PUT', '/api/settings/pda_idle_minutes', { as: ADMIN, body: { value: 0 } })).status, 200);
+    assert.strictEqual(store.pda_idle_minutes, '0');
+  });
+  await test('/api/users/me/pda-settings : lisible par tout compte, 1 min par défaut', async () => {
+    delete store.pda_idle_minutes;
+    assert.strictEqual((await call('GET', '/api/users/me/pda-settings', { as: SALARIE })).json.idle_minutes, 1);
+    store.pda_idle_minutes = '3';
+    const { status, json, text } = await call('GET', '/api/users/me/pda-settings', { as: SALARIE });
+    assert.strictEqual(status, 200);
+    assert.strictEqual(json.idle_minutes, 3);
+    assert.ok(!text.includes('JETON-SECRET') && !text.includes('MOT-DE-PASSE'));
+    assert.strictEqual((await call('GET', '/api/users/me/pda-settings')).status, 401);
   });
 
   await test('/api/reviews/config : plus aucun secret, juste « clé renseignée »', async () => {

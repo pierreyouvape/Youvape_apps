@@ -2,6 +2,8 @@ import { useContext, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { C } from '../picking/pickingUi';
 import { pdaBtn } from './pdaStyles';
+import { usePdaIdleLock } from './pdaIdle';
+import PdaLockScreen from './PdaLockScreen';
 
 /**
  * Cadre commun des pages PDA (/pda et ses apps) : barre du haut, couleur de
@@ -11,6 +13,9 @@ import { pdaBtn } from './pdaStyles';
  * La session d'un PDA se ferme tous les soirs à 19h30 (les PDA changent de
  * mains) : le serveur émet le jeton avec cette échéance, et la page, si elle
  * est ouverte, se déconnecte d'elle-même à l'heure dite.
+ *
+ * Sans activité pendant le délai réglé dans /settings, le PDA se verrouille
+ * (pdaIdle, PdaLockScreen) : la page reste ouverte sous le voile.
  */
 
 const CUTOFF = { hour: 19, minute: 30 };
@@ -28,6 +33,7 @@ const msUntilCutoff = () => {
 
 export default function PdaLayout({ title, onBack, backLabel, children }) {
   const { user, logout } = useContext(AuthContext);
+  const [locked, unlock] = usePdaIdleLock();
 
   // Le manifeste est dans index.html (Chrome doit le trouver sans exécuter la
   // page) ; seule la couleur de barre est propre aux pages PDA.
@@ -66,6 +72,7 @@ export default function PdaLayout({ title, onBack, backLabel, children }) {
         </button>
       </div>
       {children}
+      {locked && <PdaLockScreen user={user} onUnlock={unlock} />}
     </div>
   );
 }

@@ -52,6 +52,9 @@ const SettingsApp = () => {
   const [savingAll, setSavingAll] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [justSavedIds, setJustSavedIds] = useState([]);
+  // Verrouillage du PDA après inactivité (minutes, 0 = jamais)
+  const [pdaIdleMinutes, setPdaIdleMinutes] = useState('');
+  const [savingPdaIdle, setSavingPdaIdle] = useState(false);
 
   // Onglet WooCommerce
   const [wcSyncInterval, setWcSyncInterval] = useState('');
@@ -100,6 +103,9 @@ const SettingsApp = () => {
     if (activeTab === 'users' && (isAdmin || isSuperAdmin) && users.length === 0) {
       loadUsers();
     }
+    if (activeTab === 'users' && (isAdmin || isSuperAdmin) && pdaIdleMinutes === '') {
+      loadPdaIdle();
+    }
   }, [activeTab]);
 
   // Chargement lazy : settings WC
@@ -121,6 +127,36 @@ const SettingsApp = () => {
       console.error('Erreur lors du chargement des paramètres:', err);
     }
     loadSyncHealth();
+  };
+
+  // Jamais enregistré = 1 minute, la valeur appliquée par les PDA (utils/pdaIdle côté backend).
+  const loadPdaIdle = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/settings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPdaIdleMinutes(response.data.settings?.pda_idle_minutes ?? '1');
+    } catch (err) {
+      console.error('Erreur lors du chargement du délai PDA:', err);
+    }
+  };
+
+  const savePdaIdle = async () => {
+    setSavingPdaIdle(true);
+    try {
+      await axios.put(
+        `${API_URL}/settings/pda_idle_minutes`,
+        { value: pdaIdleMinutes },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccessMessage('Durée avant déconnexion PDA mise à jour');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      setError(err.response?.status === 400 ? 'Durée invalide : un nombre entier de minutes, de 0 à 240' : 'Erreur lors de la sauvegarde');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setSavingPdaIdle(false);
+    }
   };
 
   const loadSyncHealth = async () => {
@@ -429,6 +465,30 @@ const SettingsApp = () => {
         {/* Onglet Gestion utilisateurs */}
         {activeTab === 'users' && (isAdmin || isSuperAdmin) && (
           <div className="settings-section">
+            <div className="wc-sync-row">
+              <label style={{ fontWeight: '500' }}>Durée avant déconnexion PDA</label>
+              <input
+                type="number"
+                min="0"
+                max="240"
+                value={pdaIdleMinutes}
+                onChange={(e) => setPdaIdleMinutes(e.target.value)}
+                className="settings-input settings-input-short"
+              />
+              <span>minutes</span>
+              <button
+                onClick={savePdaIdle}
+                disabled={savingPdaIdle || pdaIdleMinutes === ''}
+                className="btn btn-save"
+              >
+                {savingPdaIdle ? 'Sauvegarde...' : 'Sauvegarder'}
+              </button>
+            </div>
+            <p className="field-hint" style={{ marginBottom: '24px' }}>
+              Sans activité pendant ce délai, le PDA se verrouille : on le rouvre en scannant son badge
+              (même personne = on reprend où on en était). 0 = jamais. Appliqué au prochain chargement de page du PDA.
+            </p>
+
             <h2>Gestion des utilisateurs</h2>
             {loadingUsers ? (
               <div className="loading">Chargement...</div>

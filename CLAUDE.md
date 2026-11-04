@@ -471,6 +471,19 @@ HEXASMAL figée dans `assets/postcodes/`, rafraîchie par `node src/scripts/upda
   passe toutes les commandes à `active = false`. `getWavePrintData` les écarte, sauf `withRemoved`
   pour les manquants (les lignes figées comptent encore leur part).
 
+### PDA : badge employé et verrouillage (04/11/2026)
+
+- Connexion par badge (`POST /api/auth/badge`, badge → `employees.user_id` → `users`), toujours
+  en session PDA (19h30). Badge = identifiant imprimé et devinable : frein sur les échecs
+  (`utils/badgeLogin`). Un employé sans compte relié ne peut pas se connecter par badge.
+- Verrou après inactivité (`components/pda/pdaIdle`, `PdaLockScreen`, branché dans `PdaLayout`) :
+  délai `app_config.pda_idle_minutes` (0 = jamais, défaut 1), réglé dans `/settings` → Gestion
+  utilisateurs, lu par `GET /api/users/me/pda-settings`. La page reste montée sous le voile :
+  même personne = on reprend, autre personne = rechargement complet sur `/pda`.
+- ⚠️ Le lecteur du verrou écoute `keydown` en **capture sur `window` et arrête la touche** : sinon
+  le badge scanné partait aussi au lecteur de la page dessous (le Picking l'aurait pris pour un article).
+- `PdaSignIn` est dans le socle (via `Login`) : n'y importer ni `pickingUi` ni la caméra en dur.
+
 ### Client ayant été malhonnête (fiche client — 02/11/2026)
 
 - Signalé depuis `/customers/:id` (droit `tickets` en écriture), motif libre :
