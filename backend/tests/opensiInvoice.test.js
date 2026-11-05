@@ -212,7 +212,7 @@ test('une proforma GFC se lit comme une facture, typée proforma (P26111102)', (
   assert.strictEqual(proforma.isProforma, true);
   assert.strictEqual(proforma.number, 'P26111102');
   assert.strictEqual(proforma.date, '2026-11-05');
-  assert.strictEqual(proforma.orderRefOnDoc, null);
+  assert.strictEqual(proforma.orderRefOnDoc, 'P26111102');
   assert.strictEqual(proforma.statedPaymentMethod, 'Virement bancaire');
   assert.ok(close(proforma.totalHt, 1231.95));
   assert.strictEqual(proforma.lines.length, 35);

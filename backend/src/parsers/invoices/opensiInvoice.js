@@ -204,7 +204,10 @@ function parseHeader(text) {
     // « Réf. Commande » est notre référence chez LCA et LVP ; chez GFC c'est le
     // numéro interne du fournisseur, qui ne retrouve aucune commande. On le
     // remonte quand même : c'est à l'écran de dire qu'il ne matche pas.
-    orderRefOnDoc: grab(/Réf\.\s*Commande\s*:\s*(\S+)/i),
+    // Une proforma n'en a pas : son propre numéro, que l'import de commande a
+    // pris comme numéro de commande (gfcParser), retrouve la commande.
+    orderRefOnDoc: grab(/Réf\.\s*Commande\s*:\s*(\S+)/i)
+      || (isProforma ? grab(/Proforma\s+N°\s*:?\s*(\S+)/i) : null),
     // Un avoir LCA ne porte pas de « Réf. Commande », mais la facture qu'il
     // corrige : « Facture d'origine : F2610418127 » (A2611421302). C'est par
     // elle qu'on retrouve la commande (cf. analyseInvoice), et c'est elle que

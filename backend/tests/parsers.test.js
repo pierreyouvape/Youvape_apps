@@ -246,6 +246,41 @@ console.log('GFC — facture F2610427525 (bons utilisés)');
   });
 }
 
+// ── GFC, proforma P26111102 importée comme commande ──────────────────────────
+// Trois lignes perdues : code-barres absent (offre Coton Cloud 9), attribut
+// « Valeur : 0.23 ohm » imprimé sous les montants (Coils Bonza Pro), pied
+// « Mode de règlement » collé au dernier article de la page 1 (Woodsman).
+console.log('GFC — proforma P26111102');
+{
+  const gfc = require('../src/parsers/gfcParser');
+  const parsed = gfc.parse(fixture('gfc-proforma-P26111102.txt'));
+  const bySku = (s) => parsed.items.find((i) => i.supplier_sku === s);
+
+  test('GFC P26111102 : 35 lignes, 1 231,95 € HT, aucun avertissement', () => {
+    assert.strictEqual(parsed.items.length, 35);
+    assert.strictEqual(sumLines(parsed.items), 1231.95);
+    assert.deepStrictEqual(parsed.warnings, []);
+  });
+
+  test('GFC P26111102 : le n° de proforma tient lieu de n° de commande', () => {
+    assert.strictEqual(parsed.orderNumber, 'P26111102');
+    assert.strictEqual(parsed.orderDate, '2026-11-05');
+  });
+
+  test('GFC P26111102 : les trois lignes perdues sont lues', () => {
+    const coton = bySku('GFC35862');
+    assert.strictEqual(coton.qty_ordered, 2);
+    assert.strictEqual(coton.unit_price_net, 17.50);
+    assert.strictEqual(coton.barcode, null);
+    const coils = bySku('GFC33907-61796');
+    assert.strictEqual(coils.qty_ordered, 10);
+    assert.ok(coils.designation.endsWith('Valeur : 0.23 ohm'));
+    const woodsman = bySku('GFC36467');
+    assert.strictEqual(woodsman.qty_ordered, 12);
+    assert.strictEqual(woodsman.designation, 'Woodsman 0mg 50ml - Dilligaf');
+  });
+}
+
 // ── Cloud Vapor : la page 2 disparaissait ─────────────────────────────────────
 // pdf-parse sort « Montant hors taxes » (page 1) AVANT les dernières lignes de
 // la page 2 : le parseur coupait au premier total et perdait PRISM, LE CHAMAN,

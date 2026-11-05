@@ -114,7 +114,11 @@ function parseConfirmation(text) {
  */
 function parseFacture(text) {
   // Extraire le numero de commande : "Réf. Commande : 560189"
-  const orderMatch = text.match(/Réf\.\s*Commande\s*:\s*(\S+)/);
+  // Une proforma (P26111102) n'a pas de « Réf. Commande » : son numéro en tient
+  // lieu. C'est lui que le contrôle de facture retrouve quand on redépose la
+  // proforma (opensiInvoice : orderRefOnDoc = numéro de la proforma).
+  const orderMatch = text.match(/Réf\.\s*Commande\s*:\s*(\S+)/)
+    || text.match(/^\s*Proforma\s+N°\s*:?\s*(\S+)/im);
   const orderNumber = orderMatch ? orderMatch[1] : null;
 
   // Extraire la date : "Date : 18/03/2026"
@@ -134,7 +138,10 @@ function parseFacture(text) {
   // "Code(s) promo" = bons/avoirs utilisés, imprimés entre la dernière ligne et
   //   "Base HT" : sans cet arrêt, ils se collaient au dernier article, qui ne
   //   matchait plus et disparaissait sans un mot (F2610427525, Tank DotAIO V4).
-  const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b|\bSous-total HT\b|Code\(s\) promo)/g;
+  // « Mode de règlement » = pied de page 1 d'un document sur plusieurs pages :
+  //   sans cet arrêt, il se collait au dernier article de la page (Woodsman,
+  //   proforma P26111102).
+  const blockRegex = /GFC\d[\s\S]*?(?=GFC\d|\bBase HT\b|\bSous-total HT\b|Code\(s\) promo|Mode de règlement)/g;
   const blocks = text.match(blockRegex) || [];
   const warnings = [];
 
@@ -148,15 +155,24 @@ function parseFacture(text) {
     //
     // Pattern : REF DESIGNATION CODEBARRE QTE PU_HT MONTANT_HT
     // Le code barre est une suite de chiffres (10-13 digits), suivi de qte (1-4 digits) puis prix
+    //
+    // Deux écarts au gabarit, tous deux sur la proforma P26111102 :
+    // - code-barres ABSENT : « … - Cloud 9 2 17.50 35.00 » (offre Coton Cloud 9) ;
+    // - ligne d'attribut imprimée SOUS les montants : « … 10 2.10 21.00 Valeur :
+    //   0.23 ohm ». Elle complète la désignation.
+    // Le contrôle quantité × prix = montant tranche entre les lectures possibles.
     const itemMatch = cleaned.match(
-      /^(GFC[\w-]+)\s+(.+?)\s+(\d{4,13})\s+(\d+)\s+(\d+\.\d{2})\s+(\d+\.\d{2})\s*$/
+      /^(GFC[\w-]+)\s+(.+?)\s+(?:(\d{4,13})\s+)?(\d+)\s+(\d+\.\d{2})\s+(\d+\.\d{2})(?:\s+([A-Za-zÀ-ÿ][\wÀ-ÿ ]{0,25}\s*:\s*.*))?$/
     );
+    const juste = itemMatch
+      && Math.abs(parseInt(itemMatch[4], 10) * parseFloat(itemMatch[5]) - parseFloat(itemMatch[6])) <= 0.02;
 
-    if (itemMatch) {
+    if (juste) {
+      const attribut = itemMatch[7] ? ` ${itemMatch[7].trim()}` : '';
       items.push({
         supplier_sku: itemMatch[1],
-        designation: itemMatch[2].trim(),
-        barcode: itemMatch[3],
+        designation: `${itemMatch[2].trim()}${attribut}`,
+        barcode: itemMatch[3] || null,
         qty_ordered: parseInt(itemMatch[4]),
         unit_price_net: parseFloat(itemMatch[5]),
         total_ht: parseFloat(itemMatch[6]),
