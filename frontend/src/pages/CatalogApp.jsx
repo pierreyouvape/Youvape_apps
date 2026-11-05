@@ -133,6 +133,13 @@ const CatalogApp = () => {
   // 'unpublished'. Répond à « ai-je du stock sur des produits qui ne sont pas en
   // ligne ? » — à croiser avec l'onglet « En stock ».
   const [wcStatus, setWcStatus] = useState('');
+  // Vue à plat : une ligne par article (simples, packs, déclinaisons), sans
+  // tête de ligne parent. Le tri porte alors sur chaque ligne et non plus sur la
+  // moyenne de la famille : trier par coût range toutes les déclinaisons du
+  // catalogue entre elles, sans que les familles s'intercalent.
+  const [flatView, setFlatView] = useState(() => {
+    try { return localStorage.getItem('catalog.flatView') === '1'; } catch { return false; }
+  });
 
   // CSV import state
   const [csvModal, setCsvModal] = useState(false);
@@ -144,7 +151,7 @@ const CatalogApp = () => {
 
   const headers = { Authorization: `Bearer ${token}` };
 
-  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier, categoryVal = selectedCategory, wcVal = wcStatus) => {
+  const fetchProducts = async (offset = 0, search = searchTerm, tab = stockTab, sort = sortBy, dir = sortDir, brandVal = selectedBrand, hidden = showHidden, supplierVal = selectedSupplier, categoryVal = selectedCategory, wcVal = wcStatus, flatVal = flatView) => {
     setLoading(true);
     try {
       const brandParam = brandVal && brandVal.startsWith('brand:') ? brandVal.slice(6) : undefined;
@@ -161,7 +168,7 @@ const CatalogApp = () => {
         subCategoryParam = rest.slice(sep + 1);
       }
       const res = await axios.get(`${API_URL}/products/catalog`, {
-        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, category: categoryParam, subCategory: subCategoryParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined, wcStatus: wcVal || undefined },
+        params: { limit: 50, offset, search, stockTab: tab, sortBy: sort || undefined, sortDir: dir, brand: brandParam, subBrand: subBrandParam, supplierId: supplierVal || undefined, category: categoryParam, subCategory: subCategoryParam, showHidden: hidden === 1 ? 'true' : hidden === 2 ? 'only' : undefined, wcStatus: wcVal || undefined, flat: flatVal ? 'true' : undefined },
         headers
       });
       if (res.data.success) {
@@ -240,6 +247,13 @@ const CatalogApp = () => {
   const handleWcStatusChange = (statut) => {
     setWcStatus(statut);
     fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, selectedCategory, statut);
+  };
+
+  const handleFlatViewToggle = () => {
+    const next = !flatView;
+    setFlatView(next);
+    try { localStorage.setItem('catalog.flatView', next ? '1' : '0'); } catch { /* stockage indisponible */ }
+    fetchProducts(0, searchTerm, stockTab, sortBy, sortDir, selectedBrand, showHidden, selectedSupplier, selectedCategory, wcStatus, next);
   };
 
   const handleShowHiddenToggle = () => {
@@ -729,6 +743,22 @@ const CatalogApp = () => {
             }}
           >
             {showHidden === 2 ? '👁 Masqués seuls' : showHidden === 1 ? '👁 + masqués' : '👁 Afficher masqués'}
+          </button>
+
+          {/* Vue à plat : sans têtes de ligne parent, pour trier toutes les déclinaisons entre elles */}
+          <button
+            onClick={handleFlatViewToggle}
+            title="Une ligne par article, sans le produit parent : le tri (prix, coût, marge…) range alors toutes les déclinaisons entre elles"
+            style={{
+              marginLeft: '12px', padding: '8px 16px',
+              backgroundColor: flatView ? '#eff6ff' : '#fff',
+              color: flatView ? '#1d4ed8' : '#6b7280',
+              border: flatView ? '1px solid #3b82f6' : '1px solid #d1d5db',
+              borderRadius: '6px', fontSize: '13px', fontWeight: flatView ? '600' : '500',
+              cursor: 'pointer'
+            }}
+          >
+            {flatView ? '☰ Vue à plat' : '☰ Vue à plat (sans parents)'}
           </button>
         </div>
         </div>

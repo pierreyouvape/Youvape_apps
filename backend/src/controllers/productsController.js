@@ -495,8 +495,15 @@ exports.getCatalogList = async (req, res) => {
     // notamment ceux qui gardent du stock. Vide = pas de filtre.
     const wcStatus = req.query.wcStatus || '';
 
-    const { parents, variations } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus);
-    const { total, totalWithVariations, totalStockValue } = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus);
+    // Vue à plat : une ligne par article (simple, pack, déclinaison), sans
+    // tête de ligne variable, triée et paginée article par article.
+    const flat = req.query.flat === 'true';
+
+    const { parents, variations, flatTotal } = await productModel.getAllForCatalog(limit, offset, search, trackStockOnly, stockTab, sortBy, sortDir, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus, flat);
+    const counts = await productModel.countForCatalog(search, trackStockOnly, stockTab, brand, onlyHidden, subBrand, supplierId, category, subCategory, wcStatus);
+    const { totalStockValue } = counts;
+    const total = flat ? flatTotal : counts.total;
+    const totalWithVariations = flat ? flatTotal : counts.totalWithVariations;
 
     // Stock boutiques (Nextore) rapproché par EAN — MTP (1) et CAST (2)
     try {

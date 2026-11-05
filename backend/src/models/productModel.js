@@ -249,6 +249,40 @@ function catalogOrderBy(sortBy, sortDir) {
   return `ORDER BY ${expr} ${dir} NULLS LAST, p.post_date DESC`;
 }
 
+/**
+ * Tri de la VUE À PLAT : chaque ligne est un article vendable (simple, pack ou
+ * déclinaison), jamais une tête de ligne variable. On trie donc sur la valeur
+ * de la ligne elle-même — pas sur la moyenne d'une famille, qui faisait
+ * s'intercaler les déclinaisons d'un parent entre des produits simples et
+ * empêchait de repérer un coût aberrant en triant par prix.
+ */
+const CATALOG_FLAT_SORT_EXPRESSIONS = {
+  price: 'p.price',
+  discounted_price: discountedPriceSql('p'),
+  cost_price: 'COALESCE(p.computed_cost, p.wc_cog_cost)',
+  margin: `(COALESCE(p.discounted_price, p.price) - COALESCE(p.computed_cost, p.wc_cog_cost)) / NULLIF(COALESCE(p.discounted_price, p.price), 0)`,
+  weight: 'p.weight',
+  stock: 'COALESCE(p.stock, 0)',
+  incoming_qty: `(SELECT COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON poi.purchase_order_id = po.id
+    WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial') AND poi.product_id = p.id)`,
+  shelf_location: `NULLIF(p.shelf_location, '')`,
+  sales_30d: `(SELECT COALESCE(SUM(oi.qty), 0)
+    FROM order_items oi
+    JOIN orders o ON oi.wp_order_id = o.wp_order_id
+    WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
+      AND o.post_date >= NOW() - INTERVAL '30 days'
+      AND (CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END) = p.wp_product_id)`,
+};
+
+function catalogFlatOrderBy(sortBy, sortDir) {
+  const expr = CATALOG_FLAT_SORT_EXPRESSIONS[sortBy];
+  if (!expr) return 'ORDER BY p.post_date DESC, p.id';
+  const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+  return `ORDER BY ${expr} ${dir} NULLS LAST, p.post_title, p.id`;
+}
+
 class ProductModel {
   /**
    * Récupère tous les produits avec pagination
@@ -1185,7 +1219,7 @@ class ProductModel {
     return result.rows;
   }
 
-  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '', wcStatus = '') {
+  async getAllForCatalog(limit = 50, offset = 0, search = '', trackStockOnly = true, stockTab = 'all', sortBy = null, sortDir = 'desc', brand = '', onlyHidden = false, subBrand = '', supplierId = '', category = '', subCategory = '', wcStatus = '', flat = false) {
     const reorderIdsSql = await getReorderIdsSql(stockTab);
     // LE STATUT DU PARENT NE DOIT PAS ENTERRER SES DÉCLINAISONS.
     //
@@ -1265,6 +1299,10 @@ class ProductModel {
     }
     const params = [];
     let paramIndex = 1;
+    // Vue à plat : filtres propres à une déclinaison (recherche, marque), les
+    // mêmes que ceux qui choisissent les déclinaisons affichées sous un parent
+    // en vue groupée. Parent = alias p, déclinaison = alias v.
+    const flatVarFilters = [];
 
     if (search) {
       const words = search.trim().split(/\s+/).filter(Boolean);
@@ -1275,6 +1313,7 @@ class ProductModel {
         const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
         const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
         const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
+        flatVarFilters.push(`(${pCond} OR ${vCond})`);
         return `(
           ${pCond}
           OR EXISTS (
@@ -1291,6 +1330,7 @@ class ProductModel {
 
     if (brand) {
       whereClause += ` AND ${brandMatch('p', `$${paramIndex}`)}`;
+      flatVarFilters.push(`(v.brand = $${paramIndex} OR ${brandMatch('p', `$${paramIndex}`)})`);
       params.push(brand);
       paramIndex++;
     }
@@ -1357,6 +1397,106 @@ class ProductModel {
     `;
 
     params.push(limit, offset);
+
+    // VUE À PLAT : une ligne par article vendable, sans tête de ligne variable.
+    // Les familles sont retenues exactement comme en vue groupée (whereClause),
+    // puis chacune est remplacée par celles de ses déclinaisons qui répondent aux
+    // critères (condsVar : suivi, onglet, statut, fournisseur ; plus recherche et
+    // marque, comme les déclinaisons affichées sous un parent). Le tri porte sur
+    // la ligne elle-même et la pagination sur les articles, pas sur les familles.
+    if (flat) {
+      const itemsCte = `
+        WITH fam AS (
+          SELECT p.* FROM products p
+          ${whereClause}
+        ),
+        items AS (
+          SELECT p.id FROM fam p WHERE ${CATALOG_STANDALONE}
+          UNION
+          SELECT v.id FROM fam p
+          JOIN products v ON v.wp_parent_id = p.wp_product_id
+            AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL
+          WHERE p.product_type = 'variable'
+            ${[...condsVar, ...flatVarFilters].map(c => `AND ${c}`).join('\n            ')}
+        )
+      `;
+      const flatQuery = `
+        ${itemsCte}
+        SELECT
+          p.id,
+          p.wp_product_id,
+          p.wp_parent_id,
+          p.post_title,
+          p.product_attributes,
+          p_parent.post_title as parent_title,
+          p.sku,
+          COALESCE(p.stock, 0)::int as stock,
+          p.price,
+          ${discountedPriceSql('p')} AS discounted_price,
+          COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
+          p.weight,
+          COALESCE(p.image_url, p_parent.image_url) as image_url,
+          p.product_type,
+          p.post_date,
+          p.track_stock,
+          p.shelf_location,
+          p.post_status
+        FROM products p
+        LEFT JOIN products p_parent
+          ON p.product_type = 'variation' AND p_parent.wp_product_id = p.wp_parent_id
+        WHERE p.id IN (SELECT id FROM items)
+        ${catalogFlatOrderBy(sortBy, sortDir)}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `;
+      const countQuery = `${itemsCte} SELECT COUNT(*)::int AS total FROM items`;
+      const [flatResult, countResult] = await Promise.all([
+        pool.query(flatQuery, params),
+        pool.query(countQuery, params.slice(0, paramIndex - 1)),
+      ]);
+      const rows = flatResult.rows.map(({ product_attributes, parent_title, ...r }) => (
+        r.product_type === 'variation'
+          ? { ...r, post_title: buildVariationLabel(r.post_title, parent_title, product_attributes) }
+          : r
+      ));
+      const ids = rows.map(r => r.id);
+      const wpIds = rows.map(r => parseInt(r.wp_product_id));
+      const incomingMap = new Map();
+      const salesMap = new Map();
+      if (ids.length > 0) {
+        const [incomingResult, salesResult] = await Promise.all([
+          pool.query(`
+            SELECT poi.product_id, COALESCE(SUM((poi.qty_ordered * COALESCE(poi.units_per_qty, 1) - poi.units_received)), 0)::int as incoming_qty
+            FROM purchase_order_items poi
+            JOIN purchase_orders po ON poi.purchase_order_id = po.id
+            WHERE po.status IN ('sent', 'confirmed', 'shipped', 'partial')
+              AND poi.product_id = ANY($1)
+            GROUP BY poi.product_id
+          `, [ids]),
+          pool.query(`
+            SELECT
+              CASE WHEN oi.variation_id > 0 THEN oi.variation_id ELSE oi.product_id END as wp_id,
+              COALESCE(SUM(oi.qty), 0)::int as sales_30d
+            FROM order_items oi
+            JOIN orders o ON oi.wp_order_id = o.wp_order_id
+            WHERE o.post_status IN ('wc-completed', 'wc-processing', 'wc-delivered', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
+              AND o.post_date >= NOW() - INTERVAL '30 days'
+              AND (oi.product_id = ANY($1) OR oi.variation_id = ANY($1))
+            GROUP BY wp_id
+          `, [wpIds]),
+        ]);
+        for (const r of incomingResult.rows) incomingMap.set(parseInt(r.product_id), parseInt(r.incoming_qty) || 0);
+        for (const r of salesResult.rows) salesMap.set(parseInt(r.wp_id), parseInt(r.sales_30d) || 0);
+      }
+      return {
+        parents: rows.map(r => ({
+          ...r,
+          incoming_qty: incomingMap.get(r.id) || 0,
+          sales_30d: salesMap.get(parseInt(r.wp_product_id)) || 0,
+        })),
+        variations: [],
+        flatTotal: countResult.rows[0].total,
+      };
+    }
 
     // 1) Parents/simples paginés
     const parentsQuery = `
