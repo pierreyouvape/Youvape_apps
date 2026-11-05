@@ -8,7 +8,7 @@ import { API_URL, authHeaders, C, CarrierLogo, CountryFlag, Chip } from '../comp
 import { codesTransporteurs, visuelTransporteur } from '../utils/carrierVisuals';
 import { TRACKING_STATE_OPTIONS } from '../utils/trackingStates';
 import { TrackingStateBadge, TrackingTimeline } from '../components/shipping/TrackingState';
-import CarrierClaimsTab from '../components/shipping/CarrierClaimsTab';
+import CarrierClaimsTab, { Indemnite } from '../components/shipping/CarrierClaimsTab';
 
 /**
  * Historique d'expédition — groupe « Prépa de commande ».
@@ -300,6 +300,8 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
                       {data.claim.sav_ticket_id && <> — <Link to={`/tickets/${data.claim.sav_ticket_id}`}>SAV #{data.claim.sav_ticket_id}</Link></>}
                     </span>
                   </span>
+                  <span style={{ color: C.greyT }}>Indemnisation</span>
+                  <span><Indemnite claim={data.claim} token={token} onChanged={charger} /></span>
                 </>
               )}
             </div>

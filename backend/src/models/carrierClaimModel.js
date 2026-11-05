@@ -123,10 +123,13 @@ const listBatches = async (limit = 60) => {
               'tracking_number', c.tracking_number, 'object_code', c.object_code,
               'comment', c.comment, 'deposit_day', c.deposit_day, 'due_day', c.due_day,
               'carrier_ticket', c.carrier_ticket, 'carrier_error', c.carrier_error,
-              'sav_ticket_id', c.sav_ticket_id, 'sav_error', c.sav_error
+              'sav_ticket_id', c.sav_ticket_id, 'sav_error', c.sav_error,
+              'indemnity_status', c.indemnity_status, 'indemnity_at', c.indemnity_at,
+              'indemnity_by_name', ku.name
             ) ORDER BY c.id) FILTER (WHERE c.id IS NOT NULL), '[]') AS claims
        FROM carrier_claim_batches b
        LEFT JOIN carrier_claims c ON c.batch_id = b.id
+       LEFT JOIN users ku ON ku.id = c.indemnity_by
        LEFT JOIN users cu ON cu.id = b.created_by
        LEFT JOIN users iu ON iu.id = b.imported_by
       GROUP BY b.id, cu.name, iu.name
@@ -163,15 +166,59 @@ const markImported = (batchId, userId) => pool.query(
 /** La réclamation d'un colis, pour son panneau. */
 const forLabel = async (labelId) => {
   const { rows: [row] } = await pool.query(
-    `SELECT c.*, b.file_name, b.imported_at
+    `SELECT c.*, b.file_name, b.imported_at, ku.name AS indemnity_by_name
        FROM carrier_claims c LEFT JOIN carrier_claim_batches b ON b.id = c.batch_id
+       LEFT JOIN users ku ON ku.id = c.indemnity_by
       WHERE c.label_id = $1`,
     [labelId]
   );
   return row || null;
 };
 
+/**
+ * Réponse de Chronopost sur l'indemnisation : 'accepted', 'refused', ou null
+ * (annuler un mauvais clic). Rend la réclamation, avec son état d'avant.
+ */
+const setIndemnity = async (claimId, status, userId) => {
+  const { rows: [row] } = await pool.query(
+    `WITH before AS (SELECT id, indemnity_status FROM carrier_claims WHERE id = $1)
+     UPDATE carrier_claims c
+        SET indemnity_status = $2,
+            indemnity_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
+            indemnity_by = CASE WHEN $2::text IS NULL THEN NULL ELSE $3::int END
+       FROM before
+      WHERE c.id = before.id
+     RETURNING c.*, before.indemnity_status AS previous_status`,
+    [claimId, status, userId || null]
+  );
+  return row || null;
+};
+
+/**
+ * Récapitulatif : réclamations acceptées ou refusées dont la réponse tombe
+ * dans la période, ou en attente (créées dans la période, sans réponse).
+ * Bornes 'YYYY-MM-DD' en heure de Paris, incluses.
+ */
+const listIndemnities = async ({ status = 'accepted', from, to }) => {
+  const pending = status === 'pending';
+  const dateCol = pending ? 'c.created_at' : 'c.indemnity_at';
+  const { rows } = await pool.query(
+    `SELECT c.id, c.label_id, c.order_number, c.tracking_number, c.object_code, c.carrier_ticket,
+            c.deposit_day, c.due_day, c.created_at, c.indemnity_status, c.indemnity_at,
+            c.sav_ticket_id, ku.name AS indemnity_by_name
+       FROM carrier_claims c
+       LEFT JOIN users ku ON ku.id = c.indemnity_by
+      WHERE ${pending ? 'c.indemnity_status IS NULL' : 'c.indemnity_status = $3'}
+        AND ${dateCol} >= ($1::date::timestamp AT TIME ZONE 'Europe/Paris')
+        AND ${dateCol} <  (($2::date + 1)::timestamp AT TIME ZONE 'Europe/Paris')
+      ORDER BY ${dateCol} DESC, c.id DESC`,
+    pending ? [from, to] : [from, to, status]
+  );
+  return rows;
+};
+
 module.exports = {
+  setIndemnity, listIndemnities,
   getSince, candidates, loadOrder, createBatch, markMailed, setSavResult, pendingSav,
   listBatches, getBatchFile, claimsOfBatch, setCarrierResult, markImported, forLabel,
 };

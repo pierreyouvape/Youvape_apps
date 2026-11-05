@@ -57,4 +57,30 @@ const importReport = async (req, res) => {
   }
 };
 
-module.exports = { list, download, run, importReport };
+/** « Indemnisation acceptée / refusée », ou annulation (status null). */
+const setIndemnity = async (req, res) => {
+  try {
+    const status = req.body?.status ?? null;
+    const claim = await claimService.setIndemnity(parseInt(req.params.claimId, 10), status, req.user);
+    res.json({ id: claim.id, indemnity_status: claim.indemnity_status, indemnity_at: claim.indemnity_at });
+  } catch (err) {
+    fail(res, err, 'Enregistrement impossible');
+  }
+};
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Récapitulatif des indemnisations : ?status=accepted|refused|pending&from&to (AAAA-MM-JJ). */
+const indemnities = async (req, res) => {
+  try {
+    const { status = 'accepted', from, to } = req.query;
+    if (!['accepted', 'refused', 'pending'].includes(status) || !DAY.test(from || '') || !DAY.test(to || '')) {
+      return res.status(400).json({ error: 'Période ou statut invalide' });
+    }
+    res.json({ rows: await claimModel.listIndemnities({ status, from, to }) });
+  } catch (err) {
+    fail(res, err, 'Erreur de chargement des indemnisations');
+  }
+};
+
+module.exports = { list, download, run, importReport, setIndemnity, indemnities };

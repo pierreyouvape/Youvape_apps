@@ -27,6 +27,9 @@ router.get('/claims', checkPackingRead, claimController.list);
 router.get('/claims/:batchId/file', checkPackingRead, claimController.download);
 router.post('/claims/run', checkPackingWrite, claimController.run);
 router.post('/claims/:batchId/import-report', checkPackingWrite, claimController.importReport);
+// Réponse de Chronopost sur le remboursement du port, et son récapitulatif.
+router.get('/claims/indemnities', checkPackingRead, claimController.indemnities);
+router.post('/claims/:claimId/indemnity', checkPackingWrite, claimController.setIndemnity);
 
 // Colis emballé dans BMS : même fiche, sans action.
 router.get('/bms/:id', checkPackingRead, shipmentHistoryController.detailBms);

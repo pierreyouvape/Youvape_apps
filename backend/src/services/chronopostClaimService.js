@@ -253,4 +253,40 @@ const applyImportReport = async (batchId, text, userId) => {
   return { lines: parsed.length, matched, unknown };
 };
 
-module.exports = { findClaims, run, applyImportReport, notifySav, todayParis, REOPEN_FROM, WAITING_CARRIER };
+const INDEMNITY_LABELS = { accepted: 'acceptée', refused: 'refusée' };
+
+/**
+ * Réponse de Chronopost sur le remboursement du port (sans montant, rapproché
+ * plus tard). Note privée dans le ticket SAV, statut du ticket inchangé.
+ *
+ * @param {number} claimId
+ * @param {?('accepted'|'refused')} status - null annule la saisie
+ * @param {{id: number, name?: string}} user
+ */
+const setIndemnity = async (claimId, status, user) => {
+  if (status !== null && !INDEMNITY_LABELS[status]) {
+    const err = new Error('Réponse inconnue : acceptée ou refusée.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const claim = await claimModel.setIndemnity(claimId, status, user?.id);
+  if (!claim) {
+    const err = new Error('Réclamation introuvable');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (claim.sav_ticket_id && claim.previous_status !== status) {
+    const who = user?.name ? ` par ${escapeHtml(user.name)}` : '';
+    const ticket = claim.carrier_ticket ? ` (ticket Chronopost ${escapeHtml(claim.carrier_ticket)})` : '';
+    const body = status
+      ? `<p><strong>Indemnisation Chronopost ${INDEMNITY_LABELS[status]}</strong> pour le colis `
+        + `${escapeHtml(claim.tracking_number)}${ticket}, saisie${who}.</p>`
+      : `<p>Réponse d'indemnisation Chronopost annulée pour le colis ${escapeHtml(claim.tracking_number)}`
+        + `${ticket} (elle était « ${INDEMNITY_LABELS[claim.previous_status] || '—'} »)${who}.</p>`;
+    await savModel.addMessage(claim.sav_ticket_id, { from: AGENT, body, is_agent: true, is_private: true, attachments: [] })
+      .catch(e => console.warn(`[${LOG_TAG}] Note SAV d'indemnisation non posée :`, e.message));
+  }
+  return claim;
+};
+
+module.exports = { findClaims, run, applyImportReport, setIndemnity, notifySav, todayParis, REOPEN_FROM, WAITING_CARRIER };

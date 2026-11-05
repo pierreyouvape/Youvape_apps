@@ -13,7 +13,9 @@ import { API_URL, authHeaders, C, Chip } from '../picking/pickingUi';
  * chronopostClaimService).
  *
  * Ici : les fichiers produits, leur téléchargement, et le compte-rendu
- * d'import de Chronopost à coller pour noter les n° de ticket.
+ * d'import de Chronopost à coller pour noter les n° de ticket ; la réponse de
+ * Chronopost sur le remboursement du port (acceptée / refusée, sans montant :
+ * il se rapproche plus tard) et son récapitulatif par période.
  */
 
 const TEAL = '#0F766E';
@@ -151,6 +153,7 @@ function Fichier({ batch, token, onChanged }) {
                 <th style={th}>Commentaire envoyé</th>
                 <th style={th}>Ticket Chronopost</th>
                 <th style={th}>SAV</th>
+                <th style={th}>Indemnisation</th>
               </tr>
             </thead>
             <tbody>
@@ -171,12 +174,184 @@ function Fichier({ batch, token, onChanged }) {
                       ? <Link to={`/tickets/${c.sav_ticket_id}`}>#{c.sav_ticket_id}</Link>
                       : <span style={{ color: C.red }} title={c.sav_error || ''}>non posée</span>}
                   </td>
+                  <td style={td}><Indemnite claim={c} token={token} onChanged={onChanged} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Réponse de Chronopost sur le remboursement du port : deux boutons, ou la
+ * réponse saisie avec « Annuler ». Note privée dans le ticket SAV, sans
+ * changer son statut (backend). Utilisé aussi dans le panneau d'un colis.
+ */
+export function Indemnite({ claim, token, onChanged }) {
+  const [envoi, setEnvoi] = useState(false);
+
+  const repondre = async (status) => {
+    setEnvoi(true);
+    try {
+      await axios.post(`${API_URL}/shipment-history/claims/${claim.id}/indemnity`, { status }, authHeaders(token));
+      onChanged();
+    } catch (err) {
+      alert(erreurApi(err, 'Enregistrement impossible'));
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const petit = { ...bouton('ghost'), padding: '4px 9px', fontSize: 12, opacity: envoi ? 0.5 : 1 };
+
+  if (claim.indemnity_status) {
+    const ok = claim.indemnity_status === 'accepted';
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <Chip color={ok ? C.green : C.red} bg={ok ? C.greenL : C.redL}
+          title={`${fmt(claim.indemnity_at)}${claim.indemnity_by_name ? ` — ${claim.indemnity_by_name}` : ''}`}>
+          {ok ? 'Indemnisée' : 'Refusée'}
+        </Chip>
+        <button onClick={() => repondre(null)} disabled={envoi} style={{
+          border: 'none', background: 'none', color: C.greyT, cursor: 'pointer', fontSize: 12,
+          textDecoration: 'underline', fontFamily: 'inherit', padding: 0,
+        }}>Annuler</button>
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+      <button onClick={() => repondre('accepted')} disabled={envoi} style={{ ...petit, color: C.green, borderColor: C.green }}>
+        Acceptée
+      </button>
+      <button onClick={() => repondre('refused')} disabled={envoi} style={{ ...petit, color: C.red, borderColor: C.red }}>
+        Refusée
+      </button>
+    </span>
+  );
+}
+
+/** Jours 'AAAA-MM-JJ' à Paris : premier et dernier du mois, décalé de `n` mois. */
+const moisParis = (n = 0) => {
+  const [y, m] = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()).split('-').map(Number);
+  const debut = new Date(Date.UTC(y, m - 1 + n, 1));
+  const fin = new Date(Date.UTC(y, m + n, 0));
+  return [debut.toISOString().slice(0, 10), fin.toISOString().slice(0, 10)];
+};
+
+const STATUTS_INDEMNITE = [
+  { value: 'accepted', label: 'Acceptées' },
+  { value: 'refused', label: 'Refusées' },
+  { value: 'pending', label: 'En attente de réponse' },
+];
+
+/** Récapitulatif par période, export CSV pour le rapprochement. */
+function Indemnisations({ token }) {
+  const [periode, setPeriode] = useState(() => moisParis(0));
+  const [statut, setStatut] = useState('accepted');
+  const [rows, setRows] = useState(null);
+  const [erreur, setErreur] = useState(null);
+
+  const charger = useCallback(async () => {
+    setErreur(null);
+    try {
+      const res = await axios.get(`${API_URL}/shipment-history/claims/indemnities`, {
+        ...authHeaders(token), params: { status: statut, from: periode[0], to: periode[1] },
+      });
+      setRows(res.data.rows);
+    } catch (err) {
+      setErreur(erreurApi(err, 'Erreur de chargement'));
+    }
+  }, [token, statut, periode]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  const exporter = () => {
+    const entete = ['Date de réponse', 'Réponse', 'Commande', 'Colis', 'Ticket Chronopost', 'Objet', 'Déposé', 'Dû', 'Saisi par'];
+    const lignes = rows.map(r => [
+      r.indemnity_at ? fmt(r.indemnity_at) : '', r.indemnity_status === 'accepted' ? 'Acceptée' : r.indemnity_status === 'refused' ? 'Refusée' : 'En attente',
+      r.order_number, r.tracking_number, r.carrier_ticket || '', r.object_code,
+      fmtJour(r.deposit_day), fmtJour(r.due_day), r.indemnity_by_name || '',
+    ]);
+    const csv = [entete, ...lignes].map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `indemnisations-chronopost-${statut}-${periode[0]}-${periode[1]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const champ = { padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 13.5, fontFamily: 'inherit' };
+  const pending = statut === 'pending';
+
+  return (
+    <div>
+      <div style={{
+        background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '12px 16px', marginBottom: 14,
+        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
+      }}>
+        <select value={statut} onChange={e => setStatut(e.target.value)} style={champ}>
+          {STATUTS_INDEMNITE.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <button onClick={() => setPeriode(moisParis(0))} style={bouton('ghost')}>Ce mois</button>
+        <button onClick={() => setPeriode(moisParis(-1))} style={bouton('ghost')}>Mois dernier</button>
+        <input type="date" value={periode[0]} max={periode[1]} onChange={e => setPeriode([e.target.value, periode[1]])} style={champ} />
+        <span style={{ color: C.greyT, fontSize: 13 }}>au</span>
+        <input type="date" value={periode[1]} min={periode[0]} onChange={e => setPeriode([periode[0], e.target.value])} style={champ} />
+        <span style={{ fontSize: 13, color: C.greyT }}>
+          {pending ? 'date de la réclamation' : 'date de la réponse'}
+        </span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          {rows && <strong style={{ fontSize: 14 }}>{rows.length} colis</strong>}
+          <button onClick={exporter} disabled={!rows?.length} style={{ ...bouton(), opacity: rows?.length ? 1 : 0.5 }}>Export CSV</button>
+        </span>
+      </div>
+
+      {erreur && <div style={{ color: C.red, fontSize: 13.5, marginBottom: 12 }}>{erreur}</div>}
+      <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: C.grey, textAlign: 'left', color: C.greyT, fontSize: 11.5, textTransform: 'uppercase' }}>
+              <th style={th}>{pending ? 'Réclamé le' : 'Réponse le'}</th>
+              <th style={th}>Commande</th>
+              <th style={th}>Colis</th>
+              <th style={th}>Ticket Chronopost</th>
+              <th style={th}>Objet</th>
+              <th style={th}>Déposé / dû</th>
+              <th style={th}>{pending ? 'SAV' : 'Saisi par'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows && rows.length === 0 && (
+              <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Aucun colis sur cette période.</td></tr>
+            )}
+            {!rows && !erreur && (
+              <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Chargement…</td></tr>
+            )}
+            {rows?.map(r => (
+              <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}` }}>
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmt(pending ? r.created_at : r.indemnity_at)}</td>
+                <td style={td}><Link to={`/orders/${r.order_number}`}>#{r.order_number}</Link></td>
+                <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{r.tracking_number}</td>
+                <td style={td}>{r.carrier_ticket || <span style={{ color: C.greyM }}>—</span>}</td>
+                <td style={td}><Chip color={C.white} bg={r.object_code === 'PC' ? C.red : C.amber}>{r.object_code} {OBJETS[r.object_code]}</Chip></td>
+                <td style={{ ...td, whiteSpace: 'nowrap', color: C.greyT }}>{fmtJour(r.deposit_day)} → {fmtJour(r.due_day)}</td>
+                <td style={td}>
+                  {pending
+                    ? (r.sav_ticket_id ? <Link to={`/tickets/${r.sav_ticket_id}`}>#{r.sav_ticket_id}</Link> : '—')
+                    : (r.indemnity_by_name || '—')}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -189,6 +364,7 @@ export default function CarrierClaimsTab({ token }) {
   const [erreur, setErreur] = useState(null);
   const [controle, setControle] = useState(false);
   const [resultat, setResultat] = useState(null);
+  const [vue, setVue] = useState('fichiers');
 
   const charger = useCallback(async () => {
     setErreur(null);
@@ -222,8 +398,23 @@ export default function CarrierClaimsTab({ token }) {
     }
   };
 
+  const onglets = (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+      {[['fichiers', 'Fichiers'], ['indemnites', 'Indemnisations']].map(([key, label]) => (
+        <button key={key} onClick={() => setVue(key)} style={{
+          ...bouton(vue === key ? 'primary' : 'ghost'), padding: '6px 14px',
+        }}>{label}</button>
+      ))}
+    </div>
+  );
+
+  if (vue === 'indemnites') {
+    return <div>{onglets}<Indemnisations token={token} /></div>;
+  }
+
   return (
     <div>
+      {onglets}
       <div style={{
         background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '14px 16px', marginBottom: 16,
         display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap',
