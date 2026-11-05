@@ -532,6 +532,22 @@ export default function PluginLogistiqueSection({ token }) {
 
       {data?.installed && draft && (
         <>
+          <Setting
+            title="Changements de statut par le plugin"
+            help="Coupé : le plugin écrit seulement le suivi (métas et note) sur la commande, sans changer son statut ni envoyer de mail. C'est le mode à garder tant que BMS pose les statuts. Activé : le plugin pose les statuts ci-dessous, le jour de la sortie de BMS."
+            warning={draft.status_changes_enabled ? 'Activé : chaque expédition envoyée par l\'app change le statut de la commande et peut prévenir le client.' : undefined}
+            {...props('status_changes_enabled')}
+          >
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13.5 }}>
+              <input
+                type="checkbox"
+                checked={!!draft.status_changes_enabled}
+                onChange={e => set('status_changes_enabled', e.target.checked)}
+                style={{ width: 16, height: 16 }}
+              />
+              {draft.status_changes_enabled ? 'Activés' : 'Coupés'}
+            </label>
+          </Setting>
           {SINGLE_STATUSES.map(item => (
             <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
               <StatusSelect value={draft[item.key]} onChange={v => set(item.key, v)} options={options} error={errors[item.key]} />
