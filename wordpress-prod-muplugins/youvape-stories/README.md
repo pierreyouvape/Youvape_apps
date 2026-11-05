@@ -42,7 +42,10 @@ sitemap vidéo, attribution des commandes.
     de ses termes OU l'un de leurs ancêtres y figure). Sur une fiche qui a aussi ses
     propres widgets (`products`), ceux-ci passent d'abord, puis ceux des catégories,
     sans doublon. Identifiant et non slug : il ne change pas si la catégorie est renommée.
-  - `category_info` : identifiant → `{ name }` (chemin lisible, informatif).
+  - `category_info` : identifiant → `{ name, path }` (informatif) : `name` = nom de la
+    catégorie (« Arômes et Concentrés 10ml »), `path` = chemin complet
+    (« DIY › Arômes et Concentrés › Arômes et Concentrés 10ml »). Jusqu'au 05/11/2026,
+    `name` contenait le chemin complet.
 - `stories/widgets/<slug>.json` — un widget déplié (stories complètes).
 
 Les fichiers vidéo sont versionnés (`story.v2.mp4`) et servis en cache immuable :

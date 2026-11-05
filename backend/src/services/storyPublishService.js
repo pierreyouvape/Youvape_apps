@@ -10,7 +10,7 @@
  *     pages     chemin de page → [slugs de widgets]   (ex. /youvape-awards)
  *     categories  id de catégorie WooCommerce (product_cat) → [slugs de widgets] :
  *               toutes les fiches de la catégorie ET de ses sous-catégories
- *     category_info  id → { name } (informatif, page d'aperçu)
+ *     category_info  id → { name, path } (informatif, page d'aperçu)
  *     product_info  wp_product_id → { title, image, price } (page d'aperçu)
  *   stories/widgets/<slug>.json   un widget déplié (stories complètes), pour
  *                                 un usage côté navigateur ou un contrôle à l'œil.
@@ -84,7 +84,12 @@ const publish = async ({ userId } = {}) => {
     if (!live.has(slug)) continue;
     const map = p.target_type === 'product' ? products : p.target_type === 'category' ? categories : pages;
     (map[p.target_ref] ||= []).push(slug);
-    if (p.target_type === 'category') categoryInfo[p.target_ref] = { name: p.target_label || null };
+    if (p.target_type === 'category') {
+      // target_label = chemin complet (« DIY › Arômes et Concentrés › … 10ml ») ; le nom
+      // est son dernier maillon.
+      const path = p.target_label || null;
+      categoryInfo[p.target_ref] = { name: path ? path.split(' › ').pop() : null, path };
+    }
   }
 
   const index = {

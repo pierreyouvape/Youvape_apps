@@ -108,7 +108,7 @@
       // Catégories WooCommerce : le widget s'affiche sur toutes leurs fiches (sous-catégories comprises).
       Object.keys(index.categories || {}).filter(function (cid) { return keep(index.categories[cid]); }).forEach(function (cid) {
         var info = (index.category_info || {})[cid] || {};
-        var b = box('Catégorie : ' + (info.name || '#' + cid),
+        var b = box('Catégorie : ' + (info.path || info.name || '#' + cid),
           'Widget(s) : ' + index.categories[cid].join(', ') + ' · affiché sur toutes les fiches de cette catégorie et de ses sous-catégories');
         index.categories[cid].forEach(function (slug) {
           var w = YVStories.expand(index, slug); if (!w) return;

@@ -147,6 +147,9 @@ const StoryWidgets = ({ stories }) => {
   const [publishing, setPublishing] = useState(false);
   const [lastResult, setLastResult] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  // Erreur de la dernière publication, affichée dans la page (et non dans une
+  // fenêtre qu'on ferme sans lire) jusqu'à la prochaine tentative.
+  const [publishError, setPublishError] = useState(null);
 
   const fetchList = useCallback(async () => {
     try {
@@ -175,14 +178,19 @@ const StoryWidgets = ({ stories }) => {
     }
   };
 
+  /** Publie et renvoie true si index.json a bien été réécrit. */
   const publish = async () => {
     setPublishing(true);
+    setPublishError(null);
     try {
       const res = await axios.post(`${API_URL}/stories/publish`);
       setLastResult(res.data.data);
       fetchList();
+      return true;
     } catch (err) {
-      alert(errMsg(err));
+      setLastResult(null);
+      setPublishError(errMsg(err));
+      return false;
     } finally {
       setPublishing(false);
     }
@@ -218,6 +226,11 @@ const StoryWidgets = ({ stories }) => {
         <button onClick={publish} disabled={publishing} style={{ ...btn('primary'), padding: '10px 18px', fontSize: 13, opacity: publishing ? 0.6 : 1 }}>
           {publishing ? 'Publication…' : 'Publier sur le site'}
         </button>
+        {publishError && (
+          <div style={{ width: '100%', padding: '10px 12px', borderRadius: 8, background: '#FEE', color: C.rouge, fontSize: 13, fontWeight: 700 }}>
+            La publication a échoué : rien n’a changé sur le site. {publishError}
+          </div>
+        )}
         {lastResult && (
           <div style={{ width: '100%', fontSize: 12, color: C.vert }}>
             Publié : {lastResult.widgets} widget(s) sur {lastResult.products} fiche(s) produit et {lastResult.pages} page(s), {lastResult.stories} vidéo(s).
@@ -291,6 +304,8 @@ const StoryWidgets = ({ stories }) => {
           id={selectedId}
           stories={stories}
           previewUrl={previewUrl}
+          onPublish={publish}
+          publishing={publishing}
           onChanged={fetchList}
           onDeleted={() => { setSelectedId(null); fetchList(); }}
         />
@@ -300,7 +315,7 @@ const StoryWidgets = ({ stories }) => {
 };
 
 /** Édition d'un widget : réglages, vidéos dans l'ordre, emplacements. */
-const WidgetEditor = ({ id, stories, previewUrl, onChanged, onDeleted }) => {
+const WidgetEditor = ({ id, stories, previewUrl, onPublish, publishing, onChanged, onDeleted }) => {
   const [saveState, setSaveState] = useState(null);
   const [w, setW] = useState(null);
   const [draft, setDraft] = useState(null);
@@ -413,6 +428,20 @@ const WidgetEditor = ({ id, stories, previewUrl, onChanged, onDeleted }) => {
         <button onClick={remove} style={btn('danger')}>Supprimer</button>
       </div>
       <div style={{ minHeight: 18 }}><SaveStatus state={saveState} /></div>
+      {/* « Enregistrer » n'écrit qu'en base : sur un widget publié, le dire et offrir
+          la publication tout de suite (05/11/2026 : des catégories rattachées et
+          enregistrées n'étaient jamais arrivées sur le site, faute de publication). */}
+      {w.status === 'published' && saveState?.kind === 'saved' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 12px', borderRadius: 8, background: '#FFF4E5', color: C.grisTF, fontSize: 13 }}>
+          <span style={{ flex: 1 }}>
+            <strong>Enregistré, mais pas encore sur le site.</strong> Les changements de ce widget partent à la prochaine publication.
+          </span>
+          <button onClick={async () => { if (await onPublish()) setSaveState(null); }} disabled={publishing}
+            style={{ ...btn('primary'), padding: '8px 14px', opacity: publishing ? 0.6 : 1 }}>
+            {publishing ? 'Publication…' : 'Publier maintenant'}
+          </button>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: C.grisM }}>
         Code à insérer dans une page WordPress : <code style={{ background: C.grisTL, padding: '2px 6px', borderRadius: 4 }}>[yv_stories widget="{w.slug}"]</code>
         {' '}· Un widget « Brouillon » n’est jamais envoyé sur le site.
