@@ -64,7 +64,7 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
         if (ed.isDestroyed) return;
         const target = Math.min(at ?? ed.state.selection.to, ed.state.doc.content.size);
         const before = ed.state.doc.content.size;
-        const node = kind === 'pdf'
+        const node = kind === 'pdf' || kind === 'file'
           ? { type: 'pdfFile', attrs: { src: url, name: name || file.name || 'document.pdf' } }
           : { type: 'image', attrs: { src: url, alt: '' } };
         ed.chain().focus().insertContentAt(target, [node, { type: 'paragraph' }]).run();
@@ -80,7 +80,7 @@ export default function NoteEditor({ value, onChange, onUpload, onFocusChange, o
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false, blockquote: false, horizontalRule: false, code: false }),
-      Placeholder.configure({ placeholder: 'Écrire… (Cmd+V colle une image ou un PDF)' }),
+      Placeholder.configure({ placeholder: 'Écrire… (Cmd+V colle une image ou un fichier)' }),
       Image.configure({ inline: false, allowBase64: false }),
       PdfNode,
     ],

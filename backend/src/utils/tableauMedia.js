@@ -5,8 +5,9 @@ const { isHeic } = require('./heicConvert');
 
 /**
  * Fichiers de l'app Tableau : images posées seules sur le tableau, ou dans le
- * texte d'un post-it (<img src="/api/tableau/media/<fichier>">), et PDF joints à
- * un post-it (<div data-type="pdf" data-src="/api/tableau/media/<fichier>">).
+ * texte d'un post-it (<img src="/api/tableau/media/<fichier>">), et PDF ou
+ * documents (CSV, Excel, Word) joints à un post-it
+ * (<div data-type="pdf"|"file" data-src="/api/tableau/media/<fichier>">).
  *
  * Volume Docker `tableau_uploads` (cf. docker-compose.yml) : le contenu survit
  * aux rebuilds. Un seul dossier : un post-it change de propriétaire quand il est
@@ -20,7 +21,7 @@ const { isHeic } = require('./heicConvert');
 
 const UPLOAD_ROOT = '/usr/src/app/uploads/tableau';
 const MAX_IMAGE_SIZE = 15 * 1024 * 1024; // 15 Mo, comme l'app Process
-const MAX_PDF_SIZE = 25 * 1024 * 1024; // sous la limite nginx (30 Mo)
+const MAX_PDF_SIZE = 25 * 1024 * 1024; // sous la limite nginx (30 Mo) ; idem documents
 const MAX_UPLOAD_SIZE = Math.max(MAX_IMAGE_SIZE, MAX_PDF_SIZE);
 // Long : un onglet Tableau reste ouvert toute la journée, et les liens ne sont
 // re-signés qu'à la relecture du tableau.
@@ -30,7 +31,24 @@ const MEDIA_URL_TTL = 7 * 24 * 60 * 60;
 const EXT_BY_MIME = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
 };
-const FILENAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif|pdf)$/;
+const FILENAME_RE = /^[0-9a-f-]{36}\.(jpg|png|webp|gif|pdf|csv|xls|xlsx|ods|doc|docx|odt)$/;
+
+/**
+ * Documents joints (hors PDF) : extension → signature attendue du contenu.
+ * Le type annoncé par le navigateur ne compte pas (un .csv arrive souvent en
+ * application/vnd.ms-excel, voire sans type). Toujours servis en téléchargement.
+ */
+const ZIP = (b) => b.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])); // xlsx, docx, ods, odt
+const OLE = (b) => b.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])); // xls, doc
+const TEXT = (b) => !b.subarray(0, 65536).includes(0); // csv : pas d'octet nul
+const DOC_TYPES = {
+  csv: TEXT, xls: OLE, xlsx: ZIP, ods: ZIP, doc: OLE, docx: ZIP, odt: ZIP,
+};
+const docExt = (name) => {
+  const m = /\.([a-z0-9]+)$/i.exec(name || '');
+  const ext = m && m[1].toLowerCase();
+  return ext && DOC_TYPES[ext] ? ext : null;
+};
 const MEDIA_PREFIX = '/api/tableau/media/';
 
 const fail = (msg) => { const e = new Error(msg); e.statusCode = 400; throw e; };
@@ -63,12 +81,18 @@ async function saveImage(file) {
 }
 
 /**
- * Fichier joint au texte d'un post-it : image, ou PDF (reconnu à son contenu,
- * pas au type annoncé par le navigateur).
- * → { filename, kind: 'image' | 'pdf' }
+ * Fichier joint au texte d'un post-it : image, PDF ou document (CSV, Excel,
+ * Word), contrôlé à son contenu, pas au type annoncé par le navigateur.
+ * → { filename, kind: 'image' | 'pdf' | 'file' }
  */
 async function saveMedia(file) {
   if (!file?.buffer) fail('Fichier requis');
+  const doc = docExt(file.originalname);
+  if (doc) {
+    if (!DOC_TYPES[doc](file.buffer)) fail(`Ce fichier n'est pas un .${doc} valide`);
+    if (file.buffer.length > MAX_PDF_SIZE) fail(`Fichier trop lourd (${mb(MAX_PDF_SIZE)} Mo maximum)`);
+    return { filename: writeUpload(file.buffer, doc), kind: 'file' };
+  }
   const claimsPdf = (file.mimetype || '').toLowerCase() === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
   if (!claimsPdf) return { filename: await saveImage(file), kind: 'image' };
   if (!isPdf(file)) fail('Ce fichier n\'est pas un PDF valide');
@@ -124,10 +148,10 @@ function verify(filename, exp, sig) {
 
 /* ─── Fichiers dans le texte d'un post-it ───────────────── */
 
-// Images (<img src>) et PDF (<div data-type="pdf" data-src>). L'éditeur encode
+// Images (<img src>), PDF et documents (<div data-type="pdf"|"file" data-src>). L'éditeur encode
 // le « & » de la signature en « &amp; » : on capture la query jusqu'au
 // guillemet. L'origine éventuelle (https://apps…) est retirée.
-const BODY_SRC = /(<(?:img\b[^>]*?\bsrc|div\b[^>]*?\bdata-src)=")(?:https?:\/\/[^/"]+)?\/api\/tableau\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif|pdf))(?:\?[^"]*)?"/g;
+const BODY_SRC = /(<(?:img\b[^>]*?\bsrc|div\b[^>]*?\bdata-src)=")(?:https?:\/\/[^/"]+)?\/api\/tableau\/media\/([0-9a-f-]{36}\.(?:jpg|png|webp|gif|pdf|csv|xls|xlsx|ods|doc|docx|odt))(?:\?[^"]*)?"/g;
 
 const stripSignatures = (html) => String(html || '').replace(BODY_SRC, `$1${MEDIA_PREFIX}$2"`);
 const signHtml = (html) =>
@@ -169,8 +193,11 @@ function sweep(referenced) {
   return orphans.length;
 }
 
+/** Fichier servi uniquement en téléchargement (jamais affiché dans le navigateur). */
+const isDownloadOnly = (filename) => !!DOC_TYPES[path.extname(String(filename)).slice(1)];
+
 module.exports = {
-  MAX_IMAGE_SIZE, MAX_UPLOAD_SIZE,
+  isDownloadOnly, MAX_IMAGE_SIZE, MAX_UPLOAD_SIZE,
   saveImage, saveMedia, removeFiles, resolvePath, signedUrl, verify,
   stripSignatures, signHtml, htmlFiles, copyHtmlImages, asHtml, sweep,
 };

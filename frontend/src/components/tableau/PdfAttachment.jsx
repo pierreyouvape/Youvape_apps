@@ -4,15 +4,26 @@ import { Node, mergeAttributes, ReactNodeViewRenderer, NodeViewWrapper } from '@
 import { TABLEAU_COLOR } from './tableauShared';
 
 /**
- * PDF joint au texte d'un post-it.
+ * PDF ou document (CSV, Excel, Word) joint au texte d'un post-it.
  *
- * En base : <div data-type="pdf" data-src="/api/tableau/media/<uuid>.pdf" data-name="Facture.pdf">.
+ * En base : <div data-type="pdf" data-src="/api/tableau/media/<uuid>.pdf" data-name="Facture.pdf">,
+ * ou data-type="file" pour un document (même nœud, extension lue dans data-src).
  * data-src en premier : le backend (utils/tableauMedia BODY_SRC) re-signe le lien
  * à chaque lecture et ne doit pas buter sur un « > » dans le nom.
  *
- * À l'écran : une pastille (nom du fichier) ; clic = aperçu en grand dans la
- * page, bouton ⬇ = téléchargement sous le nom d'origine.
+ * À l'écran : une pastille (nom du fichier) ; PDF : clic = aperçu en grand dans
+ * la page, bouton ⬇ = téléchargement sous le nom d'origine. Autres documents :
+ * pas d'aperçu, clic = téléchargement.
  */
+
+const extOf = (src) => (/\.([a-z0-9]+)(?:\?|$)/i.exec(src || '') || [])[1]?.toLowerCase() || 'pdf';
+
+/** Badge de la pastille : libellé et couleur par famille de fichier. */
+const BADGES = {
+  pdf: ['PDF', '#DC2626'],
+  csv: ['CSV', '#15803D'], xls: ['XLS', '#15803D'], xlsx: ['XLS', '#15803D'], ods: ['ODS', '#15803D'],
+  doc: ['DOC', '#2563EB'], docx: ['DOC', '#2563EB'], odt: ['ODT', '#2563EB'],
+};
 
 /** Lien de téléchargement : le serveur répond en pièce jointe, avec ce nom. */
 const pdfDownloadUrl = (src, name) =>
@@ -71,6 +82,10 @@ function PdfPreview({ src, name, onClose }) {
 function PdfChip({ node, selected }) {
   const { src, name } = node.attrs;
   const [open, setOpen] = useState(false);
+  const ext = extOf(src);
+  const isPdf = ext === 'pdf';
+  const [badge, badgeColor] = BADGES[ext] || [ext.toUpperCase(), '#6B7280'];
+  const download = () => { window.location.href = pdfDownloadUrl(src, name); };
 
   const btn = {
     background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.10)', borderRadius: 6,
@@ -89,19 +104,19 @@ function PdfChip({ node, selected }) {
       }}
     >
       <span
-        onClick={() => setOpen(true)}
-        title={`Aperçu de ${name}`}
+        onClick={() => (isPdf ? setOpen(true) : download())}
+        title={isPdf ? `Aperçu de ${name}` : `Télécharger ${name}`}
         style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, cursor: 'pointer' }}
       >
         <span style={{
-          flexShrink: 0, background: '#DC2626', color: '#fff', borderRadius: 4,
+          flexShrink: 0, background: badgeColor, color: '#fff', borderRadius: 4,
           fontSize: 9.5, fontWeight: 900, padding: '2px 4px', letterSpacing: 0.3,
-        }}>PDF</span>
+        }}>{badge}</span>
         <span style={{
           fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{name}</span>
       </span>
-      <button type="button" style={btn} onClick={() => setOpen(true)} title="Aperçu">👁</button>
+      {isPdf && <button type="button" style={btn} onClick={() => setOpen(true)} title="Aperçu">👁</button>}
       <a style={btn} href={pdfDownloadUrl(src, name)} title="Télécharger" draggable={false}>⬇</a>
       {open && <PdfPreview src={src} name={name} onClose={() => setOpen(false)} />}
     </NodeViewWrapper>
@@ -131,12 +146,13 @@ export const PdfNode = Node.create({
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-type="pdf"]' }];
+    return [{ tag: 'div[data-type="pdf"]' }, { tag: 'div[data-type="file"]' }];
   },
 
   renderHTML({ HTMLAttributes }) {
     // Ordre : data-type, data-src, data-name (cf. en-tête)
-    return ['div', mergeAttributes({ 'data-type': 'pdf' }, HTMLAttributes)];
+    const type = extOf(HTMLAttributes['data-src']) === 'pdf' ? 'pdf' : 'file';
+    return ['div', mergeAttributes({ 'data-type': type }, HTMLAttributes)];
   },
 
   addNodeView() {

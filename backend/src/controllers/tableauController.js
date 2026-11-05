@@ -62,9 +62,10 @@ exports.getMedia = (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   // ?dl=<nom> : téléchargement sous le nom d'origine (non signé : ne change que
   // le nom proposé). Sinon affichage dans le navigateur (aperçu d'un PDF).
-  if (req.query.dl) {
+  // Documents (CSV, Excel, Word) : toujours en pièce jointe, jamais affichés
+  if (req.query.dl || tableauMedia.isDownloadOnly(filename)) {
     const ext = filename.slice(filename.lastIndexOf('.'));
-    let name = String(req.query.dl).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 200).trim() || `fichier${ext}`;
+    let name = String(req.query.dl || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 200).trim() || `fichier${ext}`;
     if (!name.toLowerCase().endsWith(ext)) name += ext;
     res.attachment(name);
   }

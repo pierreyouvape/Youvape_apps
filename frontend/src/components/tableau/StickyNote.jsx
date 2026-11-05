@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import NoteEditor from './NoteEditor';
-import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError, formatDue, snap } from './tableauShared';
+import { NOTE_COLORS, noteColor, tableauApi, copyImageToClipboard, apiError, formatDue, snap, MEDIA_ACCEPT } from './tableauShared';
 
 const SAVE_DELAY_MS = 700;
 
@@ -181,7 +181,7 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
                   />
                 ))}
               </div>
-              <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image ou un PDF…</button>
+              <button style={menuItem} onClick={() => { setMenu(false); fileRef.current?.click(); }}>Ajouter une image ou un fichier…</button>
               {isOwner && (
                 <button style={menuItem} onClick={() => { flush(); setMenu(false); onReminder(); }}>{note.remind_at ? 'Modifier le rappel…' : 'Rappel…'}</button>
               )}
@@ -199,7 +199,7 @@ export default function StickyNote({ note, onLocalChange, onSave, onFront, onDel
           </>
         )}
         <input
-          ref={fileRef} type="file" accept="image/*,.heic,.heif,application/pdf,.pdf" multiple hidden
+          ref={fileRef} type="file" accept={MEDIA_ACCEPT} multiple hidden
           onChange={(e) => { editorRef.current?.insertFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
         />
       </div>

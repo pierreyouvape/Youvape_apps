@@ -6,7 +6,7 @@ import ImageItem from './ImageItem';
 import NoteReminderDialog from './NoteReminderDialog';
 import TableauModal from './TableauModal';
 import {
-  tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR, previewText, imageFilesOf, pdfFilesOf, copyImageToClipboard,
+  tableauApi, apiError, NOTE_COLORS, noteColor, TABLEAU_COLOR, previewText, imageFilesOf, attachmentFilesOf, copyImageToClipboard,
   GRID, snap,
 } from './tableauShared';
 
@@ -150,17 +150,17 @@ export default function PinBoard() {
   const addImagesRef = useRef(addImages);
   addImagesRef.current = addImages;
 
-  // PDF collé ou déposé sur le tableau : un post-it neuf qui le contient
+  // PDF ou document (CSV, Excel, Word) collé ou déposé sur le tableau : un post-it neuf qui le contient
   const addPdfNotes = async (files) => {
     const at = pointerRef.current || { x: 40 + (notes.length % 6) * 3 * GRID, y: 40 + (notes.length % 6) * 3 * GRID };
     let x = snap(at.x);
     let y = snap(at.y);
     for (const file of files) {
       try {
-        const { url, name } = await tableauApi.uploadMedia(file);
+        const { url, name, kind } = await tableauApi.uploadMedia(file);
         const doc = document.implementation.createHTMLDocument('');
         const div = doc.createElement('div');
-        div.setAttribute('data-type', 'pdf');
+        div.setAttribute('data-type', kind === 'file' ? 'file' : 'pdf');
         div.setAttribute('data-src', url);
         div.setAttribute('data-name', name || file.name || 'document.pdf');
         const note = await tableauApi.createNote({ color: 'jaune', x, y, content: `${div.outerHTML}<p></p>` });
@@ -178,7 +178,7 @@ export default function PinBoard() {
   // Dépôt de fichiers sur le tableau (hors post-it : l'éditeur gère le sien)
   const onBoardDrop = (e) => {
     const images = imageFilesOf(e.dataTransfer);
-    const pdfs = pdfFilesOf(e.dataTransfer);
+    const pdfs = attachmentFilesOf(e.dataTransfer);
     if (!images.length && !pdfs.length) return;
     e.preventDefault();
     trackPointer(e);
@@ -194,7 +194,7 @@ export default function PinBoard() {
     const onPaste = (e) => {
       if (isTyping(document.activeElement)) return;
       const files = imageFilesOf(e.clipboardData);
-      const pdfs = pdfFilesOf(e.clipboardData);
+      const pdfs = attachmentFilesOf(e.clipboardData);
       if (!files.length && !pdfs.length) return;
       e.preventDefault();
       if (files.length) addImagesRef.current(files);
@@ -270,8 +270,8 @@ export default function PinBoard() {
           </button>
         ))}
         <span style={{ fontSize: 12.5, color: '#8A99A4' }}>
-          Cmd+V (ou glisser-déposer) sur le tableau pour y poser une image ou un PDF, ou dans un post-it pour l'ajouter à son texte.
-          Un PDF s'ouvre d'un clic pour un coup d'œil, ⬇ pour le télécharger.
+          Cmd+V (ou glisser-déposer) sur le tableau pour y poser une image, un PDF ou un fichier (CSV, Excel, Word), ou dans un post-it pour l'ajouter à son texte.
+          Un PDF s'ouvre d'un clic pour un coup d'œil ; ⬇ télécharge (les autres fichiers se téléchargent d'un clic).
           Les post-its se calent sur la grille ; Alt maintenu pour les placer au pixel.
         </span>
         {error && <span style={{ fontSize: 13, color: '#B91C1C', fontWeight: 600 }}>{error}</span>}

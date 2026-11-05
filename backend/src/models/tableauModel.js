@@ -175,7 +175,7 @@ async function uploadMedia(file) {
   const { filename, kind } = await media.saveMedia(file);
   // multer lit le nom en latin1 : « Reçu.pdf » arriverait en « ReÃ§u.pdf »
   const name = Buffer.from(file.originalname || '', 'latin1').toString('utf8').replace(/[<>"]/g, '').slice(0, 200);
-  return { url: media.signedUrl(filename), kind, name: name || (kind === 'pdf' ? 'document.pdf' : '') };
+  return { url: media.signedUrl(filename), kind, name: name || (kind === 'pdf' ? 'document.pdf' : kind === 'file' ? 'fichier' : '') };
 }
 
 /**
@@ -717,6 +717,7 @@ async function pushDueReminders() {
 function plainText(html) {
   const images = (String(html || '').match(/<img\b/g) || []).length;
   const pdfs = (String(html || '').match(/<div\b[^>]*data-type="pdf"/g) || []).length;
+  const files = (String(html || '').match(/<div\b[^>]*data-type="file"/g) || []).length;
   const text = String(html || '')
     .replace(/<br\s*\/?>|<\/(p|li)>/g, '\n')
     .replace(/<[^>]+>/g, '')
@@ -724,7 +725,7 @@ function plainText(html) {
     .replace(/&#39;/g, "'").replace(/&amp;/g, '&')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return { text, images, pdfs };
+  return { text, images, pdfs, files };
 }
 
 /**
@@ -746,10 +747,11 @@ async function sendNoteEmailReminders(sendMail) {
                 to_char(n.remind_at, 'DD/MM/YYYY à HH24"h"MI') AS at_label, u.email`,
   );
   for (const n of rows) {
-    const { text, images, pdfs } = plainText(n.content);
+    const { text, images, pdfs, files } = plainText(n.content);
     const imgs = [
       images ? `${images} image${images > 1 ? 's' : ''}` : '',
       pdfs ? `${pdfs} PDF` : '',
+      files ? `${files} fichier${files > 1 ? 's' : ''}` : '',
     ].filter(Boolean).join(', ').replace(/^(.+)$/, '($1)');
     const firstLine = (text.split('\n')[0] || 'Post-it').slice(0, 70);
     const result = await sendMail({
