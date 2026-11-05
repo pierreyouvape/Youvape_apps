@@ -11,6 +11,7 @@
 const pool = require('../config/database');
 const { buildSearchCondition } = require('../utils/searchUtils');
 const { buildVariationLabel } = require('../utils/variationLabel');
+const { discountedPriceSql } = require('../utils/discountedPriceSql');
 
 const PAID_STATUSES = [
   'wc-completed', 'wc-delivered', 'wc-processing',
@@ -31,7 +32,7 @@ const PRODUCT_FIELDS = `
   p.stock_status,
   p.price                                        AS price,
   p.regular_price                                AS regular_price,
-  p.discounted_price                             AS discounted_price,
+  ${discountedPriceSql('p')} AS discounted_price,
   COALESCE(p.computed_cost, p.wc_cog_cost)       AS cost_price,
   COALESCE(p.brand, parent.brand)               AS brand,
   COALESCE(p.sub_brand, parent.sub_brand)       AS sub_brand,
@@ -259,7 +260,7 @@ const promoModel = {
        SELECT $1, p.wp_product_id, p.id, p.sku, p.post_title, $3,
               COALESCE((SELECT MAX(position) FROM promo_operation_items WHERE operation_id = $1), 0)
                 + ROW_NUMBER() OVER (ORDER BY p.post_title),
-              p.price, p.regular_price, p.discounted_price,
+              p.price, p.regular_price, ${discountedPriceSql('p')},
               COALESCE(p.computed_cost, p.wc_cog_cost), p.stock::int, NOW()
        FROM products p
        WHERE p.wp_product_id = ANY($2::bigint[])

@@ -3,6 +3,7 @@ const { buildSearchCondition } = require('../utils/searchUtils');
 const { buildStatsFilterClause, buildAttributeClauses } = require('../utils/productFilters');
 const needsCalculationModel = require('./needsCalculationModel');
 const { buildVariationLabel } = require('../utils/variationLabel');
+const { discountedPriceSql } = require('../utils/discountedPriceSql');
 
 // Un produit peut porter plusieurs marques dans WordPress alors que
 // products.brand n'en garde qu'une : wp_product_brands (brandMapService) complete.
@@ -200,8 +201,8 @@ const statutsWc = (cle) => WC_STATUTS[cle] || null;
 const CATALOG_SORT_EXPRESSIONS = {
   price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.price
     ELSE (SELECT AVG(v.price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
-  discounted_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN p.discounted_price
-    ELSE (SELECT AVG(v.discounted_price) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
+  discounted_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN ${discountedPriceSql('p')}
+    ELSE (SELECT AVG(${discountedPriceSql('v')}) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   cost_price: `(CASE WHEN ${CATALOG_STANDALONE} THEN COALESCE(p.computed_cost, p.wc_cog_cost)
     ELSE (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.product_type = 'variation' AND v.wc_deleted_at IS NULL AND v.post_status = 'publish') END)`,
   margin: `(CASE WHEN ${CATALOG_STANDALONE}
@@ -1366,7 +1367,7 @@ class ProductModel {
         p.sku,
         COALESCE(p.stock, 0)::int as stock,
         p.price,
-        p.discounted_price,
+        ${discountedPriceSql('p')} AS discounted_price,
         COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
         -- Dispersion du cout d'achat entre declinaisons publiees : permet de reperer
         -- dans le catalogue un produit dont une declinaison est ~10x moins chere que
@@ -1459,7 +1460,7 @@ class ProductModel {
           v.sku,
           COALESCE(v.stock, 0)::int as stock,
           v.price,
-          v.discounted_price,
+          ${discountedPriceSql('v')} AS discounted_price,
           COALESCE(v.computed_cost, v.wc_cog_cost) as cost_price,
           v.weight,
           COALESCE(v.image_url, p_parent.image_url) as image_url,

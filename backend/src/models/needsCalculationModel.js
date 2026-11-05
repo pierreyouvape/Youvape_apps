@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const { computeProductNeeds } = require('../services/needsCalculator');
 const { buildVariationLabel } = require('../utils/variationLabel');
+const { discountedPriceSql } = require('../utils/discountedPriceSql');
 const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
 
 // Cache court pour getReorderProductIds (évite de recalculer 2x par requête catalogue : liste + count)
@@ -90,7 +91,7 @@ const needsCalculationModel = {
         p.image_url,
         p.weight,
         p.price,
-        p.discounted_price,
+        ${discountedPriceSql('p')} AS discounted_price,
         p.wp_parent_id,
         p.product_type,
         p_parent.post_title as parent_title,
@@ -378,14 +379,8 @@ const needsCalculationModel = {
       sub_category: p.sub_category || null,
       weight: p.weight ? parseFloat(p.weight) : null,
       price: p.price != null ? parseFloat(p.price) : null,
-      // Tarif remisé (TTC), NULL = aucune remise active. Woo Discount Rules en
-      // priorité (calculé sur le prix courant, donc promo WC déjà incluse) ; à
-      // défaut, le prix promo WooCommerce (prix courant < prix normal).
-      discounted_price: p.discounted_price != null
-        ? parseFloat(p.discounted_price)
-        : (p.price != null && p.regular_price != null && parseFloat(p.price) > 0
-            && parseFloat(p.price) < parseFloat(p.regular_price)
-            ? parseFloat(p.price) : null)
+      // Tarif remisé TTC (WDR, sinon promo WooCommerce), NULL = aucune remise active
+      discounted_price: p.discounted_price != null ? parseFloat(p.discounted_price) : null
     }));
   },
 
