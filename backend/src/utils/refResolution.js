@@ -75,10 +75,18 @@ function resolveCompleteRefs(items, knownRefs, keys = {}) {
     //    recoupe le texte d'origine au bon endroit. Réservé aux références d'au
     //    moins quatre caractères : plus court, le risque d'attraper n'importe
     //    quel début de désignation l'emporte.
+    //
+    //    Ce repli RALLONGE une référence coupée, il ne la RACCOURCIT jamais. Une
+    //    réf connue plus courte que la réf lue, qui s'arrête au milieu de
+    //    celle-ci, est une autre référence : sur la proforma GFC P26111102,
+    //    « GFC33905-61795 » (Pyrex Bonza Pro, 1,50 €) devenait « GFC3390 »
+    //    (Entonnoir, 0,35 €) — 17,25 € de fausse réclamation.
     const compactCombined = nc.replace(/\s+/g, '');
+    const compactRef = normalizeSku(item[refKey]).replace(/\s+/g, '');
     const loose = entries.find((e) => {
       const c = e.normalized.replace(/\s+/g, '');
-      return c.length >= 4 && compactCombined.startsWith(c);
+      if (c.length < 4 || !compactCombined.startsWith(c)) return false;
+      return !(c.length < compactRef.length && compactRef.startsWith(c));
     });
     if (!loose) continue;
 

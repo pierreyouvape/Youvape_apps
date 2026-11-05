@@ -235,6 +235,21 @@ test("l'attribut imprimé sous les montants reste à son article (P26111102)", (
   assert.ok(/^Vape Band Rouge/.test(band.label));
 });
 
+test('une réf connue plus courte ne raccourcit pas la réf lue (Pyrex ≠ Entonnoir)', () => {
+  const { resolveCompleteRefs } = require('../src/utils/refResolution');
+  const lignes = proforma.lines.map((l) => ({ ...l }));
+  // GFC3390 (Entonnoir) est un préfixe de GFC33905-61795 (Pyrex Bonza Pro).
+  resolveCompleteRefs(lignes, ['GFC3390', 'GFC33905-61795', 'GFC22120']);
+  const pyrex = lignes.find((l) => /^Pyrex/.test(l.label));
+  assert.strictEqual(pyrex.ref, 'GFC33905-61795');
+  assert.ok(!lignes.some((l) => l.ref === 'GFC3390'));
+  // Le repli rallonge toujours une réf coupée (cas Curieux 190-FRAI-50-0M + G).
+  const curieux = [{ ref: '190-FRAI-50-0M', label: 'G Fraise Grenade - 50ml' }];
+  resolveCompleteRefs(curieux, ['190-FRAI-50-0MG']);
+  assert.strictEqual(curieux[0].ref, '190-FRAI-50-0MG');
+  assert.strictEqual(curieux[0].label, 'Fraise Grenade - 50ml');
+});
+
 /* ─── Avoirs OpenSi — LCA A2609409187 et GFC A2607412564 ─────────────────── */
 
 const lcaAvoir = parseInvoice(fixture('lca-avoir-A2609409187.txt'));
