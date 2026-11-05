@@ -113,7 +113,7 @@ exports.exportCsv = async (req, res) => {
 
 /* ─── Fichier Probance ─────────────────────────────────── */
 
-const { readCsv, writeCsv } = require('../utils/csvRecords');
+const { readCsv, writeCsv, EMAIL_RE } = require('../utils/csvRecords');
 
 // « 2026-11-05T10:30 » ou « 2026-11-05 10:30 » (heure de Paris) → texte SQL, sinon null.
 const parseSentAt = (v) => {
@@ -143,6 +143,8 @@ exports.cleanProbance = async (req, res) => {
       return res.status(400).json({ success: false, error: e.message });
     }
 
+    // Seules les valeurs qui ressemblent à une adresse partent en base.
+    for (const r of csv.rows) if (!EMAIL_RE.test(r.email)) r.email = '';
     const emails = [...new Set(csv.rows.map((r) => r.email).filter(Boolean))];
     const status = await relanceCodeModel.classifyEmails(code, emails);
 
@@ -172,11 +174,12 @@ exports.cleanProbance = async (req, res) => {
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('X-Relance-Stats', encodeURIComponent(JSON.stringify(stats)));
-    res.send(writeCsv({ header: csv.header, eol: csv.eol, rows: kept }));
+    res.send(writeCsv({ header: csv.header, eol: csv.eol, rows: kept, encoding: csv.encoding }));
   } catch (error) {
     console.error('Erreur nettoyage fichier Probance:', error);
+    // Le vrai message, pas « Erreur serveur » : c'est ce qui manquait pour diagnostiquer.
     res.status(error.message === "Date d'envoi invalide" ? 400 : 500)
-      .json({ success: false, error: error.message === "Date d'envoi invalide" ? error.message : 'Erreur serveur' });
+      .json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };
 
@@ -202,7 +205,7 @@ exports.createFromFilters = async (req, res) => {
     res.json({ success: true, campaign });
   } catch (error) {
     console.error('Erreur enregistrement campagne relance:', error);
-    res.status(500).json({ success: false, error: 'Erreur serveur' });
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };
 
@@ -230,7 +233,7 @@ exports.listCampaigns = async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur suivi relance:', error);
-    res.status(500).json({ success: false, error: 'Erreur serveur' });
+    res.status(500).json({ success: false, error: error.message || 'Erreur serveur' });
   }
 };
 

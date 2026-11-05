@@ -6,7 +6,47 @@
  * l'encodage réel (UTF-8 avec ou sans BOM, Windows-1252). On ne réécrit rien : le
  * fichier nettoyé garde les colonnes, l'ordre, les guillemets et l'encodage de Probance.
  * Les adresses e-mail sont en ASCII : les lire en latin1 est sans risque.
+ *
+ * Exception : l'UTF-16 (export Excel « Texte Unicode », certains exports Probance),
+ * où chaque caractère ASCII est suivi d'un octet nul. Lu en latin1, l'adresse gardait
+ * ses octets nuls et PostgreSQL refusait la requête (« Erreur serveur » le 05/11/2026).
+ * Il est décodé comme tel et réécrit en UTF-16 avec son BOM.
  */
+
+/** 'utf16le' | 'utf16be' | 'latin1' (= octets bruts, tout le reste). */
+function detectEncoding(buffer) {
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return 'utf16le';
+  if (buffer[0] === 0xfe && buffer[1] === 0xff) return 'utf16be';
+  // Sans BOM : beaucoup d'octets nuls aux positions impaires (ou paires) = UTF-16.
+  const n = Math.min(buffer.length, 2000);
+  let odd = 0;
+  let even = 0;
+  for (let i = 0; i < n; i++) {
+    if (buffer[i] === 0) { if (i % 2) odd++; else even++; }
+  }
+  if (odd > n / 4) return 'utf16le';
+  if (even > n / 4) return 'utf16be';
+  return 'latin1';
+}
+
+const swap16 = (buf) => {
+  const b = Buffer.from(buf.length % 2 ? buf.subarray(0, buf.length - 1) : buf);
+  return b.swap16();
+};
+const BOM = String.fromCharCode(0xfeff);
+const stripBom = (t) => (t.startsWith(BOM) ? t.slice(1) : t);
+
+function decode(buffer, encoding) {
+  if (encoding === 'utf16le') return stripBom(buffer.toString('utf16le'));
+  if (encoding === 'utf16be') return stripBom(swap16(buffer).toString('utf16le'));
+  return buffer.toString('latin1');
+}
+
+function encode(text, encoding) {
+  if (encoding === 'utf16le') return Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+  if (encoding === 'utf16be') return Buffer.concat([Buffer.from([0xfe, 0xff]), swap16(Buffer.from(text, 'utf16le'))]);
+  return Buffer.from(text, 'latin1');
+}
 
 const EMAIL_RE = /^[^\s@;,"]+@[^\s@;,"]+\.[^\s@;,"]+$/;
 
@@ -70,7 +110,9 @@ function parseRecords(text, delimiter) {
   return records;
 }
 
-const normEmail = (s) => String(s || '').replace(/^﻿|^ï»¿/, '').trim().toLowerCase();
+// BOM (UTF-8 lu en latin1 ou UTF-16), octets nuls et espaces invisibles retirés :
+// PostgreSQL refuse un texte qui contient un octet nul.
+const normEmail = (s) => String(s || '').replace(/^\uFEFF|^\u00EF\u00BB\u00BF/, '').replace(/[\u0000\u200B]/g, '').trim().toLowerCase();
 
 /**
  * Colonne e-mail = celle dont le plus de valeurs ressemblent à une adresse
@@ -96,7 +138,8 @@ function findEmailColumn(records) {
  * @returns {{ delimiter, eol, header, rows: [{raw, email}], emailColumn }}
  */
 function readCsv(buffer) {
-  const text = buffer.toString('latin1');
+  const encoding = detectEncoding(buffer);
+  const text = decode(buffer, encoding);
   const delimiter = detectDelimiter(text);
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const records = parseRecords(text, delimiter);
@@ -106,19 +149,20 @@ function readCsv(buffer) {
   const header = found.hasHeader ? records[0] : null;
   const body = found.hasHeader ? records.slice(1) : records;
   return {
+    encoding,
     delimiter,
     eol,
     header: header ? header.raw : null,
-    emailColumn: header ? header.fields[found.col].replace(/^ï»¿|^﻿/, '') : `colonne ${found.col + 1}`,
+    emailColumn: header ? header.fields[found.col].replace(/^\uFEFF|^\u00EF\u00BB\u00BF/, '') : `colonne ${found.col + 1}`,
     rows: body.map((r) => ({ raw: r.raw, email: normEmail(r.fields[found.col]) })),
   };
 }
 
 /** Recompose le fichier (mêmes octets que l'original pour chaque ligne gardée). */
-function writeCsv({ header, eol, rows }) {
+function writeCsv({ header, eol, rows, encoding = 'latin1' }) {
   const lines = header !== null ? [header] : [];
   for (const r of rows) lines.push(r.raw);
-  return Buffer.from(lines.join(eol) + eol, 'latin1');
+  return encode(lines.join(eol) + eol, encoding);
 }
 
-module.exports = { readCsv, writeCsv, detectDelimiter, parseRecords, EMAIL_RE };
+module.exports = { readCsv, writeCsv, detectDelimiter, detectEncoding, parseRecords, EMAIL_RE };

@@ -101,6 +101,22 @@ test("date d'envoi : jour seul, jour et heure, refus du reste", () => {
   assert.throws(() => parseSentAt("2026-11-05'; drop"));
 });
 
+test('CSV UTF-16 (avec et sans BOM) : adresses sans octet nul, fichier réécrit identique', () => {
+  const txt = 'Email;Prénom\r\nA@b.fr;Hélène\r\nc@d.com;X\r\n';
+  const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(txt, 'utf16le')]);
+  const csv = readCsv(le);
+  assert.strictEqual(csv.encoding, 'utf16le');
+  assert.deepStrictEqual(csv.rows.map((r) => r.email), ['a@b.fr', 'c@d.com']);
+  assert.ok(writeCsv(csv).equals(le));
+  const noBom = readCsv(Buffer.from(txt, 'utf16le'));
+  assert.strictEqual(noBom.encoding, 'utf16le');
+  assert.ok(!noBom.rows[0].email.includes('\u0000'));
+  const be = Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(txt, 'utf16le').swap16()]);
+  const csvBe = readCsv(be);
+  assert.deepStrictEqual(csvBe.rows.map((r) => r.email), ['a@b.fr', 'c@d.com']);
+  assert.ok(writeCsv(csvBe).equals(be));
+});
+
 if (failures) {
   console.error(`\n${failures} échec(s)`);
   process.exit(1);
