@@ -203,6 +203,38 @@ test('une désignation finissant par un nombre isolé garde sa ligne (F261042960
   assert.strictEqual(gfc2.warnings.length, 0);
 });
 
+/* ─── Proforma GFC — P26111102, à contrôler AVANT de payer ──────────────── */
+
+const proforma = parseInvoice(fixture('gfc-proforma-P26111102.txt'));
+
+test('une proforma GFC se lit comme une facture, typée proforma (P26111102)', () => {
+  assert.strictEqual(proforma.docType, 'proforma');
+  assert.strictEqual(proforma.isProforma, true);
+  assert.strictEqual(proforma.number, 'P26111102');
+  assert.strictEqual(proforma.date, '2026-11-05');
+  assert.strictEqual(proforma.orderRefOnDoc, null);
+  assert.strictEqual(proforma.statedPaymentMethod, 'Virement bancaire');
+  assert.ok(close(proforma.totalHt, 1231.95));
+  assert.strictEqual(proforma.lines.length, 35);
+  assert.ok(close(proforma.lines.reduce((a, l) => a + l.lineTotalHt, 0), 1231.95, 0.02));
+  assert.strictEqual(proforma.warnings.length, 0);
+  // Un numéro de facture ne passe pas pour une proforma.
+  assert.strictEqual(gfc.docType, 'invoice');
+  assert.strictEqual(gfc.isProforma, false);
+});
+
+test("l'attribut imprimé sous les montants reste à son article (P26111102)", () => {
+  // « Valeur : 0.23 ohm » suit la ligne de montants des Coils Bonza Pro : il
+  // devenait la référence du Vape Band Rouge suivant.
+  assert.ok(!proforma.lines.some((l) => /^Valeur/.test(l.ref)));
+  const coils = byRef(proforma, 'GFC33907-61796');
+  assert.ok(/Valeur : 0\.23 ohm$/.test(coils.label));
+  const band = byRef(proforma, 'GFC22120');
+  assert.strictEqual(band.qty, 5);
+  assert.ok(close(band.lineTotalHt, 4.25));
+  assert.ok(/^Vape Band Rouge/.test(band.label));
+});
+
 /* ─── Avoirs OpenSi — LCA A2609409187 et GFC A2607412564 ─────────────────── */
 
 const lcaAvoir = parseInvoice(fixture('lca-avoir-A2609409187.txt'));

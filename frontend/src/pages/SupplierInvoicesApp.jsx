@@ -647,6 +647,9 @@ async function settleOne(document, { method, paid_at, reference }) {
  *
  * @returns {Promise<boolean>} faux quand il n'y a rien à réclamer.
  */
+/** « Facture », « Avoir » ou « Proforma », selon le type du document. */
+const docLabel = (type) => ({ credit_note: 'Avoir', proforma: 'Proforma' }[type] || 'Facture');
+
 async function copierReclamation(id) {
   const { data } = await axios.get(`${BASE}/${id}/claim`);
   if (!data.body) return false;
@@ -1450,8 +1453,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: C.dark }}>
-                {result.invoice.docType === 'credit_note' ? 'Avoir' : 'Facture'} {result.invoice.number}
-                {result.invoice.isProforma && <Badge tone="orange"> pro forma</Badge>}
+                {docLabel(result.invoice.docType)} {result.invoice.number}
+                {result.invoice.isProforma && <Badge tone="orange"> à contrôler avant virement</Badge>}
               </div>
               <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
                 {result.supplier.name} · {date(result.invoice.date)}
@@ -1502,8 +1505,8 @@ function ControlTab({ suppliers, mobile, onSaved }) {
 
           {!totals && (
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <Kpi label={result.invoice.docType === 'credit_note' ? 'Avoir HT' : 'Facture HT'} value={eur(result.invoice.totalHt)} />
-              <Kpi label={result.invoice.docType === 'credit_note' ? 'Avoir TTC' : 'Facture TTC'} value={eur(result.invoice.totalTtc)} />
+              <Kpi label={`${docLabel(result.invoice.docType)} HT`} value={eur(result.invoice.totalHt)} />
+              <Kpi label={`${docLabel(result.invoice.docType)} TTC`} value={eur(result.invoice.totalTtc)} />
               <Kpi label="Lignes lues" value={result.invoice.lines.length} />
             </div>
           )}
@@ -1667,7 +1670,7 @@ function ControlTab({ suppliers, mobile, onSaved }) {
             {!saved ? (
               <>
                 <Btn onClick={save} disabled={busy || !!result.duplicate}>
-                  {busy ? 'Enregistrement…' : `Enregistrer ${result.invoice.docType === 'credit_note' ? "l'avoir" : 'la facture'}`}
+                  {busy ? 'Enregistrement…' : `Enregistrer ${{ credit_note: "l'avoir", proforma: 'la proforma' }[result.invoice.docType] || 'la facture'}`}
                 </Btn>
                 <Btn variant="ghost" onClick={() => { reset(); setFile(null); }}>Abandonner</Btn>
                 <span style={{ fontSize: 12, color: C.greyM }}>
@@ -2351,7 +2354,7 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>
-              {detail.doc_type === 'credit_note' ? 'Avoir' : 'Facture'} {detail.number}
+              {docLabel(detail.doc_type)} {detail.number}
             </div>
             <div style={{ fontSize: 12.5, color: C.greyT, marginTop: 3 }}>
               {detail.supplier_name} · {date(detail.doc_date)} · échéance {date(detail.effective_due_date)}

@@ -509,7 +509,7 @@ async function getClaimMessage(req, res) {
 
     const message = buildClaimMessage({
       comparison,
-      invoice: { number: document.number },
+      invoice: { number: document.number, docType: document.doc_type },
       order: { reference: (document.orders[0] || {}).bms_reference },
       supplier: { name: document.supplier_name, contactName: document.contact_name },
       senderName: (req.user && req.user.name) || null,

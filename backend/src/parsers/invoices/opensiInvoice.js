@@ -50,6 +50,8 @@ const near = (a, b, eps = EPSILON) => Math.abs(a - b) <= eps;
 const NOISE = [
   /^Page\s+\d+\s*\/\s*\d+/i,
   /^Avoir N°/i,
+  /^Proforma N°/i,
+  /^F\s+A\s+C\s+T\s+U\s+R\s+E\b/i,
   /^A\s+V\s+O\s+I\s+R\b/i,
   /^Avoir constitué/i,
   /^Facture d['’]origine/i,
@@ -79,6 +81,20 @@ const NOISE = [
   /^Aucun (escompte|SAV)/i,
 ];
 const isNoise = (line) => NOISE.some((re) => re.test(line.trim()));
+
+/**
+ * Ligne d'attribut d'une déclinaison, imprimée SOUS les montants de son article.
+ * Proforma GFC P26111102 :
+ *
+ *     Coils Bonza Pro … (10pcs) - Thunder Cloud x Vaping Bogan - 1394337100465 10 2.10 21.00
+ *     Valeur : 0.23 ohm                          ← la fin de SA désignation
+ *     GFC22120 Vape Band Rouge …                 ← le vrai article suivant
+ *
+ * Laissé au tampon, « Valeur » devenait la référence du Vape Band Rouge, qui ne
+ * retrouvait plus sa ligne de commande. Liste fermée des attributs OpenSi : une
+ * référence ne commence jamais par l'un d'eux suivi de « : ».
+ */
+const ATTRIBUT_DECLINAISON = /^(Couleur|Valeur|Taille|Nicotine|Saveurs?|Contenance|R[ée]sistance|Mod[èe]le|Format|Taux)\s*:/i;
 
 /**
  * Interprète une suite de nombres comme (quantité, prix unitaire net, montant).
@@ -158,6 +174,12 @@ function parseHeader(text) {
   // Un avoir s'annonce « Avoir N° … » et imprime ses montants en POSITIF. On le
   // reconnaît ici ; le signe est inversé à la sortie (cf. parseInvoice).
   const isCreditNote = /^\s*Avoir\s+N°/im.test(text) || /^A\s+V\s+O\s+I\s+R\s*$/im.test(text);
+  // Une proforma (GFC, paiement par virement AVANT expédition) a le gabarit
+  // d'une facture, sans « Réf. Commande ». Elle se contrôle comme une facture —
+  // c'est le moment de faire corriger un tarif, avant de payer — mais n'est pas
+  // une dette : la facture définitive suivra (cf. listUnpaid).
+  const isProforma = !isCreditNote
+    && (/^\s*Proforma\s+N°/im.test(text) || /^F\s+A\s+C\s+T\s+U\s+R\s+E\s+P\s+R\s+O\s+F\s+O\s+R\s+M\s+A\s*$/im.test(text));
   const grab = (re, i = 1) => {
     const m = text.match(re);
     return m ? m[i].trim() : null;
@@ -173,9 +195,10 @@ function parseHeader(text) {
 
   return {
     isCreditNote,
-    docType: isCreditNote ? 'credit_note' : 'invoice',
-    number: grab(/(?:Facture|Avoir)\s+N°\s*:?\s*(\S+)/i),
-    date: date(/(?:Facture|Avoir)\s+N°[^\n]*?Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i)
+    isProforma,
+    docType: isCreditNote ? 'credit_note' : (isProforma ? 'proforma' : 'invoice'),
+    number: grab(/(?:Facture|Avoir|Proforma)\s+N°\s*:?\s*(\S+)/i),
+    date: date(/(?:Facture|Avoir|Proforma)\s+N°[^\n]*?Date\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i)
        || date(/\bDate\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     dueDate: date(/Date d'échéance\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i),
     // « Réf. Commande » est notre référence chez LCA et LVP ; chez GFC c'est le
@@ -188,7 +211,8 @@ function parseHeader(text) {
     // l'avoir éteint (cf. AVOIR_DESIGNE_SQL) — même rôle que l'« Extourne de »
     // de JoshNoa.
     correctsInvoice: isCreditNote ? grab(/Facture d['’]origine\s*:\s*([A-Z]*\d+)/i) : null,
-    statedPaymentMethod: grab(/Mode de règlement\s*:\s*([^\n]+)/i),
+    // Sur une page qui continue, le « Sous-total HT » suit sur la même ligne.
+    statedPaymentMethod: (grab(/Mode de règlement\s*:\s*([^\n]+)/i) || '').split(/\s+Sous-total/i)[0].trim() || null,
     totalHt: amount(/Total HT\s*:\s*([\d  .,]+)\s*€/i),
     totalTva: amount(/Total TVA\s*:\s*([\d  .,]+)\s*€/i),
     totalTtc: amount(/Total TTC\s*:\s*([\d  .,]+)\s*€/i),
@@ -222,12 +246,24 @@ function parseInvoice(text) {
   // La parenthèse ouverte et non refermée le trahit : c'est un signe qui se
   // vérifie, pas une devinette sur la casse ou la ponctuation.
   let attenteFermeture = false;
+  // Vrai juste après l'émission d'un article : la ligne suivante peut encore
+  // lui appartenir (cf. ATTRIBUT_DECLINAISON).
+  let articleEmis = false;
   for (const raw of String(text).split('\n')) {
     const line = raw.trimEnd();
     if (!line.trim()) continue;
     if (isNoise(line)) {
       buffer = '';
       attenteFermeture = false;
+      articleEmis = false;
+      continue;
+    }
+
+    const suiteAttribut = articleEmis && !buffer.trim() && ATTRIBUT_DECLINAISON.test(line.trim());
+    articleEmis = false;
+    if (suiteAttribut && !TRAILING_NUMBERS.test(line.trim().replace(/^[^:]*:/, ''))) {
+      const precedente = lines[lines.length - 1];
+      precedente.label = `${precedente.label || ''} ${line.trim()}`.trim();
       continue;
     }
 
@@ -300,6 +336,7 @@ function parseInvoice(text) {
       kind: 'product',
     });
     buffer = '';
+    articleEmis = true;
     // Parenthèse ouverte et jamais refermée : la désignation continue à la ligne
     // suivante, au-delà des montants.
     const ouvertes = (label || '').split('(').length - 1;

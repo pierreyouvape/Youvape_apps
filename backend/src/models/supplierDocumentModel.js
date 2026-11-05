@@ -665,7 +665,10 @@ async function listUnpaid({ supplierId } = {}, db = pool) {
        FROM supplier_document_balances b
        JOIN supplier_documents d ON d.id = b.document_id
        JOIN suppliers s ON s.id = d.supplier_id
-      WHERE b.payment_status IN ('unpaid', 'partial')${filter}
+      -- Une proforma n'est pas une dette : la facture définitive la remplace.
+      -- Comptée ici, la commande GFC serait due deux fois.
+      WHERE b.payment_status IN ('unpaid', 'partial')
+        AND d.doc_type <> 'proforma'${filter}
       ORDER BY b.effective_due_date NULLS LAST, b.document_id`,
     params,
   );

@@ -139,7 +139,7 @@ function renderTableHtml(rows, headers) {
 /**
  * @param {Object} input
  * @param {Object} input.comparison  sortie de compareInvoiceToOrder
- * @param {Object} input.invoice     { number, date }
+ * @param {Object} input.invoice     { number, date, docType }
  * @param {Object} input.order       { reference }
  * @param {Object} [input.supplier]  { name, contactName }
  * @param {string} [input.senderName] signature
@@ -161,7 +161,10 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
 
   const total = Math.round(claimLines.reduce((s, l) => s + du(l), 0) * 100) / 100;
 
-  const subject = `Facture ${invoice.number || ''} — écart de tarif sur ${claimLines.length} ligne${
+  // Une proforma se conteste AVANT paiement : on demande de corriger les
+  // prix sur la facture à venir, pas un avoir sur une somme pas encore versée.
+  const proforma = invoice.docType === 'proforma';
+  const subject = `${proforma ? 'Proforma' : 'Facture'} ${invoice.number || ''} — écart de tarif sur ${claimLines.length} ligne${
     claimLines.length > 1 ? 's' : ''
   } (${fmtEur(total)} HT)`.replace(/\s+/g, ' ').trim();
 
@@ -189,11 +192,13 @@ function buildClaimMessage({ comparison, invoice = {}, order = {}, supplier = {}
   const hello = supplier.contactName ? `Bonjour ${supplier.contactName},` : 'Bonjour,';
   const ref = order.reference ? ` (commande ${order.reference})` : '';
   const pluriel = claimLines.length > 1 ? 's' : '';
-  const intro = `En contrôlant votre facture ${invoice.number || ''}${ref}, je relève `
-    + `${claimLines.length} ligne${pluriel} facturée${pluriel} au-dessus du tarif convenu `
+  const intro = `En contrôlant votre ${proforma ? 'proforma' : 'facture'} ${invoice.number || ''}${ref}, je relève `
+    + `${claimLines.length} ligne${pluriel} ${proforma ? 'chiffrée' : 'facturée'}${pluriel} au-dessus du tarif convenu `
     + 'à la commande :';
-  const bilan = `Soit ${fmtEur(total)} HT de trop sur cette facture.`;
-  const demande = 'Pouvez-vous établir un avoir correspondant svp ?';
+  const bilan = `Soit ${fmtEur(total)} HT de trop sur cette ${proforma ? 'proforma' : 'facture'}.`;
+  const demande = proforma
+    ? 'Pouvez-vous corriger ces prix et me renvoyer la proforma avant que je procède au virement svp ?'
+    : 'Pouvez-vous établir un avoir correspondant svp ?';
   const conversion = conversions.length === 0 ? null
     : `Quantités et tarifs sont donnés à la pièce — ${conversions.join(' ; ')}.`;
 

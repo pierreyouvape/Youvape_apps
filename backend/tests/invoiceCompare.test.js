@@ -393,6 +393,19 @@ test('le message réclame 3,46 € et dit à quelle unité il compte', () => {
   assert.ok(m.body.includes('facturée 1 × 25,96 € pour 5 pièces'));
 });
 
+test('une proforma demande de corriger les prix avant virement, pas un avoir', () => {
+  const m = buildClaimMessage({
+    comparison: carton,
+    invoice: { number: 'P26111102', docType: 'proforma' },
+    order: { reference: '1017' },
+    supplier: { name: 'GFC' },
+  });
+  assert.ok(m.subject.startsWith('Proforma P26111102'));
+  assert.ok(m.body.includes('votre proforma P26111102'));
+  assert.ok(m.body.includes('avant que je procède au virement'));
+  assert.ok(!m.body.includes('avoir'));
+});
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Cosmer — facture #FA018801, remise de pied « Remise youvape −300,90 € »
  * Les 11 lignes sont au prix commandé ; la remise (15 %) est au pied.
