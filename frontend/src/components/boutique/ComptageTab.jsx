@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import CameraScanner from './CameraScanner';
+import { useScanner, beep } from '../pda/pdaScan';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -14,6 +15,16 @@ const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString('fr-FR', { maxi
 const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
 const eur = (n) => `${n > 0 ? '+' : ''}${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 const ecartColor = (n) => (n > 0 ? C.green : n < 0 ? C.red : C.greyM);
+// Un code-barres, pas une quantité ni un mot : ce que la douchette tape dans
+// un champ qui n'est pas le sien.
+const looksLikeBarcode = (v) => /^\d{8,}$/.test(String(v).trim());
+const byName = (a, b) => (a.name || '').localeCompare(b.name || '', 'fr');
+/** Chaque mot du filtre doit figurer dans le nom ou le code de la ligne. */
+const matchesFilter = (item, words) => {
+  if (!words.length) return true;
+  const hay = `${item.name || ''} ${item.sku || ''}`.toLowerCase();
+  return words.every((w) => hay.includes(w));
+};
 
 const STATUS = {
   en_cours: { label: 'En cours', color: C.accent },
@@ -44,7 +55,6 @@ export default function ComptageTab({ shop, token }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [msg, setMsg] = useState(null);
 
   // création
   const [cats, setCats] = useState({ categories: [], subcategories: [], brands: [] });
@@ -58,12 +68,19 @@ export default function ComptageTab({ shop, token }) {
   const [bResults, setBResults] = useState([]);
   const [bSelected, setBSelected] = useState({}); // product_id -> {name}
   const [bSearching, setBSearching] = useState(false);
+  const [bScanMsg, setBScanMsg] = useState(null);
 
   // comptage
   const [scanVal, setScanVal] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const [lastScan, setLastScan] = useState(null);
+  const [lastId, setLastId] = useState(null);      // dernière réf touchée : affichée en tête
+  const [recent, setRecent] = useState({});        // product_id → rang de la dernière saisie
+  const [filter, setFilter] = useState('');
   const scanRef = useRef(null);
+  // Une saisie après l'autre : deux scans rapides ne se croisent pas en route.
+  const queueRef = useRef(Promise.resolve());
+  const enqueue = (fn) => { queueRef.current = queueRef.current.catch(() => {}).then(fn); return queueRef.current; };
 
   // validation
   const [validating, setValidating] = useState(false);
@@ -81,8 +98,11 @@ export default function ComptageTab({ shop, token }) {
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
-  const openSession = async (id) => {
-    setError(null); setResult(null); setReviewMode(false);
+  const resetCounting = () => { setLastScan(null); setLastId(null); setRecent({}); setFilter(''); };
+
+  const openSession = async (id, { keep = false } = {}) => {
+    setError(null); setReviewMode(false);
+    if (!keep) { setResult(null); resetCounting(); }
     try {
       const r = await axios.get(`${API_URL}/nextore/${shop.slug}/comptage/${id}`, auth(token));
       setSession(r.data.comptage); setView('session');
@@ -97,7 +117,7 @@ export default function ComptageTab({ shop, token }) {
     } catch { /* non bloquant */ }
   };
 
-  const openBuilder = () => { setBQ(''); setBBrand(''); setBCat(''); setBResults([]); setBSelected({}); setView('builder'); };
+  const openBuilder = () => { setBQ(''); setBBrand(''); setBCat(''); setBResults([]); setBSelected({}); setBScanMsg(null); setView('builder'); };
 
   // Recherche produit (debounce) pour le constructeur de liste
   useEffect(() => {
@@ -139,6 +159,7 @@ export default function ComptageTab({ shop, token }) {
     try {
       const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage`,
         { type: 'liste', name: newName || null, productIds: ids }, auth(token));
+      resetCounting(); setResult(null);
       setSession(r.data.comptage); setView('session');
     } catch (e) { setError(e.response?.data?.error || e.message); }
   };
@@ -153,6 +174,7 @@ export default function ComptageTab({ shop, token }) {
     }
     try {
       const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage`, body, auth(token));
+      resetCounting(); setResult(null);
       setSession(r.data.comptage); setView('session');
     } catch (e) { setError(e.response?.data?.error || e.message); }
   };
@@ -169,40 +191,71 @@ export default function ComptageTab({ shop, token }) {
     });
   };
 
-  const doScan = async (barcode) => {
-    if (!barcode || !session) return;
-    try {
-      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/count`, { barcode }, auth(token));
-      applyCount(r.data);
-      setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
-    } catch (e) {
-      const data = e.response?.data || {};
-      // Code porté par plusieurs articles : la caméra se ferme pour laisser choisir
-      if (data.code === 'AMBIGUOUS_BARCODE') setCameraOpen(false);
-      setLastScan({ ok: false, msg: data.error || 'Code-barres inconnu', candidates: data.candidates });
-    }
+  // La réf touchée passe en tête de l'écran, surlignée
+  const touch = (productId) => {
+    setLastId(productId);
+    setRecent((r) => ({ ...r, [productId]: Date.now() }));
+  };
+
+  const postCount = (body) => axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/count`, body, auth(token));
+
+  const doScan = (barcode) => {
+    const code = String(barcode || '').trim();
+    if (!code || !session) return;
+    // Affiché tout de suite : on voit que le scan est parti, même si le réseau traîne
+    setLastScan({ pending: true, code });
+    enqueue(async () => {
+      try {
+        const r = await postCount({ barcode: code });
+        applyCount(r.data); touch(r.data.product_id);
+        setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
+        beep(true);
+      } catch (e) {
+        const data = e.response?.data || {};
+        // Code porté par plusieurs articles : la caméra se ferme pour laisser choisir
+        if (data.code === 'AMBIGUOUS_BARCODE') setCameraOpen(false);
+        setLastScan({ ok: false, msg: data.error || 'Code-barres inconnu', candidates: data.candidates });
+        beep(false);
+      }
+    });
   };
 
   // Choix de l'article après un code ambigu : compte +1 comme un scan
-  const pickCandidate = async (productId) => {
-    try {
-      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/count`,
-        { product_id: productId, qty: 1, mode: 'scan' }, auth(token));
-      applyCount(r.data);
-      setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
-    } catch (e) {
-      setLastScan({ ok: false, msg: e.response?.data?.error || e.message });
-    }
-    if (scanRef.current) scanRef.current.focus();
+  const pickCandidate = (productId) => {
+    setLastScan({ pending: true });
+    enqueue(async () => {
+      try {
+        const r = await postCount({ product_id: productId, qty: 1, mode: 'scan' });
+        applyCount(r.data); touch(r.data.product_id);
+        setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
+        beep(true);
+      } catch (e) {
+        setLastScan({ ok: false, msg: e.response?.data?.error || e.message });
+        beep(false);
+      }
+    });
   };
 
-  const setQty = async (productId, qty) => {
-    try {
-      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/count`,
-        { product_id: productId, qty, mode: 'set' }, auth(token));
-      applyCount(r.data);
-    } catch (e) { setError(e.response?.data?.error || e.message); }
+  // Quantité saisie : affichée aussitôt, enregistrée derrière. En cas d'échec
+  // on recharge le comptage, pour ne jamais laisser à l'écran un chiffre que
+  // le serveur n'a pas.
+  const setQty = (productId, qty) => {
+    applyCount({ product_id: productId, counted_qty: qty });
+    touch(productId);
+    enqueue(async () => {
+      try {
+        const r = await postCount({ product_id: productId, qty, mode: 'set' });
+        applyCount(r.data);
+      } catch (e) {
+        setError(`Quantité non enregistrée : ${e.response?.data?.error || e.message}`);
+        await openSession(session.id, { keep: true });
+      }
+    });
   };
+
+  // Douchette lue partout sur l'écran, pas seulement dans le champ de scan
+  // (useScanner ignore les frappes faites dans un champ : chaque champ gère la sienne).
+  useScanner((code) => doScan(code), view === 'session' && session?.status === 'en_cours' && !cameraOpen && !reviewMode);
 
   const onWedgeKey = (e) => {
     if (e.key === 'Enter') {
@@ -210,18 +263,66 @@ export default function ComptageTab({ shop, token }) {
       const v = scanVal.trim();
       setScanVal('');
       if (v) doScan(v);
-      if (scanRef.current) scanRef.current.focus();
+    }
+  };
+
+  // Douchette dans le champ « filtrer » : c'est un scan, pas un filtre
+  const onFilterKey = (e) => {
+    if (e.key === 'Enter' && looksLikeBarcode(filter)) {
+      e.preventDefault();
+      doScan(filter);
+      setFilter('');
+    }
+  };
+
+  /* Constructeur de liste : un produit scanné s'ajoute à la sélection */
+  const addByBarcode = async (code) => {
+    const v = String(code || '').trim();
+    if (!v) return;
+    setBScanMsg({ pending: true, code: v });
+    try {
+      const r = await axios.get(`${API_URL}/nextore/${shop.slug}/products/search?q=${encodeURIComponent(v)}`, auth(token));
+      const hits = (r.data.products || []).filter((p) => p.barcode_match);
+      if (hits.length === 1) {
+        const p = hits[0];
+        setBSelected((sel) => ({ ...sel, [p.product_id]: { name: p.name } }));
+        setBScanMsg({ ok: true, msg: `✓ ${p.name} ajouté` });
+        beep(true);
+      } else if (hits.length > 1) {
+        // Code porté par plusieurs articles : on les montre, à cocher à la main
+        setBQ(v);
+        setBScanMsg({ ok: false, msg: `Ce code correspond à ${hits.length} articles : coche le bon` });
+        beep(false);
+      } else {
+        setBScanMsg({ ok: false, msg: `Code-barres inconnu en boutique : ${v}` });
+        beep(false);
+      }
+    } catch (e) {
+      setBScanMsg({ ok: false, msg: e.response?.data?.error || e.message });
+      beep(false);
+    }
+  };
+
+  useScanner((code) => addByBarcode(code), view === 'builder');
+
+  // Douchette dans le champ de recherche : ajout direct, comme un scan
+  const onBuilderSearchKey = (e) => {
+    if (e.key === 'Enter' && looksLikeBarcode(bQ)) {
+      e.preventDefault();
+      addByBarcode(bQ);
+      setBQ('');
     }
   };
 
   const validate = async (mode, zeroProductIds = []) => {
     setValidating(true); setError(null);
+    await queueRef.current.catch(() => {}); // les saisies en route d'abord
     try {
       const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/validate`,
         { mode, zeroProductIds }, auth(token));
       setResult(r.data);
       if (mode === 'final') { await loadSessions(); }
-      else { await openSession(session.id); } // recharge l'état poussé
+      else { await openSession(session.id, { keep: true }); } // recharge l'état poussé
     } catch (e) { setError(e.response?.data?.error || e.message); }
     finally { setValidating(false); setReviewMode(false); }
   };
@@ -330,8 +431,14 @@ export default function ComptageTab({ shop, token }) {
         <button onClick={() => setView('create')} style={{ background: 'none', border: 'none', color: C.primary, fontSize: 15, padding: 0, marginBottom: 12, cursor: 'pointer' }}>‹ Retour</button>
         {error && <div style={{ background: C.redL, color: C.red, padding: 12, borderRadius: 8, marginBottom: 12 }}>{error}</div>}
 
-        <input value={bQ} onChange={(e) => setBQ(e.target.value)} placeholder="Rechercher (nom, SKU, code-barres, marque)…"
+        <input value={bQ} onChange={(e) => setBQ(e.target.value)} onKeyDown={onBuilderSearchKey}
+          placeholder="Rechercher (mots du nom, SKU, marque) ou scanner un produit…"
           style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 16, boxSizing: 'border-box', marginBottom: 8 }} />
+        {bScanMsg && (
+          <div style={{ fontSize: 14, marginBottom: 8, color: bScanMsg.pending ? C.greyT : bScanMsg.ok ? C.green : C.red }}>
+            {bScanMsg.pending ? `⏳ Lecture de ${bScanMsg.code}…` : bScanMsg.msg}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <select value={bBrand} onChange={(e) => setBBrand(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 14, background: '#fff' }}>
             <option value="">Toutes marques</option>
@@ -385,6 +492,12 @@ export default function ComptageTab({ shop, token }) {
   const items = session?.items || [];
   const counted = items.filter((i) => i.counted_qty != null);
   const uncounted = items.filter((i) => i.counted_qty == null);
+  const filterWords = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  // À compter : par nom. Compté : la dernière saisie en tête, puis par nom.
+  const shownUncounted = uncounted.filter((i) => matchesFilter(i, filterWords)).sort(byName);
+  const shownCounted = counted.filter((i) => matchesFilter(i, filterWords))
+    .sort((a, b) => (recent[b.product_id] || 0) - (recent[a.product_id] || 0) || byName(a, b));
+  const lastItem = lastId ? items.find((i) => i.product_id === lastId) : null;
   const isCategorie = session?.type === 'categorie';
   const validated = session?.status !== 'en_cours'; // validé ou clôturé (partiel) : lecture seule
 
@@ -419,8 +532,9 @@ export default function ComptageTab({ shop, token }) {
             <button onClick={() => setCameraOpen(true)} style={{ background: C.dark, color: '#fff', border: 'none', borderRadius: 10, padding: '0 16px', fontSize: 20 }}>📷</button>
           </div>
           {lastScan && (
-            <div style={{ fontSize: 14, marginBottom: 12, color: lastScan.ok ? C.green : C.red }}>
-              {lastScan.ok ? `✓ ${lastScan.name} → ${lastScan.qty}` : `✕ ${lastScan.msg}`}
+            <div style={{ fontSize: 14, marginBottom: 12, color: lastScan.pending ? C.greyT : lastScan.ok ? C.green : C.red }}>
+              {lastScan.pending ? `⏳ Lecture${lastScan.code ? ` de ${lastScan.code}` : ''}…`
+                : lastScan.ok ? `✓ ${lastScan.name} → ${lastScan.qty}` : `✕ ${lastScan.msg}`}
             </div>
           )}
           {lastScan?.candidates?.length > 0 && (
@@ -439,12 +553,32 @@ export default function ComptageTab({ shop, token }) {
         </>
       )}
 
-      {/* Réfs à compter (tournant/catégorie non comptées) */}
-      {uncounted.length > 0 && !validated && (
+      {/* Dernière réf touchée : sous le scan, sans avoir à la chercher dans la liste */}
+      {lastItem && !validated && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>À compter ({uncounted.length})</div>
-          {uncounted.map((i) => (
-            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} muted />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>Dernier scan</div>
+          <Row key={`last-${lastItem.product_id}`} item={lastItem} onSet={(q) => setQty(lastItem.product_id, q)} onScan={doScan} highlight />
+        </div>
+      )}
+
+      {/* Filtre des listes : chaque mot doit figurer dans le nom ou le code */}
+      {!validated && items.length > 0 && (
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={onFilterKey}
+          placeholder="🔍 Filtrer la liste (mots du nom ou code)…"
+          style={{ width: '100%', padding: 11, borderRadius: 10, border: `1px solid ${C.greyB}`, fontSize: 15, boxSizing: 'border-box', marginBottom: 10 }} />
+      )}
+      {!validated && filterWords.length > 0 && shownUncounted.length + shownCounted.length === 0 && (
+        <div style={{ color: C.greyM, fontSize: 14, padding: '4px 2px 12px' }}>Aucune ligne ne correspond au filtre.</div>
+      )}
+
+      {/* Réfs à compter (tournant/catégorie non comptées) */}
+      {shownUncounted.length > 0 && !validated && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>
+            À compter ({filterWords.length ? `${shownUncounted.length}/${uncounted.length}` : uncounted.length})
+          </div>
+          {shownUncounted.map((i) => (
+            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} onScan={doScan} muted />
           ))}
         </div>
       )}
@@ -453,11 +587,14 @@ export default function ComptageTab({ shop, token }) {
       {validated && <EcartsView items={counted} />}
 
       {/* Réfs comptées */}
-      {counted.length > 0 && !validated && (
+      {shownCounted.length > 0 && !validated && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>Compté ({counted.length})</div>
-          {counted.map((i) => (
-            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} disabled={validated} />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>
+            Compté ({filterWords.length ? `${shownCounted.length}/${counted.length}` : counted.length})
+          </div>
+          {shownCounted.map((i) => (
+            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} onScan={doScan}
+              highlight={i.product_id === lastId} />
           ))}
         </div>
       )}
@@ -573,15 +710,32 @@ function EcartRow({ item, ecart }) {
   );
 }
 
-/* Ligne produit avec quantité éditable */
-function Row({ item, onSet, muted, disabled }) {
+/* Ligne produit avec quantité éditable : Entrée enregistre, Échap annule */
+function Row({ item, onSet, onScan, muted, disabled, highlight }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(item.counted_qty ?? '');
+  const cancelRef = useRef(false);
   const reason = item.reason && REASON[item.reason];
+  const commit = () => {
+    setEdit(false);
+    if (cancelRef.current) { cancelRef.current = false; return; }
+    const raw = String(v).trim();
+    // La douchette a tapé dans la quantité : c'est un scan, pas 3 760 000 pièces
+    if (looksLikeBarcode(raw)) { onScan?.(raw); return; }
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 0) return;
+    if (item.counted_qty == null || n !== Number(item.counted_qty)) onSet(n);
+  };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+    else if (e.key === 'Escape') { cancelRef.current = true; e.currentTarget.blur(); }
+  };
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#fff',
-      border: `1px solid ${C.greyB}`, borderRadius: 10, marginBottom: 6, opacity: muted ? 0.7 : 1,
+      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+      background: highlight ? '#FFF7E6' : '#fff',
+      border: `${highlight ? 2 : 1}px solid ${highlight ? C.accent : C.greyB}`, borderRadius: 10, marginBottom: 6,
+      opacity: muted && !highlight ? 0.7 : 1,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.name || item.product_id}</div>
@@ -590,8 +744,8 @@ function Row({ item, onSet, muted, disabled }) {
         </div>
       </div>
       {edit && !disabled ? (
-        <input type="number" value={v} autoFocus onChange={(e) => setV(e.target.value)}
-          onBlur={() => { setEdit(false); const n = parseInt(v, 10); if (!Number.isNaN(n)) onSet(n); }}
+        <input type="number" inputMode="numeric" value={v} autoFocus onChange={(e) => setV(e.target.value)}
+          onFocus={(e) => e.target.select()} onKeyDown={onKey} onBlur={commit}
           style={{ width: 70, padding: 8, borderRadius: 8, border: `1px solid ${C.primary}`, fontSize: 16, textAlign: 'right' }} />
       ) : (
         <button onClick={() => !disabled && (setV(item.counted_qty ?? ''), setEdit(true))} disabled={disabled}

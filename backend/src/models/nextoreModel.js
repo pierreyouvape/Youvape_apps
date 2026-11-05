@@ -16,7 +16,7 @@ const { WAREHOUSES } = require('../config/nextore');
 // La logique de déclenchement V2 (seuil/couverture) est portée ici (comme
 // NeedsTabV2), sans délai de réappro (inutile pour les boutiques).
 const { calculateTrendCoefficient } = require('../services/needsCalculator');
-const { splitNextoreBarcodes } = require('../utils/nextoreBarcodes');
+const { splitNextoreBarcodes, normalizeBarcode } = require('../utils/nextoreBarcodes');
 const { activeSql } = require('../utils/nextoreActive');
 const ACTIVE = activeSql('p', 'st');
 const ACTIVE_S = activeSql('p', 's'); // requêtes où le stock s'appelle `s`
@@ -848,7 +848,16 @@ async function getBrandsForShop(warehouseId) {
   return rows;
 }
 
-/** Recherche produit dans une boutique (nom/SKU/EAN + filtres marque/cat/sous-cat). */
+/**
+ * Recherche produit dans une boutique (nom/SKU/EAN + filtres marque/cat/sous-cat).
+ *
+ * `q` se lit MOT PAR MOT : chaque mot doit figurer dans le nom, le code ou la
+ * marque, dans n'importe quel ordre — « razz peach » trouve « RAZZ BAR 30K -
+ * JUICY PEACH ICE ». Un code-barres scanné (valeur exacte, l'un des codes du
+ * produit) suffit seul et passe en tête. Un EAN tapé en partie reste trouvé
+ * à partir de 6 chiffres ; en dessous, « 10 » de « pulp 10 ml » prendrait tous
+ * les EAN où figure « 10 ».
+ */
 async function getProductSearch(warehouseId, opts = {}) {
   const params = [warehouseId];
   const where = ['st.warehouse_id = $1', "(p.name IS NULL OR p.name NOT ILIKE 'produit non cr%')"];
@@ -857,20 +866,29 @@ async function getProductSearch(warehouseId, opts = {}) {
   if (opts.categoryId) { params.push(String(opts.categoryId)); where.push(`p.category_id = $${params.length}`); }
   if (opts.subcategoryId) { params.push(String(opts.subcategoryId)); where.push(`p.subcategory_id = $${params.length}`); }
   if (opts.brand) { params.push(String(opts.brand)); where.push(`p.brand = $${params.length}`); }
+  let exactBarcode = 'false';
   if (opts.q) {
-    params.push(`%${opts.q}%`);
-    const i = params.length;
-    where.push(`(p.name ILIKE $${i} OR p.code ILIKE $${i} OR p.barcode ILIKE $${i} OR p.brand ILIKE $${i})`);
+    const q = String(opts.q).trim().slice(0, 100);
+    params.push(normalizeBarcode(q));
+    exactBarcode = `EXISTS (SELECT 1 FROM nextore_product_barcodes b WHERE b.product_id = p.product_id AND b.barcode = $${params.length})`;
+    const words = q.split(/\s+/).filter(Boolean).slice(0, 8).map((w) => {
+      params.push(`%${w.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+      const i = params.length;
+      const partialEan = /^\d{6,}$/.test(w) ? ` OR p.barcode ILIKE $${i}` : '';
+      return `(concat_ws(' ', p.name, p.code, p.brand) ILIKE $${i}${partialEan})`;
+    });
+    where.push(`(${exactBarcode} OR (${words.join(' AND ')}))`);
   }
   const limit = Math.min(Math.max(parseInt(opts.limit, 10) || 200, 1), 500);
   const { rows } = await pool.query(
     `SELECT p.product_id, p.name, p.code AS sku, p.barcode, p.brand,
-            c.name AS category_name, st.stock::float AS stock, (NOT ${ACTIVE}) AS disabled
+            c.name AS category_name, st.stock::float AS stock, (NOT ${ACTIVE}) AS disabled,
+            ${exactBarcode} AS barcode_match
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
      WHERE ${where.join(' AND ')}
-     ORDER BY p.name ASC LIMIT ${limit}`,
+     ORDER BY ${exactBarcode} DESC, p.name ASC LIMIT ${limit}`,
     params,
   );
   return rows;

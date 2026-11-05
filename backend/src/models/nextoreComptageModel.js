@@ -215,22 +215,24 @@ async function recordCount(comptageId, warehouseId, productId, { qty = 1, mode =
     sRef = await api.getLiveStock(warehouseId, productId);
   }
 
-  let counted;
-  if (mode === 'set') counted = qty;
-  else counted = (existing?.counted_qty != null ? Number(existing.counted_qty) : 0) + qty;
-
-  await pool.query(
+  // L'addition se fait EN BASE : deux scans rapides du même article lisaient le
+  // même « déjà compté » pendant l'appel Nextore du premier, et comptaient 1 au
+  // lieu de 2.
+  const { rows: saved } = await pool.query(
     `INSERT INTO nextore_comptage_items (comptage_id, product_id, s_ref, counted_qty)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (comptage_id, product_id)
-     DO UPDATE SET counted_qty = $4, s_ref = COALESCE(nextore_comptage_items.s_ref, $3)`,
-    [comptageId, productId, sRef, counted],
+     DO UPDATE SET
+       counted_qty = CASE WHEN $5::boolean THEN $4::numeric ELSE COALESCE(nextore_comptage_items.counted_qty, 0) + $4::numeric END,
+       s_ref = COALESCE(nextore_comptage_items.s_ref, $3)
+     RETURNING counted_qty::float AS counted_qty, s_ref::float AS s_ref`,
+    [comptageId, productId, sRef, qty, mode === 'set'],
   );
   const { rows: pinfo } = await pool.query(
     'SELECT name, code AS sku, barcode FROM nextore_products WHERE product_id = $1',
     [productId],
   );
-  return { product_id: productId, counted_qty: counted, s_ref: sRef, ...(pinfo[0] || {}) };
+  return { product_id: productId, counted_qty: saved[0].counted_qty, s_ref: saved[0].s_ref, ...(pinfo[0] || {}) };
 }
 
 /**
