@@ -22,6 +22,20 @@ ssh youvape "ssh youvape@web1.youvape.drakkar.pro \
 `DISABLE_WP_CRON` est actif sur le site (cron système) : le polling n'en dépend pas, la purge si.
 Une tâche `yousync_process_queue` unique, posée par la 1.4.2 avant le déploiement, a survécu au
 nettoyage (course entre deux écritures du cron WP) : sans fonction attachée, elle ne fait rien.
+Elle a disparu au contrôle du 05/11.
+
+**Contrôle à 48 h (05/11/2026, site comparé à notre base, lecture seule) : aucun événement manqué.**
+- 799 commandes modifiées depuis la pose : toutes chez nous, même statut, même total ; pour
+  chacune, la dernière modification a laissé un événement dans la file (aucune laissée au
+  rattrapage). Rattrapage passé sur la route du plugin (`source: plugin`), 0 écart.
+- 139 comptes clients créés : 139 chez nous. 33 573 événements acquittés, 0 `failed`, aucun code.
+- Produits simples et déclinaisons : stock et prix identiques. Les écarts restants viennent de la
+  méthode de comparaison, pas du plugin : le `_price` d'un parent variable est un cache que WC
+  ne tient pas à jour (nous gardons le prix minimal des déclinaisons, juste), et le `_stock`
+  brut d'un pack woosb n'est pas le stock que WC expose (calculé par woosb, que lit aussi la
+  resynchro de 3h). **Pour comparer un stock, lire l'API WC, jamais la méta `_stock`.**
+- Aucun remboursement depuis la pose (le dernier date du 02/11) : chemin pas encore vu en prod.
+- Cron WP du site toujours ~1 h en retard (cron système), sans effet sur le polling.
 
 Mesuré le 30/10/2026 : prod en **1.4.2**, WP 7.1.3, WC **11.2.1**, PHP 8.4, MariaDB 10.11,
 préfixe de tables `hJvjTIOu`, HPOS en compatibilité (`enabled=no`, `data_sync=yes`),
