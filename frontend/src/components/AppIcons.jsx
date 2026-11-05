@@ -271,6 +271,17 @@ export const Inscrits = (props) => (
   </svg>
 );
 
+// Relance code promo : enveloppe + %
+export const RelanceCode = (props) => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <path d="M21 12V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8" />
+    <path d="m3 7 9 6 9-6" />
+    <line x1="22" y1="15" x2="16" y2="21" />
+    <circle cx="16.5" cy="15.5" r=".5" />
+    <circle cx="21.5" cy="20.5" r=".5" />
+  </svg>
+);
+
 // Actions Promos : étiquette de remise (%)
 export const Promos = (props) => (
   <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -516,6 +527,9 @@ export const APPS = [
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
   { key: 'seo', path: '/seo', label: 'Suivi SEO', Icon: Seo, color: '#7C3AED' },
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
+  // Même droit que « Inscrits sans commande » : l'autre extraction d'e-mails pour Probance
+  // (routes/relanceCodeRoutes.js exige `inscrits`). Pas de clé propre dans config/apps.js.
+  { key: 'relance-code', path: '/relance-code', label: 'Relance code promo', Icon: RelanceCode, color: '#0D9488', permissionKey: 'inscrits' },
   { key: 'promos', path: '/promos', label: 'Actions Promos', Icon: Promos, color: '#DB2777' },
   { key: 'boutique-mtp',  path: '/boutique/montpellier', label: 'Boutique Montpellier', Icon: Boutique, color: '#0D9488' },
   { key: 'boutique-cast', path: '/boutique/castelnau',   label: 'Boutique Castelnau',   Icon: Boutique, color: '#C2410C' },

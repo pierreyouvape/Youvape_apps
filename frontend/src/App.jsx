@@ -66,6 +66,7 @@ const TransporteursApp = page('transporteurs', () => import('./pages/Transporteu
 const VeilleApp = page('veille', () => import('./pages/VeilleApp'));
 const SeoApp = page('seo', () => import('./pages/SeoApp'));
 const InscritsApp = page('inscrits', () => import('./pages/InscritsApp'));
+const RelanceCodeApp = page('relance-code', () => import('./pages/RelanceCodeApp'));
 const PromosApp = page('promos', () => import('./pages/PromosApp'));
 const SupplierInvoicesApp = page('factures-fournisseurs', () => import('./pages/SupplierInvoicesApp'));
 const BoutiqueApp = page('boutique', () => import('./pages/BoutiqueApp'));
@@ -116,6 +117,7 @@ const PAGE_TITLES = {
   '/veille': 'Veille concurrentielle',
   '/seo': 'Suivi SEO',
   '/inscrits': 'Inscrits sans commande',
+  '/relance-code': 'Relance code promo',
   '/promos': 'Actions Promos',
   '/stories': 'Stories & Vidéos',
   '/factures-fournisseurs': 'Factures Fournisseurs',
@@ -611,6 +613,14 @@ function App() {
             element={
               <PrivateRoute>
                 <InscritsApp />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/relance-code"
+            element={
+              <PrivateRoute>
+                <RelanceCodeApp />
               </PrivateRoute>
             }
           />

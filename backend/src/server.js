@@ -49,6 +49,7 @@ const competitorRoutes = require('./routes/competitorRoutes');
 const seoRoutes = require('./routes/seoRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
+const relanceCodeRoutes = require('./routes/relanceCodeRoutes');
 const promoRoutes = require('./routes/promoRoutes');
 const nextoreRoutes = require('./routes/nextoreRoutes');
 const processRoutes = require('./routes/processRoutes');
@@ -129,6 +130,7 @@ app.use('/api/competitors', authMiddleware, competitorRoutes); // Veille concurr
 app.use('/api/seo', authMiddleware, seoRoutes); // Suivi SEO (Search Console, droit `seo` dans le routeur)
 app.use('/api/reception', receptionRoutes); // Réception marchandises (auth + permission dans le routeur)
 app.use('/api/inscrits', authMiddleware, inscritsRoutes); // Inscrits sans commande (par jour)
+app.use('/api/relance-code', authMiddleware, relanceCodeRoutes); // Relance code promo : clients n'ayant jamais utilisé un code (droit `inscrits`)
 app.use('/api/promos', authMiddleware, promoRoutes); // Actions Promos (préparation d'opérations)
 app.use('/api/nextore', nextoreRoutes); // Boutiques physiques Nextore (auth + permission dans le routeur)
 app.use('/api/process', processRoutes); // Process — procédures internes (auth + permission dans le routeur)
