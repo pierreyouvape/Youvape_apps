@@ -4,6 +4,8 @@ import axios from 'axios';
 import AppShell from '../components/AppShell';
 import { RelanceCode as RelanceIcon } from '../components/AppIcons';
 import { getCountryFlag, getCountryName } from '../utils/countries';
+import ProbanceTab from '../components/relanceCode/ProbanceTab';
+import SuiviTab from '../components/relanceCode/SuiviTab';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -73,7 +75,11 @@ function Toggle({ value, onChange, options }) {
 const RelanceCodeApp = () => {
   const navigate = useNavigate();
 
+  const [tab, setTab] = useState('liste'); // liste | probance | suivi
   const [code, setCode] = useState('TEAMYOUVAPE');
+  const [saveToSuivi, setSaveToSuivi] = useState(false);
+  const [savedMsg, setSavedMsg] = useState(null);
+  const [suiviKey, setSuiviKey] = useState(0);
   const [ref, setRef] = useState('first');
   const [preset, setPreset] = useState('j21');
   const [minDays, setMinDays] = useState(21);
@@ -126,6 +132,7 @@ const RelanceCodeApp = () => {
   const exportCsv = async () => {
     setExporting(true);
     setError(null);
+    setSavedMsg(null);
     try {
       const res = await axios.get(`${API_URL}/relance-code/export`, { params: params(), responseType: 'blob' });
       const url = URL.createObjectURL(res.data);
@@ -134,6 +141,11 @@ const RelanceCodeApp = () => {
       a.download = `relance_${code.trim().toLowerCase()}_${ref}_${minDays === '' ? '0' : minDays}-${maxDays === '' ? 'tout' : maxDays}j_${localYmd(new Date())}.csv`;
       a.click();
       URL.revokeObjectURL(url);
+      if (saveToSuivi) {
+        const saved = await axios.post(`${API_URL}/relance-code/campaigns`, params());
+        setSavedMsg(`Envoi ajouté au suivi : ${fmtInt(saved.data.campaign.recipients)} client(s).`);
+        setSuiviKey((k) => k + 1);
+      }
     } catch (err) {
       let msg = err.message;
       try { msg = JSON.parse(await err.response.data.text()).error || msg; } catch { /* réponse non JSON */ }
@@ -175,12 +187,40 @@ const RelanceCodeApp = () => {
           </div>
         </section>
 
-        {/* Filtres */}
-        <section style={{ padding: '18px 40px 6px', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end' }}>
-          <div style={field}>
-            <label style={labelStyle}>Code promo jamais utilisé</label>
+        {/* Onglets + code promo (commun aux trois) */}
+        <section style={{ padding: '14px 40px 0', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end', justifyContent: 'space-between', borderBottom: `1px solid ${C.grisCL}`, background: C.blanc }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {[
+              { k: 'liste', label: "Liste depuis l'app" },
+              { k: 'probance', label: 'Nettoyer un fichier Probance' },
+              { k: 'suivi', label: 'Clients fidélisés' },
+            ].map((t) => (
+              <button
+                key={t.k}
+                type="button"
+                onClick={() => setTab(t.k)}
+                style={{
+                  padding: '10px 16px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13.5, fontWeight: 700,
+                  color: tab === t.k ? C.accent : C.grisF,
+                  borderBottom: `3px solid ${tab === t.k ? C.accent : 'transparent'}`,
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ ...field, paddingBottom: 8 }}>
+            <label style={labelStyle}>Code promo</label>
             <input type="text" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} style={{ ...inputStyle, width: 160, fontWeight: 700 }} />
           </div>
+        </section>
+
+        {tab === 'probance' && <ProbanceTab code={code} onSaved={() => setSuiviKey((k) => k + 1)} />}
+        {tab === 'suivi' && <SuiviTab refreshKey={suiviKey} />}
+
+        {tab === 'liste' && (<>
+        {/* Filtres */}
+        <section style={{ padding: '18px 40px 6px', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-end' }}>
           <div style={field}>
             <label style={labelStyle}>Date comptée</label>
             <Toggle value={ref} onChange={setRef} options={REFS} />
@@ -258,6 +298,15 @@ const RelanceCodeApp = () => {
           </button>
         </section>
 
+        <section style={{ padding: '4px 40px 0', display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center', fontSize: 12.5, color: C.grisF }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 600, color: C.grisTF }}>
+            <input type="checkbox" checked={saveToSuivi} onChange={(e) => setSaveToSuivi(e.target.checked)} />
+            Ajouter l'export au suivi des clients fidélisés (envoi daté de maintenant)
+          </label>
+          {saveToSuivi && <span>Cette liste contient aussi les non-abonnés : pour un suivi exact, passe plutôt par « Nettoyer un fichier Probance ».</span>}
+          {savedMsg && <span style={{ color: C.vert, fontWeight: 700 }}>✓ {savedMsg}</span>}
+        </section>
+
         <section style={{ padding: '6px 40px 0' }}>
           <div style={{ background: C.blanc, border: `1px solid ${C.grisCL}`, color: C.grisF, borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
             Un client = une adresse e-mail, sur ses commandes payées. Sont exclus : ceux qui ont déjà utilisé
@@ -320,6 +369,7 @@ const RelanceCodeApp = () => {
             </div>
           )}
         </section>
+        </>)}
       </main>
     </AppShell>
   );

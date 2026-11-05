@@ -5,7 +5,7 @@
  */
 
 const assert = require('assert');
-const { _test: { parseFilters, csvField } } = require('../src/controllers/relanceCodeController');
+const { _test: { parseFilters, csvField, parseSentAt } } = require('../src/controllers/relanceCodeController');
 const { buildQuery } = require('../src/models/relanceCodeModel');
 
 let failures = 0;
@@ -64,6 +64,41 @@ test('CSV : point-virgule, guillemets, retour ligne et formule neutralisés', ()
   assert.strictEqual(csvField('a\nb'), 'a b');
   assert.strictEqual(csvField('=HYPERLINK(1)'), "'=HYPERLINK(1)");
   assert.strictEqual(csvField(null), '');
+});
+
+const { readCsv, writeCsv } = require('../src/utils/csvRecords');
+
+test('CSV Probance UTF-8 avec BOM : colonne trouvée, lignes recopiées à l’octet près', () => {
+  const src = Buffer.from('﻿id;Prénom;EMAIL;optin\r\n1;Hélène;Helene@Mail.fr ;1\r\n2;"Jo; ""Le"" Boss";jo@x.fr;1\r\n', 'utf8');
+  const csv = readCsv(src);
+  assert.strictEqual(csv.delimiter, ';');
+  assert.strictEqual(csv.emailColumn, 'EMAIL');
+  assert.deepStrictEqual(csv.rows.map((r) => r.email), ['helene@mail.fr', 'jo@x.fr']);
+  assert.ok(writeCsv(csv).equals(src), 'fichier réécrit identique');
+  const out = writeCsv({ ...csv, rows: csv.rows.slice(1) }).toString('utf8');
+  assert.strictEqual(out, '﻿id;Prénom;EMAIL;optin\r\n2;"Jo; ""Le"" Boss";jo@x.fr;1\r\n');
+});
+
+test('CSV Windows-1252, virgules, retour ligne dans un champ', () => {
+  const src = Buffer.concat([Buffer.from('mail,nom\n"a@b.fr","Ren'), Buffer.from([0xe9]), Buffer.from('\nsuite"\nc@d.com,X\n')]);
+  const csv = readCsv(src);
+  assert.strictEqual(csv.delimiter, ',');
+  assert.strictEqual(csv.rows.length, 2);
+  assert.ok(writeCsv(csv).equals(src));
+});
+
+test('CSV sans en-tête et fichier sans adresse', () => {
+  const csv = readCsv(Buffer.from('a@b.fr;1\nc@d.fr;0\n'));
+  assert.strictEqual(csv.header, null);
+  assert.strictEqual(csv.rows.length, 2);
+  assert.throws(() => readCsv(Buffer.from('nom;ville\nJo;Paris\n')), /colonne/);
+});
+
+test("date d'envoi : jour seul, jour et heure, refus du reste", () => {
+  assert.strictEqual(parseSentAt('2026-11-05'), '2026-11-05 00:00:00');
+  assert.strictEqual(parseSentAt('2026-11-05T10:30'), '2026-11-05 10:30:00');
+  assert.strictEqual(parseSentAt(''), null);
+  assert.throws(() => parseSentAt("2026-11-05'; drop"));
 });
 
 if (failures) {
