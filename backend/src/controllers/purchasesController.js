@@ -292,6 +292,7 @@ const purchasesController = {
         supplier_id: req.query.supplier_id ? parseInt(req.query.supplier_id) : null,
         status: req.query.status || null,
         exclude_status: req.query.exclude_status ? req.query.exclude_status.split(',') : null,
+        active: req.query.active === '1',
         search: req.query.search?.trim() || null,
         from_date: req.query.from_date || null,
         to_date: req.query.to_date || null,

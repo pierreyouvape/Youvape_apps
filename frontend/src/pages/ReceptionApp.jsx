@@ -60,10 +60,48 @@ const PREF_KEY = 'yv.reception.askBarcodeType';
 // `large` : version agrandie d'un quart, réservée à l'écran de COMPTAGE — celui
 // qu'on lit debout, douchette en main, à un mètre de l'écran. Les listes de bons
 // et le détail d'un bon gardent la taille normale.
-function Th({ children, align = 'left', width, large }) {
-  return <th style={{ padding: large ? '14px 20px' : '12px 16px', textAlign: align, width, fontWeight: 700, color: C.greyT,
+// `sort` (facultatif) : { dir, onClick } — en-tête cliquable, flèche si la
+// colonne trie la liste (`dir` = 'asc' | 'desc'), estompée sinon.
+function Th({ children, align = 'left', width, large, sort }) {
+  return <th onClick={sort ? sort.onClick : undefined}
+    style={{ padding: large ? '14px 20px' : '12px 16px', textAlign: align, width, fontWeight: 700,
+    color: sort && sort.dir ? C.primary : C.greyT,
     fontSize: large ? 14 : 11.5, textTransform: 'uppercase', letterSpacing: 0.3,
-    borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap' }}>{children}</th>;
+    borderBottom: `2px solid ${C.greyB}`, background: C.grey, whiteSpace: 'nowrap',
+    cursor: sort ? 'pointer' : undefined, userSelect: sort ? 'none' : undefined }}>
+    {children}
+    {sort && <span style={{ marginLeft: 4, opacity: sort.dir ? 1 : 0.35 }}>
+      {sort.dir === 'asc' ? '▲' : '▼'}
+    </span>}
+  </th>;
+}
+
+// Tri de la liste des bons. Sans tri choisi, l'ordre du serveur (livraison
+// prévue la plus proche d'abord). Une valeur absente va toujours en fin de liste.
+const ORDER_SORTS = {
+  order_number: o => o.order_number,
+  supplier_name: o => o.supplier_name,
+  qty_expected: o => o.qty_expected,
+  qty_received: o => o.qty_received,
+  total_amount: o => (o.total_amount == null ? null : Number(o.total_amount)),
+  order_date: o => (o.order_date ? new Date(o.order_date).getTime() : null),
+  expected_date: o => {
+    const d = o.expected_date || o.order_date;
+    return d ? new Date(d).getTime() : null;
+  },
+};
+function sortOrders(list, key, dir) {
+  const get = ORDER_SORTS[key];
+  if (!get) return list;
+  const sens = dir === 'asc' ? 1 : -1;
+  return [...list].sort((a, b) => {
+    const va = get(a), vb = get(b);
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') return sens * va.localeCompare(vb, 'fr', { numeric: true });
+    return sens * (va - vb);
+  });
 }
 function Td({ children, align = 'left', bold, color, style, large }) {
   return <td style={{ padding: large ? '15px 20px' : '12px 16px', textAlign: align, color: color || C.dark,
@@ -239,6 +277,22 @@ function OrdersList({ token, onOpen }) {
   const [supplierId, setSupplierId] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
+
+  // Premier clic : les dates et les nombres du plus récent / plus grand, le
+  // texte de A à Z. Clic suivant sur la même colonne : sens inverse.
+  const sortBy = (key) => ({
+    dir: sortKey === key ? sortDir : null,
+    onClick: () => {
+      if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+      else {
+        setSortKey(key);
+        setSortDir(['order_number', 'supplier_name'].includes(key) ? 'asc' : 'desc');
+      }
+    },
+  });
+  const shown = sortOrders(orders, sortKey, sortDir);
 
   useEffect(() => {
     axios.get(`${API_URL}/reception/suppliers`, authHeaders(token))
@@ -293,20 +347,21 @@ function OrdersList({ token, onOpen }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <Th>N° de commande</Th>
+                <Th sort={sortBy('order_number')}>N° de commande</Th>
                 {/* La réf libre de BMS, juste après le numéro comme là-bas :
                     c'est elle qui dit « Précommande JNr 50ml » là où le numéro
                     ne dit rien. */}
                 <Th>Réf fournisseur</Th>
-                <Th>Fournisseur</Th>
+                <Th sort={sortBy('supplier_name')}>Fournisseur</Th>
                 <Th>Statut</Th>
                 <Th align="right">Lignes</Th>
-                <Th align="right">Attendu</Th>
-                <Th align="right">Reçu</Th>
+                <Th align="right" sort={sortBy('qty_expected')}>Attendu</Th>
+                <Th align="right" sort={sortBy('qty_received')}>Reçu</Th>
                 {/* Le montant donne l'ordre de grandeur de ce qui arrive. « TTC »
                     est écrit : un montant sans son régime se lit de travers. */}
-                <Th align="right">Montant TTC</Th>
-                <Th>Livraison prévue</Th>
+                <Th align="right" sort={sortBy('total_amount')}>Montant TTC</Th>
+                <Th sort={sortBy('order_date')}>Date commande</Th>
+                <Th sort={sortBy('expected_date')}>Livraison prévue</Th>
                 <Th />
               </tr>
             </thead>
@@ -315,11 +370,11 @@ function OrdersList({ token, onOpen }) {
                 <tr><Td align="center" style={{ padding: 40, color: C.greyT }}>Chargement…</Td></tr>
               )}
               {!loading && orders.length === 0 && (
-                <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: C.greyT, fontSize: 14 }}>
+                <tr><td colSpan={11} style={{ padding: 40, textAlign: 'center', color: C.greyT, fontSize: 14 }}>
                   Aucune commande en attente de réception.
                 </td></tr>
               )}
-              {!loading && orders.map((o, idx) => {
+              {!loading && shown.map((o, idx) => {
                 const st = STATUS_LABEL[o.status] || { label: o.status, color: C.greyT, bg: C.grey };
                 return (
                   <tr key={o.id} onClick={() => onOpen(o.id)}
@@ -346,6 +401,7 @@ function OrdersList({ token, onOpen }) {
                     <Td align="right">
                       {fmtEur(o.total_amount)}{o.total_amount > 0 && !o.bms_po_id ? ' HT' : ''}
                     </Td>
+                    <Td>{fmtDate(o.order_date)}</Td>
                     <Td>{fmtDate(o.expected_date || o.order_date)}</Td>
                     <Td align="right"><Btn small variant="ghost">Ouvrir</Btn></Td>
                   </tr>

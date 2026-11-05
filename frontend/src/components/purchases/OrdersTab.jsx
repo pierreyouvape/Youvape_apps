@@ -217,7 +217,7 @@ const OrdersTab = ({ token }) => {
       const params = new URLSearchParams();
       if (filterSupplier) params.append('supplier_id', filterSupplier);
       if (filterStatus === 'active') {
-        params.append('exclude_status', 'received,completed,cancelled');
+        params.append('active', '1');
       } else if (filterStatus) {
         params.append('status', filterStatus);
       }

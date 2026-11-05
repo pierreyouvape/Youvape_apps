@@ -4,6 +4,7 @@ const parserRegistry = require('../parsers');
 const supplierRefModel = require('./supplierRefModel');
 const { normalizeVerifiedPrice } = require('../utils/verifiedPrice');
 const receptionSessionModel = require('./receptionSessionModel');
+const { RECEPTION_INCOMPLETE } = require('../utils/receptionScope');
 
 // Warehouse ID principal BMS (Entrepot)
 const BMS_WAREHOUSE_ID = 270;
@@ -113,6 +114,15 @@ const purchaseOrderModel = {
       const placeholders = filters.exclude_status.map(() => `$${paramIndex++}`).join(', ');
       query += ` AND po.status NOT IN (${placeholders})`;
       values.push(...filters.exclude_status);
+    }
+
+    // « Actives » : ni reçue, ni terminée, ni annulée — SAUF une commande que
+    // BMS a close alors qu'il lui manque des pièces chez nous et qu'on n'a pas
+    // soldée : elle est encore à l'écran Réception, elle doit être ici aussi
+    // (LCA 364512, close par BMS le 05/11/2026 avec 785 pièces en reliquat).
+    if (filters.active) {
+      query += ` AND (po.status NOT IN ('received', 'completed', 'cancelled')
+                      OR (po.status <> 'cancelled' AND ${RECEPTION_INCOMPLETE}))`;
     }
 
     if (filters.from_date) {
