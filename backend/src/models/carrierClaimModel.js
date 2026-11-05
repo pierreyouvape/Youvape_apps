@@ -183,9 +183,9 @@ const setIndemnity = async (claimId, status, userId) => {
   const { rows: [row] } = await pool.query(
     `WITH before AS (SELECT id, indemnity_status FROM carrier_claims WHERE id = $1)
      UPDATE carrier_claims c
-        SET indemnity_status = $2,
-            indemnity_at = CASE WHEN $2::text IS NULL THEN NULL ELSE NOW() END,
-            indemnity_by = CASE WHEN $2::text IS NULL THEN NULL ELSE $3::int END
+        SET indemnity_status = $2::varchar,
+            indemnity_at = CASE WHEN $2::varchar IS NULL THEN NULL ELSE NOW() END,
+            indemnity_by = CASE WHEN $2::varchar IS NULL THEN NULL ELSE $3::int END
        FROM before
       WHERE c.id = before.id
      RETURNING c.*, before.indemnity_status AS previous_status`,
