@@ -315,6 +315,74 @@ function PointRelais({ order, token, onChange }) {
   );
 }
 
+/* ─── AVOIR FRAIS DE PORT ────────────────────────────────── */
+// Port TTC rendu en points WPLoyalty (100 pts = 1 €), une fois par commande.
+// Le serveur calcule le montant et dit pourquoi le bouton est grisé (port
+// offert, déjà rendu par un retour ou un remboursement…). Une fois fait, le
+// bouton laisse place au badge.
+function AvoirFraisPort({ order, token, onChange }) {
+  const { canWrite } = usePermissions('tickets');
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState('');
+  const etat = order.shipping_credit;
+  if (!etat) return null;
+
+  const euros = (n) => `${Number(n).toFixed(2).replace('.', ',')} €`;
+
+  if (etat.credit) {
+    const c = etat.credit;
+    return (
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+        <span style={{
+          background: `${C.vert}18`, border: `1px solid ${C.vert}55`, color: '#2f8a48',
+          padding: '4px 12px', borderRadius: 12, fontSize: 12.5, fontWeight: 700,
+        }}>
+          Avoir frais de port : {c.points} pts ({euros(c.amount_ttc)})
+        </span>
+        <span style={{ fontSize: 11.5, color: C.grisM }}>
+          {c.by ? `Par ${c.by} le ` : 'Le '}{formatDateUTC(c.at)} · {c.email}
+        </span>
+      </div>
+    );
+  }
+
+  const raison = etat.blocked || (!canWrite ? 'Droit SAV (écriture) requis.' : null);
+  const crediter = async () => {
+    if (!window.confirm(`Créditer ${etat.points} points (${euros(etat.shipping_ttc)}) à ${order.billing_email} ?\nMotif : Avoir frais de port commande N°${order.wp_order_id}`)) return;
+    setEnvoi(true); setErreur('');
+    try {
+      const res = await axios.post(`${API_URL}/orders/${order.wp_order_id}/shipping-credit`, {},
+        token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+      onChange(res.data.data);
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Crédit impossible');
+      if (err.response?.status === 409) {
+        // État changé entre-temps (déjà fait ailleurs) : on relit.
+        axios.get(`${API_URL}/orders/${order.wp_order_id}`).then(r => onChange(r.data.data?.shipping_credit)).catch(() => {});
+      }
+    } finally {
+      setEnvoi(false);
+    }
+  };
+
+  const off = !!raison || envoi;
+  return (
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+      <button type="button" onClick={crediter} disabled={off} title={raison || undefined} style={{
+        padding: '6px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
+        cursor: off ? 'not-allowed' : 'pointer',
+        background: C.blanc, color: off ? C.grisM : C.saphir, border: `1px solid ${off ? C.grisCL : C.saphir}`,
+      }}>
+        {envoi ? 'Crédit…' : etat.points > 0
+          ? `Avoir frais de port en points (${euros(etat.shipping_ttc)} → ${etat.points} pts)`
+          : 'Avoir frais de port en points'}
+      </button>
+      {raison && <span style={{ fontSize: 11.5, color: C.grisM }}>{raison}</span>}
+      {erreur && <span style={{ fontSize: 12, color: C.rouge, fontWeight: 600 }}>{erreur}</span>}
+    </div>
+  );
+}
+
 /* ─── BLOCAGE PICKING ────────────────────────────────────── */
 // Une commande entrée dans une vague ne figure plus dans les listes du Picking :
 // c'est d'ici qu'on la bloque. Le serveur la sort de sa vague, et le packing
@@ -539,6 +607,7 @@ const OrderDetail = () => {
   // Point relais saisi ou retiré : mise à jour sur place, sans recharger la fiche.
   const majPointSaisi = (point) => setOrder(o => ({ ...o, relay_point_manual: point }));
   const majPicking = (picking) => setOrder(o => ({ ...o, picking }));
+  const majAvoirPort = (etat) => setOrder(o => ({ ...o, shipping_credit: etat ?? o.shipping_credit }));
 
   /* ── États de chargement ── */
   if (loading) {
@@ -1141,6 +1210,7 @@ const OrderDetail = () => {
                     <TotalLine label="Total TTC net" value={fmt(orderTotal - totalRefunded)} color={C.vert} bold separator />
                   </>
                 )}
+                <AvoirFraisPort order={order} token={token} onChange={majAvoirPort} />
               </div>
             </div>
           </Card>

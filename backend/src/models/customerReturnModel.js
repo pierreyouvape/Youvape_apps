@@ -586,6 +586,7 @@ const get = async (id) => {
     suppliers,
     refunds,
     shipping_paid: shippingPaid,
+    shipping_blocked: r.loyalty_shipping > 0 ? null : await shippingAlreadyCredited(r.wp_order_id, r.id),
     suggested_points: {
       lines: suggestPoints(lines),
       withShipping: suggestPoints(lines, { shippingPaid, withShipping: true }),
@@ -1200,7 +1201,7 @@ const cancelOutcome = async (id, user) => {
   await pool.query(
     `UPDATE customer_returns
         SET outcome = NULL, outcome_ref = NULL, treated_at = NULL, treated_by = NULL,
-            replacement_order_id = NULL, loyalty_points = NULL, loyalty_credited_at = NULL,
+            replacement_order_id = NULL, loyalty_points = NULL, loyalty_credited_at = NULL, loyalty_shipping = NULL,
             refund_wp_id = NULL, refund_amount = NULL, reship_label_id = NULL,
             status = CASE WHEN received_at IS NOT NULL THEN 'recu' ELSE 'attente' END
       WHERE id = $1`,
@@ -1226,12 +1227,33 @@ const cancelOutcome = async (id, user) => {
  * appel ; `loyalty_credited_at` reste vide, l'app ne les retirera donc pas
  * d'elle-même si l'issue est annulée.
  */
+/**
+ * Le port de la commande a-t-il déjà été rendu en points ? Par la fiche
+ * commande (`order_shipping_credits`) ou par un autre retour « + port ».
+ * @returns {string|null} la raison, pour le message et la case grisée.
+ */
+const shippingAlreadyCredited = async (wpOrderId, returnId) => {
+  const { rows: [byOrder] } = await pool.query('SELECT 1 FROM order_shipping_credits WHERE wp_order_id = $1', [wpOrderId]);
+  if (byOrder) return 'port déjà rendu en points depuis la fiche commande';
+  const { rows: [byReturn] } = await pool.query(
+    `SELECT id FROM customer_returns
+      WHERE wp_order_id = $1 AND id <> $2 AND cancelled_at IS NULL AND loyalty_shipping > 0
+      ORDER BY id LIMIT 1`,
+    [wpOrderId, returnId]
+  );
+  return byReturn ? `port déjà rendu en points par le retour n°${byReturn.id}` : null;
+};
+
 const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => {
   const r = await loadForAction(id);
   if (!manual && !r.billing_email) throw httpError(400, 'Commande sans email client.');
   if (r.loyalty_credited_at) throw httpError(409, 'Points déjà crédités pour ce retour.');
   const deduct = Number(String(deductEuros ?? 0).replace(',', '.'));
   if (!Number.isFinite(deduct) || deduct < 0 || deduct > 10000) throw httpError(400, 'Montant à déduire invalide.');
+  if (withShipping) {
+    const already = await shippingAlreadyCredited(r.wp_order_id, id);
+    if (already) throw httpError(409, `Frais de port impossibles : ${already}.`);
+  }
 
   const { rows: lines } = await pool.query('SELECT qty, unit_paid FROM customer_return_lines WHERE return_id = $1', [id]);
   const { rows: [o] } = await pool.query(
@@ -1246,7 +1268,7 @@ const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => 
 
   if (manual) {
     const detail = `${b.points} points (${breakdownText(b)}) crédités à la main`;
-    await markTreated(id, user.id, 'points', detail.slice(0, 255));
+    await markTreated(id, user.id, 'points', detail.slice(0, 255), ', loyalty_shipping = $5', [b.shipping || null]);
     await noteTicket(r.ticket_id, user, [
       `<strong>Retour n°${id} — avoir commande N°${r.wp_order_id} : ${escapeHtml(detail)}</strong> dans WPLoyalty${r.billing_email ? ` (${escapeHtml(r.billing_email)})` : ''}`,
     ]);
@@ -1255,9 +1277,9 @@ const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => 
 
   // Verrou avant l'appel : un double clic ne crédite pas deux fois.
   const { rowCount } = await pool.query(
-    `UPDATE customer_returns SET loyalty_points = $2, loyalty_credited_at = NOW()
+    `UPDATE customer_returns SET loyalty_points = $2, loyalty_credited_at = NOW(), loyalty_shipping = $3
       WHERE id = $1 AND loyalty_credited_at IS NULL AND cancelled_at IS NULL`,
-    [id, b.points]
+    [id, b.points, b.shipping || null]
   );
   if (!rowCount) throw httpError(409, 'Points déjà crédités pour ce retour.');
   try {
@@ -1265,7 +1287,7 @@ const creditPoints = async (id, { withShipping, deductEuros, manual }, user) => 
       type: 'avoir', note: `Avoir commande N°${r.wp_order_id}`, orderId: r.wp_order_id,
     });
   } catch (error) {
-    await pool.query('UPDATE customer_returns SET loyalty_points = NULL, loyalty_credited_at = NULL WHERE id = $1', [id]);
+    await pool.query('UPDATE customer_returns SET loyalty_points = NULL, loyalty_credited_at = NULL, loyalty_shipping = NULL WHERE id = $1', [id]);
     const detail = error.response?.data?.message || error.message;
     throw httpError(422, `WPLoyalty a refusé le crédit : ${detail}`);
   }

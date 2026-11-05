@@ -349,6 +349,13 @@ L'API WPLoyalty d'origine range tout sous « REST API » et ignore tout motif.
   juger un appel sur son seul statut HTTP (avant le 15/10, un retrait refusé passait pour fait).
 - Un retrait est plafonné au solde : la réponse donne `points` réellement retirés.
 
+**Avoir frais de port** (fiche `/orders/:id`, Totaux — 05/11/2026) : port TTC × 100 points, type
+`avoir`, motif « Avoir frais de port commande N°… », droit `tickets` écriture,
+`orderShippingCreditModel`. **Une seule fois par commande** (`order_shipping_credits.UNIQUE`) et
+jamais en plus d'un retour « + port » (`customer_returns.loyalty_shipping`, bloqué dans les deux
+sens) ni d'un port remboursé dans WC (`refund_items.item_type = 'shipping'`). Note privée sur le
+ticket SAV le plus récent de la commande, s'il existe.
+
 ### Plugin `youvape-logistique` : ses réglages depuis l'app (27/10/2026, révisé le 30/10)
 
 Le plugin (racine du dépôt, **pas encore installé**, activé le jour de la sortie de BMS) gère tous

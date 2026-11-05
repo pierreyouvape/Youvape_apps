@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ordersController = require('../controllers/ordersController');
+const { checkPermission } = require('../middleware/permissionMiddleware');
 
 // Liste et recherche
 router.get('/', ordersController.getAll);
@@ -29,5 +30,7 @@ router.put('/:id/relay-point', ordersController.setRelayPoint);
 router.delete('/:id/relay-point', ordersController.clearRelayPoint);
 router.post('/reimport-incomplete', ordersController.reimportIncomplete);
 router.post('/:id/reimport', ordersController.reimport);
+// Avoir des frais de port en points fidélité (même droit que les avoirs des Retours)
+router.post('/:id/shipping-credit', checkPermission('tickets', 'write'), ordersController.creditShipping);
 
 module.exports = router;

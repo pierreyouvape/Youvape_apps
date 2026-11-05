@@ -5,6 +5,7 @@ const shipmentTrackingModel = require('../models/shipmentTrackingModel');
 const { STATES: TRACKING_STATES } = require('../services/tracking/states');
 const shippingMethodMapModel = require('../models/shippingMethodMapModel');
 const pickingModel = require('../models/pickingModel');
+const orderShippingCreditModel = require('../models/orderShippingCreditModel');
 const { relayNetworks, expectedNetwork, buildManualRelayPoint } = require('../services/carriers/relayPoints');
 const advancedFilterService = require('../services/advancedFilterService');
 const pool = require('../config/database');
@@ -106,6 +107,14 @@ exports.getById = async (req, res) => {
     } catch (pickingError) {
       console.error('Error getting picking state for order:', pickingError.message);
       order.picking = null;
+    }
+
+    // Avoir des frais de port en points : bouton et badge des Totaux.
+    try {
+      order.shipping_credit = await orderShippingCreditModel.getState(order.wp_order_id);
+    } catch (creditError) {
+      console.error('Error getting shipping credit for order:', creditError.message);
+      order.shipping_credit = null;
     }
 
     res.json({ success: true, data: order });
@@ -781,3 +790,17 @@ exports.reimportIncomplete = async (req, res) => {
 
 // Export interne pour le service de sync
 exports.reimportIncompleteOrders = reimportIncompleteOrders;
+
+/**
+ * Avoir des frais de port TTC en points WPLoyalty (droit tickets en écriture).
+ * POST /api/orders/:id/shipping-credit — le serveur calcule le montant.
+ */
+exports.creditShipping = async (req, res) => {
+  try {
+    const state = await orderShippingCreditModel.credit(parseInt(req.params.id, 10), req.user);
+    res.json({ success: true, data: state });
+  } catch (error) {
+    if (!error.statusCode) console.error('Error crediting shipping:', error);
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
+  }
+};

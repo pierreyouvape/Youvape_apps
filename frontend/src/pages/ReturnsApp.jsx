@@ -713,7 +713,9 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
   const [editing, setEditing] = useState(!ret.treated_at);
   const [outcome, setOutcome] = useState(ret.outcome || '');
   const [ref, setRef] = useState(ret.outcome_ref || '');
-  const [withShipping, setWithShipping] = useState(false);
+  const [withShippingChecked, setWithShipping] = useState(false);
+  // Port déjà rendu en points (fiche commande ou autre retour) : case grisée.
+  const withShipping = withShippingChecked && !ret.shipping_blocked;
   const [deduct, setDeduct] = useState('');
   const [replacementOpen, setReplacementOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -850,9 +852,14 @@ function OutcomePanel({ ret, canWrite, onDone, setMessage }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
                 {ret.shipping_paid > 0 && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={withShipping} onChange={e => setWithShipping(e.target.checked)} />
+                  <label
+                    title={ret.shipping_blocked ? `Impossible : ${ret.shipping_blocked}` : undefined}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5, cursor: ret.shipping_blocked ? 'not-allowed' : 'pointer', opacity: ret.shipping_blocked ? 0.5 : 1 }}
+                  >
+                    <input type="checkbox" checked={withShipping} disabled={!!ret.shipping_blocked}
+                      onChange={e => setWithShipping(e.target.checked)} />
                     + frais de port ({euro(ret.shipping_paid)})
+                    {ret.shipping_blocked && <span style={{ fontSize: 12, color: '#8A99A4' }}>— {ret.shipping_blocked}</span>}
                   </label>
                 )}
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13.5 }}>
