@@ -1308,7 +1308,7 @@ const NeedsTab = ({ token, onCompactChange }) => {
                     {isVisible('verified_price') && <td className="text-right">{renderVerifiedPrice(row)}</td>}
                     {isVisible('discounted_price') && (
                       row.discounted_price != null
-                        ? <td className="text-right" style={{ color: '#059669', fontWeight: 600, whiteSpace: 'nowrap' }} title={row.price != null ? `Prix de vente ${row.price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € TTC` : undefined}>{row.discounted_price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</td>
+                        ? <td className="text-right" style={{ color: '#059669', fontWeight: 600, whiteSpace: 'nowrap' }} title={(row.regular_price ?? row.price) != null ? `Prix de vente ${parseFloat(row.regular_price ?? row.price).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} € TTC` : undefined}>{row.discounted_price.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</td>
                         : <td className="text-right" style={{ color: '#9ca3af' }}>—</td>
                     )}
                     <td><code style={{ fontSize: '12px' }}>{row.sku || '-'}</code></td>

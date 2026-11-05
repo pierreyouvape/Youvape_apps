@@ -378,8 +378,14 @@ const needsCalculationModel = {
       sub_category: p.sub_category || null,
       weight: p.weight ? parseFloat(p.weight) : null,
       price: p.price != null ? parseFloat(p.price) : null,
-      // Tarif remisé Woo Discount Rules (TTC), NULL = aucune remise active
-      discounted_price: p.discounted_price != null ? parseFloat(p.discounted_price) : null
+      // Tarif remisé (TTC), NULL = aucune remise active. Woo Discount Rules en
+      // priorité (calculé sur le prix courant, donc promo WC déjà incluse) ; à
+      // défaut, le prix promo WooCommerce (prix courant < prix normal).
+      discounted_price: p.discounted_price != null
+        ? parseFloat(p.discounted_price)
+        : (p.price != null && p.regular_price != null && parseFloat(p.price) > 0
+            && parseFloat(p.price) < parseFloat(p.regular_price)
+            ? parseFloat(p.price) : null)
     }));
   },
 
