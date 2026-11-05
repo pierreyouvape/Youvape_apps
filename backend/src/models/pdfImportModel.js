@@ -321,6 +321,7 @@ const pdfImportModel = {
       line: {
         ...line,
         dbPrice: line.dbPrice != null ? line.dbPrice : costPerLineUnit,
+        refPriceRetained,
         refPack,
         bmsPack,
       },
@@ -419,6 +420,9 @@ const pdfImportModel = {
         // remplace pas par le tarif validé d'une commande passée.
         document_discount: Boolean(item.document_discount),
         supplier_price: line.dbPrice,
+        // Tarif de réf « retenu » (relevé sur une facture et validé par l'acheteur) :
+        // l'écran d'import ne le remplace pas par le dernier prix validé.
+        ref_price_retained: Boolean(match && match.price_retained_at && match.pack_price != null),
         unit_price: line.unitPrice,
         // Pack : facteur appliqué à la quantité du document
         pack_qty: line.packQty,

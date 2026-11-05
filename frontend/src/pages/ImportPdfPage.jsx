@@ -201,6 +201,18 @@ const ImportPdfPage = () => {
         if (item.document_discount) return item;
         const v = data[item.product_id];
         if (!v) return item;
+        // Tarif de réf RETENU (relevé sur une facture, « Retenir ce tarif ») : il
+        // fait autorité, le dernier prix validé ne passe pas devant.
+        if (item.ref_price_retained && item.supplier_price != null) {
+          return { ...item, unit_price: item.supplier_price, discount: 0, verifiedApplied: true };
+        }
+        // Dernier prix validé plus cher que le tarif de la réf : c'est souvent un
+        // surcoût du fournisseur validé sans le voir, qu'on recopierait de commande
+        // en commande. Proforma GFC P26111102 : Cebueno 100ml à 6,50 € (validé sur
+        // les commandes précédentes) au lieu des 5,90 € de la réf, et le contrôle de
+        // facture ne relevait plus rien. On laisse effectivePrice retenir le moins
+        // cher du document et de la réf ; le bouton reste là pour l'appliquer.
+        if (item.supplier_price != null && v.unit_price > item.supplier_price + 0.0001) return item;
         // Tarif validé net → on le pose comme prix et on annule la remise
         return { ...item, unit_price: v.unit_price, discount: 0, verifiedApplied: true };
       }));
@@ -350,6 +362,7 @@ const ImportPdfPage = () => {
         pack_qty: line.packQty,
         qty_ordered: line.qtyOrdered,
         supplier_price: line.dbPrice,
+        ref_price_retained: Boolean(line.refPriceRetained),
         unit_price: it.priceEdited ? it.unit_price : (line.pdfGross ?? line.dbPrice ?? null),
         verifiedApplied: false,
       };
