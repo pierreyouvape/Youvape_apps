@@ -10,7 +10,7 @@ import PeriodFilter, { computeDateRange, dateParams } from './PeriodFilter';
 import { BrandScopeSelect, useCatalogOptions, scopeToParams } from './ScopeFilter';
 import ProductSegmentBuilder from './ProductSegmentBuilder';
 import { CATEGORY_FILTER_FIELDS } from './segmentFields';
-import MonthlyPivotTable from './MonthlyPivotTable';
+import MonthlyPivotTable, { ShareCell } from './MonthlyPivotTable';
 
 const API_BASE_URL = '/api';
 
@@ -30,6 +30,7 @@ const CATEGORIES_COLUMNS = [
   { key: 'qty_sold',           label: 'Qte Vendue' },
   { key: 'ca_ttc',             label: 'CA TTC' },
   { key: 'ca_ht',              label: 'CA HT' },
+  { key: 'ca_share',       label: '% du CA' },
   { key: 'cost_ht',            label: 'Cout HT' },
   { key: 'margin_ht',          label: 'Marge HT' },
   { key: 'margin_percent',     label: '% Marge' },
@@ -163,7 +164,12 @@ const CategoriesStatsTab = () => {
   };
 
   // Filtrer par recherche
-  const withSales = categories.filter(hasSales);
+  // Part de chaque ligne dans le CA TTC de la période (toutes les lignes, avant la recherche,
+  // pour qu'un filtre texte ne gonfle pas les parts)
+  const salesRows = categories.filter(hasSales);
+  const caTotalAll = salesRows.reduce((s, r) => s + parseFloat(r.ca_ttc || 0), 0);
+  const caShare = (ca) => (caTotalAll > 0 ? (parseFloat(ca || 0) / caTotalAll) * 100 : null);
+  const withSales = salesRows.map(r => ({ ...r, ca_share: caShare(r.ca_ttc) }));
   const filteredCategories = withSales.filter(c => {
     if (!searchTerm) return true;
     const normalize = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -193,7 +199,7 @@ const CategoriesStatsTab = () => {
 
   const handleExport = () => {
     const csv = [
-      ['Categorie', 'Nb Produits', 'Nb Sous-categories', 'Qte Vendue', 'CA TTC', 'CA HT', 'Cout HT', 'Marge HT', '% Marge', 'CA France TTC', 'CA hors France TTC', '% hors France'],
+      ['Categorie', 'Nb Produits', 'Nb Sous-categories', 'Qte Vendue', 'CA TTC', 'CA HT', '% du CA', 'Cout HT', 'Marge HT', '% Marge', 'CA France TTC', 'CA hors France TTC', '% hors France'],
       ...sortedCategories.map(c => [
         c.category || '',
         c.product_count || 0,
@@ -201,6 +207,7 @@ const CategoriesStatsTab = () => {
         c.qty_sold || 0,
         parseFloat(c.ca_ttc || 0).toFixed(2),
         parseFloat(c.ca_ht || 0).toFixed(2),
+        c.ca_share === null ? '' : c.ca_share.toFixed(2),
         parseFloat(c.cost_ht || 0).toFixed(2),
         parseFloat(c.margin_ht || 0).toFixed(2),
         parseFloat(c.margin_percent || 0).toFixed(1),
@@ -416,6 +423,7 @@ const CategoriesStatsTab = () => {
                   {isVisible('qty_sold') && <th style={headerStyle('qty_sold')} onClick={() => handleSort('qty_sold')}>Qte Vendue{getSortIcon('qty_sold')}</th>}
                   {isVisible('ca_ttc') && <th style={headerStyle('ca_ttc')} onClick={() => handleSort('ca_ttc')}>CA TTC{getSortIcon('ca_ttc')}</th>}
                   {isVisible('ca_ht') && <th style={headerStyle('ca_ht')} onClick={() => handleSort('ca_ht')}>CA HT{getSortIcon('ca_ht')}</th>}
+                  {isVisible('ca_share') && <th style={headerStyle('ca_share')} onClick={() => handleSort('ca_share')} title="Part du CA TTC de la période (périmètre et filtres appliqués)">% du CA{getSortIcon('ca_share')}</th>}
                   {isVisible('cost_ht') && <th style={headerStyle('cost_ht')} onClick={() => handleSort('cost_ht')}>Cout HT{getSortIcon('cost_ht')}</th>}
                   {isVisible('margin_ht') && <th style={headerStyle('margin_ht')} onClick={() => handleSort('margin_ht')}>Marge HT{getSortIcon('margin_ht')}</th>}
                   {isVisible('margin_percent') && <th style={headerStyle('margin_percent')} onClick={() => handleSort('margin_percent')}>% Marge{getSortIcon('margin_percent')}</th>}
@@ -465,6 +473,7 @@ const CategoriesStatsTab = () => {
                         {isVisible('qty_sold') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold' }}>{formatNumber(category.qty_sold)}</td>}
                         {isVisible('ca_ttc') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ttc)}</td>}
                         {isVisible('ca_ht') && <td style={{ padding: '15px', fontSize: '14px' }}>{formatPrice(category.ca_ht)}</td>}
+                        {isVisible('ca_share') && <td style={{ padding: '15px', fontSize: '14px' }}><ShareCell value={category.ca_share} /></td>}
                         {isVisible('cost_ht') && <td style={{ padding: '15px', fontSize: '14px', color: '#DE2020' }}>{formatPrice(category.cost_ht)}</td>}
                         {isVisible('margin_ht') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(category.margin_ht)}</td>}
                         {isVisible('margin_percent') && <td style={{ padding: '15px', fontSize: '14px', fontWeight: 'bold', color: category.margin_percent >= 30 ? '#4AB866' : category.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(category.margin_percent)}</td>}
@@ -489,6 +498,7 @@ const CategoriesStatsTab = () => {
                           {isVisible('qty_sold') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatNumber(sc.qty_sold)}</td>}
                           {isVisible('ca_ttc') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ttc)}</td>}
                           {isVisible('ca_ht') && <td style={{ padding: '10px 15px', fontSize: '13px' }}>{formatPrice(sc.ca_ht)}</td>}
+                          {isVisible('ca_share') && <td style={{ padding: '10px 15px', fontSize: '13px' }} title={parseFloat(category.ca_ttc) > 0 ? `${(parseFloat(sc.ca_ttc || 0) / parseFloat(category.ca_ttc) * 100).toFixed(1)}% de la catégorie` : ''}><ShareCell value={caShare(sc.ca_ttc)} small /></td>}
                           {isVisible('cost_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: '#DE2020' }}>{formatPrice(sc.cost_ht)}</td>}
                           {isVisible('margin_ht') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_ht >= 0 ? '#4AB866' : '#DE2020' }}>{formatPrice(sc.margin_ht)}</td>}
                           {isVisible('margin_percent') && <td style={{ padding: '10px 15px', fontSize: '13px', color: sc.margin_percent >= 30 ? '#4AB866' : sc.margin_percent >= 15 ? '#E28F00' : '#DE2020' }}>{formatPercent(sc.margin_percent)}</td>}

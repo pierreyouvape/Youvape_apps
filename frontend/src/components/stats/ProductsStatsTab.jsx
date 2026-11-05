@@ -498,6 +498,7 @@ const ProductsStatsTab = () => {
             dateRange={dateRange}
             searchTerm=""
             exportName="produits"
+            shareEnabled={false}
           />
         )
       ) : (<>

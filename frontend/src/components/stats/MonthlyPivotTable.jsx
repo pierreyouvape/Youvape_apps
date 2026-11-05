@@ -45,15 +45,33 @@ const evolution = (cur, prev) => {
   };
 };
 
+// Part en % (d'un total) avec une petite barre, réutilisée par les vues « Totaux »
+export const ShareCell = ({ value, small = false }) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return <span style={{ color: '#adb5bd' }}>–</span>;
+  const width = Math.max(0, Math.min(100, value));
+  return (
+    <div style={{ minWidth: small ? '60px' : '70px' }}>
+      <div style={{ fontWeight: small ? 400 : 600 }}>{value.toFixed(1)}%</div>
+      <div style={{ height: '4px', background: '#e9ecef', borderRadius: '2px', marginTop: '3px' }}>
+        <div style={{ width: `${width}%`, height: '100%', background: '#135E84', borderRadius: '2px' }} />
+      </div>
+    </div>
+  );
+};
+
 const normalize = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 // linkKey : champ portant l'identifiant du lien quand il diffère du libellé
 // (produits : on affiche le nom, on navigue vers /products/<id>).
-const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, dateRange, searchTerm, exportName }) => {
+const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, dateRange, searchTerm, exportName, shareEnabled = true }) => {
   const [metric, setMetric] = useState('ca_ttc');
   const [sortCol, setSortCol] = useState('total');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [showCountry, setShowCountry] = useState(true);
+  // shareEnabled = false quand les lignes reçues ne sont qu'un extrait (produits : top 100),
+  // le total du mois serait faux
+  const [showShareState, setShowShare] = useState(true);
+  const showShare = shareEnabled && showShareState;
 
   const metricDef = METRICS.find(m => m.key === metric);
 
@@ -117,6 +135,12 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
   const grandTotal = monthTotals.reduce((s, v) => s + v, 0);
   const grandTotalFr = monthTotalsFr.reduce((s, v) => s + v, 0);
 
+  // Dénominateur des parts : TOUS les groupes du mois, recherche ignorée
+  // (chercher une marque ne doit pas la faire passer à 100 %)
+  const allMonthTotals = months.map(ym => groups.reduce((s, g) => s + value(g, ym), 0));
+  const allGrandTotal = allMonthTotals.reduce((s, v) => s + v, 0);
+  const shareOf = (v, total) => (total > 0 ? (v / total) * 100 : null);
+
   const handleSort = (col) => {
     if (sortCol === col) setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC');
     else { setSortCol(col); setSortOrder(col === 'name' ? 'ASC' : 'DESC'); }
@@ -126,20 +150,23 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
   const handleExport = () => {
     const header = [groupLabel];
     months.forEach(ym => {
-      header.push(`${monthLabel(ym)} ${metricDef.label}`, `${monthLabel(ym)} évol. %`, `${monthLabel(ym)} FR`, `${monthLabel(ym)} Autres pays`);
+      header.push(`${monthLabel(ym)} ${metricDef.label}`, ...(shareEnabled ? [`${monthLabel(ym)} part du mois %`] : []), `${monthLabel(ym)} évol. %`, `${monthLabel(ym)} FR`, `${monthLabel(ym)} Autres pays`);
     });
-    header.push(`Total ${metricDef.label}`, 'Total FR', 'Total Autres pays', '% hors FR');
+    header.push(`Total ${metricDef.label}`, ...(shareEnabled ? ['Part du total %'] : []), 'Total FR', 'Total Autres pays', '% hors FR');
     const lines = tableRows.map(g => {
       const line = [g.name];
       months.forEach((ym, i) => {
         const cur = value(g, ym);
         const prev = i > 0 ? value(g, months[i - 1]) : null;
         line.push(cur.toFixed(2).replace('.', ','));
+        const sh = shareOf(cur, allMonthTotals[i]);
+        if (shareEnabled) line.push(sh === null ? '' : sh.toFixed(2).replace('.', ','));
         line.push(prev ? (((cur - prev) / prev) * 100).toFixed(1).replace('.', ',') : '');
         const fr = valueFr(g, ym);
         line.push(fr.toFixed(2).replace('.', ','), (cur - fr).toFixed(2).replace('.', ','));
       });
-      line.push(g.total.toFixed(2).replace('.', ','), g.totalFr.toFixed(2).replace('.', ','), (g.total - g.totalFr).toFixed(2).replace('.', ','));
+      const shT = shareOf(g.total, allGrandTotal);
+      line.push(g.total.toFixed(2).replace('.', ','), ...(shareEnabled ? [shT === null ? '' : shT.toFixed(2).replace('.', ',')] : []), g.totalFr.toFixed(2).replace('.', ','), (g.total - g.totalFr).toFixed(2).replace('.', ','));
       line.push(g.abroad === null ? '' : g.abroad.toFixed(1).replace('.', ','));
       return line;
     });
@@ -187,11 +214,17 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
     );
   };
 
-  const renderCell = (cur, prev, fr, key, bold = false) => {
+  const renderShare = (share) => {
+    if (!showShare || share === null || !share) return null;
+    return <div style={{ fontSize: '11px', fontWeight: 600, color: '#135E84' }} title="Part dans le total de la colonne">{share.toFixed(1)}% du total</div>;
+  };
+
+  const renderCell = (cur, prev, fr, key, bold = false, share = null) => {
     const evo = prev === null ? null : evolution(cur, prev);
     return (
       <td key={key} style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', verticalAlign: 'top' }}>
         <div style={{ fontWeight: bold ? 700 : 400, color: cur ? '#2a2e38' : '#adb5bd' }}>{metricDef.format(cur)}</div>
+        {renderShare(share)}
         <div style={{ fontSize: '11px', fontWeight: 600, color: evo ? evo.color : '#adb5bd', minHeight: '14px' }}>
           {evo ? evo.label : (prev === null ? '' : '–')}
         </div>
@@ -200,11 +233,12 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
     );
   };
 
-  const renderTotalCells = (total, totalFr) => {
+  const renderTotalCells = (total, totalFr, share = null) => {
     const abroad = shareAbroad(total, totalFr);
     return (<>
       <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap', fontSize: '14px', fontWeight: 700, borderLeft: '1px solid #E2E2E2', verticalAlign: 'top' }}>
         {metricDef.format(total)}
+        {renderShare(share)}
         <div style={{ minHeight: '14px' }} />
         {renderCountry(total, totalFr)}
       </td>
@@ -236,6 +270,10 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
             <input type="checkbox" checked={showCountry} onChange={(e) => setShowCountry(e.target.checked)} />
             Détail France / autres pays
           </label>
+          {shareEnabled && <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#374151', marginLeft: '10px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={showShare} onChange={(e) => setShowShare(e.target.checked)} />
+            Part du mois (%)
+          </label>}
         </div>
         <button
           onClick={handleExport}
@@ -268,8 +306,8 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
                       {g.name}
                     </LinkBox>
                   </td>
-                  {months.map((ym, i) => renderCell(value(g, ym), i > 0 ? value(g, months[i - 1]) : null, valueFr(g, ym), ym))}
-                  {renderTotalCells(g.total, g.totalFr)}
+                  {months.map((ym, i) => renderCell(value(g, ym), i > 0 ? value(g, months[i - 1]) : null, valueFr(g, ym), ym, false, shareOf(value(g, ym), allMonthTotals[i])))}
+                  {renderTotalCells(g.total, g.totalFr, shareOf(g.total, allGrandTotal))}
                 </tr>
               ))}
               {tableRows.length > 0 && (
@@ -289,7 +327,7 @@ const MonthlyPivotTable = ({ rows, groupKey, groupLabel, linkPrefix, linkKey, da
         )}
       </div>
       <p style={{ fontSize: '12px', color: '#8A99A4', marginTop: '10px' }}>
-        % = évolution par rapport au mois précédent. FR / Autres = pays de livraison (à défaut, de facturation), avec leur part du mois ; en orange quand l'étranger dépasse la France. * mois incomplet sur la période choisie (ex. mois en cours) : son évolution n'est pas comparable à un mois entier.
+        {shareEnabled && 'En bleu : part de la ligne dans le total du mois (colonne Total : dans le total de la période), calculée sur toutes les lignes même quand une recherche est active. '}En vert / rouge : évolution par rapport au mois précédent. FR / Autres = pays de livraison (à défaut, de facturation), avec leur part du mois ; en orange quand l'étranger dépasse la France. * mois incomplet sur la période choisie (ex. mois en cours) : son évolution n'est pas comparable à un mois entier.
       </p>
     </div>
   );
