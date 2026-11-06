@@ -198,5 +198,100 @@ const quiet = async (fn) => {
     assert.strictEqual(state.alerts.filter(a => /panne/.test(a.subject)).length, 0);
   });
 
+  // Déclinaisons copiées par une duplication puis remplacées (06/11/2026,
+  // 1274828 à 1274837) : fiche illisible, détachée de son parent sur le site.
+  const PARENT = 1274827;
+  let orphanId = 1274828;
+  let ORPHELINE;
+  let VARIATION_ROUTE;
+  // Un identifiant par test : l'anti-doublon des alertes vit dans le module.
+  const nextOrphan = () => {
+    ORPHELINE = orphanId++;
+    VARIATION_ROUTE = `GET wc/v3/products/${PARENT}/variations/${ORPHELINE}`;
+  };
+  const orphanEvent = () => ({
+    ids: [201, 202], type: 'product', action: 'update', wp_id: ORPHELINE, gone: false,
+    data: { wp_product_id: ORPHELINE, parent_id: PARENT, type: null, name: 'Copie', status: 'publish' },
+  });
+  const knownVariation = () => { db.products = [{ wp_product_id: ORPHELINE, product_type: 'variation', wp_parent_id: PARENT }]; };
+  const eventAlerts = () => state.alerts.filter(a => /echec traitement/.test(a.subject));
+
+  await test('le motif nomme le champ exact de la fiche produit', async () => {
+    nextOrphan();
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    const logs = await quiet(() => wcSyncService.poll());
+    assert.ok(logs.some(l => /champ invalide : type$/.test(l)));
+  });
+
+  await test('déclinaison orpheline confirmée par le site : marquée supprimée, acquittée, sans alerte', async () => {
+    nextOrphan();
+    knownVariation();
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    route(VARIATION_ROUTE, httpError(404, { code: 'woocommerce_rest_product_variation_invalid_id', message: 'ID non valide.', data: { status: 404 } }));
+    await quiet(() => wcSyncService.poll());
+    assert.deepStrictEqual(ack(), [{ acked: [201, 202], failed: [] }]);
+    assert.ok(db.queries.some(q => /wc_deleted_at/.test(q.sql) && q.params[0] === ORPHELINE));
+    assert.strictEqual(eventAlerts().length, 0);
+    assert.strictEqual(called(VARIATION_ROUTE)[0].config.params.consumer_key, 'ck');
+  });
+
+  await test('déclinaison que son parent reconnaît : échec et alerte, rien de supprimé', async () => {
+    nextOrphan();
+    knownVariation();
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    route(VARIATION_ROUTE, { id: ORPHELINE, parent_id: PARENT });
+    await quiet(() => wcSyncService.poll());
+    assert.deepStrictEqual(ack(), [{ acked: [], failed: [{ ids: [201, 202], code: 'INVALID_PAYLOAD' }] }]);
+    assert.ok(!db.queries.some(q => /wc_deleted_at/.test(q.sql)));
+    assert.strictEqual(eventAlerts().length, 1);
+  });
+
+  await test('site en maintenance (page HTML en 503) : pas une preuve, alerte', async () => {
+    nextOrphan();
+    knownVariation();
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    route(VARIATION_ROUTE, httpError(503, '<!DOCTYPE html><title>Maintenance temporaire</title>'));
+    await quiet(() => wcSyncService.poll());
+    assert.ok(!db.queries.some(q => /wc_deleted_at/.test(q.sql)));
+    assert.strictEqual(ack()[0].failed.length, 1);
+  });
+
+  await test('404 sans le code WooCommerce (route absente) : pas une preuve', async () => {
+    nextOrphan();
+    knownVariation();
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    route(VARIATION_ROUTE, httpError(404, { code: 'rest_no_route' }));
+    await quiet(() => wcSyncService.poll());
+    assert.ok(!db.queries.some(q => /wc_deleted_at/.test(q.sql)));
+    assert.strictEqual(ack()[0].failed.length, 1);
+  });
+
+  await test('produit qui n\'est pas une déclinaison chez nous : le site n\'est pas interrogé', async () => {
+    nextOrphan();
+    db.products = [{ wp_product_id: ORPHELINE, product_type: 'simple', wp_parent_id: null }];
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    await quiet(() => wcSyncService.poll());
+    assert.strictEqual(called(VARIATION_ROUTE).length, 0);
+    assert.strictEqual(eventAlerts().length, 1);
+  });
+
+  await test('les clés WC ne partent pas vers un autre site que celui synchronisé', async () => {
+    nextOrphan();
+    knownVariation();
+    config.set('wc_sync_wp_url', 'https://preprod.test');
+    route('GET yousync/v2/queue', queue([orphanEvent()]));
+    route('POST yousync/v2/queue/ack', { success: true });
+    route(VARIATION_ROUTE, httpError(404, { code: 'woocommerce_rest_product_variation_invalid_id' }));
+    await quiet(() => wcSyncService.poll());
+    assert.strictEqual(called(VARIATION_ROUTE).length, 0);
+    assert.strictEqual(ack()[0].failed.length, 1);
+  });
+
   finish('yousyncSync');
 })();

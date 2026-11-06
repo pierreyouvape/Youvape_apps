@@ -578,6 +578,14 @@ suivie d'une réécriture, ni d'ack par (type, id) : c'est ce qui perdait des co
 Conserver le correctif marques parent/enfant de `get_product()`, et
 `backend/src/services/brandMapService.js`.
 
+**Déclinaison orpheline** (06/11/2026) : après une duplication de produit variable dont les
+déclinaisons copiées sont remplacées, les anciennes restent dans WordPress, détachées de leur parent
+(fiche illisible, l'API WC plante dessus en 503). Un événement produit en échec n'alerte plus si le
+site le confirme : `GET wc/v3/products/<parent>/variations/<id>` → 404 JSON
+`woocommerce_rest_product_variation_invalid_id` (`wcSyncService.isOrphanVariation`). La fiche est
+alors marquée supprimée et l'événement acquitté. Page HTML, délai, 200 : alerte comme avant.
+Nettoyage côté site : WooCommerce → État → Outils → « Supprimer les variations orphelines ».
+
 ### Rattrapage des commandes (`orderReconcileService`, 30/10/2026)
 
 Compare le site et notre base toutes les 15 min (3 h) et à 4h40 (5 jours), réimporte et alerte.

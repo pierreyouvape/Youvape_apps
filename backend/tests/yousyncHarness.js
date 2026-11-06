@@ -37,13 +37,14 @@ appConfigModel.delete = async (key) => { config.delete(key); };
 
 alertService.sendAlert = async (subject, body) => { state.alerts.push({ subject, body }); };
 
-const db = { queries: [], failOn: null, rewards: { woocommerce_url: 'https://site.test/', consumer_key: 'ck', consumer_secret: 'cs' }, orders: [] };
+const db = { queries: [], failOn: null, rewards: { woocommerce_url: 'https://site.test/', consumer_key: 'ck', consumer_secret: 'cs' }, orders: [], products: [] };
 
 const runQuery = async (sql, params = []) => {
   db.queries.push({ sql, params });
   if (db.failOn && db.failOn.test(sql)) throw Object.assign(new Error('valeur client dans le message'), { code: '23505', constraint: 'une_contrainte' });
   if (/FROM rewards_config/.test(sql)) return { rows: [db.rewards] };
   if (/FROM orders WHERE wp_order_id = ANY/.test(sql)) return { rows: db.orders };
+  if (/FROM products WHERE wp_product_id = \$1 LIMIT 1/.test(sql)) return { rows: db.products.filter(p => p.wp_product_id === params[0]) };
   return { rows: [], rowCount: 1 };
 };
 pool.query = runQuery;
@@ -60,6 +61,7 @@ const reset = () => {
   db.queries.length = 0;
   db.failOn = null;
   db.orders = [];
+  db.products = [];
 };
 
 const route = (key, handler) => state.routes.set(key, typeof handler === 'function' ? handler : () => handler);

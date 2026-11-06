@@ -60,7 +60,9 @@ const checkOrder = (wpId, d) => {
 
 const checkProduct = (wpId, d) => {
   if (d.wp_product_id !== wpId) return 'wp_product_id';
-  if (!isText(d.type) || !isText(d.name) || !isText(d.status)) return 'type';
+  if (!isText(d.type)) return 'type';
+  if (!isText(d.name)) return 'name';
+  if (!isText(d.status)) return 'status';
   if (d.parent_id !== null && d.parent_id !== undefined && !Number.isSafeInteger(d.parent_id)) return 'parent_id';
   if (!isTextOrNull(d.sku)) return 'sku';
   if (!isDate(d.date_created) || !isDate(d.date_modified)) return 'date';

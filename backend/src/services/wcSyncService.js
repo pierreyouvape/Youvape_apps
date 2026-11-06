@@ -3,6 +3,7 @@
  * Poll WordPress pour récupérer la queue YouSync et traiter les événements
  */
 
+const axios = require('axios');
 const appConfigModel = require('../models/appConfigModel');
 const pool = require('../config/database');
 const refundLinesService = require('./refundLinesService');
@@ -109,6 +110,60 @@ const inTransaction = async (fn) => {
 const safeReason = (err) => (err.code ? `DB_${err.code}${err.constraint ? ` ${err.constraint}` : ''}` : 'PROCESSING_ERROR');
 
 const ackCode = (err) => (err.code ? `DB_${err.code}` : 'PROCESSING_ERROR');
+
+/*
+ * Déclinaison orpheline : la fiche existe encore dans WordPress, mais plus aucun
+ * produit ne la reconnaît comme sa déclinaison. Elle reste d'une duplication de
+ * produit variable dont les déclinaisons copiées ont été remplacées (Falcon Mini
+ * 20K → Falcon Crest 48K, 06/11/2026 : 1274828 à 1274837). Le plugin en livre une
+ * fiche illisible, l'API WC plante en la lisant (503), et chaque événement
+ * déclenchait une alerte, puis une seconde en passant en échec.
+ *
+ * Elle est traitée comme une suppression, mais seulement si le SITE le dit : la
+ * route « déclinaison X du produit P » répond une 404 WooCommerce en JSON, avec ce
+ * code exact (relevé sur 1274832). Une page HTML (maintenance, pare-feu), un délai
+ * dépassé ou un 200 n'en sont pas la preuve : l'alerte part comme avant.
+ */
+const ORPHAN_VARIATION_CODE = 'woocommerce_rest_product_variation_invalid_id';
+
+const isOrphanVariation = async (wpId) => {
+  try {
+    const { rows: [product] } = await pool.query(
+      'SELECT product_type, wp_parent_id FROM products WHERE wp_product_id = $1 LIMIT 1',
+      [wpId],
+    );
+    const parentId = Number(product?.wp_parent_id);
+    if (product?.product_type !== 'variation' || !Number.isSafeInteger(parentId) || parentId <= 0) return false;
+
+    // Les clés WC ne partent que vers le site que yousync synchronise.
+    const { rows: [wc] } = await pool.query('SELECT woocommerce_url, consumer_key, consumer_secret FROM rewards_config LIMIT 1');
+    const syncUrl = (await appConfigModel.get('wc_sync_wp_url'))?.config_value;
+    const base = (wc?.woocommerce_url || '').replace(/\/+$/, '');
+    if (!base.startsWith('https://') || !wc.consumer_key || !wc.consumer_secret) return false;
+    if (!syncUrl || new URL(syncUrl).host !== new URL(base).host) return false;
+
+    try {
+      await axios({
+        method: 'get',
+        url: `${base}/wp-json/wc/v3/products/${parentId}/variations/${wpId}`,
+        params: { consumer_key: wc.consumer_key, consumer_secret: wc.consumer_secret },
+        timeout: 15000,
+        maxRedirects: 0,
+      });
+      return false; // Son parent la reconnaît : le problème est ailleurs.
+    } catch (err) {
+      const data = err.response?.data;
+      return err.response?.status === 404
+        && data !== null && typeof data === 'object'
+        && data.code === ORPHAN_VARIATION_CODE;
+    }
+  } catch (err) {
+    console.error(`🔄 WC Sync: contrôle déclinaison orpheline #${wpId} impossible : ${safeReason(err)}`);
+    return false;
+  }
+};
+
+const isRowId = (v) => Number.isSafeInteger(v) && v > 0;
 
 /**
  * Si le site refuse le jeton alors qu'un renouvellement est resté en suspens, c'est
@@ -310,6 +365,24 @@ const wcSyncService = {
           } catch (err) {
             code = ackCode(err);
             console.error(`🔄 WC Sync Error: ${label}: ${safeReason(err)}`);
+          }
+        }
+
+        // Produit en échec : si c'est une déclinaison orpheline (voir
+        // isOrphanVariation), suppression, acquittement, et aucune alerte. En v2
+        // seulement : l'acquittement se fait par identifiants de lignes.
+        if (protocol === 'v2' && event?.type === 'product' && isRowId(event.wp_id)
+          && Array.isArray(event.ids) && event.ids.length > 0 && event.ids.every(isRowId)
+          && await isOrphanVariation(event.wp_id)) {
+          try {
+            await inTransaction(client => wcSyncService.processProduct('delete', event.wp_id, null, client));
+            processed.push(event);
+            failedEventKeys.delete(eventKey);
+            console.log(`🔄 WC Sync: ${label} est une déclinaison orpheline (détachée de son parent sur le site) : marquée supprimée, acquittée, sans alerte`);
+            continue;
+          } catch (err) {
+            code = ackCode(err);
+            console.error(`🔄 WC Sync Error: ${label} (déclinaison orpheline): ${safeReason(err)}`);
           }
         }
 
