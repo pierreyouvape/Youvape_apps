@@ -15,6 +15,9 @@
  * écart. Tout est recalculé à chaque lecture — supprimer une saisie erronée
  * corrige donc aussi les soldes qui suivent.
  *
+ * Le fond de monnaie est suivi à part : il n'entre pas dans le solde du coffre,
+ * le fond actuel est sa dernière saisie.
+ *
  * Toutes les dates sont en heure de Paris (comme Nextore) et circulent en
  * texte « AAAA-MM-JJ HH:MM:SS » : le serveur est en UTC.
  */
@@ -142,13 +145,18 @@ async function getState(warehouseId) {
     })),
   ];
   // À la même seconde, la clôture passe avant ce qui a été saisi après elle.
-  const order = { cloture: 0, remise: 1, comptage: 2 };
+  const order = { cloture: 0, remise: 1, comptage: 2, fond: 3 };
   events.sort((a, b) => a.at.localeCompare(b.at) || order[a.type] - order[b.type] || a.id - b.id);
 
   let balance = null;
   let anchor = null;
   let since = { deposits: 0, closures: 0, remises: 0, remiseCount: 0 };
+  let fond = null;
   for (const e of events) {
+    if (e.type === 'fond') {
+      fond = e;
+      continue;
+    }
     if (e.type === 'cloture') {
       if (balance != null && e.deposit != null) {
         balance = cents(balance + e.deposit);
@@ -180,6 +188,7 @@ async function getState(warehouseId) {
     balance,
     anchor: anchor && { id: anchor.id, at: anchor.at, amount: anchor.amount, author: anchor.author, gap: anchor.gap },
     since: anchor ? since : null,
+    fond: fond && { id: fond.id, at: fond.at, amount: fond.amount, author: fond.author, denominations: fond.denominations },
     openRegister: open ? { id: open.id, openedAt: open.opened_at, fond: open.fond } : null,
     unknownRegisters: unknown.rows,
     denominations: DENOMINATIONS,
@@ -188,8 +197,8 @@ async function getState(warehouseId) {
   };
 }
 
-/** Comptage du coffre : le total se recalcule ici depuis les coupures. */
-async function addComptage(warehouseId, denominations, note, userId) {
+/** Coupures saisies → { clean: { "50": 3, … } sans les zéros, total en centimes }. */
+function cleanDenominations(denominations) {
   const clean = {};
   let total = 0;
   for (const value of DENOMINATIONS) {
@@ -200,6 +209,12 @@ async function addComptage(warehouseId, denominations, note, userId) {
     clean[String(value)] = count;
     total += Math.round(value * 100) * count;
   }
+  return { clean, total };
+}
+
+/** Comptage du coffre : le total se recalcule ici depuis les coupures. */
+async function addComptage(warehouseId, denominations, note, userId) {
+  const { clean, total } = cleanDenominations(denominations);
 
   // Le théorique gardé avec le comptage est celui de l'écran à cet instant.
   const { balance } = await getState(warehouseId);
@@ -209,6 +224,29 @@ async function addComptage(warehouseId, denominations, note, userId) {
     RETURNING id
   `, [warehouseId, total / 100, JSON.stringify(clean), balance, note || null, userId]);
   return { id: rows[0].id, amount: total / 100, theoretical: balance };
+}
+
+/**
+ * Fond de monnaie, hors solde du coffre. Avec des coupures, le montant se
+ * recalcule depuis elles ; sinon c'est le montant saisi (0 accepté).
+ */
+async function addFond(warehouseId, amount, denominations, note, userId) {
+  let value;
+  let clean = null;
+  if (denominations && Object.keys(denominations).length) {
+    const d = cleanDenominations(denominations);
+    clean = d.clean;
+    value = d.total / 100;
+  } else {
+    value = cents(amount);
+    if (amount === '' || amount == null || !Number.isFinite(value) || value < 0) throw httpError(400, 'Montant invalide');
+  }
+  const { rows } = await pool.query(`
+    INSERT INTO coffre_movements (warehouse_id, kind, amount, occurred_at, denominations, note, created_by)
+    VALUES ($1, 'fond', $2, NOW() AT TIME ZONE 'Europe/Paris', $3, $4, $5)
+    RETURNING id
+  `, [warehouseId, value, clean && JSON.stringify(clean), note || null, userId]);
+  return { id: rows[0].id, amount: value };
 }
 
 const DATETIME_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(:\d{2})?$/;
@@ -233,7 +271,7 @@ async function addRemise(warehouseId, amount, at, note, userId) {
   return { id: rows[0].id };
 }
 
-/** Suppression logique d'un comptage ou d'une remise de la boutique. */
+/** Suppression logique d'un comptage, d'une remise ou d'un fond de monnaie de la boutique. */
 async function deleteMovement(warehouseId, id, userId) {
   const { rowCount } = await pool.query(`
     UPDATE coffre_movements
@@ -243,4 +281,4 @@ async function deleteMovement(warehouseId, id, userId) {
   if (!rowCount) throw httpError(404, 'Opération introuvable');
 }
 
-module.exports = { getState, addComptage, addRemise, deleteMovement, DENOMINATIONS };
+module.exports = { getState, addComptage, addFond, addRemise, deleteMovement, DENOMINATIONS };

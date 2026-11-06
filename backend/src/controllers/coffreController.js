@@ -51,6 +51,17 @@ const addComptage = async (req, res) => {
   }
 };
 
+/** POST /:shop/fonds { amount } ou { denominations }, note — fond de monnaie, hors solde. */
+const addFond = async (req, res) => {
+  try {
+    const wh = await shopFor(req);
+    const { amount, denominations, note } = req.body || {};
+    res.status(201).json(await coffreModel.addFond(wh.id, amount, denominations, note, req.user.id));
+  } catch (error) {
+    fail(res, error, 'addFond');
+  }
+};
+
 /** POST /:shop/remises { amount, at?, note } */
 const addRemise = async (req, res) => {
   try {
@@ -75,4 +86,4 @@ const deleteMovement = async (req, res) => {
   }
 };
 
-module.exports = { getState, addComptage, addRemise, deleteMovement };
+module.exports = { getState, addComptage, addFond, addRemise, deleteMovement };

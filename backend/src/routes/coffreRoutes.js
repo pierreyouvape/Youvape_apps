@@ -9,6 +9,7 @@ const coffreController = require('../controllers/coffreController');
 
 router.get('/:shop', coffreController.getState);
 router.post('/:shop/comptages', coffreController.addComptage);
+router.post('/:shop/fonds', coffreController.addFond);
 router.post('/:shop/remises', coffreController.addRemise);
 router.delete('/:shop/movements/:id', coffreController.deleteMovement);
 

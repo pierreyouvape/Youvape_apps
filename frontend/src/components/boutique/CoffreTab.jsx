@@ -82,16 +82,14 @@ function Td({ children, align = 'left', bold, color }) {
   }}>{children}</td>;
 }
 
-/* ─── CALCULATEUR ───────────────────────────────────────── */
-function Calculateur({ coupures, theorique, onSave, saving }) {
-  const [counts, setCounts] = useState({});
-  const [note, setNote] = useState('');
-  const refs = useRef([]);
+/* ─── GRILLE DES COUPURES (comptage du coffre, fond de monnaie) ─── */
+const totalCentimes = (coupures, counts) =>
+  coupures.reduce((s, v) => s + Math.round(v * 100) * (parseInt(counts[String(v)], 10) || 0), 0);
 
-  const totalCts = coupures.reduce((s, v) => s + Math.round(v * 100) * (parseInt(counts[String(v)], 10) || 0), 0);
-  const total = totalCts / 100;
-  const ecart = theorique == null ? null : Math.round((total - theorique) * 100) / 100;
-  const vide = totalCts === 0 && !Object.values(counts).some((c) => c !== '' && c != null);
+const rienSaisi = (counts) => !Object.values(counts).some((c) => c !== '' && c != null);
+
+function Grille({ coupures, counts, setCounts, compact }) {
+  const refs = useRef([]);
 
   const saisir = (v, val) => {
     if (val !== '' && !/^\d+$/.test(val)) return;
@@ -105,20 +103,11 @@ function Calculateur({ coupures, theorique, onSave, saving }) {
     refs.current[i + 1]?.focus();
   };
 
-  const enregistrer = async () => {
-    const msg = theorique == null
-      ? `Enregistrer ce comptage de ${eur.format(total)} comme solde de départ du coffre ?`
-      : `Enregistrer ce comptage de ${eur.format(total)} ?\nThéorique : ${eur.format(theorique)} — écart : ${signe(ecart) || '0,00 €'}`;
-    if (!window.confirm(msg)) return;
-    const ok = await onSave(counts, note.trim());
-    if (ok) { setCounts({}); setNote(''); }
-  };
-
   const ligne = (v, i) => {
     const n = parseInt(counts[String(v)], 10) || 0;
     return (
-      <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-        <span style={{ width: 64, fontWeight: 700, color: C.dark, fontSize: 13.5 }}>{libelleCoupure(v)}</span>
+      <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: compact ? '2px 0' : '4px 0' }}>
+        <span style={{ width: compact ? 52 : 64, fontWeight: 700, color: C.dark, fontSize: 13.5 }}>{libelleCoupure(v)}</span>
         <span style={{ color: C.greyM }}>×</span>
         <input
           ref={(el) => { refs.current[i] = el; }}
@@ -128,7 +117,7 @@ function Calculateur({ coupures, theorique, onSave, saving }) {
           onKeyDown={(e) => suivant(e, i)}
           onFocus={(e) => e.target.select()}
           placeholder="0"
-          style={{ ...champ, width: 70, textAlign: 'right', padding: '5px 8px' }}
+          style={{ ...champ, width: compact ? 56 : 70, textAlign: 'right', padding: compact ? '3px 6px' : '5px 8px' }}
         />
         <span style={{ flex: 1, textAlign: 'right', color: n ? C.dark : C.greyM, fontVariantNumeric: 'tabular-nums', fontSize: 13.5 }}>
           {eur.format((Math.round(v * 100) * n) / 100)}
@@ -139,6 +128,40 @@ function Calculateur({ coupures, theorique, onSave, saving }) {
 
   const billets = coupures.filter((v) => v >= 5);
   const pieces = coupures.filter((v) => v < 5);
+  const colonne = compact ? '1 1 170px' : '1 1 200px';
+
+  return (
+    <div style={{ display: 'flex', gap: compact ? 16 : 28, flexWrap: 'wrap' }}>
+      <div style={{ flex: colonne }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', marginBottom: 4 }}>Billets</div>
+        {billets.map((v) => ligne(v, coupures.indexOf(v)))}
+      </div>
+      <div style={{ flex: colonne }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', marginBottom: 4 }}>Pièces</div>
+        {pieces.map((v) => ligne(v, coupures.indexOf(v)))}
+      </div>
+    </div>
+  );
+}
+
+/* ─── CALCULATEUR ───────────────────────────────────────── */
+function Calculateur({ coupures, theorique, onSave, saving }) {
+  const [counts, setCounts] = useState({});
+  const [note, setNote] = useState('');
+
+  const totalCts = totalCentimes(coupures, counts);
+  const total = totalCts / 100;
+  const ecart = theorique == null ? null : Math.round((total - theorique) * 100) / 100;
+  const vide = totalCts === 0 && rienSaisi(counts);
+
+  const enregistrer = async () => {
+    const msg = theorique == null
+      ? `Enregistrer ce comptage de ${eur.format(total)} comme solde de départ du coffre ?`
+      : `Enregistrer ce comptage de ${eur.format(total)} ?\nThéorique : ${eur.format(theorique)} — écart : ${signe(ecart) || '0,00 €'}`;
+    if (!window.confirm(msg)) return;
+    const ok = await onSave(counts, note.trim());
+    if (ok) { setCounts({}); setNote(''); }
+  };
 
   return (
     <div style={{ ...carte, padding: 16, flex: '2 1 460px' }}>
@@ -150,16 +173,7 @@ function Calculateur({ coupures, theorique, onSave, saving }) {
           </button>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 200px' }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', marginBottom: 4 }}>Billets</div>
-          {billets.map((v) => ligne(v, coupures.indexOf(v)))}
-        </div>
-        <div style={{ flex: '1 1 200px' }}>
-          <div style={{ fontSize: 11.5, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', marginBottom: 4 }}>Pièces</div>
-          {pieces.map((v) => ligne(v, coupures.indexOf(v)))}
-        </div>
-      </div>
+      <Grille coupures={coupures} counts={counts} setCounts={setCounts} />
 
       <div style={{
         display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-end',
@@ -225,7 +239,7 @@ function Remise({ now, onSave, saving }) {
   };
 
   return (
-    <div style={{ ...carte, padding: 16, flex: '1 1 280px', alignSelf: 'flex-start' }}>
+    <div style={{ ...carte, padding: 16, marginBottom: 0 }}>
       <h3 style={{ margin: '0 0 4px', fontSize: 15, color: C.dark }}>Remise en banque</h3>
       <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.greyT }}>Argent sorti du coffre pour être déposé à la banque.</p>
       <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: C.greyT, marginBottom: 4 }}>Montant</label>
@@ -258,6 +272,71 @@ function Remise({ now, onSave, saving }) {
   );
 }
 
+/* ─── FOND DE MONNAIE (hors solde du coffre) ─────────────── */
+function FondMonnaie({ coupures, fond, onSave, saving }) {
+  const [montant, setMontant] = useState('');
+  const [detail, setDetail] = useState(false);
+  const [counts, setCounts] = useState({});
+  const [note, setNote] = useState('');
+
+  const valeur = detail ? totalCentimes(coupures, counts) / 100 : Number(String(montant).replace(',', '.'));
+  const valide = detail ? !rienSaisi(counts) : String(montant).trim() !== '' && Number.isFinite(valeur) && valeur >= 0;
+
+  const enregistrer = async () => {
+    if (!window.confirm(`Enregistrer un fond de monnaie de ${eur.format(valeur)} ?`)) return;
+    const ok = await onSave(detail ? { denominations: counts } : { amount: valeur }, note.trim());
+    if (ok) { setMontant(''); setCounts({}); setNote(''); setDetail(false); }
+  };
+
+  return (
+    <div style={{ ...carte, padding: 16, marginBottom: 0 }}>
+      <h3 style={{ margin: '0 0 4px', fontSize: 15, color: C.dark }}>Fond de monnaie</h3>
+      <p style={{ margin: '0 0 12px', fontSize: 12.5, color: C.greyT }}>Suivi à part : n'entre pas dans le solde du coffre.</p>
+      <div style={{ marginBottom: 12 }} title={fond ? detailCoupures(fond.denominations) || undefined : undefined}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: fond ? C.dark : C.greyM, fontVariantNumeric: 'tabular-nums' }}>
+          {fond ? eur.format(fond.amount) : '—'}
+        </div>
+        <div style={{ fontSize: 12, color: C.greyT }}>
+          {fond ? `au ${dateHeure(fond.at)}${fond.author ? ` par ${fond.author}` : ''}` : 'Aucun fond enregistré'}
+        </div>
+      </div>
+      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: C.greyT, marginBottom: 4 }}>Montant</label>
+      <input
+        inputMode="decimal"
+        value={detail ? eur.format(valeur) : montant}
+        readOnly={detail}
+        onChange={(e) => setMontant(e.target.value)}
+        placeholder="0,00"
+        style={{
+          ...champ, width: '100%', boxSizing: 'border-box', marginBottom: 6, fontSize: 16, fontWeight: 700,
+          background: detail ? C.grey : C.white,
+        }}
+      />
+      <button
+        onClick={() => setDetail((d) => !d)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: SLATE, fontWeight: 600, fontSize: 12.5, padding: 0, marginBottom: 10 }}
+      >
+        {detail ? '▴ Saisir le montant directement' : '▾ Détailler par billet / pièce'}
+      </button>
+      {detail && (
+        <div style={{ borderTop: `1px solid ${C.greyB}`, paddingTop: 8, marginBottom: 10 }}>
+          <Grille coupures={coupures} counts={counts} setCounts={setCounts} compact />
+        </div>
+      )}
+      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: C.greyT, marginBottom: 4 }}>Commentaire</label>
+      <input
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="Facultatif"
+        style={{ ...champ, width: '100%', boxSizing: 'border-box', marginBottom: 12 }}
+      />
+      <button onClick={enregistrer} disabled={!valide || saving} style={{ ...bouton(SLATE), width: '100%', opacity: !valide || saving ? 0.5 : 1 }}>
+        Enregistrer le fond de monnaie
+      </button>
+    </div>
+  );
+}
+
 /* ─── JOURNAL ───────────────────────────────────────────── */
 const detailCoupures = (d) => Object.entries(d || {})
   .sort((a, b) => Number(b[0]) - Number(a[0]))
@@ -282,6 +361,28 @@ function LigneJournal({ e, i, onDelete }) {
         <Td align="right" color={C.green} bold>{e.deposit == null ? '—' : signe(e.deposit)}</Td>
         <Td align="right">{e.balance == null ? '—' : eur.format(e.balance)}</Td>
         <Td />
+      </tr>
+    );
+  }
+  if (e.type === 'fond') {
+    return (
+      <tr style={{ background: fondLigne }}>
+        <Td color={C.greyT}>{dateHeure(e.at)}</Td>
+        <Td bold>Fond de monnaie</Td>
+        <Td color={C.greyT}>
+          <span title={detailCoupures(e.denominations) || undefined}>
+            {[e.author && `par ${e.author}`, e.note, 'hors solde du coffre'].filter(Boolean).join(' · ')}
+          </span>
+        </Td>
+        <Td align="right" color={C.greyT}>= {eur.format(e.amount)}</Td>
+        <Td />
+        <Td align="right">
+          <button
+            onClick={() => onDelete(e)}
+            title="Supprimer (saisie erronée)"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.greyM, fontSize: 15, padding: 0 }}
+          >×</button>
+        </Td>
       </tr>
     );
   }
@@ -348,9 +449,16 @@ export default function CoffreTab({ shop, token }) {
   const enregistrerRemise = (amount, at, note) => envoyer(() =>
     axios.post(`${API_URL}/coffre/${shop.slug}/remises`, { amount, at, note }, authHeaders(token)));
 
+  const enregistrerFond = (valeur, note) => envoyer(() =>
+    axios.post(`${API_URL}/coffre/${shop.slug}/fonds`, { ...valeur, note }, authHeaders(token)));
+
   const supprimer = (e) => {
-    const quoi = e.type === 'remise' ? `la remise en banque de ${eur.format(e.amount)}` : `le comptage de ${eur.format(e.amount)}`;
-    if (!window.confirm(`Supprimer ${quoi} du ${dateHeure(e.at)} ?\nLe solde du coffre sera recalculé.`)) return;
+    const quoi = {
+      remise: `la remise en banque de ${eur.format(e.amount)}`,
+      fond: `le fond de monnaie de ${eur.format(e.amount)}`,
+    }[e.type] || `le comptage de ${eur.format(e.amount)}`;
+    const suite = e.type === 'fond' ? '' : '\nLe solde du coffre sera recalculé.';
+    if (!window.confirm(`Supprimer ${quoi} du ${dateHeure(e.at)} ?${suite}`)) return;
     envoyer(() => axios.delete(`${API_URL}/coffre/${shop.slug}/movements/${e.id}`, authHeaders(token)));
   };
 
@@ -420,7 +528,10 @@ export default function CoffreTab({ shop, token }) {
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <Calculateur coupures={data.denominations} theorique={balance} onSave={enregistrerComptage} saving={saving} />
-        <Remise now={data.now} onSave={enregistrerRemise} saving={saving} />
+        <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 16 }}>
+          <Remise now={data.now} onSave={enregistrerRemise} saving={saving} />
+          <FondMonnaie coupures={data.denominations} fond={data.fond} onSave={enregistrerFond} saving={saving} />
+        </div>
       </div>
 
       <div style={carte}>
