@@ -67,6 +67,25 @@ router.patch('/recommendations/:id', checkPermission('seo', 'write'), handle(asy
   return rec;
 }));
 
+/* ─── Mots clés : Planificateur Google Ads (quota partagé, cache 30 j) ─── */
+const ads = require('../services/googleAdsService');
+
+const handleAds = (fn) => async (req, res) => {
+  try {
+    res.json(await fn(req));
+  } catch (error) {
+    console.error('[SEO] Mots clés :', error.message);
+    res.status(error.status || 500).json({ error: error.message || 'Erreur serveur' });
+  }
+};
+
+router.get('/keywords/usage', handleAds(() => ads.getUsage()));
+router.post('/keywords', handleAds((req) => ads.research({
+  keywords: req.body?.keywords,
+  geo: ['fr', 'be', 'ch'].includes(req.body?.geo) ? req.body.geo : 'fr',
+  withIdeas: req.body?.ideas !== false,
+})));
+
 /* ─── Rédaction SEO : une page à la fois ─── */
 const canWrite = checkPermission('seo', 'write');
 const pageId = (req) => Number(req.params.id);
