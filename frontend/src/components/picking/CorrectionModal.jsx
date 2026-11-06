@@ -85,7 +85,7 @@ export default function CorrectionModal({ order, token, onClose, onSaved }) {
   const addressTag = tag === 'adresse_incomplete' || tag === 'cp_ville_incoherents';
   const check = data?.postcodeCheck;
   const chip = {
-    padding: '4px 10px', borderRadius: 999, border: `1px solid ${C.greyB}`, background: C.white,
+    padding: '4px 10px', borderRadius: 999, border: `1px solid ${C.greyB}`, background: C.white, color: C.dark,
     fontSize: 12.5, cursor: 'pointer',
   };
 
@@ -188,7 +188,7 @@ export default function CorrectionModal({ order, token, onClose, onSaved }) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
           <button onClick={onClose} style={{
-            padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.greyB}`, background: C.white, cursor: 'pointer',
+            padding: '9px 16px', borderRadius: 8, border: `1px solid ${C.greyB}`, background: C.white, color: C.dark, cursor: 'pointer',
           }}>Fermer</button>
           {data && tag === 'cp_ville_incoherents' && address && (
             <button onClick={confirmAsIs} disabled={saving}
