@@ -25,7 +25,7 @@ const { getAccount } = require('../services/carriers/accounts');
 const { stampOrderNumber } = require('../services/carriers/labelPdf');
 const { buildUserMessage } = require('../services/carriers/errors');
 const { customsDocumentFileName } = require('../services/carriers/contract');
-const { checkPostcodeCity } = require('../services/carriers/postcodeCheck');
+const { checkPostcodeCity, isConfirmed } = require('../services/carriers/postcodeCheck');
 
 /**
  * Cœur de la génération : appel du transporteur, tamponnage du n° de commande
@@ -158,7 +158,8 @@ const loadOrderForLabel = async (orderNumber) => {
       shipping_address_1, shipping_address_2,
       shipping_city, shipping_postcode, shipping_country,
       shipping_phone, billing_phone, billing_email, order_total,
-      COALESCE(NULLIF(to_jsonb(o) -> 'relay_point_manual', 'null'::jsonb), o.relay_point) AS relay_point
+      COALESCE(NULLIF(to_jsonb(o) -> 'relay_point_manual', 'null'::jsonb), o.relay_point) AS relay_point,
+      to_jsonb(o) -> 'postcode_city_confirmed' AS postcode_city_confirmed
     FROM orders o
     WHERE wp_order_id = $1
   `, [orderNumber]);
@@ -177,6 +178,29 @@ const shippingCity = (order) => {
     postcode: order.shipping_postcode, city: order.shipping_city, country: order.shipping_country
   });
   return check?.status === 'corrige' ? check.city : order.shipping_city;
+};
+
+/**
+ * Message de refus quand le code postal n'existe pas ou que la ville n'est pas
+ * une commune de ce code postal (hors adresse validée telle quelle au Picking).
+ * Une simple faute de frappe reconnue (`corrige`) passe : `shippingCity` imprime
+ * le libellé officiel.
+ */
+const postcodeRefusal = (order) => {
+  if (isConfirmed(order.postcode_city_confirmed, { postcode: order.shipping_postcode, city: order.shipping_city })) return null;
+  const check = checkPostcodeCity({
+    postcode: order.shipping_postcode, city: order.shipping_city, country: order.shipping_country
+  });
+  if (!check || (check.status !== 'cp_inconnu' && check.status !== 'a_choisir')) return null;
+  const cp = order.shipping_postcode, ville = order.shipping_city;
+  const quoi = check.status === 'cp_inconnu'
+    ? `le code postal ${cp} n'existe pas`
+    : `« ${ville} » n'est pas une commune du ${cp}`;
+  const piste = check.otherPostcodes?.length
+    ? ` (${ville} existe au ${check.otherPostcodes.slice(0, 3).join(', ')}${check.otherPostcodes.length > 3 ? '…' : ''})`
+    : '';
+  return `Adresse à corriger : ${quoi}${piste}. Corrigez-la depuis le Picking (bouton Corriger), `
+    + `ou validez-la telle quelle si elle est juste, puis relancez l'étiquette.`;
 };
 
 /** Destinataire, dans la forme attendue par le contrat transporteur. */
@@ -229,6 +253,20 @@ const generateForOrder = async (req, res) => {
         reason: 'order_blocked',
         orderNumber,
         userMessage: `Commande bloquée : ${blocked.reason}. Pas d'étiquette tant qu'elle n'est pas débloquée (fiche commande ou Picking).`
+      });
+    }
+
+    // Code postal inconnu ou commune à choisir : même règle que le tag
+    // `cp_ville_incoherents` du Picking, qui écarte ces commandes des vagues.
+    // Une commande scannée hors vague passait sans contrôle (commande 1274709,
+    // « 74004 PARIS ») : Colissimo facture 3 € HT une commune hors code postal.
+    const cpRefus = postcodeRefusal(order);
+    if (cpRefus) {
+      return res.status(422).json({
+        error: 'Code postal / ville incohérents',
+        reason: 'postcode_city_mismatch',
+        orderNumber,
+        userMessage: cpRefus
       });
     }
 
