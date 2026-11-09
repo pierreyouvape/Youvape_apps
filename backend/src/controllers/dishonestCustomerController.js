@@ -50,3 +50,19 @@ exports.unflag = async (req, res) => {
     fail(res, error);
   }
 };
+
+/**
+ * PATCH /api/customers/:id/dishonest-flag — body { autoBlock: boolean }.
+ * Coché : ses commandes passées avec son téléphone sont bloquées au Picking et
+ * un mail d'alerte part à contact@ (dishonestOrderService).
+ */
+exports.setAutoBlock = async (req, res) => {
+  const id = wpUserIdOf(req);
+  if (!id) return res.status(400).json({ success: false, error: 'Client invalide.' });
+  try {
+    await dishonestCustomerModel.setAutoBlock(id, req.body?.autoBlock);
+    res.json({ success: true, data: await dishonestCustomerModel.forCustomer(id) });
+  } catch (error) {
+    fail(res, error);
+  }
+};

@@ -15,7 +15,7 @@
  */
 
 const pool = require('../config/database');
-const { CRITERIA, buildSignature, matchSignature } = require('../utils/customerIdentity');
+const { CRITERIA, buildSignature, matchSignature, normPhone } = require('../utils/customerIdentity');
 const { PAID_STATUSES } = require('./orderDuplicateModel');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
@@ -28,7 +28,7 @@ const fullName = (first, last) => [first, last].filter(Boolean).join(' ').trim()
  */
 const activeFlags = async () => {
   const { rows: flags } = await pool.query(
-    `SELECT f.id, f.wp_user_id::text AS wp_user_id, f.reason, f.flagged_at,
+    `SELECT f.id, f.wp_user_id::text AS wp_user_id, f.reason, f.flagged_at, f.auto_block,
             (f.flagged_at AT TIME ZONE 'Europe/Paris') AS flagged_local,
             u.name AS flagged_by_name, c.first_name, c.last_name, c.email
        FROM customer_dishonest_flags f
@@ -55,6 +55,12 @@ const activeFlags = async () => {
 
   return flags.map((f) => {
     const own = byUser.get(f.wp_user_id) || [];
+    // Ses téléphones tels qu'écrits (un par numéro), pour la fiche client.
+    const phones = new Map();
+    for (const p of own.flatMap(o => [o.billing_phone, o.shipping_phone])) {
+      const n = normPhone(p);
+      if (n && !phones.has(n)) phones.set(n, String(p).trim());
+    }
     return {
       id: f.id,
       wpUserId: f.wp_user_id,
@@ -66,6 +72,8 @@ const activeFlags = async () => {
       flaggedAt: f.flagged_at,
       flaggedLocal: f.flagged_local,
       flaggedBy: f.flagged_by_name || null,
+      autoBlock: f.auto_block === true,
+      phones: [...phones.values()],
       signature: buildSignature({
         wpUserId: f.wp_user_id,
         emails: [f.email, ...own.map(o => o.billing_email)],
@@ -99,6 +107,25 @@ const matchOrderRow = (order, flags) => {
     }
   }
   return best;
+};
+
+/**
+ * Le signalement « à bloquer automatiquement » dont l'un des téléphones est
+ * celui de la commande, ou null. Seul le téléphone compte ici (choix Pierre du
+ * 09/11/2026) : un fraudeur change d'email et de compte PayPal, rarement de
+ * numéro. Mêmes conditions que matchOrderRow (payée, non nulle, postérieure).
+ * @returns {?{ flag, phone: string }}
+ */
+const autoBlockMatch = (order, flags) => {
+  if (!PAID_STATUSES.includes(order.post_status) || !(Number(order.order_total) > 0)) return null;
+  for (const flag of flags) {
+    if (!flag.autoBlock || new Date(order.post_date) < new Date(flag.flaggedLocal)) continue;
+    for (const p of [order.billing_phone, order.shipping_phone]) {
+      const n = normPhone(p);
+      if (n && flag.signature.phones.has(n)) return { flag, phone: String(p).trim() };
+    }
+  }
+  return null;
 };
 
 const ORDER_COLUMNS = `o.wp_order_id::text AS order_number, o.wp_order_id, o.wp_customer_id::text AS wp_customer_id,
@@ -202,7 +229,10 @@ const forCustomer = async (wpUserId) => {
   }
 
   return {
-    flag: own ? { id: own.id, reason: own.reason, flaggedAt: own.flaggedAt, flaggedBy: own.flaggedBy } : null,
+    flag: own
+      ? { id: own.id, reason: own.reason, flaggedAt: own.flaggedAt, flaggedBy: own.flaggedBy,
+        autoBlock: own.autoBlock, phones: own.phones }
+      : null,
     related
   };
 };
@@ -282,6 +312,16 @@ const unflagCustomer = async (wpUserId, userId) => {
   if (rowCount === 0) throw httpError(404, 'Ce client n\'est pas signalé.');
 };
 
+/** Coche ou décoche le blocage automatique (par téléphone) du signalement en cours. */
+const setAutoBlock = async (wpUserId, on) => {
+  if (typeof on !== 'boolean') throw httpError(400, 'autoBlock doit valoir true ou false.');
+  const { rowCount } = await pool.query(
+    'UPDATE customer_dishonest_flags SET auto_block = $2 WHERE wp_user_id = $1 AND removed_at IS NULL',
+    [wpUserId, on]
+  );
+  if (rowCount === 0) throw httpError(404, 'Ce client n\'est pas signalé.');
+};
+
 module.exports = {
-  activeFlags, matchOrderRow, matchOrders, matchTickets, findNewMatches, forCustomer, flagCustomer, unflagCustomer
+  activeFlags, matchOrderRow, autoBlockMatch, setAutoBlock, matchOrders, matchTickets, findNewMatches, forCustomer, flagCustomer, unflagCustomer
 };

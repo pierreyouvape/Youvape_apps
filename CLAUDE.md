@@ -583,7 +583,19 @@ qui l'a validé et quand. Code : `inventorySpotModel.js`, `services/inventorySpo
   (`utils/customerIdentity`). Le nom donne des homonymes : le critère est toujours affiché.
 - Picking : **hors des règles tant que le client est signalé**, ticket fermé ou non (choix
   Pierre), vague manuelle possible. Recalculé à chaque lecture (`dishonestCustomerModel.matchOrders`),
-  jamais lu depuis `dishonest_orders` : le cron ne sert qu'aux tickets (`dishonestOrderService`, */5).
+  jamais lu depuis `dishonest_orders`.
+- **Blocage automatique PAR TÉLÉPHONE, au cas par cas** (09/11/2026) : case sur le bandeau de la fiche
+  client (`customer_dishonest_flags.auto_block`, PATCH `/api/customers/:id/dishonest-flag`). Cochée, le
+  cron `dishonestOrderService` (*/5) bloque (`pickingModel.blockIfNotBlocked`, sans auteur, ne réécrit
+  jamais un blocage manuel) toute commande portant **un de ses téléphones** (`autoBlockMatch`, 9 derniers
+  chiffres), quel que soit le compte ou l'email — **seul le téléphone compte** (choix Pierre). Déjà
+  étiquetée : pas bloquée. Traitée une seule fois : la débloquer à la main la libère pour de bon.
+  Puis **un mail d'alerte à contact@ par passage** (quota Mailgun), retenté 24 h
+  (`dishonest_orders.alert_sent_at / alert_error`). Non cochée : rien ne change (hors règles + ticket).
+- ⚠️ `activeFlags` lit `auto_block` : la migration `add_dishonest_orders_block_alert.sql` passe AVANT
+  le code, sinon Picking, Packing et SAV perdent la reconnaissance des clients signalés.
+- ⚠️ **Seules les commandes créées APRÈS le signalement** sont reconnues : celles passées juste avant
+  (Mary Obeun, 4 comptes PayPal entre 16h01 et 16h50, signalée à 17h01) se bloquent à la main.
 - SAV : `ticket.dishonest` (liste et détail, `matchTickets`) → puce « Client malhonnête » dans la liste,
   bandeau dans le panneau client. Tout ce que le ticket sait compte (compte, email, tél., nom du ticket
   ET de sa commande), sans condition de date.

@@ -326,6 +326,32 @@ const block = async (orderNumber, reason, userId) => {
   );
 };
 
+/**
+ * Blocage posé par l'app elle-même (client signalé, dishonestOrderService).
+ * Comme block(), la commande sort de sa vague — mais un blocage déjà posé
+ * n'est pas touché : son motif, écrit par quelqu'un, reste le sien.
+ * @returns {Promise<boolean>} true si la commande vient d'être bloquée
+ */
+const blockIfNotBlocked = async (orderNumber, reason) => {
+  const motif = String(reason ?? '').trim();
+  if (!motif) throw httpError(400, 'Le motif du blocage est obligatoire.');
+  const { rows: [r] } = await pool.query(
+    `WITH nouveau AS (
+       INSERT INTO picking_blocks (order_number, reason, blocked_by)
+       VALUES ($1, $2, NULL)
+       ON CONFLICT (order_number) DO NOTHING
+       RETURNING order_number
+     ), retiree AS (
+       UPDATE picking_wave_orders
+          SET active = false, removed_at = NOW(), removed_by = NULL, removed_reason = $3
+        WHERE order_number = $1 AND active AND EXISTS (SELECT 1 FROM nouveau)
+     )
+     SELECT count(*)::int AS n FROM nouveau`,
+    [String(orderNumber), motif, `Bloquée : ${motif}`]
+  );
+  return r.n > 0;
+};
+
 const unblock = async (orderNumber) => {
   await pool.query('DELETE FROM picking_blocks WHERE order_number = $1', [String(orderNumber)]);
 };
@@ -838,6 +864,7 @@ module.exports = {
   getOrderItems,
   countByBucket,
   block,
+  blockIfNotBlocked,
   unblock,
   getBlock,
   getOrderState,

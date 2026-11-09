@@ -90,6 +90,24 @@ export default function DishonestFlagPanel({ wpUserId }) {
               {signedBy(flag)} — ses nouvelles commandes, même sous un autre compte, ne partent qu'en vague manuelle
               et ouvrent un ticket SAV.
             </div>
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: 13,
+              cursor: canWrite && flag.phones?.length ? 'pointer' : 'default',
+            }}>
+              <input
+                type="checkbox"
+                checked={flag.autoBlock === true}
+                disabled={!canWrite || busy || (!flag.autoBlock && !flag.phones?.length)}
+                onChange={e => send('patch', { autoBlock: e.target.checked })}
+                style={{ marginTop: 2, accentColor: RED }}
+              />
+              <span>
+                <strong>Bloquer automatiquement</strong> au Picking ses commandes passées avec son téléphone
+                {flag.phones?.length ? ` (${flag.phones.join(', ')})` : ''}, sous n'importe quel compte ou email,
+                et prévenir contact@ par mail.
+                {!flag.phones?.length && <em> Aucun téléphone connu pour ce client.</em>}
+              </span>
+            </label>
           </div>
           {canWrite && (
             <button onClick={remove} disabled={busy} style={{ ...btn(false), flexShrink: 0 }}>

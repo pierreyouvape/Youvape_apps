@@ -28,6 +28,7 @@ router.get('/:id/coupons', customersController.getCoupons);
 router.get('/:id/dishonest-flag', dishonestCustomerController.get);
 router.post('/:id/dishonest-flag', checkPermission('tickets', 'write'), dishonestCustomerController.flag);
 router.delete('/:id/dishonest-flag', checkPermission('tickets', 'write'), dishonestCustomerController.unflag);
+router.patch('/:id/dishonest-flag', checkPermission('tickets', 'write'), dishonestCustomerController.setAutoBlock);
 
 // Notes client
 router.get('/:customerId/notes', customerNotesController.getNotes);
