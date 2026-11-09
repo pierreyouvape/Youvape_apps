@@ -3,7 +3,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import BillingClaimsList, { ClaimSelector } from '../components/chronopost/BillingClaims';
-import { claimLineId } from '../utils/billingClaimLine';
+import { claimLineId, groupSupplementsForEmail, isClaimableSupplement } from '../utils/billingClaimLine';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -1515,7 +1515,7 @@ export default function ChronopostApp() {
     };
     for (const s of supplements) {
       const tracking = s.related_tracking || s.tracking;
-      if (tracking) add({ kind: 'supplement', tracking, order_id: s.related_order_id || null, description: s.description, claimed_ht: s.amount_ht, billed_ht: s.amount_ht, source: s });
+      if (tracking && isClaimableSupplement(s)) add({ kind: 'supplement', tracking, order_id: s.related_order_id || null, description: s.description, claimed_ht: s.amount_ht, billed_ht: s.amount_ht, source: s });
     }
     const weight = (o, extra) => add({ kind: 'weight', tracking: o.tracking, order_id: o.order_id || null, description: null, weight_declared: o.weight_bdd, weight_billed: o.weight_chrono, source: o, ...extra });
     for (const o of tarifEcarts) weight(o, { claimed_ht: o._ecart.ecart, billed_ht: o._ecart.priceFac, due_ht: o._ecart.priceDu });
@@ -1615,13 +1615,7 @@ export default function ChronopostApp() {
     const TABLE = (rows) =>
       `<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;margin-bottom:20px">${rows}</table>`;
 
-    const supplGroups = {};
-    for (const s of emailSupplements) {
-      const key = s.description;
-      if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
-      supplGroups[key].count += 1;
-      supplGroups[key].total += s.amount_ht || 0;
-    }
+    const supplGroups = groupSupplementsForEmail(emailSupplements);
 
     const tarifOvercharges = tarifEcarts.filter(isEmailWeight);
 
@@ -1680,13 +1674,7 @@ export default function ChronopostApp() {
   }
 
   function generateEmailText() {
-    const supplGroups = {};
-    for (const s of emailSupplements) {
-      const key = s.description;
-      if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
-      supplGroups[key].count += 1;
-      supplGroups[key].total += s.amount_ht || 0;
-    }
+    const supplGroups = groupSupplementsForEmail(emailSupplements);
 
     const bigDiffs = orders
       .filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && isEmailWeight(o))
@@ -2259,7 +2247,7 @@ export default function ChronopostApp() {
                   label="✉ Email réclamation"
                   active={tab === 'email'}
                   onClick={() => { setTab('email'); setEmailCopied(false); }}
-                  badge={supplements.length + orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return).length || null}
+                  badge={claimLines.length || null}
                 />
               </div>
 
@@ -2636,9 +2624,9 @@ export default function ChronopostApp() {
               {/* ── TAB EMAIL RÉCLAMATION */}
               {tab === 'email' && (
                 <div style={{ padding: 20 }}>
-                  {supplements.length === 0 && orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return).length === 0 ? (
+                  {claimLines.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
-                      Aucun supplément ni écart de poids important (&gt;200g) détecté sur cette facture.
+                      Rien à réclamer sur cette facture : aucun supplément facturé ni écart de poids important.
                     </div>
                   ) : (
                     <>
