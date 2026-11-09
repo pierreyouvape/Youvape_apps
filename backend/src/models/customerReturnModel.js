@@ -914,8 +914,13 @@ const shippingLineFor = async (denomination) => {
 // Méta posée sur la commande de renvoi : la seule façon de la retrouver quand
 // WooCommerce l'a créée sans que sa réponse nous parvienne.
 const RETURN_META = '_yv_return_id';
-// Créer une commande de 14 lignes a dépassé 30 s chez WooCommerce (retour 101, 09/11/2026).
-const CREATE_TIMEOUT_MS = 120000;
+// WooCommerce enregistre la commande en 1 à 3 s, mais sa RÉPONSE a dépassé 30 s
+// (retour 101, 09/11/2026 : commande créée à 17:54:17, mail parti à 17:54:20).
+// Inutile d'attendre plus : passé ce délai on va chercher la commande par sa
+// méta. Le tout doit tenir sous les 100 s où Cloudflare coupe la requête du navigateur.
+const CREATE_TIMEOUT_MS = 25000;
+const FIND_ATTEMPTS = 4;
+const FIND_INTERVAL_MS = 5000;
 // Retours dont la création tourne dans CE processus. Verrou en base à 0 sans
 // entrée ici = création interrompue (délai dépassé, redémarrage) : issue inconnue.
 const creatingReplacements = new Set();
@@ -937,9 +942,19 @@ const findTaggedReplacement = async (id, origin, sinceMs) => {
   };
   if (origin.customer_id) params.customer = origin.customer_id;
   else if (origin.billing?.email) params.search = origin.billing.email;
-  const orders = await wcRequest('get', '/orders', null, 'wc/v3', { params, timeout: 60000 });
+  const orders = await wcRequest('get', '/orders', null, 'wc/v3', { params, timeout: 10000 });
   if (!Array.isArray(orders)) throw new Error('réponse WooCommerce illisible');
   return orders.find(o => String(metaOf(o.meta_data)(RETURN_META)) === String(id)) || null;
+};
+
+/** Cherche la commande à plusieurs reprises : elle peut s'enregistrer après notre abandon. */
+const waitForTaggedReplacement = async (id, origin, sinceMs) => {
+  for (let i = 0; i < FIND_ATTEMPTS; i++) {
+    if (i) await new Promise(res => setTimeout(res, FIND_INTERVAL_MS));
+    const found = await findTaggedReplacement(id, origin, sinceMs).catch(() => null);
+    if (found) return found;
+  }
+  return null;
 };
 
 /**
@@ -1066,7 +1081,7 @@ const createReplacement = async (id, items, user, method = null) => {
     // Délai dépassé : la commande a pu être créée. Relâcher le verrou ici a
     // produit trois commandes identiques (retour 101, 09/11/2026).
     if (!error.statusCode && outcomeUnknown(error)) {
-      created = await findTaggedReplacement(id, origin, startedAt - 60000).catch(() => null);
+      created = await waitForTaggedReplacement(id, origin, startedAt - 60000);
       if (!created) {
         creatingReplacements.delete(id);
         throw httpError(422, 'WooCommerce n’a pas répondu à temps : la commande a peut-être été créée quand même. '
