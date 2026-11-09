@@ -28,11 +28,12 @@
 const axios = require('axios');
 const pool = require('../config/database');
 const advisor = require('./seoAdvisorService');
+const reading = require('../utils/seoTargetReading');
 
 const SITE = 'https://www.youvape.fr';
 const COUNTRY = 'fra';
 const REPOS_JOURS = 28;
-const PART_GAGNEE = 80;
+const { PART_GAGNEE } = reading;
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36';
 
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -292,12 +293,9 @@ const computeTargets = async ({ id } = {}) => {
 };
 
 const verdictOf = (t, last) => {
-  const s = t.stats?.last28;
-  if (!s || !s.impressions) return { code: 'vide', label: 'Pas de données' };
-  if (s.target_share >= PART_GAGNEE) return { code: 'gagnee', label: 'Gagnée' };
   const decided = ymd(new Date(t.decided_at));
-  if (addDays(decided, REPOS_JOURS) > ymd(new Date()) || enRepos(last)) return { code: 'attente', label: 'En attente de mesure' };
-  return { code: 'revoir', label: 'À revoir' };
+  const waiting = addDays(decided, REPOS_JOURS) > ymd(new Date()) || enRepos(last);
+  return reading.verdictOf(t.stats, waiting);
 };
 
 const listTargets = async () => {
@@ -320,6 +318,7 @@ const listTargets = async () => {
         last_change: last,
         repos_until: enRepos(last) ? reposJusquau(last) : null,
         verdict: verdictOf(t, last),
+        reading: reading.readTarget(t.stats),
       };
     }),
   };

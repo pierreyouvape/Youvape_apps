@@ -38,7 +38,8 @@ function Pill({ color, children, title }) {
   );
 }
 
-const VERDICT_COLORS = { gagnee: C.vertF, attente: C.orange, revoir: C.rouge, vide: C.grisM };
+const VERDICT_COLORS = { gagnee: C.vertF, acquise: C.vertF, perdue: C.rouge, attente: C.orange, revoir: C.rouge, vide: C.grisM };
+const EVOLUTION_COLORS = { hausse: C.vertF, gagnee: C.vertF, baisse: C.rouge, perdue: C.rouge };
 
 function PageLink({ url, onOpen }) {
   const path = pathOf(url);
@@ -96,16 +97,24 @@ function TargetRow({ t, seuil, onOpen, onEdit }) {
   const b = s.baseline || {};
   const l = s.last28 || {};
   const since = s.since;
+  const share = t.reading?.share || {};
+  const position = t.reading?.position || {};
   const color = VERDICT_COLORS[t.verdict?.code] || C.grisM;
   return (
     <>
       <tr style={{ cursor: 'pointer' }} onClick={() => setOpen(!open)}>
         <td style={td}><span style={{ color: C.grisM, marginRight: 6 }}>{open ? '▾' : '▸'}</span><b>{t.label}</b></td>
         <td style={td} onClick={(e) => e.stopPropagation()}><PageLink url={t.target_url} onOpen={onOpen} /></td>
-        <td style={tdNum}>{fmtInt(l.impressions)}</td>
-        <td style={tdNum}>{pct(b.target_share)}</td>
-        <td style={{ ...tdNum, fontWeight: 700, color: (l.target_share ?? 0) >= seuil ? C.vertF : C.grisTF }}>{pct(l.target_share)}</td>
-        <td style={tdNum}>{fmt1(b.target_position)} → <b>{fmt1(l.target_position)}</b></td>
+        <td style={tdNum}>{fmtInt(t.reading?.impressions)}</td>
+        <td style={tdNum}>{pct(share.from)}</td>
+        <td style={{ ...tdNum, fontWeight: 700, color: (share.to ?? 0) >= seuil ? C.vertF : C.grisTF }}>
+          {pct(share.to)}
+          <div style={{ fontSize: 11, fontWeight: 400, color: EVOLUTION_COLORS[share.status] || C.grisM }}>{share.label}</div>
+        </td>
+        <td style={tdNum}>
+          {fmt1(position.from)} → <b>{fmt1(position.to)}</b>
+          <div style={{ fontSize: 11, color: EVOLUTION_COLORS[position.status] || C.grisM }}>{position.label}</div>
+        </td>
         <td style={{ ...td, width: 130, padding: '2px 10px' }}>
           <div style={{ width: 120, height: 30 }}>
             <ResponsiveContainer>
@@ -201,7 +210,7 @@ export function TargetsTab({ onOpenPage }) {
         </div>
       </div>
       <div style={{ fontSize: 12, color: C.grisM, marginBottom: 10 }}>
-        « Part » = part des impressions de ces requêtes que Google donne à la page cible, parmi toutes nos pages. Une requête est gagnée au-delà de {data?.seuil ?? 80} %.
+        « Part » = part des impressions de ces requêtes que Google donne à la page cible, parmi toutes nos pages. « Actuelle » = depuis la décision, ou les 28 derniers jours quand elle est plus ancienne. Le verdict porte sur la part seule (seuil {data?.seuil ?? 80} %) : « Déjà acquise » = le seuil était déjà passé au départ, « Perdue » = il ne l&apos;est plus. La position se lit à part : plus le chiffre est bas, mieux c&apos;est.
         Les recommandations de cannibalisation suivent ces décisions. Une page modifiée reste au repos {data?.repos ?? 28} jours avant d&apos;être jugée.
       </div>
       {msg && <div style={{ color: C.rouge, fontSize: 13, marginBottom: 8 }}>{msg}</div>}
@@ -209,8 +218,8 @@ export function TargetsTab({ onOpenPage }) {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr>
-            <th style={th}>Requête</th><th style={th}>Page cible</th><th style={{ ...th, textAlign: 'right' }}>Impr. 28 j</th>
-            <th style={{ ...th, textAlign: 'right' }}>Part au départ</th><th style={{ ...th, textAlign: 'right' }}>Part 28 j</th>
+            <th style={th}>Requête</th><th style={th}>Page cible</th><th style={{ ...th, textAlign: 'right' }}>Impr. mesurées</th>
+            <th style={{ ...th, textAlign: 'right' }}>Part au départ</th><th style={{ ...th, textAlign: 'right' }}>Part actuelle</th>
             <th style={{ ...th, textAlign: 'right' }}>Position cible</th><th style={th}>Part sur 16 sem.</th><th style={th}>Verdict</th>
           </tr></thead>
           <tbody>
