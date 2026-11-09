@@ -466,6 +466,9 @@ vue `order_carrier_costs` (`add_order_carrier_costs.sql`), écrite par `services
 - **Rectificative** (`is_rectificative`, en-tête « FACTURATION PRESTATIONS ») : sa ligne **remplace**
   celle de la facture d'origine pour le même n° de suivi, et l'avoir de ce colis est ignoré.
   Sinon les colis refacturés comptent deux fois (176 sur 40852941, avoirs absents de la base).
+- **Bouton « Appliquer les tarifs » verrouillé** quand ils sont à jour : il ne se rouvre que si un avoir ou une
+  rectificative arrive après le dernier passage (`needsReapply`). Une correction faite directement en base ne
+  le rouvre pas : recalculer par `applyInvoices` ou `recomputeOrderShippingCosts.js`.
 - **Avoir Chronopost** : montant par ligne calculé par le serveur (`chronopostCreditLines`). Ligne sans
   poids = supplément : ni sûreté ni éco, et pas de carburant sur les pénalités (`FLAT_SUPPL_RE`).
   La somme des lignes retombe sur « TOTAL AVOIR » à quelques centimes d'arrondi près. Un avoir déposé dans la zone

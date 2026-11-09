@@ -866,7 +866,7 @@ export default function ChronopostApp() {
 
   // Colonne « Tarifs » d'une facture d'origine : bouton de réapplication si elle a été corrigée
   function tariffsCell(inv, g) {
-    if (!g.hasCorrections) {
+    if (!g.needsReapply) {
       return inv.tariffs_applied_at
         ? <Badge label="✓ Appliqués" color={C.green} bg={C.greenL} />
         : <Badge label="Non appliqués" color={C.greyT} bg={C.greyB} />;
@@ -877,14 +877,14 @@ export default function ChronopostApp() {
         disabled={applying}
         title="Coût livraison des commandes = facture d'origine + avoir + facture rectificative"
         style={{
-          background: g.needsReapply ? C.orange : 'none',
-          color: g.needsReapply ? C.white : C.green,
-          border: `1px solid ${g.needsReapply ? C.orange : C.green}`,
+          background: C.orange,
+          color: C.white,
+          border: `1px solid ${C.orange}`,
           borderRadius: 6, padding: '3px 8px', fontSize: 11.5, fontWeight: 700,
           cursor: applying ? 'wait' : 'pointer', whiteSpace: 'nowrap',
         }}
       >
-        {g.needsReapply ? '↻ Réappliquer les tarifs' : '✓ Appliqués · ↻'}
+        ↻ Réappliquer les tarifs
       </button>
     );
   }
@@ -1253,6 +1253,9 @@ export default function ChronopostApp() {
     ? historyGroups.find(g => g.hasCorrections && (g.head.id === currentInvoiceId || g.rectifs.some(r => r.id === currentInvoiceId)))
     : null;
 
+  // Déjà appliqués et aucune correction reçue depuis : rien à refaire
+  const tariffsUpToDate = !!tariffsAppliedAt && !currentGroup?.needsReapply;
+
   function handleDownloadPdf(inv, e) {
     e.stopPropagation(); // ne pas déclencher le clic de ligne
     const a = document.createElement('a');
@@ -1318,8 +1321,12 @@ export default function ChronopostApp() {
       setTab('poids');
       // Vérifier si cette facture est déjà enregistrée
       if (data.invoiceNumber) {
-        const alreadySaved = history.some(h => h.invoice_number === data.invoiceNumber);
-        if (alreadySaved) setSaveState('already');
+        const saved = history.find(h => h.invoice_number === data.invoiceNumber);
+        if (saved) {
+          setSaveState('already');
+          setCurrentInvoiceId(saved.id);
+          setTariffsAppliedAt(saved.tariffs_applied_at || null);
+        }
       }
     } catch (e) {
       setError(e.response?.data?.error || e.message);
@@ -2169,18 +2176,21 @@ export default function ChronopostApp() {
                     )}
                     <button
                       onClick={handleApplyTariffs}
-                      disabled={applying || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
-                      title="Coût livraison réel de chaque commande : toutes ses lignes facturées (aller, retours, tous transporteurs), avoirs déduits"
+                      disabled={applying || tariffsUpToDate || !orders.filter(o=>o.order_id && o.amount_ht!=null).length}
+                      title={tariffsUpToDate
+                        ? 'Rien à refaire : aucune correction reçue depuis le dernier passage'
+                        : 'Coût livraison réel de chaque commande : toutes ses lignes facturées (aller, retours, tous transporteurs), avoirs déduits'}
                       style={{
-                        background: '#7C3AED', color: C.white,
+                        background: tariffsUpToDate ? C.greyB : '#7C3AED', color: tariffsUpToDate ? C.greyT : C.white,
                         border: 'none', borderRadius: 8,
                         padding: '9px 18px', fontWeight: 700,
-                        fontSize: 13.5, cursor: applying ? 'wait' : 'pointer',
+                        fontSize: 13.5, cursor: applying ? 'wait' : tariffsUpToDate ? 'not-allowed' : 'pointer',
                         opacity: applying ? 0.85 : 1, width: '100%',
                       }}
                     >
                       {applying
                         ? `⏳ Mise à jour… ${Math.round(applyProgress)}%`
+                        : tariffsUpToDate ? '✓ Tarifs à jour'
                         : (tariffsAppliedAt ? '🔄 Réappliquer les tarifs aux commandes' : '🔄 Appliquer les tarifs aux commandes')}
                     </button>
                     {applying && (
