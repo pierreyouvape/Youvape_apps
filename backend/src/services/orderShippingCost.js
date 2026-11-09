@@ -61,6 +61,28 @@ function chronopostLineCosts(invoice, parcels, supplements) {
   });
 }
 
+// Montant déduit par chaque ligne d'un avoir. Une ligne de supplément (sans poids) ne porte
+// ni sûreté ni éco-participation, comptées au colis, et une pénalité administrative n'entre
+// pas dans la base carburant. Sinon la somme des lignes dépasse le total du document
+// (40984082 : -74,14 € pour -70,98 €).
+function chronopostCreditLines(orders, globalCharges) {
+  const p = chronopostParams(orders, globalCharges);
+  return orders.map(o => {
+    if (o.amount_ht == null) return null;
+    const amount = Number(o.amount_ht);
+    let credit;
+    if (o.weight_chrono == null) {
+      credit = FLAT_SUPPL_RE.test(o.supplement_label || '') ? amount : amount * (1 + p.carburantRate);
+    } else if (o.is_return) {
+      credit = amount * (1 + p.carburantRate);
+    } else {
+      credit = (amount + p.redevanceUnit) * (1 + p.carburantRate) + p.ecoUnit + p.fraisGestion / p.nbSurete;
+    }
+    // Au centime, comme carrier_invoice_credits.amount_ht : l'écran montre ce qui sera enregistré
+    return Math.round(credit * 100) / 100;
+  });
+}
+
 // ── Colissimo ─────────────────────────────────────────────────────────────
 function colissimoLineCosts(invoice, parcels, supplements) {
   const suppl = {};
@@ -184,7 +206,7 @@ const HAS_REAL_COST_SQL = alias =>
 const ORDER_SHIP_COST_SQL = 'GREATEST(0, COALESCE(ship.cost, o.shipping_cost_calculated))';
 
 module.exports = {
-  chronopostLineCosts, colissimoLineCosts, mondialRelayLineCosts,
+  chronopostLineCosts, chronopostCreditLines, colissimoLineCosts, mondialRelayLineCosts,
   computeInvoiceCosts, creditOrderIds, recomputeOrderCosts, applyInvoices, HAS_REAL_COST_SQL,
   ORDER_SHIP_COST_SQL,
 };

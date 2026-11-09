@@ -113,6 +113,11 @@ const pendingSav = async () => {
   return rows;
 };
 
+// Montant de l'avoir d'indemnisation relié à une réclamation (alias c)
+const INDEMNITY_AMOUNT_SQL = `SELECT SUM(ic.amount_ht) FROM carrier_invoice_credits ic
+  WHERE ic.carrier = 'chronopost' AND ic.credit_number = c.indemnity_credit_number
+    AND UPPER(ic.tracking) = UPPER(c.tracking_number)`;
+
 /** Les fichiers produits, les plus récents d'abord, avec leurs réclamations. */
 const listBatches = async (limit = 60) => {
   const { rows } = await pool.query(
@@ -125,7 +130,8 @@ const listBatches = async (limit = 60) => {
               'carrier_ticket', c.carrier_ticket, 'carrier_error', c.carrier_error,
               'sav_ticket_id', c.sav_ticket_id, 'sav_error', c.sav_error,
               'indemnity_status', c.indemnity_status, 'indemnity_at', c.indemnity_at,
-              'indemnity_by_name', ku.name
+              'indemnity_by_name', ku.name, 'indemnity_credit_number', c.indemnity_credit_number,
+              'indemnity_amount_ht', (${INDEMNITY_AMOUNT_SQL})
             ) ORDER BY c.id) FILTER (WHERE c.id IS NOT NULL), '[]') AS claims
        FROM carrier_claim_batches b
        LEFT JOIN carrier_claims c ON c.batch_id = b.id
@@ -205,7 +211,8 @@ const listIndemnities = async ({ status = 'accepted', from, to }) => {
   const { rows } = await pool.query(
     `SELECT c.id, c.label_id, c.order_number, c.tracking_number, c.object_code, c.carrier_ticket,
             c.deposit_day, c.due_day, c.created_at, c.indemnity_status, c.indemnity_at,
-            c.sav_ticket_id, ku.name AS indemnity_by_name
+            c.sav_ticket_id, ku.name AS indemnity_by_name, c.indemnity_credit_number,
+            (${INDEMNITY_AMOUNT_SQL}) AS indemnity_amount_ht
        FROM carrier_claims c
        LEFT JOIN users ku ON ku.id = c.indemnity_by
       WHERE ${pending ? 'c.indemnity_status IS NULL' : 'c.indemnity_status = $3'}
@@ -217,8 +224,37 @@ const listIndemnities = async ({ status = 'accepted', from, to }) => {
   return rows;
 };
 
+const findByTracking = async (tracking) => {
+  const { rows: [row] } = await pool.query(
+    'SELECT * FROM carrier_claims WHERE UPPER(tracking_number) = UPPER($1) ORDER BY id DESC LIMIT 1', [tracking]
+  );
+  return row || null;
+};
+
+const setIndemnityCredit = (claimId, creditNumber) => pool.query(
+  'UPDATE carrier_claims SET indemnity_credit_number = $2 WHERE id = $1', [claimId, creditNumber]
+);
+
+const clearIndemnityCredit = (creditNumber) => pool.query(
+  'UPDATE carrier_claims SET indemnity_credit_number = NULL WHERE indemnity_credit_number = $1', [creditNumber]
+);
+
+/** Avoirs d'indemnisation dont le colis n'a aucune réclamation reliée dans l'app. */
+const unlinkedIndemnities = async () => {
+  const { rows } = await pool.query(`
+    SELECT ic.credit_number, d.credit_date, d.related_invoice_number, ic.order_id, ic.tracking, ic.amount_ht
+      FROM carrier_invoice_credits ic
+      JOIN carrier_credit_documents d ON d.carrier = ic.carrier AND d.credit_number = ic.credit_number
+     WHERE ic.carrier = 'chronopost' AND d.is_indemnity
+       AND NOT EXISTS (SELECT 1 FROM carrier_claims c
+                        WHERE c.indemnity_credit_number = ic.credit_number
+                          AND UPPER(c.tracking_number) = UPPER(ic.tracking))
+     ORDER BY ic.credit_number DESC`);
+  return rows;
+};
+
 module.exports = {
-  setIndemnity, listIndemnities,
+  setIndemnity, listIndemnities, findByTracking, setIndemnityCredit, clearIndemnityCredit, unlinkedIndemnities,
   getSince, candidates, loadOrder, createBatch, markMailed, setSavResult, pendingSav,
   listBatches, getBatchFile, claimsOfBatch, setCarrierResult, markImported, forLabel,
 };

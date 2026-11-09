@@ -466,12 +466,33 @@ vue `order_carrier_costs` (`add_order_carrier_costs.sql`), écrite par `services
 - **Rectificative** (`is_rectificative`, en-tête « FACTURATION PRESTATIONS ») : sa ligne **remplace**
   celle de la facture d'origine pour le même n° de suivi, et l'avoir de ce colis est ignoré.
   Sinon les colis refacturés comptent deux fois (176 sur 40852941, avoirs absents de la base).
+- **Avoir Chronopost** : montant par ligne calculé par le serveur (`chronopostCreditLines`). Ligne sans
+  poids = supplément : ni sûreté ni éco, et pas de carburant sur les pénalités (`FLAT_SUPPL_RE`).
+  La somme des lignes retombe sur « TOTAL AVOIR » à quelques centimes d'arrondi près. Un avoir déposé dans la zone
+  Facture part dans le parcours des avoirs, aussi accessible depuis l'accueil de `/chronopost`.
 - L'**estimation** (`applyShippingCosts`, `applyShippingCostToOrder` à chaque synchro WC) ne touche
   jamais une commande qui a un `cost_ht` (`HAS_REAL_COST_SQL`). Avant, un changement de statut
   effaçait le coût réel.
 - Rattrapage complet : `node src/scripts/recomputeOrderShippingCosts.js [--apply]` (simulation
   par défaut, transaction annulée). Passé le 04/11/2026 : 14 022 commandes, +50,7 k€ HT, dont
   ≈ 49 k€ de 7 212 commandes Colissimo qui n'avaient jamais reçu de coût.
+
+### Réclamations de facturation Chronopost (09/11/2026)
+
+Onglet « Email réclamation » d'une facture : les lignes sont cochées par défaut, « Générer l'email » produit
+le mail des seules lignes cochées (changer une case l'efface), « Enregistrer ma demande » les garde (`carrier_billing_claims`, une demande par facture,
+rattachée par son n° pour survivre à un réimport). Suivi : accueil `/chronopost` → « Réclamations facture ».
+
+- **Le résultat n'est jamais stocké** (`services/claims/billingClaimMatch.js`) : recalculé depuis les avoirs
+  et rectificatives. Poids : obtenu = avoir − rectificative. « Non acceptée » = un avoir sur cette facture
+  daté de la demande ou après, sans cette ligne ; rien de reçu = « En attente ».
+- Il faut `carrier_invoice_credits.base_ht/description/has_weight` : **vides sur les avoirs d'avant le
+  09/11/2026**, donc ignorés par la comparaison. Réimporter un tel avoir pour qu'il compte.
+- **Date d'envoi modifiable** : elle décide de « Non acceptée » pour une demande saisie après coup.
+- **Indemnisation** (`is_indemnity`, en-tête « INDEMNISATION DES FRAIS… ») : à l'enregistrement, relie la
+  réclamation du colis (`carrier_claims.indemnity_credit_number`) et la passe en « Indemnisée » avec note SAV.
+  Sans réclamation dans l'app (faite sur le site Chronopost) : listée dans `/expeditions` → Réclamations →
+  Indemnisations. Supprimer l'avoir retire le lien, pas la réponse saisie.
 
 ### Contrôle code postal / commune (04/11/2026)
 

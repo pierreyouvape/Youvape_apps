@@ -2,6 +2,8 @@ import { useState, useRef, useContext, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import BillingClaimsList, { ClaimSelector } from '../components/chronopost/BillingClaims';
+import { claimLineId } from '../utils/billingClaimLine';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -704,7 +706,7 @@ export default function ChronopostApp() {
   // ── Totaux payés par mois / par année
   const [totals, setTotals] = useState(null);
   const [totalsLoading, setTotalsLoading] = useState(false);
-  const [homeTab, setHomeTab] = useState('historique'); // historique | totaux
+  const [homeTab, setHomeTab] = useState('historique'); // historique | avoirs | reclamations | totaux
 
   const [emailCopied, setEmailCopied] = useState(false);
 
@@ -719,6 +721,15 @@ export default function ChronopostApp() {
   const [creditFile, setCreditFile] = useState(null);
   const [creditsHistory, setCreditsHistory] = useState([]);
   const [creditsHistoryLoading, setCreditsHistoryLoading] = useState(false);
+  const [creditIndemnity, setCreditIndemnity] = useState(null);
+
+  // ── Réclamation de facturation : lignes décochées et demande enregistrée
+  const [claimUnchecked, setClaimUnchecked] = useState(() => new Set());
+  const [claimSentOn, setClaimSentOn] = useState('');
+  const [billingClaim, setBillingClaim] = useState(null);
+  const [claimSaving, setClaimSaving] = useState(false);
+  const [claimMessage, setClaimMessage] = useState(null);
+  const [emailDraft, setEmailDraft] = useState(null); // { html, text } : le mail généré depuis les lignes cochées
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -1295,6 +1306,14 @@ export default function ChronopostApp() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!data.success) throw new Error(data.error || 'Erreur analyse');
+      // Avoir déposé dans la zone Facture : il passe par le parcours des avoirs
+      if (data.isCredit) {
+        setCurrentFile(null);
+        setHomeTab('avoirs');
+        await handleCreditFile(file);
+        return;
+      }
+      if (!data.invoiceNumber) throw new Error('Numéro de facture introuvable : ce PDF ne semble pas être une facture Chronopost.');
       setResult(data);
       setTab('poids');
       // Vérifier si cette facture est déjà enregistrée
@@ -1359,6 +1378,7 @@ export default function ChronopostApp() {
     setCreditError(null);
     setCreditResult(null);
     setCreditSaveState(null);
+    setCreditIndemnity(null);
     setCreditLoading(true);
     try {
       const fd = new FormData();
@@ -1382,14 +1402,15 @@ export default function ChronopostApp() {
     if (!creditResult) return;
     setCreditSaving(true);
     try {
-      const params = computeTarifParams(creditResult.orders || [], creditResult.globalCharges || []);
-      const { supplBaseByTracking, supplFlatByTracking } = computeSupplMaps(creditResult.supplements || []);
       const credits = (creditResult.orders || [])
         .filter(o => o.amount_ht != null)
         .map(o => ({
           order_id: o.order_id || null,
           tracking: o.tracking || null,
-          amount_ht: computeTarif(o, params, supplBaseByTracking, supplFlatByTracking),
+          amount_ht: o.credit_ht,
+          base_ht: o.amount_ht,
+          description: o.supplement_label || null,
+          has_weight: o.weight_chrono != null,
         }));
 
       const fd = new FormData();
@@ -1399,6 +1420,7 @@ export default function ChronopostApp() {
         relatedInvoiceNumber: creditResult.relatedInvoiceNumber,
         creditTotalHt: creditResult.creditTotalHt ?? null,
         creditTotalTtc: creditResult.creditTotalTtc ?? null,
+        isIndemnity: !!creditResult.isIndemnity,
         credits,
       }));
       if (creditFile) fd.append('pdf', creditFile);
@@ -1408,6 +1430,7 @@ export default function ChronopostApp() {
       });
       if (data.success) {
         setCreditSaveState(data.already_saved ? 'already' : 'saved');
+        setCreditIndemnity(data.indemnity || null);
         if (!data.already_saved) { loadCreditsHistory(); loadTotals(); }
       }
     } catch (e) {
@@ -1449,13 +1472,9 @@ export default function ChronopostApp() {
       .catch(() => setCreditError('PDF non disponible pour cet avoir'));
   }
 
-  // Tarifs (négatifs) calculés pour les commandes de l'avoir en cours d'analyse
+  // Montants (négatifs) calculés par le serveur pour l'avoir en cours d'analyse
   const creditOrders = creditResult?.orders || [];
-  const _creditTarifParams = computeTarifParams(creditOrders, creditResult?.globalCharges || []);
-  const _creditSupplMaps = computeSupplMaps(creditResult?.supplements || []);
-  function getCreditAmount(order) {
-    return computeTarif(order, _creditTarifParams, _creditSupplMaps.supplBaseByTracking, _creditSupplMaps.supplFlatByTracking);
-  }
+  const getCreditAmount = order => order.credit_ht;
 
   // Filtered orders
   const filteredOrders = (result?.orders || []).filter(o => {
@@ -1486,6 +1505,91 @@ export default function ChronopostApp() {
     [orders, revisionCtx],
   );
 
+  // Lignes réclamables : mêmes règles que le mail, chacune peut être décochée
+  const claimLines = useMemo(() => {
+    const out = [], seen = {};
+    const add = l => {
+      const id = claimLineId(l);
+      seen[id] = (seen[id] || 0) + 1;
+      out.push({ ...l, key: `${id}|${seen[id]}` });
+    };
+    for (const s of supplements) {
+      const tracking = s.related_tracking || s.tracking;
+      if (tracking) add({ kind: 'supplement', tracking, order_id: s.related_order_id || null, description: s.description, claimed_ht: s.amount_ht, billed_ht: s.amount_ht, source: s });
+    }
+    const weight = (o, extra) => add({ kind: 'weight', tracking: o.tracking, order_id: o.order_id || null, description: null, weight_declared: o.weight_bdd, weight_billed: o.weight_chrono, source: o, ...extra });
+    for (const o of tarifEcarts) weight(o, { claimed_ht: o._ecart.ecart, billed_ht: o._ecart.priceFac, due_ht: o._ecart.priceDu });
+    for (const o of orders) {
+      if (o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o, revisionCtx)) weight(o, { claimed_ht: null, billed_ht: o.amount_ht });
+    }
+    return out;
+  }, [supplements, orders, tarifEcarts, revisionCtx]);
+  const checkedClaimLines = claimLines.filter(l => !claimUnchecked.has(l.key));
+  const emailSupplements = checkedClaimLines.filter(l => l.kind === 'supplement').map(l => l.source);
+  const emailWeightKeys = new Set(checkedClaimLines.filter(l => l.kind === 'weight').map(l => String(l.tracking).toUpperCase()));
+  const isEmailWeight = o => emailWeightKeys.has(String(o.tracking).toUpperCase());
+
+  // Rouvrir une facture : retrouve la demande enregistrée et ses cases
+  const claimInvoiceNumber = result?.invoiceNumber || null;
+  useEffect(() => {
+    setBillingClaim(null);
+    setClaimMessage(null);
+    setEmailDraft(null);
+    setClaimUnchecked(new Set());
+    setClaimSentOn(new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()));
+    if (!claimInvoiceNumber) return undefined;
+    let annule = false;
+    axios.get(`${API_URL}/chronopost/billing-claims/${claimInvoiceNumber}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(({ data }) => {
+        if (annule || !data.claim) return;
+        setBillingClaim(data.claim);
+        setClaimSentOn(data.claim.sent_on);
+        const asked = new Set(data.claim.lines.map(claimLineId));
+        setClaimUnchecked(new Set(claimLines.filter(l => !asked.has(claimLineId(l))).map(l => l.key)));
+      })
+      .catch(e => { if (!annule) setClaimMessage({ ok: false, text: e.response?.data?.error || 'Demande enregistrée illisible' }); });
+    return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recharge seulement au changement de facture
+  }, [claimInvoiceNumber, token]);
+
+  function toggleClaimLine(key) {
+    setEmailDraft(null); // le mail généré ne correspond plus aux cases
+    setClaimUnchecked(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function handleSaveBillingClaim() {
+    setClaimSaving(true);
+    setClaimMessage(null);
+    try {
+      const lines = checkedClaimLines.map(l => ({
+        kind: l.kind, tracking: l.tracking, order_id: l.order_id, description: l.description, claimed_ht: l.claimed_ht,
+        billed_ht: l.billed_ht, due_ht: l.due_ht, weight_declared: l.weight_declared, weight_billed: l.weight_billed,
+      }));
+      const { data } = await axios.put(`${API_URL}/chronopost/billing-claims/${result.invoiceNumber}`,
+        { sentOn: claimSentOn, lines }, { headers: { Authorization: `Bearer ${token}` } });
+      setBillingClaim(data.claim);
+      setClaimMessage({ ok: true, text: 'Demande enregistrée. Le résultat se met à jour à chaque avoir ou rectificative importé.' });
+    } catch (e) {
+      setClaimMessage({ ok: false, text: e.response?.data?.error || "Erreur lors de l'enregistrement" });
+    } finally { setClaimSaving(false); }
+  }
+
+  async function handleDeleteBillingClaim() {
+    if (!window.confirm(`Supprimer la demande sur la facture ${result.invoiceNumber} ?`)) return;
+    setClaimSaving(true);
+    try {
+      await axios.delete(`${API_URL}/chronopost/billing-claims/${result.invoiceNumber}`, { headers: { Authorization: `Bearer ${token}` } });
+      setBillingClaim(null);
+      setClaimMessage({ ok: true, text: 'Demande supprimée.' });
+    } catch (e) {
+      setClaimMessage({ ok: false, text: e.response?.data?.error || 'Erreur lors de la suppression' });
+    } finally { setClaimSaving(false); }
+  }
+
   // ── Extraction des tarifs unitaires depuis les charges globales
   const _tarifParams = computeTarifParams(orders, globalCharges);
   const { redevanceUnit, nbSûreté, ecoUnit, carburantRate, fraisGestionTotal } = _tarifParams;
@@ -1512,27 +1616,23 @@ export default function ChronopostApp() {
       `<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;margin-bottom:20px">${rows}</table>`;
 
     const supplGroups = {};
-    for (const s of supplements) {
+    for (const s of emailSupplements) {
       const key = s.description;
       if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
       supplGroups[key].count += 1;
       supplGroups[key].total += s.amount_ht || 0;
     }
 
-    const tarifOvercharges = orders
-      .filter(o => !o.is_return)
-      .map(o => ({ ...o, _ecart: computePriceEcart(o, revisionCtx) }))
-      .filter(o => o._ecart !== null && o._ecart.ecart > 0)
-      .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
+    const tarifOvercharges = tarifEcarts.filter(isEmailWeight);
 
-    const bigDiffs = orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o, revisionCtx));
+    const bigDiffs = orders.filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && !hasKnownTariff(o, revisionCtx) && isEmailWeight(o));
 
     let html = `<html><body style="font-family:Arial,sans-serif;font-size:13px;color:#2C3E50;line-height:1.6">`;
     html += `<p>Bonjour Amel,</p>`;
     html += `<p>Comme précédemment, je vous transmets les facturations anormales reçues. Votre service facturation avait accepté le remboursement.</p>`;
 
     if (Object.keys(supplGroups).length > 0) {
-      const totalSup = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
+      const totalSup = emailSupplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
       html += `<p><strong>Facture ${result.invoiceNumber} du ${result.invoiceDate}</strong></p>`;
       html += TABLE(
         `<thead><tr>${th('Type de supplément')}${th('Coût unitaire', true)}${th('Nb', true)}${th('Total HT', true)}</tr></thead>` +
@@ -1581,7 +1681,7 @@ export default function ChronopostApp() {
 
   function generateEmailText() {
     const supplGroups = {};
-    for (const s of supplements) {
+    for (const s of emailSupplements) {
       const key = s.description;
       if (!supplGroups[key]) supplGroups[key] = { description: key, count: 0, total: 0, unitCost: s.amount_ht };
       supplGroups[key].count += 1;
@@ -1589,7 +1689,7 @@ export default function ChronopostApp() {
     }
 
     const bigDiffs = orders
-      .filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return)
+      .filter(o => o.diff_g !== null && o.diff_g > 200 && !o.is_return && isEmailWeight(o))
       .sort((a, b) => b.diff_g - a.diff_g);
 
     let text = 'Bonjour Amel,\n\n';
@@ -1598,8 +1698,8 @@ export default function ChronopostApp() {
     const row = cols => '| ' + cols.join(' | ') + ' |';
     const sep = cols => '|' + cols.map(w => '-'.repeat(w + 2)).join('|') + '|';
 
-    if (supplements.length > 0) {
-      const totalSup = supplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
+    if (emailSupplements.length > 0) {
+      const totalSup = emailSupplements.reduce((s, x) => s + (x.amount_ht || 0), 0);
       text += `\nFacture ${result.invoiceNumber} du ${result.invoiceDate}\n\n`;
       text += row(['Type de supplément', 'Coût unitaire', 'Nb', 'Total HT']) + '\n';
       text += sep([34, 13, 4, 10]) + '\n';
@@ -1612,11 +1712,7 @@ export default function ChronopostApp() {
     }
 
     // Surcoûts tarifaires réels (changement de tranche)
-    const tarifOvercharges = orders
-      .filter(o => !o.is_return)
-      .map(o => ({ ...o, _ecart: computePriceEcart(o, revisionCtx) }))
-      .filter(o => o._ecart !== null && o._ecart.ecart > 0)
-      .sort((a, b) => b._ecart.ecart - a._ecart.ecart);
+    const tarifOvercharges = tarifEcarts.filter(isEmailWeight);
 
     if (tarifOvercharges.length > 0) {
       const totalEcartTarif = tarifOvercharges.reduce((s, o) => s + o._ecart.ecart, 0);
@@ -1659,6 +1755,209 @@ export default function ChronopostApp() {
     text += '\n\nCordialement\n\nMaxime Coglitore\nDirecteur\n04 99 78 24 53\ndirection@youvape.fr\nwww.youvape.fr';
     return text;
   }
+
+  // Panneau Avoirs : dans les onglets d'une facture ouverte et sur l'accueil
+  const avoirsPanel = (
+                <div style={{ padding: 20 }}>
+                  <p style={{ margin: '0 0 14px', color: C.greyT, fontSize: 13 }}>
+                    Importe un PDF d'avoir Chronopost ("Avoir sur facture …") : son montant sera déduit
+                    du tarif réel de la commande correspondante (via le n° de commande, ou à défaut le n° de suivi).
+                  </p>
+
+                  {/* Upload zone */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setCreditDragging(true); }}
+                    onDragLeave={() => setCreditDragging(false)}
+                    onDrop={onCreditDrop}
+                    onClick={() => creditFileRef.current?.click()}
+                    style={{
+                      border: `2px dashed ${creditDragging ? C.accent : C.greyB}`,
+                      borderRadius: 12,
+                      background: creditDragging ? C.accentL : C.grey,
+                      padding: '28px 20px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      marginBottom: 16,
+                    }}
+                  >
+                    <input
+                      ref={creditFileRef}
+                      type="file"
+                      accept=".pdf"
+                      style={{ display: 'none' }}
+                      onChange={e => handleCreditFile(e.target.files[0])}
+                    />
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>
+                      {creditLoading ? 'Analyse en cours…' : "Déposer le PDF d'avoir Chronopost ici"}
+                    </div>
+                    <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 4 }}>
+                      ou cliquer pour sélectionner le fichier
+                    </div>
+                    {creditFile && !creditLoading && (
+                      <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>
+                        📎 {creditFile.name}
+                      </div>
+                    )}
+                  </div>
+
+                  {creditError && (
+                    <div style={{
+                      background: C.redL, border: `1px solid ${C.red}`,
+                      borderRadius: 10, padding: '12px 16px',
+                      color: C.red, fontSize: 13.5, marginBottom: 16,
+                    }}>
+                      ⚠️ {creditError}
+                    </div>
+                  )}
+
+                  {creditResult && (
+                    <div style={{ marginBottom: 24 }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        flexWrap: 'wrap', gap: 12, marginBottom: 12,
+                      }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>
+                            Avoir {creditResult.creditNumber}
+                          </span>
+                          {creditResult.creditDate && (
+                            <span style={{ color: C.greyT, fontSize: 13, marginLeft: 12 }}>{creditResult.creditDate}</span>
+                          )}
+                          {creditResult.relatedInvoiceNumber && (
+                            <span style={{ color: C.greyT, fontSize: 13, marginLeft: 12 }}>
+                              (sur facture {creditResult.relatedInvoiceNumber})
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          {creditSaveState === 'saved' && (
+                            <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Avoir enregistré</span>
+                          )}
+                          {creditSaveState === 'already' && (
+                            <span style={{
+                              background: C.yellowL, color: '#92400E',
+                              border: '1px solid #F59E0B', borderRadius: 8,
+                              padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                            }}>⚠ Avoir déjà enregistré en BDD</span>
+                          )}
+                          {creditSaveState === null && (
+                            <button
+                              onClick={handleSaveCredit}
+                              disabled={creditSaving}
+                              style={{
+                                background: C.green, color: C.white,
+                                border: 'none', borderRadius: 8,
+                                padding: '9px 18px', fontWeight: 700,
+                                fontSize: 13.5, cursor: creditSaving ? 'wait' : 'pointer',
+                                opacity: creditSaving ? 0.7 : 1,
+                              }}
+                            >
+                              {creditSaving ? '⏳ Enregistrement…' : "💾 Enregistrer l'avoir"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {creditResult.isIndemnity && (
+                        <div style={{ background: C.accentL, borderRadius: 8, padding: '9px 12px', fontSize: 13, color: C.dark, marginBottom: 12 }}>
+                          <strong>Avoir d'indemnisation (transport remboursé, sans TVA).</strong>{' '}
+                          {creditIndemnity?.linked?.map(l => `${l.tracking} relié à sa réclamation, passée en « Indemnisée »${l.carrier_ticket ? ` (ticket ${l.carrier_ticket})` : ''}.`).join(' ')}{' '}
+                          {creditIndemnity?.unlinked?.length > 0 && `Aucune réclamation dans l'app pour ${creditIndemnity.unlinked.join(', ')} : il reste visible dans les indemnisations des Réclamations.`}{' '}
+                          <a href="/expeditions?vue=reclamations&onglet=indemnites" target="_blank" rel="noreferrer">Voir les réclamations</a>
+                        </div>
+                      )}
+
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: C.grey }}>
+                              {['N° Commande', 'Date', 'N° Suivi', 'Montant HT colis', 'Avoir total HT (déduit)'].map(h => (
+                                <th key={h} style={{
+                                  padding: '10px 12px', textAlign: 'left',
+                                  fontWeight: 700, color: C.dark, fontSize: 12,
+                                  borderBottom: `2px solid ${C.greyB}`,
+                                }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {creditOrders.map((o, i) => (
+                              <tr key={i} style={{
+                                background: i % 2 === 0 ? C.white : C.grey,
+                                borderBottom: `1px solid ${C.greyB}`,
+                              }}>
+                                <td style={{ padding: '9px 12px', fontWeight: 600, color: C.dark }}>
+                                  {o.order_id
+                                    ? <a href={`/orders/${o.order_id}`} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: 'none', fontWeight: 700 }}>{o.order_id}</a>
+                                    : <span style={{ color: C.greyT }}>—</span>}
+                                </td>
+                                <td style={{ padding: '9px 12px', color: C.greyT }}>{o.date || '—'}</td>
+                                <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{o.tracking}</td>
+                                <td style={{ padding: '9px 12px' }}>{fmtEur(o.amount_ht)}</td>
+                                <td style={{ padding: '9px 12px', fontWeight: 800, color: C.red }}>
+                                  {o.amount_ht != null ? fmtEur(getCreditAmount(o)) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: `2px solid ${C.greyB}` }}>
+                              <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>TOTAL AVOIR</td>
+                              <td style={{ padding: '10px 12px', fontWeight: 800, color: C.red, fontSize: 15 }}>
+                                {fmtEur(creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0))}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Historique des avoirs enregistrés */}
+                  <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>Avoirs Chronopost enregistrés.</p>
+                    <button onClick={loadCreditsHistory} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
+                      ↻ Actualiser
+                    </button>
+                  </div>
+                  {creditsHistoryLoading ? (
+                    <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
+                  ) : creditsHistory.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
+                      Aucun avoir enregistré pour l'instant.
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: C.grey }}>
+                            {['N° Avoir', 'Date', 'Facture liée', 'Lignes', 'Total HT', 'Enregistré le', ''].map(h => (
+                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {creditsHistory.map((c, i) => (
+                            <tr key={c.credit_number} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>{c.credit_number}</td>
+                              <td style={{ padding: '9px 12px', color: C.greyT }}>{c.credit_date || '—'}</td>
+                              <td style={{ padding: '9px 12px', color: C.greyT }}>{c.related_invoice_number || '—'}</td>
+                              <td style={{ padding: '9px 12px', textAlign: 'center' }}>{c.lines_count}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{fmtEur(c.total_ht)}</td>
+                              <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                              <td style={{ padding: '9px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <button onClick={e => handleDownloadCreditPdf(c, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
+                                <button onClick={e => handleDeleteCredit(c, e)} title="Supprimer l'avoir" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, color: C.red }}>🗑️</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+  );
 
   return (
     <AppShell currentPath="/chronopost">
@@ -2343,239 +2642,83 @@ export default function ChronopostApp() {
                     </div>
                   ) : (
                     <>
-                      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                        <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
-                          Aperçu de l'email — cliquez <strong>Copier</strong> puis collez directement dans Gmail ou Outlook.
-                        </p>
+                      <ClaimSelector
+                        lines={claimLines}
+                        unchecked={claimUnchecked}
+                        onToggle={toggleClaimLine}
+                        onSetAll={all => { setEmailDraft(null); setClaimUnchecked(new Set(all ? [] : claimLines.map(l => l.key))); }}
+                        sentOn={claimSentOn}
+                        onSentOn={setClaimSentOn}
+                        saved={billingClaim}
+                        saving={claimSaving}
+                        message={claimMessage}
+                        canSave={saveState === 'saved' || saveState === 'already'}
+                        onSave={handleSaveBillingClaim}
+                        onDelete={handleDeleteBillingClaim}
+                      />
+                      <div style={{ marginBottom: 14 }}>
                         <button
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.write([new ClipboardItem({
-                                'text/html':  new Blob([generateEmailHtml()],  { type: 'text/html' }),
-                                'text/plain': new Blob([generateEmailText()], { type: 'text/plain' }),
-                              })]);
-                            } catch {
-                              navigator.clipboard.writeText(generateEmailText());
-                            }
-                            setEmailCopied(true);
-                            setTimeout(() => setEmailCopied(false), 2500);
+                          onClick={() => {
+                            setEmailDraft({ html: generateEmailHtml(), text: generateEmailText() });
+                            setEmailCopied(false);
                           }}
+                          disabled={!checkedClaimLines.length}
                           style={{
-                            background: emailCopied ? C.green : C.accent, color: C.white,
-                            border: 'none', borderRadius: 8,
-                            padding: '9px 20px', fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
-                            transition: 'background 0.2s',
+                            background: C.primary, color: C.white, border: 'none', borderRadius: 8,
+                            padding: '10px 20px', fontWeight: 700, fontSize: 13.5,
+                            cursor: checkedClaimLines.length ? 'pointer' : 'not-allowed',
+                            opacity: checkedClaimLines.length ? 1 : 0.5,
                           }}
                         >
-                          {emailCopied ? '✓ Copié !' : '📋 Copier l\'email'}
+                          ✉ Générer l'email ({checkedClaimLines.length} ligne{checkedClaimLines.length > 1 ? 's' : ''} cochée{checkedClaimLines.length > 1 ? 's' : ''})
                         </button>
                       </div>
-                      <div
-                        dangerouslySetInnerHTML={{ __html: generateEmailHtml() }}
-                        style={{
-                          border: `1px solid ${C.greyB}`, borderRadius: 8,
-                          padding: '20px 24px', background: C.white,
-                          minHeight: 300, overflowY: 'auto',
-                        }}
-                      />
+                      {emailDraft && (
+                        <>
+                          <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                            <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>
+                              Aperçu de l'email — cliquez <strong>Copier</strong> puis collez directement dans Gmail ou Outlook.
+                            </p>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.write([new ClipboardItem({
+                                    'text/html':  new Blob([emailDraft.html], { type: 'text/html' }),
+                                    'text/plain': new Blob([emailDraft.text], { type: 'text/plain' }),
+                                  })]);
+                                } catch {
+                                  navigator.clipboard.writeText(emailDraft.text);
+                                }
+                                setEmailCopied(true);
+                                setTimeout(() => setEmailCopied(false), 2500);
+                              }}
+                              style={{
+                                background: emailCopied ? C.green : C.accent, color: C.white,
+                                border: 'none', borderRadius: 8,
+                                padding: '9px 20px', fontWeight: 700, fontSize: 13.5, cursor: 'pointer',
+                                transition: 'background 0.2s',
+                              }}
+                            >
+                              {emailCopied ? '✓ Copié !' : '📋 Copier l\'email'}
+                            </button>
+                          </div>
+                          <div
+                            dangerouslySetInnerHTML={{ __html: emailDraft.html }}
+                            style={{
+                              border: `1px solid ${C.greyB}`, borderRadius: 8,
+                              padding: '20px 24px', background: C.white,
+                              minHeight: 300, overflowY: 'auto',
+                            }}
+                          />
+                        </>
+                      )}
                     </>
                   )}
                 </div>
               )}
 
               {/* ── TAB AVOIRS */}
-              {tab === 'avoirs' && (
-                <div style={{ padding: 20 }}>
-                  <p style={{ margin: '0 0 14px', color: C.greyT, fontSize: 13 }}>
-                    Importe un PDF d'avoir Chronopost ("Avoir sur facture …") : son montant sera déduit
-                    du tarif réel de la commande correspondante (via le n° de commande, ou à défaut le n° de suivi).
-                  </p>
-
-                  {/* Upload zone */}
-                  <div
-                    onDragOver={e => { e.preventDefault(); setCreditDragging(true); }}
-                    onDragLeave={() => setCreditDragging(false)}
-                    onDrop={onCreditDrop}
-                    onClick={() => creditFileRef.current?.click()}
-                    style={{
-                      border: `2px dashed ${creditDragging ? C.accent : C.greyB}`,
-                      borderRadius: 12,
-                      background: creditDragging ? C.accentL : C.grey,
-                      padding: '28px 20px',
-                      textAlign: 'center',
-                      cursor: 'pointer',
-                      marginBottom: 16,
-                    }}
-                  >
-                    <input
-                      ref={creditFileRef}
-                      type="file"
-                      accept=".pdf"
-                      style={{ display: 'none' }}
-                      onChange={e => handleCreditFile(e.target.files[0])}
-                    />
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>📄</div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>
-                      {creditLoading ? 'Analyse en cours…' : "Déposer le PDF d'avoir Chronopost ici"}
-                    </div>
-                    <div style={{ color: C.greyT, fontSize: 12.5, marginTop: 4 }}>
-                      ou cliquer pour sélectionner le fichier
-                    </div>
-                    {creditFile && !creditLoading && (
-                      <div style={{ marginTop: 8, color: C.accent, fontSize: 12.5, fontWeight: 600 }}>
-                        📎 {creditFile.name}
-                      </div>
-                    )}
-                  </div>
-
-                  {creditError && (
-                    <div style={{
-                      background: C.redL, border: `1px solid ${C.red}`,
-                      borderRadius: 10, padding: '12px 16px',
-                      color: C.red, fontSize: 13.5, marginBottom: 16,
-                    }}>
-                      ⚠️ {creditError}
-                    </div>
-                  )}
-
-                  {creditResult && (
-                    <div style={{ marginBottom: 24 }}>
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        flexWrap: 'wrap', gap: 12, marginBottom: 12,
-                      }}>
-                        <div>
-                          <span style={{ fontWeight: 700, fontSize: 14, color: C.dark }}>
-                            Avoir {creditResult.creditNumber}
-                          </span>
-                          {creditResult.creditDate && (
-                            <span style={{ color: C.greyT, fontSize: 13, marginLeft: 12 }}>{creditResult.creditDate}</span>
-                          )}
-                          {creditResult.relatedInvoiceNumber && (
-                            <span style={{ color: C.greyT, fontSize: 13, marginLeft: 12 }}>
-                              (sur facture {creditResult.relatedInvoiceNumber})
-                            </span>
-                          )}
-                        </div>
-                        <div>
-                          {creditSaveState === 'saved' && (
-                            <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>✓ Avoir enregistré</span>
-                          )}
-                          {creditSaveState === 'already' && (
-                            <span style={{
-                              background: C.yellowL, color: '#92400E',
-                              border: '1px solid #F59E0B', borderRadius: 8,
-                              padding: '6px 14px', fontSize: 13, fontWeight: 600,
-                            }}>⚠ Avoir déjà enregistré en BDD</span>
-                          )}
-                          {creditSaveState === null && (
-                            <button
-                              onClick={handleSaveCredit}
-                              disabled={creditSaving}
-                              style={{
-                                background: C.green, color: C.white,
-                                border: 'none', borderRadius: 8,
-                                padding: '9px 18px', fontWeight: 700,
-                                fontSize: 13.5, cursor: creditSaving ? 'wait' : 'pointer',
-                                opacity: creditSaving ? 0.7 : 1,
-                              }}
-                            >
-                              {creditSaving ? '⏳ Enregistrement…' : "💾 Enregistrer l'avoir"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                          <thead>
-                            <tr style={{ background: C.grey }}>
-                              {['N° Commande', 'Date', 'N° Suivi', 'Montant HT colis', 'Avoir total HT (déduit)'].map(h => (
-                                <th key={h} style={{
-                                  padding: '10px 12px', textAlign: 'left',
-                                  fontWeight: 700, color: C.dark, fontSize: 12,
-                                  borderBottom: `2px solid ${C.greyB}`,
-                                }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {creditOrders.map((o, i) => (
-                              <tr key={i} style={{
-                                background: i % 2 === 0 ? C.white : C.grey,
-                                borderBottom: `1px solid ${C.greyB}`,
-                              }}>
-                                <td style={{ padding: '9px 12px', fontWeight: 600, color: C.dark }}>
-                                  {o.order_id
-                                    ? <a href={`/orders/${o.order_id}`} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: 'none', fontWeight: 700 }}>{o.order_id}</a>
-                                    : <span style={{ color: C.greyT }}>—</span>}
-                                </td>
-                                <td style={{ padding: '9px 12px', color: C.greyT }}>{o.date || '—'}</td>
-                                <td style={{ padding: '9px 12px', fontFamily: 'monospace', fontSize: 12, color: C.greyT }}>{o.tracking}</td>
-                                <td style={{ padding: '9px 12px' }}>{fmtEur(o.amount_ht)}</td>
-                                <td style={{ padding: '9px 12px', fontWeight: 800, color: C.red }}>
-                                  {o.amount_ht != null ? fmtEur(getCreditAmount(o)) : '—'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr style={{ borderTop: `2px solid ${C.greyB}` }}>
-                              <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>TOTAL AVOIR</td>
-                              <td style={{ padding: '10px 12px', fontWeight: 800, color: C.red, fontSize: 15 }}>
-                                {fmtEur(creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0))}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Historique des avoirs enregistrés */}
-                  <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <p style={{ margin: 0, color: C.greyT, fontSize: 13 }}>Avoirs Chronopost enregistrés.</p>
-                    <button onClick={loadCreditsHistory} style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '5px 12px', fontSize: 12, cursor: 'pointer', color: C.greyT }}>
-                      ↻ Actualiser
-                    </button>
-                  </div>
-                  {creditsHistoryLoading ? (
-                    <div style={{ textAlign: 'center', padding: 30, color: C.greyT }}>Chargement…</div>
-                  ) : creditsHistory.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: 40, color: C.greyT }}>
-                      Aucun avoir enregistré pour l'instant.
-                    </div>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                        <thead>
-                          <tr style={{ background: C.grey }}>
-                            {['N° Avoir', 'Date', 'Facture liée', 'Lignes', 'Total HT', 'Enregistré le', ''].map(h => (
-                              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontWeight: 700, color: C.dark, fontSize: 11.5, borderBottom: `2px solid ${C.greyB}`, whiteSpace: 'nowrap' }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {creditsHistory.map((c, i) => (
-                            <tr key={c.credit_number} style={{ background: i % 2 === 0 ? C.white : C.grey, borderBottom: `1px solid ${C.greyB}` }}>
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.primary }}>{c.credit_number}</td>
-                              <td style={{ padding: '9px 12px', color: C.greyT }}>{c.credit_date || '—'}</td>
-                              <td style={{ padding: '9px 12px', color: C.greyT }}>{c.related_invoice_number || '—'}</td>
-                              <td style={{ padding: '9px 12px', textAlign: 'center' }}>{c.lines_count}</td>
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{fmtEur(c.total_ht)}</td>
-                              <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
-                              <td style={{ padding: '9px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                <button onClick={e => handleDownloadCreditPdf(c, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>
-                                <button onClick={e => handleDeleteCredit(c, e)} title="Supprimer l'avoir" style={{ background: 'none', border: `1px solid #FECACA`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, color: C.red }}>🗑️</button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
+              {tab === 'avoirs' && avoirsPanel}
 
               {/* ── TAB HISTORIQUE */}
               {tab === 'historique' && (
@@ -2688,8 +2831,14 @@ export default function ChronopostApp() {
           <div style={{ background: C.white, borderRadius: 12, border: `1px solid ${C.greyB}`, marginTop: 8 }}>
             <div style={{ borderBottom: `1px solid ${C.greyB}`, padding: '0 16px', display: 'flex' }}>
               <TabBtn label="Historique des factures" active={homeTab === 'historique'} onClick={() => setHomeTab('historique')} badge={history.length} />
+              <TabBtn label="Avoirs" active={homeTab === 'avoirs'} onClick={() => setHomeTab('avoirs')} badge={creditsHistory.length} />
+              <TabBtn label="Réclamations facture" active={homeTab === 'reclamations'} onClick={() => setHomeTab('reclamations')} />
               <TabBtn label="Totaux" active={homeTab === 'totaux'} onClick={() => setHomeTab('totaux')} />
             </div>
+            {homeTab === 'avoirs' && avoirsPanel}
+            {homeTab === 'reclamations' && (
+              <BillingClaimsList token={token} onOpenInvoice={async id => { await handleLoadFromHistory({ id }); setTab('email'); }} />
+            )}
             {homeTab === 'totaux' && (
               <TotalsView totals={totals} totalsLoading={totalsLoading} loadTotals={loadTotals} totalsByPeriod={totalsByPeriod} />
             )}

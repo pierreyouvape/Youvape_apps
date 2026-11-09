@@ -5,7 +5,10 @@ const JSZip = require('jszip');
 const pool = require('../config/database');
 const { newestInvoicesFirst, HISTORY_LIMIT } = require('../utils/carrierInvoiceOrder');
 const { orderWeightSql, getPackagingWeight } = require('../services/orderWeightService');
-const { applyInvoices } = require('../services/orderShippingCost');
+const { applyInvoices, chronopostCreditLines } = require('../services/orderShippingCost');
+const billingClaimModel = require('../models/carrierBillingClaimModel');
+const claimModel = require('../models/carrierClaimModel');
+const claimService = require('../services/chronopostClaimService');
 
 const PACKAGING_KG = 0.011; // 11g
 
@@ -225,6 +228,7 @@ function parseChronopostPdf(text) {
   // « FACTURATION DU MOIS ») — la mention « Facture rectificative » n'est pas toujours
   // dans le texte extrait (absente des 4 rectificatives en base au 04/11/2026).
   const isRectificative = lines.some(l => /Facture rectificative|^FACTURATION PRESTATIONS/i.test(l));
+  const isIndemnity = lines.some(l => /^INDEMNISATION DES FRAIS/i.test(l));
   const frNum = v => parseFloat(v.replace(/[\s.]/g, '').replace(',', '.'));
 
   // Extract invoice metadata
@@ -284,6 +288,8 @@ function parseChronopostPdf(text) {
           amount_ht: amountNum?.val ?? null,
           is_return: isReturn,
           weight_corrected: isWeightCorrected,
+          // Avoir : « XN… Supplément Zones Difficiles d'accès -5,00 » est une ligne de supplément
+          supplement_label: SUPPLEMENT_PATTERNS.find(p => p.re.test(line))?.label || null,
           country: zoneToCountry(chronoZone(line)),
           weight_bdd: null,
           diff_g: null,
@@ -359,7 +365,7 @@ function parseChronopostPdf(text) {
     }
   }
 
-  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate, creditNumber, relatedInvoiceNumber, totalTtc, isRectificative, creditTotalHt, creditTotalTtc };
+  return { orders, supplements, globalCharges, invoiceNumber, invoiceDate, creditNumber, relatedInvoiceNumber, totalTtc, isRectificative, isIndemnity, creditTotalHt, creditTotalTtc };
 }
 
 /* ─── TRACKING → ORDER ID LOOKUP ────────────────────────────── */
@@ -561,8 +567,11 @@ exports.analyze = [
       const pdfParser = new PDFParse(uint8);
       await pdfParser.load();
       const pdfData = await pdfParser.getText();
-      const { orders, supplements, globalCharges, invoiceNumber, invoiceDate, totalTtc, isRectificative } =
+      const { orders, supplements, globalCharges, invoiceNumber, invoiceDate, totalTtc, isRectificative, creditNumber } =
         parseChronopostPdf(pdfData.text);
+
+      // Un avoir déposé ici : l'écran le passe à son propre parcours d'import
+      if (creditNumber) return res.json({ success: true, isCredit: true, creditNumber });
 
       // 2a. Résoudre les order_id manquants via numéro de suivi
       const trackingsWithoutId = orders
@@ -884,7 +893,7 @@ exports.analyzeCredit = [
       const pdfParser = new PDFParse(uint8);
       await pdfParser.load();
       const pdfData = await pdfParser.getText();
-      const { orders, supplements, globalCharges, invoiceDate, creditNumber, relatedInvoiceNumber, creditTotalHt, creditTotalTtc } =
+      const { orders, supplements, globalCharges, invoiceDate, creditNumber, relatedInvoiceNumber, creditTotalHt, creditTotalTtc, isIndemnity } =
         parseChronopostPdf(pdfData.text);
 
       if (!creditNumber) {
@@ -906,6 +915,10 @@ exports.analyzeCredit = [
         }
       }
 
+      // Montant déduit par ligne, calculé ici : c'est lui qui est affiché puis enregistré
+      const creditAmounts = chronopostCreditLines(orders, globalCharges);
+      orders.forEach((o, i) => { o.credit_ht = creditAmounts[i]; });
+
       res.json({
         success: true,
         creditNumber,
@@ -913,6 +926,7 @@ exports.analyzeCredit = [
         relatedInvoiceNumber,
         creditTotalHt,
         creditTotalTtc,
+        isIndemnity,
         orders,
         supplements,
         globalCharges,
@@ -923,6 +937,25 @@ exports.analyzeCredit = [
     }
   },
 ];
+
+// Avoir d'indemnisation : le relie à la réclamation du colis, qui passe en « Indemnisée ».
+// L'avoir est déjà enregistré : un échec ici ne doit pas le faire passer pour refusé.
+async function linkIndemnity(creditNumber, credits, user) {
+  const linked = [], unlinked = [];
+  for (const c of credits) {
+    try {
+      const claim = c.tracking ? await claimModel.findByTracking(c.tracking) : null;
+      if (!claim) { unlinked.push(c.tracking); continue; }
+      if (claim.indemnity_status !== 'accepted') await claimService.setIndemnity(claim.id, 'accepted', user);
+      await claimModel.setIndemnityCredit(claim.id, creditNumber);
+      linked.push({ tracking: c.tracking, order_number: claim.order_number, carrier_ticket: claim.carrier_ticket });
+    } catch (err) {
+      console.error('[Chronopost] linkIndemnity error:', err);
+      unlinked.push(c.tracking);
+    }
+  }
+  return { linked, unlinked };
+}
 
 // POST /api/chronopost/save-credit — enregistre un avoir + son PDF en BDD
 exports.saveCredit = [
@@ -935,7 +968,7 @@ exports.saveCredit = [
       } else {
         parsed = req.body;
       }
-      const { creditNumber, creditDate, relatedInvoiceNumber, credits, creditTotalHt, creditTotalTtc } = parsed;
+      const { creditNumber, creditDate, relatedInvoiceNumber, credits, creditTotalHt, creditTotalTtc, isIndemnity } = parsed;
       if (!creditNumber) return res.status(400).json({ success: false, error: 'creditNumber requis' });
 
       const existing = await pool.query(
@@ -948,23 +981,25 @@ exports.saveCredit = [
 
       const pdfBuffer = req.file ? req.file.buffer : null;
       await pool.query(`
-        INSERT INTO carrier_credit_documents (carrier, credit_number, credit_date, related_invoice_number, pdf_data, total_ht, total_ttc)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-      `, ['chronopost', creditNumber, creditDate || null, relatedInvoiceNumber || null, pdfBuffer, creditTotalHt ?? null, creditTotalTtc ?? null]);
+        INSERT INTO carrier_credit_documents (carrier, credit_number, credit_date, related_invoice_number, pdf_data, total_ht, total_ttc, is_indemnity)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      `, ['chronopost', creditNumber, creditDate || null, relatedInvoiceNumber || null, pdfBuffer, creditTotalHt ?? null, creditTotalTtc ?? null, !!isIndemnity]);
 
       if (credits?.length) {
-        const vals = credits.map((_, i) => { const b = i * 6; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6})`; }).join(',');
+        const vals = credits.map((_, i) => { const b = i * 9; return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9})`; }).join(',');
         const params = credits.flatMap(c => [
           'chronopost', creditNumber, creditDate || null,
           c.order_id || null, c.tracking || null, c.amount_ht ?? null,
+          c.base_ht ?? null, c.description || null, c.has_weight ?? null,
         ]);
         await pool.query(`
-          INSERT INTO carrier_invoice_credits (carrier, credit_number, credit_date, order_id, tracking, amount_ht)
+          INSERT INTO carrier_invoice_credits (carrier, credit_number, credit_date, order_id, tracking, amount_ht, base_ht, description, has_weight)
           VALUES ${vals}
         `, params);
       }
 
-      res.json({ success: true, already_saved: false });
+      const indemnity = isIndemnity ? await linkIndemnity(creditNumber, credits || [], req.user) : null;
+      res.json({ success: true, already_saved: false, indemnity });
     } catch (err) {
       console.error('[Chronopost] saveCredit error:', err);
       res.status(500).json({ success: false, error: err.message });
@@ -1000,6 +1035,8 @@ exports.getCreditsHistory = async (req, res) => {
 exports.deleteCredit = async (req, res) => {
   try {
     const { number } = req.params;
+    // La réclamation reste « Indemnisée » : c'est une réponse de Chronopost, modifiable à l'écran
+    await claimModel.clearIndemnityCredit(number);
     await pool.query('DELETE FROM carrier_invoice_credits WHERE carrier=$1 AND credit_number=$2', ['chronopost', number]);
     const result = await pool.query(
       'DELETE FROM carrier_credit_documents WHERE carrier=$1 AND credit_number=$2 RETURNING credit_number',
@@ -1093,6 +1130,58 @@ exports.getTotals = async (req, res) => {
     res.json({ success: true, invoices: invoices.rows, credits: credits.rows });
   } catch (err) {
     console.error('[Chronopost] getTotals error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/* ─── RÉCLAMATIONS DE FACTURATION ───────────────────────────── */
+// GET /api/chronopost/billing-claims — demandes enregistrées et leur résultat
+exports.listBillingClaims = async (req, res) => {
+  try {
+    res.json({ success: true, claims: await billingClaimModel.list() });
+  } catch (err) {
+    console.error('[Chronopost] listBillingClaims error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/chronopost/billing-claims/:invoiceNumber
+exports.getBillingClaim = async (req, res) => {
+  try {
+    res.json({ success: true, claim: await billingClaimModel.getByInvoice(req.params.invoiceNumber) });
+  } catch (err) {
+    console.error('[Chronopost] getBillingClaim error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// PUT /api/chronopost/billing-claims/:invoiceNumber — { sentOn, lines } : les lignes cochées
+exports.saveBillingClaim = async (req, res) => {
+  try {
+    const { invoiceNumber } = req.params;
+    const { sentOn, lines } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sentOn || '')) return res.status(400).json({ success: false, error: "Date d'envoi invalide" });
+    if (!Array.isArray(lines) || !lines.length) return res.status(400).json({ success: false, error: 'Coche au moins une ligne à réclamer' });
+    if (lines.some(l => !['supplement', 'weight'].includes(l.kind) || !l.tracking)) {
+      return res.status(400).json({ success: false, error: 'Ligne de réclamation invalide' });
+    }
+    const inv = await pool.query('SELECT id FROM carrier_invoices WHERE carrier = $1 AND invoice_number = $2', ['chronopost', invoiceNumber]);
+    if (!inv.rows.length) return res.status(400).json({ success: false, error: "Enregistre d'abord la facture" });
+    const claim = await billingClaimModel.save({ invoiceNumber, sentOn, lines, userId: req.user?.id });
+    res.json({ success: true, claim });
+  } catch (err) {
+    console.error('[Chronopost] saveBillingClaim error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// DELETE /api/chronopost/billing-claims/:invoiceNumber
+exports.deleteBillingClaim = async (req, res) => {
+  try {
+    if (!await billingClaimModel.remove(req.params.invoiceNumber)) return res.status(404).json({ success: false, error: 'Demande non trouvée' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Chronopost] deleteBillingClaim error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 };

@@ -215,6 +215,11 @@ export function Indemnite({ claim, token, onChanged }) {
           title={`${fmt(claim.indemnity_at)}${claim.indemnity_by_name ? ` — ${claim.indemnity_by_name}` : ''}`}>
           {ok ? 'Indemnisée' : 'Refusée'}
         </Chip>
+        {claim.indemnity_credit_number && (
+          <span style={{ fontSize: 12, color: C.greyT }}>
+            Avoir {claim.indemnity_credit_number}{claim.indemnity_amount_ht != null ? ` : ${Number(claim.indemnity_amount_ht).toFixed(2).replace('.', ',')} €` : ''}
+          </span>
+        )}
         <button onClick={() => repondre(null)} disabled={envoi} style={{
           border: 'none', background: 'none', color: C.greyT, cursor: 'pointer', fontSize: 12,
           textDecoration: 'underline', fontFamily: 'inherit', padding: 0,
@@ -253,6 +258,7 @@ function Indemnisations({ token }) {
   const [periode, setPeriode] = useState(() => moisParis(0));
   const [statut, setStatut] = useState('accepted');
   const [rows, setRows] = useState(null);
+  const [unlinked, setUnlinked] = useState([]);
   const [erreur, setErreur] = useState(null);
 
   const charger = useCallback(async () => {
@@ -262,6 +268,7 @@ function Indemnisations({ token }) {
         ...authHeaders(token), params: { status: statut, from: periode[0], to: periode[1] },
       });
       setRows(res.data.rows);
+      setUnlinked(res.data.unlinked || []);
     } catch (err) {
       setErreur(erreurApi(err, 'Erreur de chargement'));
     }
@@ -270,11 +277,12 @@ function Indemnisations({ token }) {
   useEffect(() => { charger(); }, [charger]);
 
   const exporter = () => {
-    const entete = ['Date de réponse', 'Réponse', 'Commande', 'Colis', 'Ticket Chronopost', 'Objet', 'Déposé', 'Dû', 'Saisi par'];
+    const entete = ['Date de réponse', 'Réponse', 'Commande', 'Colis', 'Ticket Chronopost', 'Objet', 'Déposé', 'Dû', 'Saisi par', 'Avoir', 'Montant avoir HT'];
     const lignes = rows.map(r => [
       r.indemnity_at ? fmt(r.indemnity_at) : '', r.indemnity_status === 'accepted' ? 'Acceptée' : r.indemnity_status === 'refused' ? 'Refusée' : 'En attente',
       r.order_number, r.tracking_number, r.carrier_ticket || '', r.object_code,
       fmtJour(r.deposit_day), fmtJour(r.due_day), r.indemnity_by_name || '',
+      r.indemnity_credit_number || '', r.indemnity_amount_ht != null ? String(r.indemnity_amount_ht).replace('.', ',') : '',
     ]);
     const csv = [entete, ...lignes].map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
@@ -314,6 +322,33 @@ function Indemnisations({ token }) {
       </div>
 
       {erreur && <div style={{ color: C.red, fontSize: 13.5, marginBottom: 12 }}>{erreur}</div>}
+      {unlinked.length > 0 && (
+        <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflowX: 'auto', marginBottom: 14 }}>
+          <div style={{ padding: '10px 14px', fontSize: 13.5, fontWeight: 700, color: C.dark }}>
+            Avoirs d'indemnisation sans réclamation dans l'app ({unlinked.length})
+            <div style={{ fontSize: 12.5, fontWeight: 400, color: C.greyT }}>Réclamés directement sur le site Chronopost, ou avant la mise en route des réclamations automatiques.</div>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: C.grey, textAlign: 'left', color: C.greyT, fontSize: 11.5, textTransform: 'uppercase' }}>
+                <th style={th}>Avoir</th><th style={th}>Date</th><th style={th}>Sur facture</th><th style={th}>Commande</th><th style={th}>Colis</th><th style={th}>Montant HT</th>
+              </tr>
+            </thead>
+            <tbody>
+              {unlinked.map(u => (
+                <tr key={`${u.credit_number}-${u.tracking}`} style={{ borderTop: `1px solid ${C.greyB}` }}>
+                  <td style={td}>{u.credit_number}</td>
+                  <td style={td}>{u.credit_date || '—'}</td>
+                  <td style={td}>{u.related_invoice_number || '—'}</td>
+                  <td style={td}>{u.order_id ? <Link to={`/orders/${u.order_id}`}>#{u.order_id}</Link> : '—'}</td>
+                  <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{u.tracking || '—'}</td>
+                  <td style={td}>{u.amount_ht != null ? `${Number(u.amount_ht).toFixed(2).replace('.', ',')} €` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -325,14 +360,15 @@ function Indemnisations({ token }) {
               <th style={th}>Objet</th>
               <th style={th}>Déposé / dû</th>
               <th style={th}>{pending ? 'SAV' : 'Saisi par'}</th>
+              <th style={th}>Avoir</th>
             </tr>
           </thead>
           <tbody>
             {rows && rows.length === 0 && (
-              <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Aucun colis sur cette période.</td></tr>
+              <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Aucun colis sur cette période.</td></tr>
             )}
             {!rows && !erreur && (
-              <tr><td colSpan={7} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Chargement…</td></tr>
+              <tr><td colSpan={8} style={{ ...td, textAlign: 'center', color: C.greyT, padding: 24 }}>Chargement…</td></tr>
             )}
             {rows?.map(r => (
               <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}` }}>
@@ -346,6 +382,11 @@ function Indemnisations({ token }) {
                   {pending
                     ? (r.sav_ticket_id ? <Link to={`/tickets/${r.sav_ticket_id}`}>#{r.sav_ticket_id}</Link> : '—')
                     : (r.indemnity_by_name || '—')}
+                </td>
+                <td style={td}>
+                  {r.indemnity_credit_number
+                    ? `${r.indemnity_credit_number}${r.indemnity_amount_ht != null ? ` : ${Number(r.indemnity_amount_ht).toFixed(2).replace('.', ',')} €` : ''}`
+                    : <span style={{ color: C.greyM }}>—</span>}
                 </td>
               </tr>
             ))}
@@ -364,7 +405,7 @@ export default function CarrierClaimsTab({ token }) {
   const [erreur, setErreur] = useState(null);
   const [controle, setControle] = useState(false);
   const [resultat, setResultat] = useState(null);
-  const [vue, setVue] = useState('fichiers');
+  const [vue, setVue] = useState(() => (new URLSearchParams(window.location.search).get('onglet') === 'indemnites' ? 'indemnites' : 'fichiers'));
 
   const charger = useCallback(async () => {
     setErreur(null);

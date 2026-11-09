@@ -77,7 +77,8 @@ const indemnities = async (req, res) => {
     if (!['accepted', 'refused', 'pending'].includes(status) || !DAY.test(from || '') || !DAY.test(to || '')) {
       return res.status(400).json({ error: 'Période ou statut invalide' });
     }
-    res.json({ rows: await claimModel.listIndemnities({ status, from, to }) });
+    const [rows, unlinked] = await Promise.all([claimModel.listIndemnities({ status, from, to }), claimModel.unlinkedIndemnities()]);
+    res.json({ rows, unlinked });
   } catch (err) {
     fail(res, err, 'Erreur de chargement des indemnisations');
   }

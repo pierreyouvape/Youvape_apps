@@ -16,6 +16,7 @@
 
 const assert = require('assert');
 const { _parsePdf } = require('../src/controllers/chronopostController');
+const { chronopostCreditLines } = require('../src/services/orderShippingCost');
 
 const RECTIF = `Compte 34751303
 Facture 40971693
@@ -83,6 +84,45 @@ test('avoir : totaux HT / TTC du récapitulatif', () => {
   const r = _parsePdf(AVOIR);
   assert.strictEqual(r.creditTotalHt, -83.58);
   assert.strictEqual(r.creditTotalTtc, -100.3);
+});
+
+// Avoirs réels du 04/11/2026 : suppléments, pénalités et corrections de poids mêlés
+const AVOIR_MIXTE = `Avoir 40984082
+Date 04/11/2026
+AVOIR SUR FACTURE 13821509 DU 31/10/2026
+1 XR706079665TS Supplément Zones Difficiles d'accès -5,00 N
+5 XR708943438TS Etiquette non conforme -2,00 N
+6 06/10/2026 XR708913590TS 34170 78160 P 1,050 -4,34 N
+Participation eco-responsable 1 colis à 0,22 EUR -0,22
+Surcharge Carburant Routier : 5,00 % sur montant de 9,34 EUR -0,47
+TOTAL AVOIR -12,03 -2,41 -14,44`;
+
+const AVOIR_REACHEMINEMENT = `Avoir 40984106
+Date 04/11/2026
+AVOIR SUR FACTURE 13800049 DU 31/10/2026
+22 XV911418595JB Traitement Réacheminement -8,00 N
+XV911418595JB Traitement Retour expéditeur -2,00 N
+Surcharge Carburant Routier : 24,20 % sur montant de 2,00 EUR -0,48
+TOTAL AVOIR -10,48 -2,10 -12,58`;
+
+const creditsOf = text => {
+  const r = _parsePdf(text);
+  return { r, lines: chronopostCreditLines(r.orders, r.globalCharges) };
+};
+
+test("avoir : l'éco-participation ne touche que le colis, la pénalité n'a pas de carburant", () => {
+  const { lines } = creditsOf(AVOIR_MIXTE);
+  assert.deepStrictEqual(lines, [-5.25, -2, -4.78]);
+});
+
+test('avoir : la somme des lignes égale le total HT du document', () => {
+  const { r, lines } = creditsOf(AVOIR_MIXTE);
+  assert.ok(Math.abs(lines.reduce((s, x) => s + x, 0) - r.creditTotalHt) < 0.02);
+});
+
+test('avoir : réacheminement hors carburant, retour expéditeur avec', () => {
+  const { lines } = creditsOf(AVOIR_REACHEMINEMENT);
+  assert.deepStrictEqual(lines, [-8, -2.48]);
 });
 
 if (failures) { console.error(`\n${failures} échec(s)`); process.exit(1); }

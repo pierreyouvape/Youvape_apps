@@ -22,6 +22,12 @@ router.get('/credits-for-orders',  c.getCreditsForOrders);
 router.delete('/credits/:number',  c.deleteCredit);
 router.get('/credits/:number/pdf', c.downloadCreditPdf);
 
+// Réclamations de facturation
+router.get('/billing-claims',                 c.listBillingClaims);
+router.get('/billing-claims/:invoiceNumber',  c.getBillingClaim);
+router.put('/billing-claims/:invoiceNumber',  c.saveBillingClaim);
+router.delete('/billing-claims/:invoiceNumber', c.deleteBillingClaim);
+
 router.get('/search-order', c.searchOrder);
 router.get('/totals', c.getTotals);
 

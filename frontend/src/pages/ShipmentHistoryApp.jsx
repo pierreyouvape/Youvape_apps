@@ -454,7 +454,7 @@ const ShipmentHistoryApp = () => {
   const [erreur, setErreur] = useState(null);
   const [ouvert, setOuvert] = useState(null);
   const [reimpression, setReimpression] = useState(null);
-  const [vue, setVue] = useState('colis');
+  const [vue, setVue] = useState(() => (new URLSearchParams(window.location.search).get('vue') === 'reclamations' ? 'reclamations' : 'colis'));
 
   // La recherche part après la frappe, pas à chaque touche.
   useEffect(() => {
