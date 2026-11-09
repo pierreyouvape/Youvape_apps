@@ -12,7 +12,7 @@
  *     → ni sûreté ni éco, carburant sur le supplément → 2,48 €.
  */
 const assert = require('assert');
-const { chronopostLineCosts, colissimoLineCosts, mondialRelayLineCosts } = require('../src/services/orderShippingCost');
+const { chronopostLineCosts, colissimoLineCosts, mondialRelayLineCosts, ORDER_SHIP_COST_SQL } = require('../src/services/orderShippingCost');
 
 let failures = 0;
 function test(name, fn) {
@@ -22,6 +22,12 @@ function test(name, fn) {
 const r2 = v => Math.round(v * 100) / 100;
 
 console.log('orderShippingCost');
+
+// GREATEST ignore les NULL en PostgreSQL : le repli sur l'estimé doit se faire à l'intérieur,
+// sinon toute commande non facturée compte 0 € (bug du 04/11/2026).
+test('KPI : une commande non facturée garde son coût estimé', () => {
+  assert.strictEqual(ORDER_SHIP_COST_SQL, 'GREATEST(0, COALESCE(ship.cost, o.shipping_cost_calculated))');
+});
 
 const EXPRESS = { global_charges: [
   { description: 'Redevance sûreté', detail: '28 colis × 0.70 EUR', amount_ht: 19.6 },

@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { ORDER_SHIP_COST_SQL } = require('../services/orderShippingCost');
 
 // Statuts considérés comme commandes actives (payées)
 const ACTIVE_STATUSES = [
@@ -164,7 +165,7 @@ async function computeDashboard({ dateFrom, dateTo, granularity } = {}) {
     // Jointure 1:1 par commande → pas de fan-out sur les autres agrégats.
     const shipJoin = `
       LEFT JOIN order_carrier_costs ship ON ship.order_id = o.wp_order_id`;
-    const shipCostExpr = `COALESCE(GREATEST(0, ship.cost), o.shipping_cost_calculated)`;
+    const shipCostExpr = ORDER_SHIP_COST_SQL;
 
     // ─── COÛT PRODUIT UNITAIRE — jamais 0 si un coût existe quelque part ────
     // Priorité : computed_cost (PMP FIFO achats) → wc_cog_cost du produit →

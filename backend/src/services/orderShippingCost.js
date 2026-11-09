@@ -174,7 +174,17 @@ async function applyInvoices(db, invoiceIds) {
 const HAS_REAL_COST_SQL = alias =>
   `EXISTS (SELECT 1 FROM carrier_invoice_parcels rc WHERE rc.order_id = ${alias}.wp_order_id AND rc.cost_ht IS NOT NULL)`;
 
+/**
+ * Coût d'expédition d'une commande pour les KPI : réel (vue order_carrier_costs, alias `ship`)
+ * sinon estimé (orders, alias `o`), plancher à 0 (avoir supérieur aux lignes facturées).
+ * Le COALESCE doit rester DANS le GREATEST : GREATEST ignore les NULL en PostgreSQL, donc
+ * GREATEST(0, NULL) = 0 et COALESCE(GREATEST(0, ship.cost), ...) ne retombe jamais sur
+ * l'estimé (commandes non facturées comptées à 0 €, bug du 04/11 au 09/11/2026).
+ */
+const ORDER_SHIP_COST_SQL = 'GREATEST(0, COALESCE(ship.cost, o.shipping_cost_calculated))';
+
 module.exports = {
   chronopostLineCosts, colissimoLineCosts, mondialRelayLineCosts,
   computeInvoiceCosts, creditOrderIds, recomputeOrderCosts, applyInvoices, HAS_REAL_COST_SQL,
+  ORDER_SHIP_COST_SQL,
 };
