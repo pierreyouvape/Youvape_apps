@@ -22,7 +22,16 @@ async function withResults(claims) {
   const numbers = claims.map(c => c.invoice_number);
 
   const [lines, credits] = await Promise.all([
-    pool.query('SELECT * FROM carrier_billing_claim_lines WHERE claim_id = ANY($1::int[]) ORDER BY id', [ids]),
+    // La facture ne porte pas toujours la commande sur un supplément : retrouvée par le n° de suivi
+    pool.query(`
+      SELECT l.id, l.claim_id, l.kind, l.tracking, l.description, l.claimed_ht, l.billed_ht, l.due_ht,
+             l.weight_declared, l.weight_billed,
+             COALESCE(l.order_id, (SELECT p.order_id FROM carrier_invoice_parcels p
+                                    WHERE UPPER(p.tracking) = UPPER(l.tracking) AND p.order_id IS NOT NULL
+                                    LIMIT 1)) AS order_id
+        FROM carrier_billing_claim_lines l
+       WHERE l.claim_id = ANY($1::int[])
+       ORDER BY l.id`, [ids]),
     pool.query(`
       SELECT d.related_invoice_number, c.credit_number, c.tracking, c.order_id, c.description, c.has_weight,
              c.base_ht, c.amount_ht, d.is_indemnity,

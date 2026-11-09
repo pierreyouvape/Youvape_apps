@@ -16,7 +16,7 @@
 
 const assert = require('assert');
 const { _parsePdf } = require('../src/controllers/chronopostController');
-const { chronopostCreditLines } = require('../src/services/orderShippingCost');
+const { chronopostCreditLines, chronopostLineCosts } = require('../src/services/orderShippingCost');
 
 const RECTIF = `Compte 34751303
 Facture 40971693
@@ -123,6 +123,22 @@ test('avoir : la somme des lignes égale le total HT du document', () => {
 test('avoir : réacheminement hors carburant, retour expéditeur avec', () => {
   const { lines } = creditsOf(AVOIR_REACHEMINEMENT);
   assert.deepStrictEqual(lines, [-8, -2.48]);
+});
+
+// Facture 13800049 : ligne restée ignorée jusqu'au 09/11/2026, hors base carburant (3756,88 €)
+test("correction d'adresse : lue sur le colis qui précède, sans carburant", () => {
+  const r = _parsePdf(`Facture 13800049
+Date 31/10/2026
+1 22/10/2026 XN500035414FR 1271046 34170 38240 NT 0,500 6,99 S C13 1271046 N
+Correction d'adresse 6,00 N
+Surcharge Carburant Routier : 24,20 % sur montant de 6,99 EUR 1,69`);
+  assert.deepStrictEqual(r.supplements.map(s => [s.description, s.amount_ht, s.related_tracking, s.related_order_id]),
+    [["Correction d'adresse", 6, 'XN500035414FR', 1271046]]);
+  const [line] = chronopostLineCosts(
+    { global_charges: r.globalCharges },
+    [{ id: 1, tracking: 'XN500035414FR', amount_ht: 6.99, is_return: false }],
+    [{ tracking: 'XN500035414FR', description: "Correction d'adresse", amount_ht: 6 }]);
+  assert.ok(Math.abs(line.cost - (6.99 * 1.242 + 6)) < 0.001);
 });
 
 if (failures) { console.error(`\n${failures} échec(s)`); process.exit(1); }

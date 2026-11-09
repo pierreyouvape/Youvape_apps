@@ -203,6 +203,7 @@ function parseChronopostPdf(text) {
     { re: /Supplément zone éloignée/i, label: 'Zone éloignée' },
     { re: /Supplément carburant/i, label: 'Surcharge carburant' },
     { re: /Correction de poids/i, label: 'Correction de poids' },
+    { re: /Correction d['’]adresse/i, label: "Correction d'adresse" },
   ];
 
   // Global invoice charge patterns (montants négatifs possibles sur les avoirs)

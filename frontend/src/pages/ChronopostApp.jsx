@@ -634,7 +634,7 @@ function computeTarifParams(orders, globalCharges) {
 }
 
 // Suppléments plats (hors base carburant) : pénalités administratives
-const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme|annonce\s+incompl|assurance/i;
+const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme|annonce\s+incompl|assurance|correction\s+d.adresse/i;
 
 function computeSupplMaps(supplements) {
   const supplByTracking = {};      // total pour affichage tooltip
@@ -1508,6 +1508,9 @@ export default function ChronopostApp() {
   // Lignes réclamables : mêmes règles que le mail, chacune peut être décochée
   const claimLines = useMemo(() => {
     const out = [], seen = {};
+    // La facture ne porte pas toujours la commande sur un supplément : retrouvée par le n° de suivi
+    const orderByTracking = {};
+    for (const o of orders) if (o.tracking && o.order_id) orderByTracking[String(o.tracking).toUpperCase()] = o.order_id;
     const add = l => {
       const id = claimLineId(l);
       seen[id] = (seen[id] || 0) + 1;
@@ -1515,7 +1518,7 @@ export default function ChronopostApp() {
     };
     for (const s of supplements) {
       const tracking = s.related_tracking || s.tracking;
-      if (tracking && isClaimableSupplement(s)) add({ kind: 'supplement', tracking, order_id: s.related_order_id || null, description: s.description, claimed_ht: s.amount_ht, billed_ht: s.amount_ht, source: s });
+      if (tracking && isClaimableSupplement(s)) add({ kind: 'supplement', tracking, order_id: s.related_order_id || orderByTracking[String(tracking).toUpperCase()] || null, description: s.description, claimed_ht: s.amount_ht, billed_ht: s.amount_ht, source: s });
     }
     const weight = (o, extra) => add({ kind: 'weight', tracking: o.tracking, order_id: o.order_id || null, description: null, weight_declared: o.weight_bdd, weight_billed: o.weight_chrono, source: o, ...extra });
     for (const o of tarifEcarts) weight(o, { claimed_ht: o._ecart.ecart, billed_ht: o._ecart.priceFac, due_ht: o._ecart.priceDu });

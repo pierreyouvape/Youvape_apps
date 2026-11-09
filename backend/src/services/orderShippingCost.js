@@ -39,7 +39,7 @@ function chronopostParams(orders, globalCharges) {
 }
 
 // Suppléments hors base carburant : pénalités administratives
-const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme|annonce\s+incompl|assurance/i;
+const FLAT_SUPPL_RE = /réacheminement|[eé]tiquette\s+non\s+conforme|annonce\s+incompl|assurance|correction\s+d.adresse/i;
 
 function chronopostLineCosts(invoice, parcels, supplements) {
   const base = {}, flat = {};
