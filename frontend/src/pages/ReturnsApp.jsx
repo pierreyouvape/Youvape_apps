@@ -590,13 +590,14 @@ function ReplacementModal({ ret, onClose, onDone, setMessage }) {
   return (
     <div
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '8vh 16px' }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.45)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 16px' }}
     >
-      <div style={{ background: C.white, borderRadius: 14, width: 'min(680px, 100%)', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
+      {/* Hauteur bornée à l'écran : seule la liste défile, titre et bouton « Créer » restent visibles. */}
+      <div style={{ background: C.white, borderRadius: 14, width: 'min(680px, 100%)', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,0.25)' }}>
         <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.greyB}`, fontSize: 17, fontWeight: 800 }}>
           {data?.lost ? 'Renvoi du colis perdu' : 'Commande de renvoi'} — retour n°{ret.id}
         </div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto', minHeight: 0 }}>
           {!data && !error && <span style={{ color: C.greyT }}>Lecture du stock BMS…</span>}
           {data && (
             <>
