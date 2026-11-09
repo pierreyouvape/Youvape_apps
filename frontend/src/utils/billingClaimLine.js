@@ -18,3 +18,8 @@ export function groupSupplementsForEmail(supplements) {
   }
   return groups;
 }
+
+// Sous ce montant, un écart de poids n'est pas coché d'office : on ne réclame que les écarts
+// importants (octobre 2026 : réclamés de 1,14 € à 2,38 €, écartés jusqu'à 0,62 €).
+export const SMALL_WEIGHT_GAP_HT = 1;
+export const isUncheckedByDefault = l => l.kind === 'weight' && l.claimed_ht != null && Number(l.claimed_ht) < SMALL_WEIGHT_GAP_HT;

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import BillingClaimsList, { ClaimSelector } from '../components/chronopost/BillingClaims';
-import { claimLineId, groupSupplementsForEmail, isClaimableSupplement } from '../utils/billingClaimLine';
+import { claimLineId, groupSupplementsForEmail, isClaimableSupplement, isUncheckedByDefault, SMALL_WEIGHT_GAP_HT } from '../utils/billingClaimLine';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
@@ -1535,7 +1535,7 @@ export default function ChronopostApp() {
     setBillingClaim(null);
     setClaimMessage(null);
     setEmailDraft(null);
-    setClaimUnchecked(new Set());
+    setClaimUnchecked(new Set(claimLines.filter(isUncheckedByDefault).map(l => l.key)));
     setClaimSentOn(new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris' }).format(new Date()));
     if (!claimInvoiceNumber) return undefined;
     let annule = false;
@@ -2630,6 +2630,11 @@ export default function ChronopostApp() {
                     </div>
                   ) : (
                     <>
+                      {!billingClaim && claimLines.some(isUncheckedByDefault) && (
+                        <p style={{ margin: '0 0 10px', color: C.greyT, fontSize: 13 }}>
+                          Écarts de poids sous {SMALL_WEIGHT_GAP_HT} € décochés d'office : {claimLines.filter(isUncheckedByDefault).length} ligne(s), à cocher si tu veux les réclamer.
+                        </p>
+                      )}
                       <ClaimSelector
                         lines={claimLines}
                         unchecked={claimUnchecked}

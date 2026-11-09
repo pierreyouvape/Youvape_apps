@@ -479,7 +479,7 @@ vue `order_carrier_costs` (`add_order_carrier_costs.sql`), écrite par `services
 
 ### Réclamations de facturation Chronopost (09/11/2026)
 
-Onglet « Email réclamation » d'une facture : les lignes sont cochées par défaut (suppléments à 0 € exclus), « Générer l'email » produit
+Onglet « Email réclamation » d'une facture : les lignes sont cochées par défaut (suppléments à 0 € exclus, écarts de poids sous 1 € décochés), « Générer l'email » produit
 le mail des seules lignes cochées (changer une case l'efface), « Enregistrer ma demande » les garde (`carrier_billing_claims`, une demande par facture,
 rattachée par son n° pour survivre à un réimport). Suivi : accueil `/chronopost` → « Réclamations facture ».
 
