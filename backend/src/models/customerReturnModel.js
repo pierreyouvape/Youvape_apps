@@ -911,6 +911,37 @@ const shippingLineFor = async (denomination) => {
   throw httpError(400, `Aucune commande récente en « ${denomination} » ne porte la méthode WooCommerce à reprendre.`);
 };
 
+// Méta posée sur la commande de renvoi : la seule façon de la retrouver quand
+// WooCommerce l'a créée sans que sa réponse nous parvienne.
+const RETURN_META = '_yv_return_id';
+// Créer une commande de 14 lignes a dépassé 30 s chez WooCommerce (retour 101, 09/11/2026).
+const CREATE_TIMEOUT_MS = 120000;
+// Retours dont la création tourne dans CE processus. Verrou en base à 0 sans
+// entrée ici = création interrompue (délai dépassé, redémarrage) : issue inconnue.
+const creatingReplacements = new Set();
+
+/**
+ * Pas de réponse, ou 5xx (Cloudflare 502/524 compris) : WooCommerce a pu créer
+ * la commande quand même. Seul un 4xx est un vrai refus.
+ */
+const outcomeUnknown = (error) => !error.response || error.response.status >= 500;
+
+/** Commande de renvoi de ce retour déjà créée dans WooCommerce, ou null. */
+const findTaggedReplacement = async (id, origin, sinceMs) => {
+  const params = {
+    after: new Date(sinceMs).toISOString().slice(0, 19),
+    dates_are_gmt: true,
+    per_page: 50,
+    orderby: 'date',
+    order: 'desc',
+  };
+  if (origin.customer_id) params.customer = origin.customer_id;
+  else if (origin.billing?.email) params.search = origin.billing.email;
+  const orders = await wcRequest('get', '/orders', null, 'wc/v3', { params, timeout: 60000 });
+  if (!Array.isArray(orders)) throw new Error('réponse WooCommerce illisible');
+  return orders.find(o => String(metaOf(o.meta_data)(RETURN_META)) === String(id)) || null;
+};
+
 /**
  * Crée la commande de renvoi dans WooCommerce : même client, mêmes adresses,
  * articles à 0 €, « SAV commande N°… » en note interne, statut En cours
@@ -976,18 +1007,31 @@ const createReplacement = async (id, items, user, method = null) => {
   const network = relayNetwork(methods.find(m => m.denomination === plan.method));
   const originNetwork = r.relay_point?.network || null;
 
-  // Verrou contre le double clic : 0 = création en cours.
+  // Verrou contre le double clic : 0 = création en cours. Un 0 laissé par une
+  // création interrompue se reprend, mais en cherchant d'abord ce qu'elle a créé.
+  if (creatingReplacements.has(id)) throw httpError(409, 'Commande de renvoi déjà en cours de création.');
+  const interrupted = r.replacement_order_id != null;
   const { rowCount } = await pool.query(
     `UPDATE customer_returns SET replacement_order_id = 0
-      WHERE id = $1 AND replacement_order_id IS NULL AND cancelled_at IS NULL`,
+      WHERE id = $1 AND (replacement_order_id IS NULL OR replacement_order_id = 0) AND cancelled_at IS NULL`,
     [id]
   );
   if (!rowCount) throw httpError(409, 'Commande de renvoi déjà en cours de création.');
+  creatingReplacements.add(id);
 
   let created;
   let origin;
+  const startedAt = Date.now();
   try {
     origin = await fetchWcOrder(r.wp_order_id);
+    if (interrupted) created = await findTaggedReplacement(id, origin, startedAt - 7 * 86400000);
+  } catch (error) {
+    // Rien n'a été envoyé : le verrou ne reste à 0 que si une création précédente reste à élucider.
+    if (!interrupted) await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
+    creatingReplacements.delete(id);
+    throw httpError(422, `WooCommerce injoignable, rien n’a été créé : ${error.response?.data?.message || error.message}`);
+  }
+  if (!created) try {
     // La méthode affichée fait foi ; la ligne d'origine n'est reprise que si elle
     // la porte vraiment (une commande créée dans l'admin n'a que le libellé).
     const originLine = origin.shipping_lines?.[0];
@@ -1010,18 +1054,34 @@ const createReplacement = async (id, items, user, method = null) => {
         method_title: plan.method,
         total: '0.00',
       }],
-      // Sans elles, BMS n'a pas de point relais (commande 1269103, 14/10/2026).
-      meta_data: keepRelay(plan, planned, network, originNetwork || relayPointOf(metaOf(origin.meta_data))?.network)
-        ? pickupMetaFor(origin, shippingLine.method_id)
-        : [],
-    });
+      meta_data: [
+        { key: RETURN_META, value: String(id) },
+        // Sans elles, BMS n'a pas de point relais (commande 1269103, 14/10/2026).
+        ...(keepRelay(plan, planned, network, originNetwork || relayPointOf(metaOf(origin.meta_data))?.network)
+          ? pickupMetaFor(origin, shippingLine.method_id)
+          : []),
+      ],
+    }, 'wc/v3', { timeout: CREATE_TIMEOUT_MS });
   } catch (error) {
-    await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
-    if (error.statusCode) throw error;
-    const detail = error.response?.data?.message || error.message;
-    // 422 et non 502 : Cloudflare remplace le corps d'un 502, le message n'arrivait jamais à l'écran.
-    throw httpError(422, `WooCommerce a refusé la commande : ${detail}`);
+    // Délai dépassé : la commande a pu être créée. Relâcher le verrou ici a
+    // produit trois commandes identiques (retour 101, 09/11/2026).
+    if (!error.statusCode && outcomeUnknown(error)) {
+      created = await findTaggedReplacement(id, origin, startedAt - 60000).catch(() => null);
+      if (!created) {
+        creatingReplacements.delete(id);
+        throw httpError(422, 'WooCommerce n’a pas répondu à temps : la commande a peut-être été créée quand même. '
+          + 'Patientez quelques minutes puis relancez : l’app retrouvera la commande au lieu d’en créer une seconde.');
+      }
+    } else {
+      await pool.query('UPDATE customer_returns SET replacement_order_id = NULL WHERE id = $1', [id]);
+      creatingReplacements.delete(id);
+      if (error.statusCode) throw error;
+      const detail = error.response?.data?.message || error.message;
+      // 422 et non 502 : Cloudflare remplace le corps d'un 502, le message n'arrivait jamais à l'écran.
+      throw httpError(422, `WooCommerce a refusé la commande : ${detail}`);
+    }
   }
+  creatingReplacements.delete(id);
 
   const newId = Number(created.id);
   await pool.query('UPDATE customer_returns SET replacement_order_id = $2 WHERE id = $1', [id, newId]);

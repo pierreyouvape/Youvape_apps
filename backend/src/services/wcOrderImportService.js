@@ -253,7 +253,11 @@ const toSyncPayload = (o) => {
  * Partagé avec les Retours, qui créent les commandes de renvoi, et le jeton
  * yousync, dont la route vit dans un autre espace de noms.
  */
-const wcRequest = async (method, path, body = null, namespace = 'wc/v3') => {
+/**
+ * Appel à l'API REST WooCommerce. `options.timeout` (ms, 30 s par défaut) et
+ * `options.params` (filtres de liste) s'ajoutent à la connexion.
+ */
+const wcRequest = async (method, path, body = null, namespace = 'wc/v3', options = {}) => {
   const { rows } = await pool.query(
     'SELECT woocommerce_url, consumer_key, consumer_secret, htaccess_user, htaccess_password FROM rewards_config LIMIT 1'
   );
@@ -267,10 +271,10 @@ const wcRequest = async (method, path, body = null, namespace = 'wc/v3') => {
   const { data } = await axios({
     method,
     url: `${cfg.woocommerce_url.replace(/\/$/, '')}/wp-json/${namespace}${path}`,
-    params: { consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
+    params: { ...(options.params || {}), consumer_key: cfg.consumer_key, consumer_secret: cfg.consumer_secret },
     data: body || undefined,
     headers,
-    timeout: 30000
+    timeout: options.timeout || 30000
   });
   return data;
 };
