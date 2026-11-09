@@ -651,7 +651,10 @@ const getPage = async (rawUrl) => {
   return {
     url, path: pathOf(url), kind, dataTo: to, period: { from, to },
     main_query: main,
-    own_targets: ownTargets.map((t) => ({ id: t.id, label: t.label, share: t.stats?.last28?.target_share ?? null, position: t.stats?.last28?.target_position ?? null })),
+    own_targets: ownTargets.map((t) => {
+      const cur = reading.currentWindow(t.stats);
+      return { id: t.id, label: t.label, share: cur?.target_share ?? null, position: cur?.target_position ?? null };
+    }),
     page: { ...page, links: undefined, jsonld: page.jsonld.slice(0, 12) },
     checks,
     queries,
@@ -672,11 +675,13 @@ const targetRecommendations = async () => {
   await ensureTables();
   const { targets } = await listTargets();
   // Relevé des cibles et des pages concurrentes (title, H1, marque, liens), fait au début du calcul.
-  const audits = await loadAudits(targets.flatMap((t) => [t.target_url, ...(t.stats?.last28?.pages || []).map((p) => p.page)]));
+  const audits = await loadAudits(targets.flatMap((t) => [t.target_url, ...(reading.currentWindow(t.stats)?.pages || []).map((p) => p.page)]));
   const recs = [];
   for (const t of targets) {
-    const s = t.stats?.last28;
-    if (!s || s.impressions < 100 || s.target_share >= PART_GAGNEE) continue;
+    // Même mesure que le verdict : jamais de fenêtre à cheval sur la décision.
+    const s = reading.currentWindow(t.stats);
+    if (!s || s.impressions < reading.MIN_IMPRESSIONS_PART || s.target_share >= PART_GAGNEE) continue;
+    const days = reading.windowDays(s);
     const rivals = s.pages.filter((p) => p.page !== normUrl(t.target_url) && p.share >= 10);
     if (!rivals.length) continue;
     const head = t.label.split(',')[0].trim();
@@ -699,16 +704,16 @@ const targetRecommendations = async () => {
     // Rien à faire : pas de carte.
     if (!work.length) continue;
     const steps = [
-      `Page cible décidée le ${t.decided_at.split('-').reverse().join('/')} : ${t.target_path}. Elle reçoit ${s.target_share} % des impressions (position ${s.target_position ?? '—'}).`,
+      `Page cible décidée le ${t.decided_at.split('-').reverse().join('/')} : ${t.target_path}. Sur les ${days} derniers jours mesurés, elle reçoit ${s.target_share} % des impressions (position ${s.target_position ?? '—'}).`,
       ...work,
     ];
     recs.push({
       rec_key: `cible:${t.id}`,
       type: 'cannibalisation',
       effort: 'faible',
-      est_clicks: Math.max(0, (s.impressions * (100 - s.target_share)) / 100 * 0.03 * (30 / 28)),
+      est_clicks: Math.max(0, (s.impressions * (100 - s.target_share)) / 100 * 0.03 * (30 / days)),
       title: `« ${head} » : la page cible n'a que ${s.target_share} % des impressions`,
-      reason: `Sur les requêtes « ${t.label} » (${s.impressions} impressions en 28 jours, France), Google montre surtout d'autres pages que la cible décidée.`,
+      reason: `Sur les requêtes « ${t.label} » (${s.impressions} impressions en ${days} jours, France), Google montre surtout d'autres pages que la cible décidée.`,
       action: steps.map((x, n) => `${n + 1}. ${x}`).join('\n\n'),
       urls: [normUrl(t.target_url), ...rivals.map((p) => p.page)],
       queries: [],

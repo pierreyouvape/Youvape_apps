@@ -33,6 +33,9 @@ const currentWindow = (stats) => {
   return since;
 };
 
+const dayCount = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+const windowDays = (w) => dayCount(w.from, w.to);
+
 const readShare = (base, cur) => {
   const from = base?.target_share ?? null;
   const to = cur?.target_share ?? null;
@@ -106,7 +109,6 @@ const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').
 const pct = (v) => (v === null || v === undefined ? '—' : `${num(v)} %`);
 const pos = (v) => (v === null || v === undefined ? '—' : num(v));
 const frDate = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—');
-const dayCount = (from, to) => Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
 const colored = (status, text) => `<span style="color:${COLORS[status] || '#374151'}">${esc(text)}</span>`;
 
 const howToReadPositions = () => `<p style="background:#f8fafc;padding:8px 12px;font-size:13px"><b>Comment lire ce tableau</b><br>
@@ -172,5 +174,5 @@ ${rows}
 
 module.exports = {
   PART_GAGNEE, MIN_IMPRESSIONS_PART, MIN_IMPRESSIONS_POSITION,
-  currentWindow, readTarget, verdictOf, renderTargetsHtml, howToReadPositions,
+  currentWindow, windowDays, readTarget, verdictOf, renderTargetsHtml, howToReadPositions,
 };

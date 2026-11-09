@@ -4,7 +4,7 @@
  * Chiffres réels du rapport au 07/11/2026.
  */
 const assert = require('assert');
-const { currentWindow, readTarget, verdictOf, renderTargetsHtml } = require('../src/utils/seoTargetReading');
+const { currentWindow, windowDays, readTarget, verdictOf, renderTargetsHtml } = require('../src/utils/seoTargetReading');
 
 const win = (from, impressions, target_share, target_impressions, target_position) => ({ from, to: '2026-11-07', impressions, target_share, target_impressions, target_position });
 const stats = (baseline, since, last28) => ({ baseline, since, last28: last28 || win('2026-10-11', 1000, 50, 500, 10) });
@@ -13,6 +13,7 @@ const base = (impressions, share, targetImpr, position) => ({ from: '2026-07-27'
 // Mesure : depuis la décision tant qu'elle a moins de 28 jours, jamais à cheval.
 const grosFumeur = stats(base(2423, 86, 2084, 9.5), win('2026-10-29', 342, 72.8, 249, 9), win('2026-10-11', 800, 80.9, 632, 9.3));
 assert.strictEqual(currentWindow(grosFumeur).target_share, 72.8);
+assert.strictEqual(windowDays(currentWindow(grosFumeur)), 10);
 assert.strictEqual(verdictOf(grosFumeur, true).code, 'perdue', '80,9 % sur 28 j ne doit plus la dire gagnée');
 
 const ancienne = stats(base(1000, 50, 500, 10), win('2026-09-01', 5000, 60, 3000, 8), win('2026-10-11', 1000, 85, 850, 7));
