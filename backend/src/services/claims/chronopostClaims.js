@@ -12,20 +12,28 @@
  * pour PC, famille et contenu facultatifs ; commentaire toujours obligatoire.
  */
 
-const { addBusinessDays } = require('../../utils/frenchHolidays');
+const { addBusinessDays, addDays } = require('../../utils/frenchHolidays');
 
 /**
- * Produits Chronopost suivis. Chrono 13 et Chrono Relais sont garantis le
- * lendemain avant 13 h ; Chrono Express (international) est laissé à J+3 ouvrés
- * (décision Pierre du 03/11/2026). 2Shop n'est jamais réclamé.
+ * Produits Chronopost suivis, et l'heure limite du jour dû (décisions Pierre) :
+ *   - Chrono 13 : lendemain ouvré AVANT 13 h (contrat) ;
+ *   - Chrono Relais : lendemain ouvré, TOUTE LA JOURNÉE (09/11/2026 ; le
+ *     contrat dit « Chrono Relais 13 », on laisse la journée) ;
+ *   - Chrono Express (international) : J+3 ouvrés, toute la journée (03/11/2026).
+ * `before` absent = jusqu'à minuit. 2Shop n'est jamais réclamé.
  */
 const PRODUCTS = {
-  '01': { label: 'Chrono 13', days: 1, before13: true },
-  '86': { label: 'Chrono Relais', days: 1, before13: true, relay: true },
+  '01': { label: 'Chrono 13', days: 1, before: '13:00' },
+  '86': { label: 'Chrono Relais', days: 1, relay: true },
   '17': { label: 'Chrono Express', days: 3 },
 };
 
-/** Le colis est jugé à cette heure-là, le jour dû (heure de Paris). */
+/**
+ * Heure du contrôle (heure de Paris), le LENDEMAIN du jour dû : l'API de suivi
+ * Chronopost publie certains évènements avec retard (constaté), on lui laisse
+ * au moins 24 h. Pas de contrôle le dimanche : un colis dû le samedi est jugé
+ * le lundi.
+ */
 const CHECK_TIME = '16:00';
 
 const OBJECTS = {
@@ -72,14 +80,24 @@ const parisInstant = (day, hhmm) => {
   return new Date(guess.getTime() - parisOffsetMinutes(guess) * 60000);
 };
 
-/** L'instant où un colis dû ce jour-là est jugé. */
-const checkInstant = (day) => parisInstant(day, CHECK_TIME);
+/**
+ * L'heure limite d'un colis dû ce jour-là : 13 h pour Chrono 13, minuit (fin du
+ * jour dû) pour les autres. C'est l'heure de l'ÉVÈNEMENT qui compte, pas celle
+ * où l'API le publie.
+ */
+const deadline = (methodCode, day) => {
+  const product = PRODUCTS[parseMethod(methodCode).code];
+  return product?.before ? parisInstant(day, product.before) : parisInstant(addDays(day, 1), '00:00');
+};
+
+/** À partir de quand un colis dû ce jour-là est jugé : le lendemain, 16 h. */
+const judgeInstant = (day) => parisInstant(addDays(day, 1), CHECK_TIME);
 
 /**
  * Réclamer, et quoi ?
  *
- * Seuls comptent les évènements survenus AVANT l'heure du contrôle : rejoué un
- * autre jour (rattrapage), le contrôle rend la même réponse.
+ * Seuls comptent les évènements survenus avant l'heure limite (`deadline`) :
+ * rejoué un autre jour (rattrapage), le contrôle rend la même réponse.
  *   - livré → rien. Relais : mis à disposition au point relais, c'est là que
  *     s'arrête l'engagement de Chronopost. Domicile : présenté suffit (client
  *     absent, avis de passage, laissé en point de retrait) ;
@@ -96,7 +114,7 @@ const checkInstant = (day) => parisInstant(day, CHECK_TIME);
  */
 const decide = (label, events, stateOf, day) => {
   const product = PRODUCTS[parseMethod(label.method_code).code];
-  const cutoff = checkInstant(day);
+  const cutoff = deadline(label.method_code, day);
   const before = events
     .filter(e => new Date(e.occurred_at) <= cutoff)
     .sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
@@ -137,12 +155,16 @@ const buildComment = ({ object, label, depositDay, bordereauNumber, day, lastEve
   if (object === 'PC') {
     return `${depot}, aucune prise en charge enregistrée depuis. Merci de localiser le colis. ${REFUND_REQUEST}`;
   }
-  const due = `livraison due le ${frDay(day)}${product.before13 ? ' avant 13h' : ''}`;
+  const hour = product.before ? `${Number(product.before.slice(0, 2))}h` : null;
+  const due = `livraison due le ${frDay(day)}`
+    + (hour ? ` avant ${hour}, non livré à ${hour}`
+      : product.relay ? ', pas mis à disposition au relais ce jour-là'
+        : ', non livré ce jour-là');
   const last = lastEvent
     ? ` Dernier évènement : ${frStamp(lastEvent.occurred_at)} ${lastEvent.label || lastEvent.event_key}`
       + `${lastEvent.location ? ` (${lastEvent.location})` : ''}.`
     : '';
-  return `${depot}, ${due}, non livré à 16h. ${REFUND_REQUEST}${last}`;
+  return `${depot}, ${due}. ${REFUND_REQUEST}${last}`;
 };
 
 // ── Fichier d'import ────────────────────────────────────────────────────────
@@ -201,6 +223,6 @@ const parseImportReport = (text) => {
 
 module.exports = {
   PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME, REFUND_REQUEST,
-  parseMethod, dueDay, parisInstant, checkInstant, decide, buildComment,
+  parseMethod, dueDay, parisInstant, deadline, judgeInstant, decide, buildComment,
   csvRow, buildCsv, parseImportReport, frDay,
 };

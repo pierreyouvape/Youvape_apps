@@ -7,9 +7,11 @@
  *   - jours fériés (Pâques et ses fêtes mobiles, 11 novembre) ;
  *   - jour dû : lendemain ouvré, vendredi → lundi, option samedi, férié sauté,
  *     Express à J+3 ouvrés, 2Shop jamais ;
- *   - heure du contrôle : 16 h à Paris, été comme hiver ;
- *   - décision : livré / mis en relais avant 16 h, retard (RT), jamais pris en
- *     charge (PC), livraison après 16 h, code non classé ;
+ *   - heure limite : 13 h pour Chrono 13, minuit pour Relais et Express ;
+ *   - contrôle : le lendemain du jour dû à 16 h à Paris, été comme hiver ;
+ *     dû le samedi (option) = jugé le lundi ;
+ *   - décision : livré / mis en relais à temps, retard (RT), jamais pris en
+ *     charge (PC), livraison après l'heure limite, code non classé ;
  *   - commentaire (commande 1273568, retard déclaré le 03/11/2026) ;
  *   - fichier : en-tête du modèle, `;`, CRLF, UTF-8 sans BOM, colonnes vides
  *     là où la notice les interdit ;
@@ -67,19 +69,49 @@ test('2Shop n\'est jamais réclamé', () => {
   assert.strictEqual(rules.dueDay('2026-11-02', '6B'), null);
 });
 
+console.log('Heure limite');
+test('Chrono 13 : 13 h à Paris le jour dû', () => {
+  assert.strictEqual(rules.deadline('01', '2026-11-03').toISOString(), '2026-11-03T12:00:00.000Z');
+  assert.strictEqual(rules.deadline('01-SAMEDI', '2026-07-04').toISOString(), '2026-07-04T11:00:00.000Z');
+});
+test('Chrono Relais et Express : toute la journée, jusqu\'à minuit à Paris', () => {
+  assert.strictEqual(rules.deadline('86', '2026-11-03').toISOString(), '2026-11-03T23:00:00.000Z');
+  assert.strictEqual(rules.deadline('86', '2026-07-01').toISOString(), '2026-07-01T22:00:00.000Z');
+  assert.strictEqual(rules.deadline('17', '2026-11-10').toISOString(), '2026-11-10T23:00:00.000Z');
+});
+
 console.log('Heure du contrôle');
-test('16 h à Paris : 15 h UTC en hiver, 14 h UTC en été', () => {
-  assert.strictEqual(rules.checkInstant('2026-11-03').toISOString(), '2026-11-03T15:00:00.000Z');
-  assert.strictEqual(rules.checkInstant('2026-07-01').toISOString(), '2026-07-01T14:00:00.000Z');
+test('le lendemain du jour dû, 16 h à Paris : 15 h UTC en hiver, 14 h UTC en été', () => {
+  assert.strictEqual(rules.judgeInstant('2026-11-03').toISOString(), '2026-11-04T15:00:00.000Z');
+  assert.strictEqual(rules.judgeInstant('2026-07-01').toISOString(), '2026-07-02T14:00:00.000Z');
+});
+test('déposé vendredi avec l\'option samedi : jugé le lundi (pas de contrôle le dimanche)', () => {
+  const day = rules.dueDay('2026-11-06', '86-SAMEDI');
+  assert.strictEqual(day, '2026-11-07');
+  const at = rules.judgeInstant(day);
+  assert.ok(at > new Date('2026-11-07T15:00:00Z'), 'pas jugé par le contrôle du samedi');
+  assert.ok(at <= new Date('2026-11-09T15:00:00Z'), 'jugé par le contrôle du lundi');
+});
+test('déposé vendredi sans option : dû lundi, jugé mardi', () => {
+  const day = rules.dueDay('2026-11-06', '86');
+  assert.strictEqual(day, '2026-11-09');
+  assert.ok(rules.judgeInstant(day) > new Date('2026-11-09T15:00:00Z'));
+  assert.ok(rules.judgeInstant(day) <= new Date('2026-11-10T15:00:00Z'));
 });
 
 console.log('Décision');
 const DAY = '2026-11-03';
-test('Relais mis à disposition avant 16 h : rien', () => {
+test('Relais mis à disposition le matin du jour dû : rien', () => {
   const r = rules.decide(RELAIS, [ev('DC', '2026-11-02T11:00:00Z'), ev('SC', '2026-11-02T16:40:00Z'), ev('AB', '2026-11-03T10:00:00Z')], stateOf, DAY);
   assert.strictEqual(r.object, null);
 });
-test('Chrono 13 livré avant 16 h : rien', () => {
+test('Relais mis à disposition à 22 h le jour dû : rien (toute la journée)', () => {
+  assert.strictEqual(rules.decide(RELAIS, [ev('SC', '2026-11-02T16:40:00Z'), ev('AB', '2026-11-03T21:00:00Z')], stateOf, DAY).object, null);
+});
+test('Relais mis à disposition le lendemain matin : RT', () => {
+  assert.strictEqual(rules.decide(RELAIS, [ev('SC', '2026-11-02T16:40:00Z'), ev('AB', '2026-11-04T07:00:00Z')], stateOf, DAY).object, 'RT');
+});
+test('Chrono 13 livré avant 13 h : rien', () => {
   assert.strictEqual(rules.decide(C13, [ev('SC', '2026-11-02T16:40:00Z'), ev('D', '2026-11-03T11:46:38Z')], stateOf, DAY).object, null);
 });
 test('Chrono 13 présenté, client absent, laissé en point de retrait : rien', () => {
@@ -101,8 +133,11 @@ test('aucun scan Chronopost depuis le bordereau : PC', () => {
   assert.strictEqual(rules.decide(RELAIS, [ev('DC', '2026-11-02T11:00:00Z')], stateOf, DAY).object, 'PC');
   assert.strictEqual(rules.decide(RELAIS, [], stateOf, DAY).object, 'PC');
 });
-test('livré après 16 h : réclamé quand même (rattrapage identique au contrôle du jour)', () => {
-  assert.strictEqual(rules.decide(C13, [ev('SC', '2026-11-02T16:40:00Z'), ev('D', '2026-11-03T15:30:00Z')], stateOf, DAY).object, 'RT');
+test('Chrono 13 livré à 13 h 30 : RT (l\'heure limite est 13 h)', () => {
+  assert.strictEqual(rules.decide(C13, [ev('SC', '2026-11-02T16:40:00Z'), ev('D', '2026-11-03T12:30:00Z')], stateOf, DAY).object, 'RT');
+});
+test('Express livré le soir du jour dû : rien', () => {
+  assert.strictEqual(rules.decide({ method_code: '17' }, [ev('SC', '2026-11-05T16:40:00Z'), ev('D', '2026-11-10T19:00:00Z')], stateOf, '2026-11-10').object, null);
 });
 test('un code jamais classé prouve la prise en charge', () => {
   assert.strictEqual(rules.decide(C13, [ev('DC', '2026-11-02T11:00:00Z'), ev('ZZ', '2026-11-02T17:00:00Z')], stateOf, DAY).object, 'RT');
@@ -115,12 +150,17 @@ test('retard Chrono Relais : produit, bordereau, échéance, dernier évènement
     lastEvent: ev('CR', '2026-11-03T10:03:00Z', { label: 'Colis retardé durant l\'acheminement', location: 'HUB CHILLY MAZARIN CHRONOPOST' }),
   });
   assert.strictEqual(c, 'Chrono Relais remis au chauffeur le 02/11/2026 (bordereau CH-20261102-02), livraison due le '
-    + '03/11/2026 avant 13h, non livré à 16h. Nous demandons le remboursement des frais de livraison de ce colis. '
+    + '03/11/2026, pas mis à disposition au relais ce jour-là. Nous demandons le remboursement des frais de livraison de ce colis. '
     + 'Dernier évènement : 03/11 11:03 Colis retardé durant l\'acheminement (HUB CHILLY MAZARIN CHRONOPOST).');
 });
-test('Express : pas de « avant 13h »', () => {
+test('Chrono 13 : avant 13h', () => {
+  const c = rules.buildComment({ object: 'RT', label: C13, depositDay: '2026-11-02', bordereauNumber: null, day: DAY, lastEvent: null });
+  assert.strictEqual(c, 'Chrono 13 remis au chauffeur le 02/11/2026, livraison due le 03/11/2026 avant 13h, non livré à 13h. '
+    + 'Nous demandons le remboursement des frais de livraison de ce colis.');
+});
+test('Express : toute la journée', () => {
   const c = rules.buildComment({ object: 'RT', label: { method_code: '17' }, depositDay: '2026-11-05', bordereauNumber: null, day: '2026-11-10', lastEvent: null });
-  assert.strictEqual(c, 'Chrono Express remis au chauffeur le 05/11/2026, livraison due le 10/11/2026, non livré à 16h. '
+  assert.strictEqual(c, 'Chrono Express remis au chauffeur le 05/11/2026, livraison due le 10/11/2026, non livré ce jour-là. '
     + 'Nous demandons le remboursement des frais de livraison de ce colis.');
 });
 test('jamais pris en charge', () => {

@@ -439,8 +439,14 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
 (fériés sautés, samedi seulement avec l'option `-SAMEDI`). **2Shop jamais.** Règles pures dans
 `services/claims/chronopostClaims.js` (testées : `tests/chronopostClaims.test.js`).
 
-- Jugé sur les évènements **avant 16 h le jour dû** (rattrapage = même réponse). Relais : mis à disposition
-  au relais = livré. Domicile : **présenté** suffit (absent, laissé en point de retrait). Aucun scan → **PC**,
+- **Heure limite** (`deadline`, 09/11/2026) : Chrono 13 **avant 13 h** (contrat), Relais et Express **toute la
+  journée** (minuit) — le contrat dit « Chrono Relais 13 », Pierre laisse la journée. Seule compte l'heure de
+  l'évènement (rattrapage = même réponse).
+- ⚠️ **Jugé le LENDEMAIN du jour dû à 16 h** (`judgeInstant`), jamais le jour même : l'API de suivi Chronopost
+  publie des évènements avec retard (constaté). Dû le samedi (option) = jugé le **lundi**. Relecture en direct
+  des colis non livrés dont l'heure limite date de moins de 3 jours. Lendemain de férié : réclamé quand même.
+- Relais : mis à disposition au relais = livré.
+  Domicile : **présenté** suffit (absent, laissé en point de retrait). Aucun scan → **PC**,
   sinon → **RT**. Un colis n'est réclamé **qu'une fois** (`carrier_claims.UNIQUE(label_id)`).
 - Fichier au format de la notice du « Service Client en ligne » (en-tête, `;`, CRLF, **UTF-8 sans BOM** — Chronopost lit l'UTF-8, le 1er import en Windows-1252 a donné des « � ») :
   RT sans motif/famille/contenu, PC avec F1 + contenu. Le commentaire **demande toujours le remboursement des

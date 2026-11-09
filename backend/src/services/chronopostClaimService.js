@@ -5,15 +5,17 @@
  * Relais et Chrono Express déposés sur un bordereau :
  *   1. jour dû (services/claims/chronopostClaims.dueDay : lendemain ouvré, J+3
  *      pour Express, fériés sautés, samedi si l'option a été prise) ;
- *   2. le jour dû passé 16 h, relecture du suivi EN DIRECT (Chronopost publie
- *      parfois une livraison avec retard), puis décision : RT, PC ou rien ;
+ *   2. le LENDEMAIN du jour dû à 16 h (l'API publie des évènements avec
+ *      retard ; dû le samedi = jugé le lundi), relecture du suivi EN DIRECT,
+ *      puis décision sur les évènements d'avant l'heure limite (13 h pour
+ *      Chrono 13, minuit pour Relais et Express) : RT, PC ou rien ;
  *   3. un fichier d'import pour le « Service Client en ligne », envoyé à
  *      contact@youvape.fr — on l'importe à la main chez Chronopost ;
  *   4. une note PRIVÉE dans le ticket SAV de la commande (créé s'il n'existe
  *      pas). Jamais de mail au client.
  *
  * Un colis n'est réclamé qu'une fois. Un passage manqué est rattrapé au suivant :
- * la décision ne regarde que les évènements d'avant 16 h le jour dû.
+ * la décision ne regarde que les évènements d'avant l'heure limite.
  */
 
 const claimModel = require('../models/carrierClaimModel');
@@ -37,6 +39,12 @@ const REOPEN_FROM = ['terminé', 'en_attente_réponse_client'];
 /** On remonte assez loin pour un Express déposé avant un long week-end. */
 const LOOKBACK_DAYS = 10;
 
+/**
+ * Relecture en direct des colis dont l'heure limite est passée depuis moins
+ * de ça : le contrôle du lendemain, et celui du lundi pour un colis dû samedi.
+ */
+const LIVE_WINDOW_MS = 3 * 24 * 3600 * 1000;
+
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const todayParis = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(now);
@@ -55,15 +63,15 @@ const findClaims = async ({ now = new Date(), live = true, since = null } = {}) 
   const labels = await claimModel.candidates(addDays(from, -LOOKBACK_DAYS));
   const due = labels
     .map(l => ({ ...l, dueDay: rules.dueDay(l.deposit_day, l.method_code) }))
-    .filter(l => l.dueDay && l.dueDay >= from && rules.checkInstant(l.dueDay) <= now);
+    .filter(l => l.dueDay && l.dueDay >= from && rules.judgeInstant(l.dueDay) <= now);
 
-  // Relecture en direct pour les seuls colis dus aujourd'hui et pas encore
-  // livrés : pour les échéances passées, le suivi ordinaire a déjà tout reçu.
-  const today = todayParis(now);
+  // Relecture en direct pour les colis pas encore livrés dont l'échéance est
+  // récente : pour les plus anciennes, le suivi ordinaire a déjà tout reçu.
   const stateOf = live ? await trackingModel.loadStateOf() : null;
   const claims = [];
   for (const label of due) {
-    if (live && label.dueDay === today && !FINAL_STATES.includes(label.tracking_state)) {
+    const recent = now - rules.deadline(label.method_code, label.dueDay) < LIVE_WINDOW_MS;
+    if (live && recent && !FINAL_STATES.includes(label.tracking_state)) {
       await trackLabel(label, stateOf);
     }
     const events = await trackingModel.eventsForLabel(label.id);

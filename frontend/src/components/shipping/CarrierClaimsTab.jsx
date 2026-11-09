@@ -7,7 +7,8 @@ import { API_URL, authHeaders, C, Chip } from '../picking/pickingUi';
  * Onglet « Réclamations » de l'Historique d'expédition.
  *
  * Chaque jour à 16 h (lundi → samedi), les colis Chrono 13 / Chrono Relais /
- * Chrono Express pas livrés le jour dû sont réclamés : un fichier d'import pour
+ * Chrono Express pas livrés le jour dû (jugés le lendemain, l'API publiant avec
+ * retard) sont réclamés : un fichier d'import pour
  * le « Service Client en ligne » Chronopost, envoyé à contact@youvape.fr, et
  * une note privée dans le ticket SAV de la commande (backend :
  * chronopostClaimService).
@@ -461,9 +462,10 @@ export default function CarrierClaimsTab({ token }) {
         display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap',
       }}>
         <div style={{ flex: '1 1 420px', fontSize: 13.5, color: C.dark, lineHeight: 1.55 }}>
-          Chaque jour à <strong>16 h</strong> (lundi → samedi), les colis <strong>Chrono 13</strong> et
-          <strong> Chrono Relais</strong> pas livrés le jour dû (lendemain ouvré du bordereau), et les
-          <strong> Chrono Express</strong> pas livrés à J+3 ouvrés, sont réclamés : <strong>RT</strong> retard,
+          Chaque jour à <strong>16 h</strong> (lundi → samedi), on juge les colis dus <strong>la veille</strong>
+          (ceux dus le samedi, le lundi) : <strong>Chrono 13</strong> pas livrés avant 13 h le lendemain ouvré du
+          bordereau, <strong>Chrono Relais</strong> pas mis à disposition dans la journée du lendemain ouvré,
+          <strong> Chrono Express</strong> pas livrés dans la journée à J+3 ouvrés. Ils sont réclamés : <strong>RT</strong> retard,
           ou <strong>PC</strong> s'ils n'ont jamais été pris en charge. Le fichier part à contact@youvape.fr, à
           importer dans le Service Client en ligne Chronopost (Import de tickets) ; une note privée est posée dans
           le ticket SAV de la commande. Un colis n'est réclamé qu'une fois.
