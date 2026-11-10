@@ -283,7 +283,7 @@ export default function PrelevementsTab({ shop, token }) {
             </div>
             {product.recent?.length > 0 && (
               <div style={{ background: '#FEF3C7', color: '#92400E', borderRadius: 12, padding: '10px 14px', marginTop: 12, fontSize: 14 }}>
-                <b>Déjà sorti du site dans les dernières 24 h :</b>{' '}
+                <b>Déjà sorti du site par quelqu'un d'autre dans les 2 dernières heures :</b>{' '}
                 {product.recent.map((r) => `${r.qty} pièce${r.qty > 1 ? 's' : ''} par ${r.user_name || '—'} le ${fmtDate(r.created_at)}`).join(' · ')}.
                 {' '}Vérifiez que ce n'est pas la même pièce avant de valider.
               </div>

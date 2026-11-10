@@ -31,11 +31,11 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 module.exports = {
   lookup: handle(async (req, res, wh) => {
-    res.json(await prelevementModel.lookup(wh.id, req.query.q));
+    res.json(await prelevementModel.lookup(wh.id, req.query.q, req.user.id));
   }),
 
   product: handle(async (req, res, wh) => {
-    res.json(await prelevementModel.productView(parseInt(req.params.productId, 10), wh.id));
+    res.json(await prelevementModel.productView(parseInt(req.params.productId, 10), wh.id, req.user.id));
   }),
 
   searchNextore: handle(async (req, res, wh) => {

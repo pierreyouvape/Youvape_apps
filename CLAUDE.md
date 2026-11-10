@@ -634,7 +634,8 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   Son historique (`pda_product_log.reason = 'vente_boutique'`) est repris par `scripts/backfillPrelevementsPda.js
   [--apply]` (`origin = 'pda'`, `nx_status = 'skipped'`, coût FIFO du jour du mouvement).
   Règle : **celui qui sort la pièce du stock du site la scanne, une fois** ; la vente en caisse ne touche que le
-  stock boutique. L'écran avertit (sans bloquer) si le produit a déjà été prélevé dans les 24 h.
+  stock boutique. L'écran avertit (sans bloquer) si le produit a été prélevé par une AUTRE personne dans les
+  2 dernières heures (24 h et tout le monde : l'alerte sonnait à chaque booster).
 - Écran : `/boutique/castelnau/prelevements` et `/pda/prelevement` (même composant `PrelevementsTab.jsx`), export
   CSV « refacturation » (mois, catégorie, marque, coût, prix site). **Vendeurs de Castelnau = utilisateurs du PDA** :
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).

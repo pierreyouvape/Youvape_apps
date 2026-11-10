@@ -70,21 +70,24 @@ const resolveNxFor = async (productId, db = pool) => {
 };
 
 /** Fiche affichée au scan : produit du site, coût, et produit caisse. */
-const productView = async (productId, warehouseId) => {
+const productView = async (productId, warehouseId, userId = null) => {
   const p = await loadSite(productId);
   const res = await resolveNxFor(productId);
   const nx = await loadNx(res.nxProductId, warehouseId);
   const candidates = res.how === 'ambiguous'
     ? (await Promise.all(res.candidates.map((id) => loadNx(id, warehouseId)))).filter(Boolean)
     : [];
-  // Garde-fou doublon : la même pièce scannée au PDA par la logistique ET ici
-  // sortirait deux fois du site. On le montre, on ne bloque pas.
+  // Garde-fou doublon : la même pièce prélevée par la logistique PUIS par le
+  // vendeur sortirait deux fois du site. Fenêtre courte (2 h) et seulement les
+  // prélèvements d'une AUTRE personne, sinon l'alerte sonne à chaque booster et
+  // plus personne ne la lit (décision Maxime, 10/11/2026). On montre, on ne bloque pas.
   const { rows: recent } = await pool.query(
     `SELECT b.qty, b.origin, b.created_at, u.name AS user_name
        FROM boutique_prelevements b LEFT JOIN users u ON u.id = b.created_by
-      WHERE b.product_id = $1 AND b.warehouse_id = $2 AND b.created_at > NOW() - INTERVAL '24 hours'
+      WHERE b.product_id = $1 AND b.warehouse_id = $2 AND b.created_at > NOW() - INTERVAL '2 hours'
+        AND b.created_by IS DISTINCT FROM $3
       ORDER BY b.created_at DESC LIMIT 5`,
-    [p.id, warehouseId]
+    [p.id, warehouseId, userId ?? null]
   );
   return {
     id: p.id,
@@ -103,12 +106,12 @@ const productView = async (productId, warehouseId) => {
 };
 
 /** Scan ou recherche : un seul produit → sa fiche ; sinon la liste. */
-const lookup = async (warehouseId, code) => {
+const lookup = async (warehouseId, code, userId = null) => {
   const found = await pdaProductModel.search(code);
   if (found.results.length === 1) {
     const r = found.results[0];
     const packQty = r.matched?.type === 'pack' ? Number(r.matched.quantity) || 1 : 1;
-    return { product: await productView(r.id, warehouseId), qty: packQty, by: found.by };
+    return { product: await productView(r.id, warehouseId, userId), qty: packQty, by: found.by };
   }
   return { results: found.results, by: found.by };
 };
