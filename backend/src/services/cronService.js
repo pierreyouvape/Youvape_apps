@@ -887,7 +887,15 @@ const runNextoreNightly = async () => {
   }
 };
 
+// Prélèvements boutique (EMC → EMC2) : sortie du stock du site + entrée Nextore.
+const prelevementPushService = require('./prelevementPushService');
+let prelevementJob = null;
+
 const setupNextoreCrons = () => {
+  prelevementJob?.stop();
+  prelevementJob = cron.schedule('* 7-21 * * *', () => {
+    prelevementPushService.processQueue().catch((error) => console.error('Erreur cron prélèvements boutique:', error.message));
+  }, { timezone: 'Europe/Paris' });
   nextoreCatalogJob?.stop();
   nextoreStockJobs.forEach((j) => j.stop());
   nextoreSalesJob?.stop();

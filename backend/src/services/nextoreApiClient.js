@@ -119,6 +119,16 @@ module.exports = {
     return Array.isArray(rows) ? rows[0] || null : null;
   },
 
+  /**
+   * Crée une fiche produit (doc Postman : seul `name` est obligatoire). La forme
+   * de la réponse n'est pas documentée : l'appelant retrouve la fiche par son
+   * code-barres / link_code après une synchro du catalogue.
+   */
+  createProduct: (fields) => nextoreWrite('POST', '/products', fields),
+
+  /** Modifie une fiche : seuls les champs envoyés changent (product_id obligatoire). */
+  updateProduct: (productId, fields) => nextoreWrite('PUT', '/products', { product_id: productId, ...fields }),
+
   getWarehouses: () => nextoreGet('/warehouses'),
   getTaxRates: () => nextoreGet('/tax_rates'),
   getSuppliers: () => nextoreGet('/suppliers'),

@@ -7,6 +7,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const nextoreController = require('../controllers/nextoreController');
+const prelevementController = require('../controllers/prelevementController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 const { resolveWarehouse } = require('../config/nextore');
@@ -83,5 +84,33 @@ router.get('/:shop/comptage/:id', boutiquePerm('read'), nextoreController.getCom
 router.post('/:shop/comptage/:id/count', boutiquePerm('write'), nextoreController.countComptage);
 router.post('/:shop/comptage/:id/validate', boutiquePerm('write'), nextoreController.validateComptage);
 router.post('/:shop/comptage/:id/abandon', boutiquePerm('write'), nextoreController.abandonComptage);
+
+// Prélèvements au stock du site (Castelnau, EMC → EMC2) — prelevementController.
+// Les vendeurs de Castelnau sont les gens du PDA (décision Maxime, 10/11/2026) :
+// le droit picking (celui du PDA) suffit, en plus du droit de la boutique.
+const userPermissionsModel = require('../models/userPermissionsModel');
+const prelevementPerm = (action) => async (req, res, next) => {
+  try {
+    const wh = resolveWarehouse(req.params.shop);
+    if (!wh) return res.status(400).json({ error: 'Boutique inconnue.' });
+    if (userPermissionsModel.isSuperAdmin(req.user.email)
+      || await userPermissionsModel.hasPermission(req.user.id, wh.permKey, action)
+      || await userPermissionsModel.hasPermission(req.user.id, 'picking', 'read')) return next();
+    return res.status(403).json({ error: 'Accès refusé : droit PDA ou boutique requis' });
+  } catch (error) {
+    console.error('Permission prélèvements:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+router.get('/:shop/prelevements', prelevementPerm('read'), prelevementController.list);
+router.get('/:shop/prelevements/export', prelevementPerm('read'), prelevementController.exportCsv);
+router.get('/:shop/prelevements/lookup', prelevementPerm('read'), prelevementController.lookup);
+router.get('/:shop/prelevements/nextore-search', prelevementPerm('read'), prelevementController.searchNextore);
+router.get('/:shop/prelevements/categories', prelevementPerm('read'), nextoreController.getCategories);
+router.get('/:shop/prelevements/products/:productId', prelevementPerm('read'), prelevementController.product);
+router.post('/:shop/prelevements', prelevementPerm('write'), prelevementController.create);
+router.post('/:shop/prelevements/products/:productId/link', prelevementPerm('write'), prelevementController.link);
+router.post('/:shop/prelevements/products/:productId/create-nextore', prelevementPerm('write'), prelevementController.createInNextore);
+router.post('/:shop/prelevements/:id/resolve', prelevementPerm('write'), prelevementController.resolveStep);
 
 module.exports = router;

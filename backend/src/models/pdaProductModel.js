@@ -187,7 +187,7 @@ const resolveLocation = (list, raw) => {
 
 const log = (entry) => pool.query(
   `INSERT INTO pda_product_log (product_id, sku, user_id, action, old_value, new_value, reason, qty, comment, bms_movement_id)
-   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
   [entry.productId, entry.sku, entry.userId, entry.action, entry.oldValue ?? null, entry.newValue ?? null,
     entry.reason ?? null, entry.qty ?? null, entry.comment ?? null, entry.bmsMovementId ?? null]
 );
@@ -355,11 +355,30 @@ const createMovement = async (productId, { reason, direction, qty, comment }, us
     comments,
   });
 
-  await log({
+  const bmsMovementId = await findMovementId(created, bmsProductId, comments, n);
+  const { rows: [logged] } = await log({
     productId, sku: r.sku, userId: user.id, action: 'movement', reason,
-    qty: direction === 'in' ? n : -n, comment: note || null,
-    bmsMovementId: await findMovementId(created, bmsProductId, comments, n),
+    qty: direction === 'in' ? n : -n, comment: note || null, bmsMovementId,
   });
+
+  // « Vente boutique » = toujours Castelnau (EMC2) : c'est un prélèvement. La
+  // sortie BMS est faite ; il reste l'entrée dans Nextore et la refacturation.
+  // Un échec ici ne défait pas le mouvement BMS : on le dit dans les journaux.
+  // Interrupteur `app_config.prelevements_pda` = 'on' (posé après le test en réel).
+  if (reason === 'vente_boutique') {
+    try {
+      const { rows: [flag] } = await pool.query(
+        `SELECT config_value FROM app_config WHERE config_key = 'prelevements_pda'`
+      );
+      if (flag?.config_value !== 'on') return getProduct(productId);
+      await require('./prelevementModel').record({
+        warehouseId: 2, productId, qty: n, userId: user.id, origin: 'pda', note: note || null,
+        siteDone: { ref: bmsMovementId == null ? null : String(bmsMovementId) }, pdaLogId: logged?.id ?? null,
+      });
+    } catch (error) {
+      console.error(`[PDA Produit] Prélèvement non enregistré (produit ${productId}, ${n}) :`, error.message);
+    }
+  }
   return getProduct(productId);
 };
 

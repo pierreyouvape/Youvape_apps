@@ -399,4 +399,8 @@ async function checkAlignmentWithCatalog(base = null) {
   return { report: point.total_value_ht, catalog, delta, aligned: Math.abs(delta) <= 0.01 };
 }
 
-module.exports = { loadBase, computeAt, computeSeries, snapshotToday, checkAlignmentWithCatalog, PAID_STATUSES, STOCK_VALUE_SCOPE };
+module.exports = {
+  loadBase, computeAt, computeSeries, snapshotToday, checkAlignmentWithCatalog, PAID_STATUSES, STOCK_VALUE_SCOPE,
+  // Réutilisés par services/costAtDate.js (coût d'achat d'un produit à une date).
+  fifoCostAsOf, LOT_QTY, LOT_UNIT_PRICE, PO_EXCLUDED_STATUSES, CURRENT_COST,
+};

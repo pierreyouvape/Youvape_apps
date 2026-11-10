@@ -10,6 +10,7 @@ import ComptageTab from '../components/boutique/ComptageTab';
 import StatsTab from '../components/boutique/StatsTab';
 import DormantsTab from '../components/boutique/DormantsTab';
 import CoffreTab from '../components/boutique/CoffreTab';
+import PrelevementsTab from '../components/boutique/PrelevementsTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -38,6 +39,7 @@ const IcCart  = () => <Ic><path d="M3 4 H5.5 L7.6 15 H18 L20 7.5 H6.4" /><circle
 const IcCount = () => <Ic><rect x={5} y={4} width={14} height={17} rx={2} /><path d="M9 4 V2.6 H15 V4" /><path d="M8.5 12 L11 14.5 L15.5 9.5" /></Ic>;
 const IcStats = () => <Ic><path d="M4 20 H20" /><path d="M7 20 V13" /><path d="M12 20 V8" /><path d="M17 20 V4" /></Ic>;
 const IcSleep = () => <Ic><path d="M18.5 14.5 A7.5 7.5 0 1 1 9.5 5.5 A6 6 0 0 0 18.5 14.5 Z" /><path d="M14 3.5 H18 L14 7.5 H18" /></Ic>;
+const IcTake  = () => <Ic><path d="M3.5 9 L9 6 L14.5 9 V15 L9 18 L3.5 15 Z" /><path d="M3.5 9 L9 12 L14.5 9" /><path d="M14 12 H21" /><path d="M18 9 L21 12 L18 15" /></Ic>;
 const IcSafe  = () => <Ic><rect x={3.5} y={5} width={17} height={14} rx={2} /><circle cx={11} cy={12} r={3.2} /><path d="M11 12 H13.6" /><path d="M17 9.5 V14.5" /></Ic>;
 
 /* Sections de la boutique. `ready:false` → tuile « Bientôt » (non cliquable).
@@ -48,6 +50,8 @@ const SECTIONS = [
   { key: 'import',   label: 'Import commande', color: '#16A34A', Icon: IcDoc, ready: true, group: 'achat' },
   { key: 'commandes', label: 'Commandes', color: '#0891B2', Icon: IcBox, ready: true, group: 'achat' },
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
+  // Castelnau seulement (EMC2) : Montpellier est dans la même société que le site.
+  { key: 'prelevements', label: 'Prélèvements site', color: '#C2410C', Icon: IcTake, ready: true, shops: ['castelnau'] },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
   { key: 'dormants', label: 'Produits dormants', color: '#4338CA', Icon: IcSleep, ready: true, permKey: 'stats-boutiques' },
@@ -161,7 +165,8 @@ export default function BoutiqueApp() {
   }
 
   // Une section à droit propre n'existe pas pour qui ne l'a pas.
-  const sections = SECTIONS.filter((s) => !s.permKey || isSuperAdmin || permissions?.[s.permKey]?.read === true);
+  const sections = SECTIONS.filter((s) => (!s.permKey || isSuperAdmin || permissions?.[s.permKey]?.read === true)
+    && (!s.shops || s.shops.includes(shop.slug)));
   const statsLevel = isSuperAdmin || permissions?.['stats-boutiques']?.write ? 'Responsable' : 'Conseiller';
 
   const sectionDef = section ? sections.find((s) => s.key === section) : null;
@@ -258,6 +263,13 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Comptage — inventaire (écrit dans Nextore)" onBack={goHome} />
             <ComptageTab shop={shop} token={token} />
+          </>
+        )}
+
+        {section === 'prelevements' && (
+          <>
+            <ShopHeader shop={shop} subtitle="Prélèvements au stock du site — sortie du site, entrée en caisse, refacturation EMC → EMC2" onBack={goHome} />
+            <PrelevementsTab shop={shop} token={token} />
           </>
         )}
 

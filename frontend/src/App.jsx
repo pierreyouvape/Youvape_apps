@@ -49,6 +49,7 @@ const PdaPicking = page('pda', () => import('./pages/PdaPicking'));
 const PdaProduit = page('pda', () => import('./pages/PdaProduit'));
 const PdaInventaire = page('pda', () => import('./pages/PdaInventaire'));
 const PdaDebug = page('pda', () => import('./pages/PdaDebug'));
+const PdaPrelevement = page('pda', () => import('./pages/PdaPrelevement'));
 const InventoryApp = page('inventaire', () => import('./pages/InventoryApp'));
 const ReturnsApp = page('retours', () => import('./pages/ReturnsApp'));
 const ReceptionApp = page('reception', () => import('./pages/ReceptionApp'));
@@ -102,6 +103,7 @@ const PAGE_TITLES = {
   '/pda/produit': 'Produit PDA',
   '/pda/inventaire': 'Inventaire PDA',
   '/pda/debug': 'Diagnostic scan PDA',
+  '/pda/prelevement': 'Prélèvement boutique PDA',
   '/inventaire': 'Inventaire',
   '/retours': 'Retours',
   '/reception': 'Réception',
@@ -430,6 +432,14 @@ function App() {
             element={
               <PrivateRoute>
                 <PdaDebug />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/prelevement"
+            element={
+              <PrivateRoute>
+                <PdaPrelevement />
               </PrivateRoute>
             }
           />

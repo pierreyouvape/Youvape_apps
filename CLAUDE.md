@@ -605,6 +605,41 @@ qui l'a validé et quand. Code : `inventorySpotModel.js`, `services/inventorySpo
   bandeau dans le panneau client. Tout ce que le ticket sait compte (compte, email, tél., nom du ticket
   ET de sa commande), sans condition de date.
 
+### Prélèvements au stock du site par Castelnau (EMC → EMC2, 10/11/2026)
+
+La boutique de Castelnau (EMC2, `warehouse_id` 2) prend des produits au stock du site (EMC), juste derrière.
+Avant : sortie BMS par PDA « Vente boutique » (toujours Castelnau, ~1 800 pièces/mois, quand on y pense),
+jamais d'entrée dans Nextore → stocks négatifs, et ~400 pièces/mois encaissées en **article libre**
+(Nextore `13027` « Produit non cree », prix catalogue 100 000 € exprès : le vrai prix est `unit_price`,
+jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au jugé.
+
+- **Une ligne `boutique_prelevements` = la refacturation**, au **coût d'achat du JOUR** figé
+  (`services/costAtDate.js` : PMP FIFO à la date, même calcul que la valeur de stock aux dates passées ; à la date
+  du jour il retombe sur `computed_cost`, vérifié le 10/11/2026), plus deux étapes en file (`prelevementPushService`, cron
+  `* 7-21`) : `site_status` (sortie du stock du site) et `nx_status` (entrée Nextore `PUT /stocks` en delta).
+  Discipline d'`inventoryPushService` : `sending` avant l'appel, « VÉRIFIEZ » si réponse incertaine.
+- **Rien ne bloque le vendeur** : le prélèvement s'enregistre toujours ; sans produit caisse, `nx_status = waiting`
+  jusqu'au rattachement ou à la création.
+- **Le stock du site passe par `services/siteStock.js` seul** (BMS aujourd'hui, mouvement de sortie
+  `miscellaneous`). À la sortie de BMS, ne changer que ce fichier (→ `stock/adjust` de youvape-logistique).
+- **Produit caisse** : lien `boutique_site_links` (manuel ou créé par l'app), sinon UN produit Nextore partageant
+  un code-barres (`nextore_product_barcodes`, réécrite à chaque synchro catalogue : ne jamais y ranger un lien).
+  Rattacher ajoute les codes-barres du site à la fiche Nextore (`PUT /products`, champ `barcode` séparé par `;`) :
+  sans eux la caisse ne reconnaît pas le produit au scan → article libre.
+- **Création de fiche Nextore** (`POST /products`) : nom du site, prix = `regular_price` (sans remise WDR ni promo,
+  décision Maxime), `cost` HT, TVA code `4` (20 %), catégorie choisie, `link_code` = `wp_product_id`. La réponse
+  n'étant pas documentée, l'id est relu au catalogue par code-barres.
+- PDA « Vente boutique » (`pdaProductModel.createMovement`) enregistre aussi un prélèvement (`origin = 'pda'`,
+  sortie site déjà faite, `pda_log_id` unique), **seulement si `app_config.prelevements_pda = 'on'`**.
+  Historique repris par `scripts/backfillPrelevementsPda.js [--apply]` (`nx_status = 'skipped'`, coût du jour) :
+  le relancer juste avant d'activer l'interrupteur. Règle : **celui qui sort la pièce du stock du site la scanne, une fois** (logistique =
+  réassort au PDA, vendeur = dépannage à l'écran) ; la vente en caisse ne touche que le stock boutique. L'écran
+  avertit (sans bloquer) si le produit a déjà été prélevé dans les 24 h.
+- Écran : `/boutique/castelnau/prelevements` et `/pda/prelevement` (même composant `PrelevementsTab.jsx`), export
+  CSV « refacturation » (mois, catégorie, marque, coût, prix site). **Vendeurs de Castelnau = utilisateurs du PDA** :
+  les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).
+- Tests : `tests/prelevement.test.js`.
+
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 

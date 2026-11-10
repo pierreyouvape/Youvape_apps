@@ -18,6 +18,8 @@ const PDA_APPS = [
   { key: 'produit', perm: 'picking', path: '/pda/produit', label: 'Produit', hint: 'Stock, emplacement, codes-barres', Icon: ProductIcon, color: C.primary },
   // Même droit (06/10/2026) : l'inventaire se crée au bureau (droit `inventaire`), se compte ici.
   { key: 'inventaire', perm: 'picking', path: '/pda/inventaire', label: 'Inventaire', hint: 'Compter un emplacement', Icon: InventoryIcon, color: '#0369A1' },
+  // Prélèvement au stock du site pour la boutique de Castelnau (10/11/2026) : tout vendeur = utilisateur PDA.
+  { key: 'prelevement', perm: 'picking', path: '/pda/prelevement', label: 'Prélèvement boutique', hint: 'Prendre au stock du site pour Castelnau', Icon: PickingIcon, color: '#C2410C' },
   // Diagnostic (13/10/2026) : comprendre comment un PDA transmet ses scans.
   { key: 'debug', perm: 'picking', path: '/pda/debug', label: 'Diagnostic scan', hint: 'Si un PDA ne scanne pas', Icon: SettingsIcon, color: C.greyM },
 ];
