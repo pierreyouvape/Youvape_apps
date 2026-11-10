@@ -533,10 +533,13 @@ const asyncTests = [
       { url: AJ, title: 'Atelier Just - YouVape', h1: 'E-liquides Atelier Just', http_status: 200 },
       { url: CONCENTRE, title: 'Concentré X - YouVape', brand: 'Maison Fuel', http_status: 200 }, // sous-marque
     );
-    const [concentres] = await productTables(AJ, [CONCENTRE], audits);
-    assert.strictEqual(concentres.h3, 'Concentrés grands formats Atelier Just');
-    // Un concentré n'a ni autonomie ni charge (colonnes de matériel, vues le 28/10/2026).
-    assert.strictEqual(concentres.shortcode, '[product_table brand="atelier-just" category="concentres-grands-formats" columns="name,contenance" headers="Référence,Contenance" orderby="popularity"]');
+    // Liquides (concentrés, e-liquides…) : pas de tableau, il répéterait la grille (Maxime, 10/11/2026).
+    assert.deepStrictEqual(await productTables(AJ, [CONCENTRE], audits), []);
+    const POD = `${SITE}/produit/e-cigarettes/kits-format-pod/pod-x`;
+    audits.set(POD, { url: POD, title: 'Pod X - YouVape', http_status: 200 });
+    const [pods] = await productTables(AJ, [POD], audits);
+    assert.strictEqual(pods.h3, 'Pods Atelier Just');
+    assert.strictEqual(pods.shortcode, '[product_table brand="atelier-just" category="kits-format-pod" columns="name,autonomie,capacite,charge" headers="Référence,Autonomie,Capacité,Charge" orderby="popularity"]');
     const YV = `${SITE}/marque/youvape`;
     const PACK = `${SITE}/produit/e-cigarettes/kits-ecigarettes/packs-youvape/pack-decouverte`;
     const yv = auditsOf({ url: YV, title: 'YouVape', http_status: 200 }, { url: PACK, title: 'Pack découverte', brand: 'YouVape', http_status: 200 });

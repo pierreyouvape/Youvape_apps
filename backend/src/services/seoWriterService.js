@@ -20,7 +20,7 @@
 
 const axios = require('axios');
 const pool = require('../config/database');
-const { BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks, TABLE_MAX, presetFor } = require('./seoAdvisorService');
+const { BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks, TABLE_MAX, TABLE_SKIP, presetFor } = require('./seoAdvisorService');
 
 const SITE = 'https://www.youvape.fr';
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
@@ -443,7 +443,8 @@ const productTableGroups = async (products, pagePath = '') => {
     const preset = presetFor(g.category || '');
     const extra = g.count > TABLE_MAX ? ' orderby="popularity"' : '';
     g.sub_brand = subBrand && g.brand && g.brand !== subBrand ? subBrand : null;
-    g.shortcode = g.brand && g.category && !g.sub_brand
+    g.liquid = !!g.category && TABLE_SKIP.test(g.category);
+    g.shortcode = g.brand && g.category && !g.sub_brand && !g.liquid
       ? `[product_table brand="${g.brand}" category="${g.category}" columns="${preset.columns}" headers="${preset.headers}"${extra}]`
       : null;
   }
@@ -749,7 +750,7 @@ ${mdTable(['Marque', 'Catégorie', 'Produits', 'Shortcode proposé'], d.tables.m
     g.brand ? `${g.brand_name} (${g.brand})${g.brand_ok ? '' : ' — page marque introuvable, slug à vérifier'}` : 'marque inconnue',
     g.category || 'inconnue',
     `${g.count}${g.count > TABLE_MAX ? ' (au-delà de 10 : orderby="popularity")' : ''}`,
-    g.shortcode || (g.sub_brand
+    g.shortcode || (g.liquid ? 'aucun : liquides, le tableau répéterait la grille (pas de tableau pour les liquides)' : g.sub_brand
       ? `aucun : le slug « ${g.brand} » est celui de la marque mère, le tableau afficherait toutes ses gammes, pas seulement ${g.sub_brand}`
       : 'impossible (marque ou catégorie inconnue) : tableau HTML'),
   ]))}`);

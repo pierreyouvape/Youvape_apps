@@ -656,15 +656,16 @@ const TABLE_PRESETS = [
   { re: /^kits-format-pod$|^kits-format-box$|^kits-ecigarettes$/, columns: 'name,autonomie,capacite,charge', headers: 'Référence,Autonomie,Capacité,Charge' },
   { re: /^cartouches-pre-remplies$/, columns: 'name,contenance,taux-de-nicotine,compatibilite', headers: 'Référence,Contenance,Nicotine,Compatible avec' },
   { re: /^cartouches-pods$|^cartouches/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
-  { re: /^eliquides|^boosters|^bases|^packs-e-liquides$/, columns: 'name,contenance,taux-de-nicotine,ratio-pg-vg', headers: 'Référence,Contenance,Nicotine,PG/VG' },
-  // Arômes et concentrés : ni nicotine ni PG/VG, on les dilue.
-  { re: /^concentres|^aromes/, columns: 'name,contenance', headers: 'Référence,Contenance' },
   { re: /^box-batteries|^box-mods/, columns: 'name,autonomie,charge,compatibilite', headers: 'Référence,Autonomie,Charge,Compatible avec' },
   { re: /^clearomiseurs$|^tanks-|^atomiseurs/, columns: 'name,contenance,tirage,compatibilite', headers: 'Référence,Contenance,Tirage,Compatible avec' },
   { re: /^resistances$/, columns: 'name,tirage,compatibilite', headers: 'Référence,Tirage,Compatible avec' },
   { re: /^reservoirs/, columns: 'name,contenance,compatibilite', headers: 'Référence,Contenance,Compatible avec' },
   { re: /^accus$/, columns: 'name,capacite', headers: 'Référence,Capacité' },
 ];
+// Liquides (e-liquides, boosters, bases, packs, concentrés, arômes) : pas de
+// tableau, il ne ferait que répéter la grille (contenance, nicotine, PG/VG).
+// Un tableau n'a d'intérêt que pour le matériel (autonomie, capacité, compatibilités).
+const TABLE_SKIP = /^eliquides|^boosters|^bases|^packs-e-liquides$|^concentres|^aromes/;
 // Accessoires (drip tips, étuis, chargeurs…) : seulement ce qu'ils acceptent,
 // jamais l'autonomie ni la charge d'un appareil.
 const presetFor = (category) => TABLE_PRESETS.find((p) => p.re.test(category)) || { columns: 'name,compatibilite', headers: 'Référence,Compatible avec' };
@@ -696,7 +697,7 @@ const productTables = async (page, productUrls, audits, max = marqueSlug(page) ?
     const segs = pathOf(u).split('/').filter(Boolean);
     const category = segs.length >= 3 ? segs[segs.length - 2] : null;
     const brand = own || brandOf(u, audits);
-    if (!brand || !category) continue;
+    if (!brand || !category || TABLE_SKIP.test(category)) continue;
     const key = `${brand}|${category}`;
     const g = groups.get(key) || { brand, category, products: [], brandName: null };
     g.products.push(u);
@@ -2028,7 +2029,7 @@ module.exports = {
   // Vocabulaire partagé avec la rédaction SEO (seoWriterService).
   BANNED, QUESTION_RE, HEALTH_RE, MARKETING_RE, extractLinks,
   // Tableaux [product_table] : partagés avec la rédaction SEO et les pages cibles.
-  TABLE_MAX, presetFor, productTables, tableBlock, countProductTables,
+  TABLE_MAX, TABLE_SKIP, presetFor, productTables, tableBlock, countProductTables,
   // Partagés avec les pages cibles (seoPilotService).
   brandFromJsonLd, rivalSteps, brandIndex, linkFixes, linkFixLine,
   // Banc d'essai (tests/seoAdvisor.test.js) : détecteurs sans réseau ni base.
