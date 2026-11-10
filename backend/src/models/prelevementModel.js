@@ -17,6 +17,7 @@ const nextoreApi = require('../services/nextoreApiClient');
 const pdaProductModel = require('./pdaProductModel');
 const rules = require('../services/prelevementRules');
 const { costsAtDates } = require('../services/costAtDate');
+const siteStock = require('../services/siteStock');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 const kick = () => require('../services/prelevementPushService').kick();
@@ -69,7 +70,30 @@ const resolveNxFor = async (productId, db = pool) => {
   return rules.resolveNx(link, ean.map((r) => r.product_id));
 };
 
-/** Fiche affichée au scan : produit du site, coût, et produit caisse. */
+/**
+ * Stock du site disponible pour un prélèvement : disponible en direct (hors
+ * réservé par les commandes internet en cours) moins les prélèvements déjà
+ * validés mais pas encore sortis. `null` + error si le stock est illisible :
+ * dans ce cas on ne bloque pas (la panne est chez nous, pas chez le vendeur).
+ */
+const siteAvailability = async (productId, sku) => {
+  if (!sku) return { error: 'Produit sans SKU.' };
+  try {
+    const [s, { rows: [q] }] = await Promise.all([
+      siteStock.readSiteStock(sku),
+      pool.query(
+        `SELECT COALESCE(sum(qty), 0)::int AS pending FROM boutique_prelevements
+          WHERE product_id = $1 AND site_status IN ('queued', 'sending')`,
+        [productId]
+      ),
+    ]);
+    return { ...s, pending: q.pending, free: Math.max(0, s.available - q.pending) };
+  } catch (error) {
+    return { error: error.message };
+  }
+};
+
+/** Fiche affichée au scan : produit du site, stock du site, coût, et produit caisse. */
 const productView = async (productId, warehouseId, userId = null) => {
   const p = await loadSite(productId);
   const res = await resolveNxFor(productId);
@@ -102,6 +126,7 @@ const productView = async (productId, warehouseId, userId = null) => {
     nxHow: res.how,
     candidates,
     recent,
+    siteStock: await siteAvailability(p.id, p.sku),
   };
 };
 
@@ -148,6 +173,16 @@ const record = async ({ warehouseId, productId, qty, userId, origin, note, siteD
   if (!p.sku) throw httpError(400, 'Produit sans SKU : inconnu du stock du site.');
   if (p.product_type === 'variable' || p.product_type === 'woosb') {
     throw httpError(400, 'Choisissez la déclinaison ou le produit du pack : ce produit n\'a pas de stock à lui.');
+  }
+  // Une pièce réservée par une commande internet en cours n'est pas à prendre
+  // (décision Maxime, 10/11/2026). Stock illisible : on laisse passer.
+  if (!siteDone) {
+    const s = await siteAvailability(p.id, p.sku);
+    if (!s.error && s.free < n) {
+      throw httpError(409, s.free > 0
+        ? `Non disponible : seulement ${s.free} pièce(s) libre(s) au site, le reste est réservé pour des commandes internet en cours.`
+        : 'Non disponible : plus aucune pièce libre au site (stock à 0 ou réservé pour des commandes internet en cours).');
+    }
   }
   const res = await resolveNxFor(productId);
   const nx = await loadNx(res.nxProductId, warehouseId);

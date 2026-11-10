@@ -43,4 +43,13 @@ const removeFromSite = async ({ sku, qty, comment }) => {
   return { ref: ref == null ? null : String(ref) };
 };
 
-module.exports = { removeFromSite };
+/**
+ * Stock du site d'un produit, en direct : { available, physical, reserved }.
+ * `available` = ce qui n'est pas déjà réservé par une commande internet en cours.
+ */
+const readSiteStock = async (sku) => {
+  const s = await pdaProductModel.readBmsStock(sku);
+  return { available: Number(s.available) || 0, physical: Number(s.physical) || 0, reserved: Number(s.reserved) || 0 };
+};
+
+module.exports = { removeFromSite, readSiteStock };

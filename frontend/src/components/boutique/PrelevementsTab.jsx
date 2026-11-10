@@ -237,6 +237,8 @@ export default function PrelevementsTab({ shop, token }) {
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); }
   };
 
+  // Stock illisible (panne BMS) : on ne bloque pas.
+  const unavailable = !!product?.siteStock && !product.siteStock.error && product.siteStock.free < qty;
   const { counts = {} } = data;
   const totalHt = data.rows.reduce((s, r) => s + r.qty * Number(r.unit_cost_ht || 0), 0);
   const missingCost = data.rows.filter((r) => r.unit_cost_ht == null).length;
@@ -273,9 +275,22 @@ export default function PrelevementsTab({ shop, token }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{product.name}</div>
                 <div style={{ fontSize: 13, color: C.greyT }}>SKU {product.sku} · coût site {eur(product.unitCost)} HT</div>
+                {product.siteStock && !product.siteStock.error && (
+                  <div style={{ fontSize: 13, marginTop: 4 }}>
+                    Stock du site : <b style={{ color: product.siteStock.free > 0 ? C.green : C.red }}>{product.siteStock.free} disponible{product.siteStock.free > 1 ? 's' : ''}</b>
+                    <span style={{ color: C.greyT }}>
+                      {' '}· {product.siteStock.physical} en rayon
+                      {product.siteStock.reserved > 0 && ` · ${product.siteStock.reserved} réservé${product.siteStock.reserved > 1 ? 's' : ''} commandes internet`}
+                      {product.siteStock.pending > 0 && ` · ${product.siteStock.pending} déjà prélevé${product.siteStock.pending > 1 ? 's' : ''} (en cours)`}
+                    </span>
+                  </div>
+                )}
+                {product.siteStock?.error && (
+                  <div style={{ fontSize: 13, marginTop: 4, color: C.greyT }}>Stock du site illisible pour l'instant : le prélèvement reste possible.</div>
+                )}
                 {product.nx && (
                   <div style={{ fontSize: 13, marginTop: 4 }}>
-                    Caisse : <b>{product.nx.name}</b> · stock {product.nx.stock ?? 0}
+                    Caisse Castelnau : <b>{product.nx.name}</b> · stock {product.nx.stock ?? 0}
                     {product.nx.perSiteUnit > 1 && <span style={{ color: C.orange }}> · 1 pièce site = {product.nx.perSiteUnit} pièces boutique</span>}
                   </div>
                 )}
@@ -289,12 +304,22 @@ export default function PrelevementsTab({ shop, token }) {
               </div>
             )}
             {!product.nx && <NotInCaisse product={product} call={call} onDone={(r) => { setProduct(r.product); load(); }} />}
+            {unavailable && (
+              <div style={{ background: C.redL, color: C.red, borderRadius: 12, padding: '10px 14px', marginTop: 12, fontWeight: 700 }}>
+                Non disponible : {product.siteStock.free > 0
+                  ? `seulement ${product.siteStock.free} pièce${product.siteStock.free > 1 ? 's' : ''} libre${product.siteStock.free > 1 ? 's' : ''} au site.`
+                  : 'plus aucune pièce libre au site.'}
+                {product.siteStock.reserved > 0 && ' Le reste est réservé pour des commandes internet en cours : ne le prenez pas.'}
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
               <Btn bg={C.greyT} onClick={() => setQty((q) => Math.max(1, q - 1))}>−</Btn>
               <input type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
                 style={{ width: 70, textAlign: 'center', fontSize: 20, fontWeight: 700, padding: 10, borderRadius: 10, border: `1px solid ${C.greyB}` }} />
               <Btn bg={C.greyT} onClick={() => setQty((q) => q + 1)}>+</Btn>
-              <Btn disabled={busy} bg={C.green} onClick={submit} style={{ flex: 1 }}>{busy ? 'Enregistrement…' : 'Valider le prélèvement'}</Btn>
+              <Btn disabled={busy || unavailable} bg={C.green} onClick={submit} style={{ flex: 1 }}>
+                {busy ? 'Enregistrement…' : unavailable ? 'Non disponible' : 'Valider le prélèvement'}
+              </Btn>
               <Btn bg={C.greyM} onClick={() => setProduct(null)}>Annuler</Btn>
             </div>
           </div>

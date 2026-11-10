@@ -619,7 +619,9 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   `* 7-21`) : `site_status` (sortie du stock du site) et `nx_status` (entrée Nextore `PUT /stocks` en delta).
   Discipline d'`inventoryPushService` : `sending` avant l'appel, « VÉRIFIEZ » si réponse incertaine.
 - **Rien ne bloque le vendeur** : le prélèvement s'enregistre toujours ; sans produit caisse, `nx_status = waiting`
-  jusqu'au rattachement ou à la création.
+  jusqu'au rattachement ou à la création. **Seule exception : la pièce non disponible au site** — l'écran montre le
+  stock du site en direct (`siteStock.readSiteStock` : disponible = hors réservé par les commandes internet en cours,
+  moins les prélèvements pas encore sortis) et `record` refuse (409) au-delà. Stock illisible (panne BMS) = on laisse passer.
 - **Le stock du site passe par `services/siteStock.js` seul** (BMS aujourd'hui, mouvement de sortie
   `miscellaneous`). À la sortie de BMS, ne changer que ce fichier (→ `stock/adjust` de youvape-logistique).
 - **Produit caisse** : lien `boutique_site_links` (manuel ou créé par l'app), sinon UN produit Nextore partageant
