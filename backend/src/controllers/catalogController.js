@@ -23,7 +23,7 @@ const ids = (body) => (Array.isArray(body?.ids) ? body.ids.map((x) => parseInt(x
 module.exports = {
   reviews: handle(async (req, res) => {
     res.json(await catalogReviewModel.list({
-      reason: req.query.reason, q: req.query.q, offset: req.query.offset, limit: req.query.limit, same: req.query.same === '1',
+      reason: req.query.reason, q: req.query.q, offset: req.query.offset, limit: req.query.limit, same: req.query.same === '1', near: req.query.near === '1',
     }));
   }),
   ignore: handle(async (req, res) => {

@@ -180,6 +180,7 @@ export default function CatalogueTab({ shop, token }) {
   const [reason, setReason] = useState('doublon');
   const [q, setQ] = useState('');
   const [onlySame, setOnlySame] = useState(false);
+  const [onlyNear, setOnlyNear] = useState(false);
   const [data, setData] = useState({ rows: [], counts: {} });
   const [error, setError] = useState(null);
   const [running, setRunning] = useState(false);
@@ -187,10 +188,10 @@ export default function CatalogueTab({ shop, token }) {
 
   const load = useCallback(async () => {
     try {
-      setData(await call.get(`/catalogue/reviews?reason=${reason}&q=${encodeURIComponent(q)}${onlySame ? '&same=1' : ''}`));
+      setData(await call.get(`/catalogue/reviews?reason=${reason}&q=${encodeURIComponent(q)}${onlySame ? '&same=1' : ''}${onlyNear ? '&near=1' : ''}`));
       setError(null);
     } catch (e) { setError(errMsg(e)); }
-  }, [reason, q, onlySame]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reason, q, onlySame, onlyNear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
@@ -245,6 +246,11 @@ export default function CatalogueTab({ shop, token }) {
         {(reason === 'doublon' || reason === 'absent') && (
           <label style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
             <input type="checkbox" checked={onlySame} onChange={(e) => setOnlySame(e.target.checked)} /> Seulement ceux qui ont une fiche caisse au nom identique
+          </label>
+        )}
+        {reason === 'absent' && (
+          <label style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <input type="checkbox" checked={onlyNear} onChange={(e) => setOnlyNear(e.target.checked)} /> Seulement ceux qui ont une fiche caisse proche (à trancher : même article ou pas), la plus ressemblante d'abord
           </label>
         )}
         {error && <div style={{ color: C.red }}>{error}</div>}

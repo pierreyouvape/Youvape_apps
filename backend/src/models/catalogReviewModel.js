@@ -11,10 +11,12 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 
 const REASONS = ['doublon', 'categorie', 'sans_ean', 'ean_multiple', 'ean_conflit', 'prix', 'absent'];
 
-const list = async ({ reason, q, offset = 0, limit = 100, same = false }) => {
+const list = async ({ reason, q, offset = 0, limit = 100, same = false, near = false }) => {
   if (!REASONS.includes(reason)) throw httpError(400, 'Motif inconnu.');
   const args = [reason];
   let filter = same ? ` AND r.candidates @> '[{"same": true}]'::jsonb` : '';
+  // « Avec une fiche proche » : à trancher par un humain, meilleure ressemblance d'abord.
+  if (near) filter += ` AND jsonb_array_length(COALESCE(r.candidates, '[]'::jsonb)) > 0`;
   const words = String(q || '').trim().split(/\s+/).filter(Boolean).slice(0, 6);
   for (const w of words) {
     args.push(`%${w}%`);
@@ -34,7 +36,9 @@ const list = async ({ reason, q, offset = 0, limit = 100, same = false }) => {
        LEFT JOIN nextore_categories c ON c.id = r.suggested_category_id
        LEFT JOIN nextore_products np ON np.product_id = r.nx_product_id
       WHERE r.status = 'open' AND r.reason = $1 ${filter}
-      ORDER BY ${reason === 'prix' ? "abs((r.detail->>'ecart_pct')::numeric) DESC" : reason === 'absent' ? 'p.stock DESC NULLS LAST' : 'r.created_at DESC'}
+      ORDER BY ${reason === 'prix' ? "abs((r.detail->>'ecart_pct')::numeric) DESC"
+        : near ? "(r.candidates->0->>'score')::numeric DESC NULLS LAST"
+        : reason === 'absent' ? 'p.stock DESC NULLS LAST' : 'r.created_at DESC'}
       LIMIT $${args.length - 1} OFFSET $${args.length}`,
     args
   );
