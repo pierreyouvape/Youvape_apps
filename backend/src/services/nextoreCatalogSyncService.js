@@ -75,7 +75,8 @@ const categoryStats = async () => {
              sum(count(*)) OVER (PARTITION BY cat, sub) AS tot,
              row_number() OVER (PARTITION BY cat, sub ORDER BY count(*) DESC) AS rk
         FROM pairs GROUP BY 1, 2, 3)
-    SELECT cat, sub, nx_category_id, n::int, tot::int FROM agg WHERE rk = 1`);
+    SELECT cat, sub, nx_category_id, (SELECT name FROM nextore_categories WHERE id = nx_category_id) AS nx_category_name,
+           n::int, tot::int FROM agg WHERE rk = 1`);
   return rows;
 };
 
@@ -136,7 +137,8 @@ const syncMissing = async (since, stats, nxCatalog, report) => {
       continue;
     }
     const cat = rules.pickCategory(stats, r.cat, r.sub);
-    if (!cat.sure) {
+    // Résistances : jamais créées seules (pack sur le site, unité en boutique).
+    if (!cat.sure || rules.isResistance(r.name, cat.categoryName)) {
       await upsertReview(r.id, 'categorie', { candidates: near, categoryId: cat.categoryId });
       report.reviews += 1;
       continue;
@@ -245,12 +247,22 @@ const savePrice = (productId, nxId, price, locked = false) => pool.query(
   [productId, nxId, price, locked]
 );
 
-/** Envoie le prix normal du site à la fiche caisse (seul champ envoyé : vérifié le 10/11/2026). */
-const pushPrice = async (productId, nxId, price) => {
+/**
+ * Envoie le prix normal du site à la fiche caisse (seul champ envoyé : vérifié le
+ * 10/11/2026). Un prix qui change = une étiquette à refaire dans chaque boutique.
+ */
+const pushPrice = async (productId, nxId, price, source = 'auto') => {
   const p = Math.round(Number(price) * 100) / 100;
+  const { rows: [before] } = await pool.query('SELECT price FROM nextore_products WHERE product_id = $1', [nxId]);
   await nextoreApi.updateProduct(nxId, { price: p });
   await pool.query('UPDATE nextore_products SET price = $2 WHERE product_id = $1', [nxId, p]);
   await savePrice(productId, nxId, p);
+  if (before?.price == null || Math.abs(Number(before.price) - p) >= 0.005) {
+    await pool.query(
+      `INSERT INTO boutique_price_labels (product_id, nx_product_id, old_price, new_price, source) VALUES ($1, $2, $3, $4, $5)`,
+      [productId, nxId, before?.price ?? null, p, source]
+    );
+  }
 };
 
 // ── Passage complet ─────────────────────────────────────────────────────────

@@ -76,7 +76,7 @@ const alignPrices = async (ids, userId) => {
   let done = 0;
   for (const r of rows) {
     try {
-      await sync.pushPrice(r.product_id, r.nx_product_id, r.regular_price);
+      await sync.pushPrice(r.product_id, r.nx_product_id, r.regular_price, 'aligned');
       await close([r.id], 'aligned', userId);
       done += 1;
     } catch (error) {
@@ -133,4 +133,87 @@ const linkSame = async (ids, userId) => {
   return { done, errors };
 };
 
-module.exports = { list, ignore, alignPrices, keepPrices, linkSame, REASONS };
+// ── Étiquettes de prix à refaire (boutique_price_labels) ────────────────────
+
+const SHOP_COL = { 1: 'mtp', 2: 'cast' };
+
+/** Prix changés dans la caisse : `todo` = pas encore refaits dans CETTE boutique. */
+const labels = async (warehouseId, { todo = true } = {}) => {
+  const col = SHOP_COL[warehouseId];
+  if (!col) throw httpError(400, 'Boutique inconnue.');
+  const { rows } = await pool.query(
+    `SELECT l.id, l.old_price, l.new_price, l.changed_at, l.source, l.done_mtp_at, l.done_cast_at,
+            np.name AS nx_name, np.barcode, c.name AS category, p.sku, p.post_title AS name,
+            st.stock::float AS shop_stock
+       FROM boutique_price_labels l
+       LEFT JOIN nextore_products np ON np.product_id = l.nx_product_id
+       LEFT JOIN nextore_categories c ON c.id = np.category_id
+       LEFT JOIN products p ON p.id = l.product_id
+       LEFT JOIN nextore_stock st ON st.product_id = l.nx_product_id AND st.warehouse_id = $1
+      WHERE ${todo ? `l.done_${col}_at IS NULL` : 'true'}
+      ORDER BY c.name NULLS LAST, np.name
+      LIMIT 2000`,
+    [warehouseId]
+  );
+  const { rows: [counts] } = await pool.query(
+    `SELECT count(*) FILTER (WHERE done_mtp_at IS NULL)::int AS mtp, count(*) FILTER (WHERE done_cast_at IS NULL)::int AS cast
+       FROM boutique_price_labels`
+  );
+  return { rows, counts };
+};
+
+const labelsDone = async (warehouseId, ids, userId, done = true) => {
+  const col = SHOP_COL[warehouseId];
+  if (!col) throw httpError(400, 'Boutique inconnue.');
+  const { rowCount } = await pool.query(
+    `UPDATE boutique_price_labels SET done_${col}_at = ${done ? 'NOW()' : 'NULL'}, done_${col}_by = $2 WHERE id = ANY($1::bigint[])`,
+    [ids, done ? userId : null]
+  );
+  return { done: rowCount };
+};
+
+// ── Création en masse des existants absents ─────────────────────────────────
+
+const bulk = { running: false, total: 0, created: 0, errors: [], startedAt: null, finishedAt: null, by: null };
+
+/**
+ * Crée dans la caisse tous les « existants absents » encore ouverts qui ont une
+ * catégorie proposée (décision Maxime, 10/11/2026 : ce qu'il n'a pas rattaché est
+ * à créer). Tâche de fond, une fiche à la fois ; sans catégorie : restent en liste.
+ */
+const createAllAbsent = async (userId) => {
+  if (bulk.running) return bulkStatus();
+  const prelevementModel = require('./prelevementModel');
+  const { isResistance } = require('../services/catalogSyncRules');
+  const { rows: all } = await pool.query(
+    `SELECT r.id, r.product_id, r.suggested_category_id, p.sku, p.post_title AS name, c.name AS category
+       FROM boutique_catalog_reviews r
+       JOIN products p ON p.id = r.product_id
+       LEFT JOIN nextore_categories c ON c.id = r.suggested_category_id
+      WHERE r.status = 'open' AND r.reason = 'absent' AND r.suggested_category_id IS NOT NULL
+      ORDER BY p.stock DESC NULLS LAST`
+  );
+  // Résistances (pack sur le site, unité en boutique) : laissées de côté (Maxime, 10/11/2026).
+  const rows = all.filter((r) => !isResistance(r.name, r.category));
+  Object.assign(bulk, { running: true, total: rows.length, created: 0, errors: [], startedAt: new Date(), finishedAt: null, by: userId });
+  (async () => {
+    for (const r of rows) {
+      try {
+        await prelevementModel.createInNextore(2, r.product_id, r.suggested_category_id, userId, { quiet: true });
+        bulk.created += 1;
+      } catch (error) {
+        bulk.errors.push(`${r.sku} : ${error.message}`);
+        if (/HTTP 429|Too Many/i.test(error.message)) await new Promise((res) => setTimeout(res, 60000));
+      }
+      await new Promise((res) => setTimeout(res, 300));
+    }
+  })().catch((error) => bulk.errors.push(`Arrêt : ${error.message}`))
+    .finally(() => { bulk.running = false; bulk.finishedAt = new Date(); });
+  return bulkStatus();
+};
+
+const bulkStatus = () => ({ ...bulk, errors: bulk.errors.slice(-20), errorCount: bulk.errors.length });
+
+module.exports = {
+  list, ignore, alignPrices, keepPrices, linkSame, REASONS, labels, labelsDone, createAllAbsent, bulkStatus,
+};

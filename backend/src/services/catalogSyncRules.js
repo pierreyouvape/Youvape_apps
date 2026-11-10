@@ -140,7 +140,7 @@ const pickCategory = (stats, cat, sub) => {
   const row = stats.find((s) => s.cat === cat && s.sub === sub) || null;
   if (!row) return { categoryId: null, sure: false };
   const share = Number(row.n) / Number(row.tot);
-  return { categoryId: row.nx_category_id, sure: share >= 0.9 && Number(row.tot) >= 10, share };
+  return { categoryId: row.nx_category_id, categoryName: row.nx_category_name || null, sure: share >= 0.9 && Number(row.tot) >= 10, share };
 };
 
 /**
@@ -161,9 +161,19 @@ const priceDecision = ({ sitePrice, nxPrice, state }) => {
   return Math.abs(Number(state.price_pushed) - site) >= 0.005 ? 'push' : 'none';
 };
 
+/**
+ * Résistances : le site les vend en pack (« Pack 5 Résistances… »), les boutiques
+ * à l'unité. Jamais créées depuis la fiche du site (prix et quantité faux en
+ * caisse) — décision Maxime, 10/11/2026 : laissées de côté pour l'instant.
+ */
+// Pas les « Pack 10 Coils » (fils montés, vendus en pack aussi en boutique), ni les
+// cartouches « à résistance intégrée » (vendues à la boîte).
+const isResistance = (siteName, nxCategoryName) => String(nxCategoryName || '').toUpperCase() === 'RESISTANCES'
+  || /^pack\s+\d+\s*x?\s*r[ée]sistances?\b/i.test(String(siteName || '').trim());
+
 /** Écart relatif caisse / site, en % (signe : caisse plus chère = positif). */
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, isSameName, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 };

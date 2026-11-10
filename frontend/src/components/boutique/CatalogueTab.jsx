@@ -24,8 +24,109 @@ const REASONS = [
   { key: 'ean_multiple', label: 'Code-barres sur plusieurs fiches', hint: 'Un code-barres du site est porté par plusieurs fiches caisse : choisissez la bonne.' },
   { key: 'ean_conflit', label: 'Code-barres en conflit', hint: 'Un code-barres du site est déjà sur une AUTRE fiche caisse. À corriger dans Nextore (doublon ou code recyclé).' },
   { key: 'prix', label: 'Prix différents', hint: 'Prix caisse ≠ prix normal du site. « Aligner » met le prix du site ; « Garder » fige le prix caisse (plus aligné ensuite).' },
-  { key: 'absent', label: 'Existants absents de la caisse', hint: 'Produits en stock au site, introuvables dans la caisse. Rien n\'est créé seul : rattachez ou créez au fil de l\'eau.' },
+  { key: 'absent', label: 'Existants absents de la caisse', hint: 'Produits en stock au site, introuvables dans la caisse. Rattachez ce qui existe, puis « Créer tous » pour le reste (les résistances au pack sont laissées de côté).' },
+  { key: 'labels', label: 'Étiquettes à refaire', hint: 'Prix changés dans la caisse par l\'app : refaites l\'étiquette en rayon, puis cochez « Fait ». Chaque boutique coche les siennes.' },
 ];
+
+const fmtDate = (s) => new Date(s).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/* Étiquettes de prix à refaire dans CETTE boutique. */
+function LabelRows({ shop, call, onCount }) {
+  const [data, setData] = useState({ rows: [], counts: {} });
+  const [showAll, setShowAll] = useState(false);
+  const [sel, setSel] = useState({});
+  const [msg, setMsg] = useState(null);
+  const col = shop.id === 1 ? 'done_mtp_at' : 'done_cast_at';
+
+  const load = useCallback(async () => {
+    try {
+      const d = await call.get(`/catalogue/labels${showAll ? '?all=1' : ''}`);
+      setData(d); onCount(shop.id === 1 ? d.counts.mtp : d.counts.cast);
+    } catch (e) { setMsg(errMsg(e)); }
+  }, [showAll]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+
+  const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
+  const mark = async (list, done = true) => {
+    if (!list.length) return;
+    try { await call.post('/catalogue/labels/done', { ids: list, done }); setSel({}); load(); } catch (e) { setMsg(errMsg(e)); }
+  };
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0 10px', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 13 }}>
+          <input type="checkbox" checked={data.rows.length > 0 && chosen.length === data.rows.length}
+            onChange={(e) => setSel(e.target.checked ? Object.fromEntries(data.rows.map((r) => [r.id, true])) : {})} /> Tout cocher
+        </label>
+        <Btn bg={C.green} disabled={!chosen.length} onClick={() => mark(chosen)}>Étiquettes faites ({chosen.length})</Btn>
+        <Btn bg={C.greyT} onClick={() => window.print()}>Imprimer la liste</Btn>
+        <label style={{ fontSize: 13, marginLeft: 'auto' }}>
+          <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Voir aussi celles déjà faites
+        </label>
+        {msg && <span style={{ color: C.red, fontSize: 13 }}>{msg}</span>}
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <thead>
+          <tr style={{ textAlign: 'left', color: C.greyT, fontSize: 12 }}>
+            <th /><th style={{ padding: 6 }}>Produit (caisse)</th><th style={{ padding: 6 }}>Catégorie</th>
+            <th style={{ padding: 6 }}>Ancien prix</th><th style={{ padding: 6 }}>Nouveau prix</th><th style={{ padding: 6 }}>Stock boutique</th>
+            <th style={{ padding: 6 }}>Changé le</th><th style={{ padding: 6 }}>Étiquette</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map((r) => (
+            <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}` }}>
+              <td style={{ padding: 6 }}><input type="checkbox" checked={!!sel[r.id]} onChange={(e) => setSel((s) => ({ ...s, [r.id]: e.target.checked }))} /></td>
+              <td style={{ padding: 6 }}>{r.nx_name || r.name}<div style={{ fontSize: 11, color: C.greyT }}>{r.sku}</div></td>
+              <td style={{ padding: 6, fontSize: 12 }}>{r.category || '—'}</td>
+              <td style={{ padding: 6, whiteSpace: 'nowrap', color: C.greyT, textDecoration: 'line-through' }}>{eur(r.old_price)}</td>
+              <td style={{ padding: 6, whiteSpace: 'nowrap', fontWeight: 700 }}>{eur(r.new_price)}</td>
+              <td style={{ padding: 6 }}>{r.shop_stock ?? 0}</td>
+              <td style={{ padding: 6, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(r.changed_at)}</td>
+              <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                {r[col]
+                  ? <span style={{ color: C.green, fontSize: 12 }}>Faite <Btn bg={C.greyM} onClick={() => mark([r.id], false)}>Annuler</Btn></span>
+                  : <Btn bg={C.green} onClick={() => mark([r.id])}>Fait</Btn>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!data.rows.length && <div style={{ color: C.greyT, padding: 10 }}>Aucune étiquette à refaire.</div>}
+    </>
+  );
+}
+
+/* « Créer tous » : création en masse des existants absents (tâche de fond). */
+function CreateAll({ call, onDone }) {
+  const [st, setSt] = useState(null);
+  const poll = useCallback(async () => {
+    try { setSt(await call.get('/catalogue/create-all')); } catch { /* rien */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { poll(); }, [poll]);
+  useEffect(() => {
+    if (!st?.running) return undefined;
+    const t = setTimeout(() => { poll(); onDone(); }, 5000);
+    return () => clearTimeout(t);
+  }, [st]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = async () => {
+    if (!window.confirm('Créer dans la caisse tous les produits de cette liste qui ont une catégorie proposée ?\n\nLes résistances au pack et ceux sans catégorie restent dans la liste. Une fiche est créée toutes les quelques secondes.')) return;
+    try { setSt(await call.post('/catalogue/create-all', {})); } catch (e) { setSt({ errors: [errMsg(e)] }); }
+  };
+  return (
+    <div style={{ background: C.orangeL, borderRadius: 10, padding: '8px 12px', marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, fontSize: 13 }}>
+        {st?.running
+          ? <>Création en cours : <b>{st.created} / {st.total}</b>{st.errorCount ? ` · ${st.errorCount} erreur(s)` : ''}</>
+          : st?.finishedAt
+            ? <>Dernière création en masse : {st.created} / {st.total} fiche(s){st.errorCount ? ` · ${st.errorCount} erreur(s) : ${st.errors.slice(-3).join(' ; ')}` : ''}</>
+            : 'Tout ce qui reste ici n\'est pas dans la caisse.'}
+      </span>
+      {!st?.running && <Btn bg={C.orange} onClick={start}>Créer tous dans la caisse</Btn>}
+    </div>
+  );
+}
 
 function Btn({ children, onClick, disabled, bg = C.primary, style }) {
   return (
@@ -186,7 +287,9 @@ export default function CatalogueTab({ shop, token }) {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState(null);
 
+  const [labelCount, setLabelCount] = useState(0);
   const load = useCallback(async () => {
+    if (reason === 'labels') return;
     try {
       setData(await call.get(`/catalogue/reviews?reason=${reason}&q=${encodeURIComponent(q)}${onlySame ? '&same=1' : ''}${onlyNear ? '&near=1' : ''}`));
       setError(null);
@@ -194,6 +297,10 @@ export default function CatalogueTab({ shop, token }) {
   }, [reason, q, onlySame, onlyNear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+  // Compteur de l'onglet Étiquettes dès l'ouverture de l'écran.
+  useEffect(() => {
+    call.get('/catalogue/labels').then((d) => setLabelCount(shop.id === 1 ? d.counts.mtp : d.counts.cast)).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runNow = async () => {
     setRunning(true); setReport(null);
@@ -227,7 +334,7 @@ export default function CatalogueTab({ shop, token }) {
           <button key={r.key} onClick={() => setReason(r.key)} style={{
             border: `1px solid ${reason === r.key ? C.primary : C.greyB}`, background: reason === r.key ? C.primary : C.white,
             color: reason === r.key ? '#fff' : C.dark, borderRadius: 999, padding: '6px 12px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}>{r.label} <b>{data.counts[r.key] || 0}</b></button>
+          }}>{r.label} <b>{r.key === 'labels' ? labelCount : (data.counts[r.key] || 0)}</b></button>
         ))}
         <Btn disabled={running} bg={C.dark} style={{ marginLeft: 'auto' }} onClick={runNow}>{running ? 'Synchro…' : 'Lancer la synchro'}</Btn>
       </div>
@@ -254,11 +361,12 @@ export default function CatalogueTab({ shop, token }) {
           </label>
         )}
         {error && <div style={{ color: C.red }}>{error}</div>}
-        {reason === 'prix'
-          ? <PriceRows rows={data.rows} call={call} onDone={load} />
-          : data.rows.map((row) => <ReviewRow key={row.id} row={row} call={call} onDone={load} />)}
-        {!data.rows.length && <div style={{ color: C.greyT, padding: 10 }}>Rien à vérifier ici.</div>}
-        {data.rows.length >= 100 && <div style={{ color: C.greyT, fontSize: 12, paddingTop: 8 }}>100 premières lignes : filtrez pour voir les autres.</div>}
+        {reason === 'absent' && <CreateAll call={call} onDone={load} />}
+        {reason === 'labels' && <LabelRows shop={shop} call={call} onCount={setLabelCount} />}
+        {reason === 'prix' && <PriceRows rows={data.rows} call={call} onDone={load} />}
+        {reason !== 'prix' && reason !== 'labels' && data.rows.map((row) => <ReviewRow key={row.id} row={row} call={call} onDone={load} />)}
+        {reason !== 'labels' && !data.rows.length && <div style={{ color: C.greyT, padding: 10 }}>Rien à vérifier ici.</div>}
+        {reason !== 'labels' && data.rows.length >= 100 && <div style={{ color: C.greyT, fontSize: 12, paddingTop: 8 }}>100 premières lignes : filtrez pour voir les autres.</div>}
       </div>
     </div>
   );

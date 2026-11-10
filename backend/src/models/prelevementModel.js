@@ -292,7 +292,11 @@ const findCreatedId = async (response, barcodes) => {
   return rows[0]?.product_id || null;
 };
 
-const createInNextore = async (warehouseId, productId, categoryId, userId) => {
+/**
+ * `quiet` : création en masse — ne relit pas la fiche complète à la fin (elle lit
+ * le stock BMS en direct : 2 000 appels satureraient BMS).
+ */
+const createInNextore = async (warehouseId, productId, categoryId, userId, { quiet = false } = {}) => {
   if (creating.has(productId)) throw httpError(409, 'Création déjà en cours pour ce produit.');
   creating.add(productId);
   try {
@@ -325,6 +329,7 @@ const createInNextore = async (warehouseId, productId, categoryId, userId) => {
          price_locked = false, updated_at = NOW()`,
       [p.id, nxId, payload.price]
     );
+    if (quiet) return { released, nxProductId: nxId };
     return { product: await productView(p.id, warehouseId), released, nxProductId: nxId };
   } finally {
     creating.delete(productId);

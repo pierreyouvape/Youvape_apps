@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, isSameName, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, isResistance, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -65,6 +65,12 @@ assert.strictEqual(pickCategory(stats, 'Kits', 'Kits Format Box').sure, false, '
 assert.strictEqual(pickCategory(stats, 'Kits', 'Kits Format Box').categoryId, '18', 'mais proposée');
 assert.strictEqual(pickCategory(stats, 'Accessoires', 'Chargeurs').sure, false, '6 paires : trop peu');
 assert.strictEqual(pickCategory(stats, 'Inconnue', null).categoryId, null);
+
+// ── Résistances laissées de côté ────────────────────────────────────────────
+assert.ok(isResistance('Pack 5 Résistances M Series Coils - 0.15 Ω', 'RESISTANCES'));
+assert.ok(isResistance('Pack 5 Résistances GTX - 1.20 Ω Mesh', null), 'par le nom seul');
+assert.ok(!isResistance('Pack 10 Coils Dual Core Fused Clapton Ni80', 'COIL'), 'fils montés : créables');
+assert.ok(!isResistance('Pack 3 Cartouches Xlim - résistance intégrée 1.20 Ω', 'CARTOUCHES'), 'cartouches : créables');
 
 // ── Prix ────────────────────────────────────────────────────────────────────
 assert.strictEqual(priceDecision({ sitePrice: 5.9, nxPrice: 5.9, state: null }), 'same');

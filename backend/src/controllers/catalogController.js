@@ -51,6 +51,20 @@ module.exports = {
   createInNextore: handle(async (req, res) => {
     res.json(await prelevementModel.createInNextore(WH, parseInt(req.params.productId, 10), req.body?.categoryId, req.user.id));
   }),
+  labels: handle(async (req, res) => {
+    const { resolveWarehouse } = require('../config/nextore');
+    res.json(await catalogReviewModel.labels(resolveWarehouse(req.params.shop).id, { todo: req.query.all !== '1' }));
+  }),
+  labelsDone: handle(async (req, res) => {
+    const { resolveWarehouse } = require('../config/nextore');
+    res.json(await catalogReviewModel.labelsDone(resolveWarehouse(req.params.shop).id, ids(req.body), req.user.id, req.body?.done !== false));
+  }),
+  createAll: handle(async (req, res) => {
+    res.json(await catalogReviewModel.createAllAbsent(req.user.id));
+  }),
+  createAllStatus: handle(async (req, res) => {
+    res.json(catalogReviewModel.bulkStatus());
+  }),
   run: handle(async (req, res) => {
     res.json(await sync.run({ dryRun: req.body?.dryRun === true }));
   }),
