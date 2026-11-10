@@ -312,7 +312,24 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
     if (!nxId) {
       throw httpError(502, 'Nextore a répondu mais la fiche est introuvable : VÉRIFIEZ dans la caisse avant de recréer.');
     }
-    if (!(await loadNx(nxId, warehouseId))) await require('./nextoreModel').syncCatalog();
+    // Nextore renvoie la fiche créée (constaté le 10/11/2026) : on la range dans le
+    // miroir local tout de suite, au lieu de relire tout le catalogue (5 000 fiches).
+    if (response && typeof response === 'object' && String(response.id) === String(nxId)) {
+      await pool.query(
+        `INSERT INTO nextore_products (product_id, code, name, unit, cost, price, category_id, barcode, tax_rate, type, status, synced_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+         ON CONFLICT (product_id) DO NOTHING`,
+        [nxId, response.code ?? null, response.name ?? payload.name, response.unit ?? null,
+          Number(response.cost ?? payload.cost) || null, Number(response.price ?? payload.price) || null,
+          String(response.category_id ?? payload.category_id), response.barcode ?? payload.barcode ?? null,
+          String(response.tax_rate ?? payload.tax_rate), response.type ?? 'standard', response.status ?? '']
+      );
+      for (const b of rules.splitBarcodes(response.barcode ?? payload.barcode)) {
+        await pool.query('INSERT INTO nextore_product_barcodes (product_id, barcode) VALUES ($1, $2) ON CONFLICT DO NOTHING', [nxId, b]);
+      }
+    } else if (!(await loadNx(nxId, warehouseId))) {
+      await require('./nextoreModel').syncCatalog();
+    }
     await pool.query(
       `INSERT INTO boutique_site_links (product_id, nx_product_id, source, created_by)
        VALUES ($1, $2, 'created', $3)
