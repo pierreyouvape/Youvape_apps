@@ -92,7 +92,9 @@ function LabelRows({ shop, call, onCount }) {
   const [busy, setBusy] = useState(false);
   // Plusieurs lignes cochées : retour à l'ancien prix pour chacune (celles qui le permettent).
   const revertMany = async (ids) => {
-    const list = data.rows.filter((r) => ids.includes(r.id) && !r.reverted_at && r.old_price != null && r.source !== 'reverted');
+    // Les id arrivent en texte (BIGSERIAL) : on compare en texte, sinon rien ne correspond.
+    const wanted = new Set(ids.map(String));
+    const list = data.rows.filter((r) => wanted.has(String(r.id)) && !r.reverted_at && r.old_price != null && r.source !== 'reverted');
     if (!list.length) { setMsg('Aucune ligne cochée ne peut revenir à son ancien prix.'); return; }
     const preview = list.slice(0, 12).map((r) => `• ${r.nx_name || r.name} : ${eur(r.new_price)} → ${eur(r.old_price)}`).join('\n');
     if (!window.confirm(`Remettre l'ancien prix dans la caisse pour ${list.length} produit(s) ?\n\n${preview}${list.length > 12 ? '\n…' : ''}\n\nLeur prix ne sera plus aligné sur le site ensuite.`)) return;
