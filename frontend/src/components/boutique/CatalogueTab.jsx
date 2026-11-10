@@ -89,6 +89,22 @@ function LabelRows({ shop, call, onCount }) {
     if (!window.confirm(`Remettre « ${r.nx_name || r.name} » à ${eur(r.old_price)} dans la caisse (au lieu de ${eur(r.new_price)}) ?\n\nLe prix de ce produit ne sera plus aligné sur le site ensuite.`)) return;
     try { await call.post(`/catalogue/labels/${r.id}/revert`, {}); setMsg(null); load(); } catch (e) { setMsg(errMsg(e)); }
   };
+  const [busy, setBusy] = useState(false);
+  // Plusieurs lignes cochées : retour à l'ancien prix pour chacune (celles qui le permettent).
+  const revertMany = async (ids) => {
+    const list = data.rows.filter((r) => ids.includes(r.id) && !r.reverted_at && r.old_price != null && r.source !== 'reverted');
+    if (!list.length) { setMsg('Aucune ligne cochée ne peut revenir à son ancien prix.'); return; }
+    const preview = list.slice(0, 12).map((r) => `• ${r.nx_name || r.name} : ${eur(r.new_price)} → ${eur(r.old_price)}`).join('\n');
+    if (!window.confirm(`Remettre l'ancien prix dans la caisse pour ${list.length} produit(s) ?\n\n${preview}${list.length > 12 ? '\n…' : ''}\n\nLeur prix ne sera plus aligné sur le site ensuite.`)) return;
+    setBusy(true); setMsg(null);
+    let ok = 0;
+    const errors = [];
+    for (const r of list) {
+      try { await call.post(`/catalogue/labels/${r.id}/revert`, {}); ok += 1; } catch (e) { errors.push(`${r.nx_name || r.name} : ${errMsg(e)}`); }
+    }
+    setMsg(`${ok} produit(s) revenu(s) à l'ancien prix${errors.length ? ` · ${errors.length} refusé(s) : ${errors.slice(0, 3).join(' ; ')}` : ''}`);
+    setSel({}); setBusy(false); load();
+  };
   const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
   const mark = async (list, done = true) => {
     if (!list.length) return;
@@ -102,12 +118,13 @@ function LabelRows({ shop, call, onCount }) {
           <input type="checkbox" checked={data.rows.length > 0 && chosen.length === data.rows.length}
             onChange={(e) => setSel(e.target.checked ? Object.fromEntries(data.rows.map((r) => [r.id, true])) : {})} /> Tout cocher
         </label>
-        <Btn bg={C.green} disabled={!chosen.length} onClick={() => mark(chosen)}>Étiquettes faites ({chosen.length})</Btn>
+        <Btn bg={C.green} disabled={!chosen.length || busy} onClick={() => mark(chosen)}>Étiquettes faites ({chosen.length})</Btn>
+        <Btn bg={C.orange} disabled={!chosen.length || busy} onClick={() => revertMany(chosen)}>{busy ? 'En cours…' : `Ancien prix (${chosen.length})`}</Btn>
         <Btn bg={C.greyT} onClick={() => window.print()}>Imprimer la liste</Btn>
         <label style={{ fontSize: 13, marginLeft: 'auto' }}>
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> Voir aussi celles déjà faites
         </label>
-        {msg && <span style={{ color: C.red, fontSize: 13 }}>{msg}</span>}
+        {msg && <span style={{ color: C.dark, fontSize: 13 }}>{msg}</span>}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
