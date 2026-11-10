@@ -294,6 +294,14 @@ export default function PrelevementsTab({ shop, token }) {
                   <div style={{ fontSize: 13, marginTop: 4 }}>
                     Caisse Castelnau : <b>{product.nx.name}</b> · stock {product.nx.stock ?? 0}
                     {product.nx.perSiteUnit > 1 && <span style={{ color: C.orange }}> · 1 pièce site = {product.nx.perSiteUnit} pièces boutique</span>}
+                    {product.nx.how === 'manual' && (
+                      <button onClick={async () => {
+                        if (!window.confirm(`« ${product.name} » n'est PAS « ${product.nx.name} » ?\n\nLe rattachement est défait et ses codes-barres retirés de la fiche caisse.`)) return;
+                        try { await call.post(`/prelevements/products/${product.id}/unlink`, {}); pick(product.id); } catch (e) { setMsg({ ok: false, text: errMsg(e) }); }
+                      }} style={{ marginLeft: 8, background: 'none', border: 'none', color: C.red, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}>
+                        Pas le bon produit caisse
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

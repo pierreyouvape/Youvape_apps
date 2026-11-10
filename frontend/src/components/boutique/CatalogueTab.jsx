@@ -315,6 +315,17 @@ function PriceRows({ rows: raw, call, onDone, shop }) {
   const [msg, setMsg] = useState(null);
   const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
 
+  // Mauvais rattachement : on le défait (codes-barres retirés de la fiche caisse).
+  const notSame = async (r) => {
+    if (!window.confirm(`« ${r.name} » (site) n'est PAS « ${r.nx_name} » (caisse) ?\n\nLe rattachement est défait, ses codes-barres retirés de la fiche caisse, et le produit revient dans « Existants absents » pour être rattaché à la bonne fiche ou créé.`)) return;
+    setBusy(true); setMsg(null);
+    try {
+      const res = await call.post(`/catalogue/products/${r.product_id}/unlink`, {});
+      setMsg(`Défait${res.removedBarcodes?.length ? ` · ${res.removedBarcodes.length} code(s)-barres retiré(s) de « ${res.nxName} »` : ''}`);
+      onDone();
+    } catch (e) { setMsg(errMsg(e)); } finally { setBusy(false); }
+  };
+
   const act = async (kind, list) => {
     if (!list.length) return;
     const what = kind === 'align' ? 'Mettre le prix du site sur' : 'Garder le prix caisse (plus aligné ensuite) pour';
@@ -368,7 +379,8 @@ function PriceRows({ rows: raw, call, onDone, shop }) {
                 <td style={{ padding: 6, fontWeight: stockOf(r) > 0 ? 700 : 400, color: stockOf(r) > 0 ? C.dark : C.greyM }}>{stockOf(r)}</td>
                 <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                   <Btn bg={C.green} disabled={busy} onClick={() => act('align', [r.id])}>Aligner</Btn>{' '}
-                  <Btn bg={C.greyT} disabled={busy} onClick={() => act('keep', [r.id])}>Garder</Btn>
+                  <Btn bg={C.greyT} disabled={busy} onClick={() => act('keep', [r.id])}>Garder</Btn>{' '}
+                  <Btn bg={C.red} disabled={busy} onClick={() => notSame(r)}>Pas le même</Btn>
                 </td>
               </tr>
             );

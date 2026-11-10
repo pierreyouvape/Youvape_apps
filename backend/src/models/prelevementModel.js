@@ -266,6 +266,49 @@ const link = async (warehouseId, productId, nxProductId, userId) => {
 };
 
 /**
+ * « Pas le même article » : défait un rattachement manuel faux. Retire de la
+ * fiche caisse les codes-barres de CE produit du site (ajoutés au rattachement :
+ * sinon la caisse continue de le prendre pour l'autre), oublie la comparaison de
+ * prix, et remet le produit dans « Existants absents » pour être rattaché à la
+ * bonne fiche ou créé. Une fiche CRÉÉE par l'app pour ce produit n'est pas concernée.
+ */
+const unlink = async (productId, userId) => {
+  const { rows: [l] } = await pool.query(
+    'SELECT nx_product_id, source FROM boutique_site_links WHERE product_id = $1', [productId]
+  );
+  if (!l) throw httpError(404, 'Ce produit n\'est rattaché à aucune fiche caisse à la main.');
+  if (l.source !== 'manual') throw httpError(409, 'Cette fiche caisse a été créée pour ce produit : à corriger dans la caisse.');
+  const { rows: mine } = await pool.query(
+    `SELECT barcode FROM product_barcodes WHERE product_id = $1 AND type = 'unit'`, [productId]
+  );
+  const nx = await loadNx(l.nx_product_id, 0);
+  const remove = new Set(mine.map((b) => b.barcode));
+  const before = rules.splitBarcodes(nx?.barcode);
+  const kept = before.filter((b) => !remove.has(b));
+  const removed = before.filter((b) => remove.has(b));
+  if (removed.length) {
+    await nextoreApi.updateProduct(l.nx_product_id, { barcode: kept.join(';') });
+    await pool.query('UPDATE nextore_products SET barcode = $2 WHERE product_id = $1', [l.nx_product_id, kept.join(';')]);
+    await pool.query(
+      'DELETE FROM nextore_product_barcodes WHERE product_id = $1 AND barcode = ANY($2::text[])', [l.nx_product_id, removed]
+    );
+  }
+  await pool.query('DELETE FROM boutique_site_links WHERE product_id = $1', [productId]);
+  await pool.query('DELETE FROM boutique_nx_sync WHERE product_id = $1', [productId]);
+  await pool.query(
+    `UPDATE boutique_catalog_reviews SET status = 'done', resolution = 'unlinked', resolved_by = $2, resolved_at = NOW()
+      WHERE product_id = $1 AND reason = 'prix' AND status = 'open'`,
+    [productId, userId || null]
+  );
+  await pool.query(
+    `INSERT INTO boutique_catalog_reviews (product_id, reason, candidates) VALUES ($1, 'absent', '[]'::jsonb)
+     ON CONFLICT (product_id, reason) DO UPDATE SET status = 'open', resolution = NULL, resolved_by = NULL, resolved_at = NULL`,
+    [productId]
+  );
+  return { unlinked: l.nx_product_id, nxName: nx?.name || null, removedBarcodes: removed };
+};
+
+/**
  * Produit désormais dans la caisse : ses lignes « à vérifier » de catalogue sont
  * réglées (sauf le prix, comparé au passage suivant de la synchro).
  */
@@ -425,5 +468,5 @@ const exportRows = async (warehouseId, from, to) => {
 
 module.exports = {
   lookup, productView, searchNextore, record, link, createInNextore, list, resolveStep, exportRows, releaseWaiting,
-  addSiteBarcodesToNx,
+  addSiteBarcodesToNx, unlink,
 };

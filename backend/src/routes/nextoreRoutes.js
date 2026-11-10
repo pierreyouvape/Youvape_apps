@@ -111,6 +111,7 @@ router.get('/:shop/prelevements/categories', prelevementPerm('read'), nextoreCon
 router.get('/:shop/prelevements/products/:productId', prelevementPerm('read'), prelevementController.product);
 router.post('/:shop/prelevements', prelevementPerm('write'), prelevementController.create);
 router.post('/:shop/prelevements/products/:productId/link', prelevementPerm('write'), prelevementController.link);
+router.post('/:shop/prelevements/products/:productId/unlink', prelevementPerm('write'), catalogController.unlink);
 router.post('/:shop/prelevements/products/:productId/create-nextore', prelevementPerm('write'), prelevementController.createInNextore);
 router.post('/:shop/prelevements/:id/resolve', prelevementPerm('write'), prelevementController.resolveStep);
 
@@ -120,6 +121,7 @@ router.get('/:shop/catalogue/categories', boutiquePerm('read'), nextoreControlle
 router.get('/:shop/catalogue/nextore-search', boutiquePerm('read'), catalogController.searchNextore);
 router.get('/:shop/catalogue/products/:productId', boutiquePerm('read'), catalogController.product);
 router.post('/:shop/catalogue/products/:productId/link', boutiquePerm('write'), catalogController.link);
+router.post('/:shop/catalogue/products/:productId/unlink', boutiquePerm('write'), catalogController.unlink);
 router.post('/:shop/catalogue/products/:productId/create-nextore', boutiquePerm('write'), catalogController.createInNextore);
 router.post('/:shop/catalogue/reviews/:id/ignore', boutiquePerm('write'), catalogController.ignore);
 router.post('/:shop/catalogue/prices/align', boutiquePerm('write'), catalogController.alignPrices);

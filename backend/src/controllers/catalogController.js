@@ -48,6 +48,9 @@ module.exports = {
     if (!req.body?.nxProductId) return res.status(400).json({ error: 'Produit caisse manquant.' });
     res.json(await prelevementModel.link(WH, parseInt(req.params.productId, 10), req.body.nxProductId, req.user.id));
   }),
+  unlink: handle(async (req, res) => {
+    res.json(await prelevementModel.unlink(parseInt(req.params.productId, 10), req.user.id));
+  }),
   createInNextore: handle(async (req, res) => {
     res.json(await prelevementModel.createInNextore(WH, parseInt(req.params.productId, 10), req.body?.categoryId, req.user.id));
   }),
