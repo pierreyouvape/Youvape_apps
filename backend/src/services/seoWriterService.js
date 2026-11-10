@@ -150,7 +150,8 @@ const parsePage = (url, status, html) => {
   const h1Pos = html.search(/<h1[\s>]/i);
   const afterH1 = h1Pos >= 0 ? html.slice(h1Pos, h1Pos + 4000) : '';
   // Bannière = image de la médiathèque (pas une icône du thème, ex. close.svg).
-  const banner = afterH1.match(/<img[^>]*src="([^"]*\/wp-content\/uploads\/[^"]+)"[^>]*alt="([^"]*)"/i);
+  // Les .svg de la médiathèque sont des icônes (ex. icon-filter-capacity.svg du filtre), pas une bannière.
+  const banner = afterH1.match(/<img[^>]*src="([^"]*\/wp-content\/uploads\/[^"]+\.(?:jpe?g|png|webp|gif|avif))"[^>]*alt="([^"]*)"/i);
   // L'intro (description du terme) s'arrête aux filtres du thème.
   const subtitle = innerDiv(html, '<div class="subtitle">');
   const intro = subtitle ? subtitle.split(/<div\b/i)[0].trim() : null;
@@ -415,8 +416,13 @@ const loadBrandIndex = async () => {
 
 // Produits de la page regroupés par marque × catégorie : chaque groupe est un
 // [product_table] possible, prêt à coller.
-const productTableGroups = async (products) => {
+// Sous-marque (/marque/mere/gamme) : le shortcode ne filtre que sur la marque
+// pwb-brand des fiches, qui est la marque mère ; le tableau remonterait toutes
+// ses gammes. Pas de tableau proposé dans ce cas.
+const productTableGroups = async (products, pagePath = '') => {
   if (!products?.length) return [];
+  const brandSegs = pagePath.startsWith('/marque/') ? pagePath.split('/').filter(Boolean).slice(1) : [];
+  const subBrand = brandSegs.length >= 2 ? brandSegs[brandSegs.length - 1] : null;
   const brands = await loadBrandIndex();
   const groups = new Map();
   for (const p of products) {
@@ -436,11 +442,25 @@ const productTableGroups = async (products) => {
     g.brand_ok = !!g.brand && idx.get(`${SITE}/marque/${g.brand}`)?.http_status === 200;
     const preset = presetFor(g.category || '');
     const extra = g.count > TABLE_MAX ? ' orderby="popularity"' : '';
-    g.shortcode = g.brand && g.category
+    g.sub_brand = subBrand && g.brand && g.brand !== subBrand ? subBrand : null;
+    g.shortcode = g.brand && g.category && !g.sub_brand
       ? `[product_table brand="${g.brand}" category="${g.category}" columns="${preset.columns}" headers="${preset.headers}"${extra}]`
       : null;
   }
   return out;
+};
+
+// /produit/eliquides/eliquides-grands-formats/x → /categorie-produit/eliquides/eliquides-grands-formats
+const BOOSTERS_URL = `${SITE}/categorie-produit/eliquides/boosters-de-nicotine`;
+const categoryPagesOf = (products) => {
+  const out = new Set();
+  for (const x of products || []) {
+    const segs = pathOf(x.url).split('/').filter(Boolean);
+    if (segs[0] !== 'produit' || segs.length < 3) continue;
+    out.add(`${SITE}/categorie-produit/${segs.slice(1, -1).join('/')}`);
+    if (segs.includes('eliquides-grands-formats')) out.add(BOOSTERS_URL);
+  }
+  return [...out];
 };
 
 const analyze = async (id) => {
@@ -501,7 +521,7 @@ const analyze = async (id) => {
     ? row.target_queries
     : topic.filter((q) => !q.excluded).slice(0, DEFAULT_TARGETS).map((q) => q.query);
 
-  const tables = await productTableGroups(page.products);
+  const tables = await productTableGroups(page.products, page.path);
   const data = { range, page_queries: pageQueries.slice(0, 60), topic, competitors, facts, links, tables };
   const r = await pool.query(
     `UPDATE seo_pages SET page = $2, data = $3, topic_terms = $4, target_queries = $5, analyzed_at = now(), updated_at = now(),
@@ -623,6 +643,9 @@ LIVRABLE
   4. APRÈS [/more], visible : un H2 de FAQ reprenant la requête principale (ex. « Questions fréquentes sur les puffs JNR ») et la FAQ de 4 à 7 questions en shortcodes ;
   5. la phrase « Produits réservés aux adultes. Si vous ne fumez pas, ne vapotez pas. ».
 - Le texte est complet, prêt à coller : jamais un morceau à insérer.
+- Aucune section hors de ce plan (pas d'étiquetage, de réglementation, de mention CLP…) : une page marque ou catégorie présente la gamme et ses formats, elle ne recopie pas les fiches.
+- Pas de tableau qui ne fait que répéter les produits déjà affichés dans la grille de la page ; aucun [product_table] si le brief n'en propose pas pour cette page.
+- Lie les catégories listées dans « Pages que tu peux lier » là où le texte en parle (ex. grands formats, sels de nicotine, boosters).
 - liens à ajouter AILLEURS vers la page : depuis la page qui capte aujourd'hui la requête principale, et depuis la page marque ; ancre = requête visée.
 
 CODE DU THÈME (obligatoire)
@@ -678,8 +701,16 @@ const buildBrief = async (row) => {
   if (!row.page || !row.data) throw new Error('Lancez d’abord l’analyse de la page');
   const p = row.page;
   const d = { ...row.data };
-  // Analyse faite avant les tableaux automatiques : on les calcule à la volée.
-  if (!d.tables) d.tables = await productTableGroups(p.products);
+  // Recalculés à chaque brief : règles des tableaux (sous-marque) plus récentes que l'analyse.
+  d.tables = await productTableGroups(p.products, p.path);
+  // Catégories des produits listés (+ boosters si e-liquides 50ml), vérifiées indexables :
+  // sans données Search Console, ce sont les seuls liens utiles hors fiches.
+  const catUrls = categoryPagesOf(p.products);
+  const catIdx = await loadIndexability(catUrls);
+  const categories = catUrls.filter((u) => {
+    const x = catIdx.get(u);
+    return x?.http_status === 200 && !/noindex/i.test(x.robots || '');
+  });
   const ads = await adsWithGsc(row.ads, d.range);
   const parts = [];
   parts.push(`# Brief SEO — ${p.path}`);
@@ -718,7 +749,9 @@ ${mdTable(['Marque', 'Catégorie', 'Produits', 'Shortcode proposé'], d.tables.m
     g.brand ? `${g.brand_name} (${g.brand})${g.brand_ok ? '' : ' — page marque introuvable, slug à vérifier'}` : 'marque inconnue',
     g.category || 'inconnue',
     `${g.count}${g.count > TABLE_MAX ? ' (au-delà de 10 : orderby="popularity")' : ''}`,
-    g.shortcode || 'impossible (marque ou catégorie inconnue) : tableau HTML',
+    g.shortcode || (g.sub_brand
+      ? `aucun : le slug « ${g.brand} » est celui de la marque mère, le tableau afficherait toutes ses gammes, pas seulement ${g.sub_brand}`
+      : 'impossible (marque ou catégorie inconnue) : tableau HTML'),
   ]))}`);
   }
   // Pages qu'on peut lier sans risque : vérifiées indexables (ou fiches listées).
@@ -728,6 +761,7 @@ ${mdTable(['Marque', 'Catégorie', 'Produits', 'Shortcode proposé'], d.tables.m
   for (const l of d.links || []) if (l.robots && !/noindex/.test(l.robots)) addLink(l.url, 'déjà lié par le texte actuel');
   for (const c of d.competitors || []) if (c.robots && !/noindex/.test(c.robots)) addLink(c.url, 'capte des requêtes du sujet');
   for (const g of d.tables || []) if (g.brand_ok) addLink(`${SITE}/marque/${g.brand}`, 'page marque');
+  for (const u of categories) addLink(u, /boosters-de-nicotine/.test(u) ? 'catégorie boosters (e-liquides 50ml à nicotiner)' : 'catégorie des produits listés');
   linkable.delete(p.url);
   parts.push(`## Pages que tu peux lier (indexables ; aucune autre page en href)
 ${[...linkable.entries()].map(([u, why]) => `- ${pathOf(u)} — ${why}`).join('\n') || '(aucune)'}
