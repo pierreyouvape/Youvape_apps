@@ -59,6 +59,18 @@ module.exports = {
     const { resolveWarehouse } = require('../config/nextore');
     res.json(await catalogReviewModel.labelsDone(resolveWarehouse(req.params.shop).id, ids(req.body), req.user.id, req.body?.done !== false));
   }),
+  uncategorized: handle(async (req, res) => {
+    const pool = require('../config/database');
+    const [groups, { rows: categories }] = await Promise.all([
+      catalogReviewModel.uncategorizedGroups(),
+      // Toutes les catégories caisse, même sans stock en boutique (HUILE CBD…).
+      pool.query(`SELECT id, name FROM nextore_categories WHERE name NOT IN ('Test', 'Zzzzzzzzzzzz') ORDER BY name`),
+    ]);
+    res.json({ groups, categories });
+  }),
+  setGroupCategory: handle(async (req, res) => {
+    res.json(await catalogReviewModel.setGroupCategory(req.body || {}));
+  }),
   createAll: handle(async (req, res) => {
     res.json(await catalogReviewModel.createAllAbsent(req.user.id));
   }),

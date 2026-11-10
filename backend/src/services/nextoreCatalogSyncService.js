@@ -55,7 +55,10 @@ const upsertReview = (productId, reason, { nxProductId = null, candidates = null
     `INSERT INTO boutique_catalog_reviews (product_id, reason, nx_product_id, candidates, suggested_category_id, detail)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (product_id, reason) DO UPDATE SET nx_product_id = EXCLUDED.nx_product_id,
-       candidates = EXCLUDED.candidates, suggested_category_id = EXCLUDED.suggested_category_id, detail = EXCLUDED.detail
+       candidates = EXCLUDED.candidates,
+       -- Une catégorie choisie à la main (« Sans catégorie caisse ») n'est jamais effacée.
+       suggested_category_id = COALESCE(EXCLUDED.suggested_category_id, boutique_catalog_reviews.suggested_category_id),
+       detail = EXCLUDED.detail
      WHERE boutique_catalog_reviews.status = 'open'`,
     [productId, reason, nxProductId, candidates ? JSON.stringify(candidates) : null, categoryId, detail ? JSON.stringify(detail) : null]
   );

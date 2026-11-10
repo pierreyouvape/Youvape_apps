@@ -146,6 +146,49 @@ function LabelRows({ shop, call, onCount }) {
   );
 }
 
+/* Existants sans catégorie caisse : une catégorie par groupe (sous-catégorie du site). */
+function Uncategorized({ call, onDone }) {
+  const [data, setData] = useState({ groups: [], categories: [] });
+  const [pick, setPick] = useState({});
+  const [msg, setMsg] = useState(null);
+  const load = useCallback(async () => {
+    try { setData(await call.get('/catalogue/uncategorized')); } catch (e) { setMsg(errMsg(e)); }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  if (!data.groups.length) return null;
+  const key = (g) => `${g.cat}|${g.sub}`;
+  const apply = async (g) => {
+    try {
+      const r = await call.post('/catalogue/uncategorized', { cat: g.cat, sub: g.sub, categoryId: pick[key(g)] });
+      setMsg(`${r.updated} produit(s) classé(s) : « Créer tous » les créera.`);
+      load(); onDone();
+    } catch (e) { setMsg(errMsg(e)); }
+  };
+  return (
+    <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, padding: '8px 12px', marginBottom: 10 }}>
+      <div style={{ fontWeight: 700, fontSize: 14 }}>Sans catégorie caisse ({data.groups.reduce((s, g) => s + g.n, 0)})</div>
+      <div style={{ fontSize: 12, color: C.greyT, marginBottom: 6 }}>
+        Aucun produit de ces groupes n'est encore en caisse : la catégorie ne peut pas être devinée. Choisissez-la une fois par groupe.
+      </div>
+      {data.groups.map((g) => (
+        <div key={key(g)} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderTop: `1px solid ${C.greyB}`, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <b>{g.sub || g.cat || 'Sans catégorie site'}</b> <span style={{ color: C.greyT }}>· {g.n} produit(s)</span>
+            <div style={{ fontSize: 11, color: C.greyT }}>{(g.examples || []).join(' · ')}</div>
+          </div>
+          <select value={pick[key(g)] || ''} onChange={(e) => setPick((p) => ({ ...p, [key(g)]: e.target.value }))}
+            style={{ padding: 7, borderRadius: 8, border: `1px solid ${C.greyB}` }}>
+            <option value="">Catégorie caisse…</option>
+            {data.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <Btn disabled={!pick[key(g)]} onClick={() => apply(g)}>Appliquer</Btn>
+        </div>
+      ))}
+      {msg && <div style={{ fontSize: 13, marginTop: 6 }}>{msg}</div>}
+    </div>
+  );
+}
+
 /* « Créer tous » : création en masse des existants absents (tâche de fond). */
 function CreateAll({ call, onDone }) {
   const [st, setSt] = useState(null);
@@ -425,6 +468,7 @@ export default function CatalogueTab({ shop, token }) {
           </label>
         )}
         {error && <div style={{ color: C.red }}>{error}</div>}
+        {reason === 'absent' && <Uncategorized call={call} onDone={load} />}
         {reason === 'absent' && <CreateAll call={call} onDone={load} />}
         {reason === 'labels' && <LabelRows shop={shop} call={call} onCount={setLabelCount} />}
         {reason === 'prix' && <PriceRows rows={data.rows} call={call} onDone={load} shop={shop} />}

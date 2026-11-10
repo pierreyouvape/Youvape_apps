@@ -127,6 +127,8 @@ router.post('/:shop/catalogue/link-same', boutiquePerm('write'), catalogControll
 router.get('/:shop/catalogue/labels', boutiquePerm('read'), catalogController.labels);
 router.post('/:shop/catalogue/labels/done', boutiquePerm('write'), catalogController.labelsDone);
 router.post('/:shop/catalogue/create-all', boutiquePerm('write'), catalogController.createAll);
+router.get('/:shop/catalogue/uncategorized', boutiquePerm('read'), catalogController.uncategorized);
+router.post('/:shop/catalogue/uncategorized', boutiquePerm('write'), catalogController.setGroupCategory);
 router.get('/:shop/catalogue/create-all', boutiquePerm('read'), catalogController.createAllStatus);
 router.post('/:shop/catalogue/prices/keep', boutiquePerm('write'), catalogController.keepPrices);
 router.post('/:shop/catalogue/run', boutiquePerm('write'), catalogController.run);

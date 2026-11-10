@@ -174,6 +174,36 @@ const labelsDone = async (warehouseId, ids, userId, done = true) => {
   return { done: rowCount };
 };
 
+// ── Existants sans catégorie caisse : un choix par groupe (sous-catégorie du site) ──
+
+const GROUP_SQL = `COALESCE(NULLIF(p.category, ''), pp.category, '')`;
+const SUBGROUP_SQL = `COALESCE(NULLIF(p.sub_category, ''), pp.sub_category, '')`;
+
+const uncategorizedGroups = async () => {
+  const { rows } = await pool.query(
+    `SELECT ${GROUP_SQL} AS cat, ${SUBGROUP_SQL} AS sub, count(*)::int AS n,
+            (array_agg(p.post_title ORDER BY p.stock DESC NULLS LAST))[1:3] AS examples
+       FROM boutique_catalog_reviews r JOIN products p ON p.id = r.product_id
+       LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
+      WHERE r.status = 'open' AND r.reason = 'absent' AND r.suggested_category_id IS NULL
+      GROUP BY 1, 2 ORDER BY 3 DESC`
+  );
+  return rows;
+};
+
+/** Pose la catégorie caisse de tout un groupe (pour « Créer tous » ensuite). */
+const setGroupCategory = async ({ cat, sub, categoryId }) => {
+  if (!categoryId) throw httpError(400, 'Choisissez une catégorie caisse.');
+  const { rowCount } = await pool.query(
+    `UPDATE boutique_catalog_reviews r SET suggested_category_id = $3
+       FROM products p LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
+      WHERE p.id = r.product_id AND r.status = 'open' AND r.reason = 'absent' AND r.suggested_category_id IS NULL
+        AND ${GROUP_SQL} = $1 AND ${SUBGROUP_SQL} = $2`,
+    [cat || '', sub || '', String(categoryId)]
+  );
+  return { updated: rowCount };
+};
+
 // ── Création en masse des existants absents ─────────────────────────────────
 
 const bulk = { running: false, total: 0, created: 0, errors: [], startedAt: null, finishedAt: null, by: null };
@@ -218,4 +248,5 @@ const bulkStatus = () => ({ ...bulk, errors: bulk.errors.slice(-20), errorCount:
 
 module.exports = {
   list, ignore, alignPrices, keepPrices, linkSame, REASONS, labels, labelsDone, createAllAbsent, bulkStatus,
+  uncategorizedGroups, setGroupCategory,
 };
