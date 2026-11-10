@@ -73,6 +73,12 @@ function NotInCaisse({ product, call, onDone }) {
     return () => clearTimeout(t);
   }, [q, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Un mauvais rattachement fausse le stock de la caisse : on fait relire les deux noms.
+  const linkTo = (nx) => {
+    if (!window.confirm(`Rattacher\n« ${product.name} » (site)\nà\n« ${nx.name} » (caisse) ?\n\nCe doit être exactement le même article.`)) return;
+    run(() => call.post(`/prelevements/products/${product.id}/link`, { nxProductId: nx.id }));
+  };
+
   const run = async (fn) => {
     setBusy(true); setError(null);
     try { onDone(await fn()); } catch (e) { setError(errMsg(e)); } finally { setBusy(false); }
@@ -91,7 +97,7 @@ function NotInCaisse({ product, call, onDone }) {
           {product.candidates.map((c) => (
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
               <span style={{ flex: 1 }}>{c.name} <span style={{ color: C.greyT }}>· stock {c.stock ?? 0}</span></span>
-              <Btn small disabled={busy} onClick={() => run(() => call.post(`/prelevements/products/${product.id}/link`, { nxProductId: c.id }))}>C'est celui-ci</Btn>
+              <Btn small disabled={busy} onClick={() => linkTo(c)}>C'est celui-ci</Btn>
             </div>
           ))}
         </div>
@@ -112,7 +118,7 @@ function NotInCaisse({ product, call, onDone }) {
                   <div style={{ fontWeight: 600 }}>{r.name}</div>
                   <div style={{ fontSize: 12, color: C.greyT }}>{r.category_name || '—'} · {eur(r.price)} · stock {r.stock ?? 0}</div>
                 </div>
-                <Btn small disabled={busy} onClick={() => run(() => call.post(`/prelevements/products/${product.id}/link`, { nxProductId: r.id }))}>Rattacher</Btn>
+                <Btn small disabled={busy} onClick={() => linkTo(r)}>Rattacher</Btn>
               </div>
             ))}
             {q.trim().length >= 2 && !results.length && <div style={{ color: C.greyT, fontSize: 13, padding: 6 }}>Aucun produit trouvé.</div>}
@@ -278,7 +284,7 @@ export default function PrelevementsTab({ shop, token }) {
             {product.recent?.length > 0 && (
               <div style={{ background: '#FEF3C7', color: '#92400E', borderRadius: 12, padding: '10px 14px', marginTop: 12, fontSize: 14 }}>
                 <b>Déjà sorti du site dans les dernières 24 h :</b>{' '}
-                {product.recent.map((r) => `${r.qty} pièce${r.qty > 1 ? 's' : ''} par ${r.user_name || '—'} (${r.origin === 'pda' ? 'PDA' : 'écran boutique'}) le ${fmtDate(r.created_at)}`).join(' · ')}.
+                {product.recent.map((r) => `${r.qty} pièce${r.qty > 1 ? 's' : ''} par ${r.user_name || '—'} le ${fmtDate(r.created_at)}`).join(' · ')}.
                 {' '}Vérifiez que ce n'est pas la même pièce avant de valider.
               </div>
             )}
@@ -331,7 +337,7 @@ export default function PrelevementsTab({ shop, token }) {
             <tbody>
               {data.rows.map((r) => (
                 <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}`, verticalAlign: 'top' }}>
-                  <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}<div style={{ fontSize: 11, color: C.greyT }}>{r.origin === 'pda' ? 'PDA' : 'Boutique'} · {r.user_name || '—'}</div></td>
+                  <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}<div style={{ fontSize: 11, color: C.greyT }}>{r.origin === 'pda' ? 'Ancien « Vente boutique »' : 'Prélèvement'} · {r.user_name || '—'}</div></td>
                   <td style={{ padding: 6 }}>{r.name}<div style={{ fontSize: 11, color: C.greyT }}>{r.sku}{r.nx_name ? ` → ${r.nx_name}` : ''}</div></td>
                   <td style={{ padding: 6 }}>{r.qty}{r.nx_qty && Number(r.nx_qty) !== r.qty ? <div style={{ fontSize: 11, color: C.orange }}>{Number(r.nx_qty)} en caisse</div> : null}</td>
                   <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{r.unit_cost_ht == null ? <span style={{ color: C.red }}>inconnu</span> : eur(r.qty * Number(r.unit_cost_ht))}</td>

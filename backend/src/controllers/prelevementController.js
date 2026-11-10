@@ -81,7 +81,7 @@ module.exports = {
     const lines = rows.map((r) => [
       r.date, r.month, r.category, r.brand, r.sub_brand, r.sku, r.name, r.qty,
       frNum(r.unit_cost_ht), frNum(r.total_ht), frNum(r.site_price_ttc),
-      r.nx_status === 'skipped' ? 'PDA (reprise)' : r.origin === 'pda' ? 'PDA' : 'Boutique',
+      r.origin === 'pda' ? 'Vente boutique (ancien, reprise)' : 'Prélèvement',
       r.user_name, r.site_status === 'sent' ? 'faite' : r.site_status,
     ].map(csvCell).join(';'));
     const total = rows.reduce((s, r) => s + Number(r.total_ht || 0), 0);

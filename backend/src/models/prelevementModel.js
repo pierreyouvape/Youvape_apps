@@ -134,8 +134,9 @@ const searchNextore = async (warehouseId, q) => {
 // ── Enregistrer ─────────────────────────────────────────────────────────────
 
 /**
- * Enregistre un prélèvement. `siteDone` = la sortie du site est déjà faite
- * (PDA « Vente boutique », qui écrit dans BMS lui-même) : { ref }.
+ * Enregistre un prélèvement (écran boutique ou PDA › Prélèvement boutique).
+ * `siteDone` = sortie du site déjà faite : { ref } (n'a servi qu'à l'ancien PDA
+ * « Vente boutique », retiré le 10/11/2026 ; `origin = 'pda'` = son historique).
  */
 const record = async ({ warehouseId, productId, qty, userId, origin, note, siteDone, pdaLogId }) => {
   const n = Number(qty);

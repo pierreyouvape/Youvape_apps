@@ -629,12 +629,12 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
 - **Création de fiche Nextore** (`POST /products`) : nom du site, prix = `regular_price` (sans remise WDR ni promo,
   décision Maxime), `cost` HT, TVA code `4` (20 %), catégorie choisie, `link_code` = `wp_product_id`. La réponse
   n'étant pas documentée, l'id est relu au catalogue par code-barres.
-- PDA « Vente boutique » (`pdaProductModel.createMovement`) enregistre aussi un prélèvement (`origin = 'pda'`,
-  sortie site déjà faite, `pda_log_id` unique), **seulement si `app_config.prelevements_pda = 'on'`**.
-  Historique repris par `scripts/backfillPrelevementsPda.js [--apply]` (`nx_status = 'skipped'`, coût du jour) :
-  le relancer juste avant d'activer l'interrupteur. Règle : **celui qui sort la pièce du stock du site la scanne, une fois** (logistique =
-  réassort au PDA, vendeur = dépannage à l'écran) ; la vente en caisse ne touche que le stock boutique. L'écran
-  avertit (sans bloquer) si le produit a déjà été prélevé dans les 24 h.
+- **PDA › Produit › « Vente boutique » est SUPPRIMÉ** (10/11/2026, décision Maxime) : un seul geste,
+  « Prélèvement boutique » (PDA ou écran), sinon une même pièce pouvait être comptée deux fois. Ne pas le remettre.
+  Son historique (`pda_product_log.reason = 'vente_boutique'`) est repris par `scripts/backfillPrelevementsPda.js
+  [--apply]` (`origin = 'pda'`, `nx_status = 'skipped'`, coût FIFO du jour du mouvement).
+  Règle : **celui qui sort la pièce du stock du site la scanne, une fois** ; la vente en caisse ne touche que le
+  stock boutique. L'écran avertit (sans bloquer) si le produit a déjà été prélevé dans les 24 h.
 - Écran : `/boutique/castelnau/prelevements` et `/pda/prelevement` (même composant `PrelevementsTab.jsx`), export
   CSV « refacturation » (mois, catégorie, marque, coût, prix site). **Vendeurs de Castelnau = utilisateurs du PDA** :
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).

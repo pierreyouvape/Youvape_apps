@@ -22,8 +22,12 @@ const BMS_WAREHOUSE_ID = 270;
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 
 /** Raisons de mouvement, et le sens qu'elles autorisent. */
+// « Vente boutique » retirée le 10/11/2026 (décision Maxime) : un produit pris au
+// site pour Castelnau passe UNIQUEMENT par PDA › Prélèvement boutique, qui fait
+// aussi l'entrée en caisse et la refacturation. Deux gestes = des doublons.
+// Les anciennes lignes `vente_boutique` du journal restent (reprises par
+// scripts/backfillPrelevementsPda.js).
 const REASONS = {
-  vente_boutique: { label: 'Vente boutique', category: 'miscellaneous', directions: ['out'] },
   ajustement: { label: 'Ajustement', category: 'adjustment', directions: ['in', 'out'] },
   defectueux: { label: 'Défectueux', category: 'defective', directions: ['out'] },
 };
@@ -355,30 +359,11 @@ const createMovement = async (productId, { reason, direction, qty, comment }, us
     comments,
   });
 
-  const bmsMovementId = await findMovementId(created, bmsProductId, comments, n);
-  const { rows: [logged] } = await log({
+  await log({
     productId, sku: r.sku, userId: user.id, action: 'movement', reason,
-    qty: direction === 'in' ? n : -n, comment: note || null, bmsMovementId,
+    qty: direction === 'in' ? n : -n, comment: note || null,
+    bmsMovementId: await findMovementId(created, bmsProductId, comments, n),
   });
-
-  // « Vente boutique » = toujours Castelnau (EMC2) : c'est un prélèvement. La
-  // sortie BMS est faite ; il reste l'entrée dans Nextore et la refacturation.
-  // Un échec ici ne défait pas le mouvement BMS : on le dit dans les journaux.
-  // Interrupteur `app_config.prelevements_pda` = 'on' (posé après le test en réel).
-  if (reason === 'vente_boutique') {
-    try {
-      const { rows: [flag] } = await pool.query(
-        `SELECT config_value FROM app_config WHERE config_key = 'prelevements_pda'`
-      );
-      if (flag?.config_value !== 'on') return getProduct(productId);
-      await require('./prelevementModel').record({
-        warehouseId: 2, productId, qty: n, userId: user.id, origin: 'pda', note: note || null,
-        siteDone: { ref: bmsMovementId == null ? null : String(bmsMovementId) }, pdaLogId: logged?.id ?? null,
-      });
-    } catch (error) {
-      console.error(`[PDA Produit] Prélèvement non enregistré (produit ${productId}, ${n}) :`, error.message);
-    }
-  }
   return getProduct(productId);
 };
 
