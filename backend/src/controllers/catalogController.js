@@ -62,6 +62,9 @@ module.exports = {
     const { resolveWarehouse } = require('../config/nextore');
     res.json(await catalogReviewModel.labelsDone(resolveWarehouse(req.params.shop).id, ids(req.body), req.user.id, req.body?.done !== false));
   }),
+  revertLabel: handle(async (req, res) => {
+    res.json(await catalogReviewModel.revertLabel(parseInt(req.params.id, 10), req.user.id));
+  }),
   uncategorized: handle(async (req, res) => {
     const pool = require('../config/database');
     const [groups, { rows: categories }] = await Promise.all([

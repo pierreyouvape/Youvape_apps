@@ -669,6 +669,11 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
   à résistance intégrée, eux, se créent.
 - **Étiquettes à refaire** (`boutique_price_labels`) : tout prix changé dans la caisse par `pushPrice` (aligné à la main
   ou auto) ; « faite » cochée séparément par boutique (`done_mtp_at`, `done_cast_at`). Onglet « Étiquettes à refaire ».
+  « Ancien prix » (`revertLabel`) remet l'ancien prix en caisse et **fige** le prix (`price_locked`) ; refuse si le prix
+  caisse a bougé depuis. Étiquette déjà refaite quelque part → nouvelle ligne `source = 'reverted'`.
+- **« Pas le même »** (`prelevementModel.unlink`) défait un rattachement MANUEL : lien supprimé, codes-barres du produit
+  retirés de la fiche caisse, état de prix oublié, retour en « absent ». Audit du 10/11 : 4 faux (cartouches Gorilla X
+  sur fiches puff, Box sur Kit) défaits ; 5 puffs « sans nicotine » liées aux fiches 20 mg laissées à Maxime.
 - **Création en masse** (« Créer tous », `createAllAbsent`) des existants absents restants, le 10/11/2026 : 2 137 fiches.
   `createInNextore({ quiet })` ne relit ni le stock BMS ni le catalogue : `POST /products` renvoie la fiche (id compris),
   rangée directement dans `nextore_products`.

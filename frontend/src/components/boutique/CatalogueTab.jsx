@@ -85,6 +85,10 @@ function LabelRows({ shop, call, onCount }) {
     stock: (r) => Number(r.shop_stock || 0),
     date: (r) => new Date(r.changed_at).getTime(),
   });
+  const revert = async (r) => {
+    if (!window.confirm(`Remettre « ${r.nx_name || r.name} » à ${eur(r.old_price)} dans la caisse (au lieu de ${eur(r.new_price)}) ?\n\nLe prix de ce produit ne sera plus aligné sur le site ensuite.`)) return;
+    try { await call.post(`/catalogue/labels/${r.id}/revert`, {}); setMsg(null); load(); } catch (e) { setMsg(errMsg(e)); }
+  };
   const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
   const mark = async (list, done = true) => {
     if (!list.length) return;
@@ -133,9 +137,15 @@ function LabelRows({ shop, call, onCount }) {
               <td style={{ padding: 6, fontWeight: Number(r.shop_stock) > 0 ? 700 : 400, color: Number(r.shop_stock) > 0 ? C.dark : C.greyM }}>{r.shop_stock ?? 0}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(r.changed_at)}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
-                {r[col]
-                  ? <span style={{ color: C.green, fontSize: 12 }}>Faite <Btn bg={C.greyM} onClick={() => mark([r.id], false)}>Annuler</Btn></span>
-                  : <Btn bg={C.green} onClick={() => mark([r.id])}>Fait</Btn>}
+                {r.reverted_at
+                  ? <span style={{ color: C.greyT, fontSize: 12 }}>Revenu à l'ancien prix</span>
+                  : r[col]
+                    ? <span style={{ color: C.green, fontSize: 12 }}>Faite <Btn bg={C.greyM} onClick={() => mark([r.id], false)}>Annuler</Btn></span>
+                    : <Btn bg={C.green} onClick={() => mark([r.id])}>Fait</Btn>}
+                {!r.reverted_at && r.old_price != null && r.source !== 'reverted' && (
+                  <>{' '}<Btn bg={C.orange} onClick={() => revert(r)} style={{ marginTop: 4 }}>Ancien prix</Btn></>
+                )}
+                {r.source === 'reverted' && <div style={{ fontSize: 11, color: C.orange }}>retour à l'ancien prix</div>}
               </td>
             </tr>
           ))}

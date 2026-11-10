@@ -128,6 +128,7 @@ router.post('/:shop/catalogue/prices/align', boutiquePerm('write'), catalogContr
 router.post('/:shop/catalogue/link-same', boutiquePerm('write'), catalogController.linkSame);
 router.get('/:shop/catalogue/labels', boutiquePerm('read'), catalogController.labels);
 router.post('/:shop/catalogue/labels/done', boutiquePerm('write'), catalogController.labelsDone);
+router.post('/:shop/catalogue/labels/:id/revert', boutiquePerm('write'), catalogController.revertLabel);
 router.post('/:shop/catalogue/create-all', boutiquePerm('write'), catalogController.createAll);
 router.get('/:shop/catalogue/uncategorized', boutiquePerm('read'), catalogController.uncategorized);
 router.post('/:shop/catalogue/uncategorized', boutiquePerm('write'), catalogController.setGroupCategory);

@@ -144,7 +144,7 @@ const labels = async (warehouseId, { todo = true } = {}) => {
   const col = SHOP_COL[warehouseId];
   if (!col) throw httpError(400, 'Boutique inconnue.');
   const { rows } = await pool.query(
-    `SELECT l.id, l.old_price, l.new_price, l.changed_at, l.source, l.done_mtp_at, l.done_cast_at,
+    `SELECT l.id, l.old_price, l.new_price, l.changed_at, l.source, l.done_mtp_at, l.done_cast_at, l.reverted_at,
             np.name AS nx_name, np.barcode, c.name AS category, p.sku, p.post_title AS name,
             st.stock::float AS shop_stock
        FROM boutique_price_labels l
@@ -152,13 +152,14 @@ const labels = async (warehouseId, { todo = true } = {}) => {
        LEFT JOIN nextore_categories c ON c.id = np.category_id
        LEFT JOIN products p ON p.id = l.product_id
        LEFT JOIN nextore_stock st ON st.product_id = l.nx_product_id AND st.warehouse_id = $1
-      WHERE ${todo ? `l.done_${col}_at IS NULL` : 'true'}
+      WHERE ${todo ? `l.done_${col}_at IS NULL AND l.reverted_at IS NULL` : 'true'}
       ORDER BY c.name NULLS LAST, np.name
       LIMIT 2000`,
     [warehouseId]
   );
   const { rows: [counts] } = await pool.query(
-    `SELECT count(*) FILTER (WHERE done_mtp_at IS NULL)::int AS mtp, count(*) FILTER (WHERE done_cast_at IS NULL)::int AS cast
+    `SELECT count(*) FILTER (WHERE done_mtp_at IS NULL AND reverted_at IS NULL)::int AS mtp,
+            count(*) FILTER (WHERE done_cast_at IS NULL AND reverted_at IS NULL)::int AS cast
        FROM boutique_price_labels`
   );
   return { rows, counts };
@@ -172,6 +173,46 @@ const labelsDone = async (warehouseId, ids, userId, done = true) => {
     [ids, done ? userId : null]
   );
   return { done: rowCount };
+};
+
+/**
+ * « Revenir à l'ancien prix » (Maxime, 10/11/2026 : un vendeur peut juger que
+ * l'ancien prix caisse était mieux). Remet l'ancien prix dans Nextore, fige le
+ * prix du produit (la synchro ne le réaligne plus), sort l'étiquette de la liste ;
+ * si une boutique l'avait déjà refaite, une étiquette « retour » la remplace.
+ */
+const revertLabel = async (id, userId) => {
+  const nextoreApi = require('../services/nextoreApiClient');
+  const { rows: [l] } = await pool.query(
+    `SELECT l.*, np.price AS current_price, p.regular_price
+       FROM boutique_price_labels l
+       JOIN nextore_products np ON np.product_id = l.nx_product_id
+       LEFT JOIN products p ON p.id = l.product_id
+      WHERE l.id = $1`,
+    [id]
+  );
+  if (!l) throw httpError(404, 'Étiquette introuvable.');
+  if (l.reverted_at) throw httpError(409, 'Déjà revenu à l\'ancien prix.');
+  if (l.old_price == null) throw httpError(409, 'Ancien prix inconnu : à corriger dans la caisse.');
+  if (Math.abs(Number(l.current_price) - Number(l.new_price)) >= 0.005) {
+    throw httpError(409, `Le prix caisse a changé depuis (${Number(l.current_price).toFixed(2)} €) : à corriger dans la caisse.`);
+  }
+  const old = Math.round(Number(l.old_price) * 100) / 100;
+  await nextoreApi.updateProduct(l.nx_product_id, { price: old });
+  await pool.query('UPDATE nextore_products SET price = $2 WHERE product_id = $1', [l.nx_product_id, old]);
+  if (l.product_id) await sync.savePrice(l.product_id, l.nx_product_id, l.regular_price, true);
+  await pool.query('UPDATE boutique_price_labels SET reverted_at = NOW(), reverted_by = $2 WHERE id = $1', [id, userId || null]);
+  // Déjà refaite quelque part : il faut remettre l'ancienne étiquette en rayon.
+  if (l.done_mtp_at || l.done_cast_at) {
+    await pool.query(
+      `INSERT INTO boutique_price_labels (product_id, nx_product_id, old_price, new_price, source,
+                                         done_mtp_at, done_cast_at)
+       VALUES ($1, $2, $3, $4, 'reverted', $5, $6)`,
+      [l.product_id, l.nx_product_id, l.new_price, old,
+        l.done_mtp_at ? null : new Date(), l.done_cast_at ? null : new Date()]
+    );
+  }
+  return { price: old };
 };
 
 // ── Existants sans catégorie caisse : un choix par groupe (sous-catégorie du site) ──
@@ -248,5 +289,5 @@ const bulkStatus = () => ({ ...bulk, errors: bulk.errors.slice(-20), errorCount:
 
 module.exports = {
   list, ignore, alignPrices, keepPrices, linkSame, REASONS, labels, labelsDone, createAllAbsent, bulkStatus,
-  uncategorizedGroups, setGroupCategory,
+  uncategorizedGroups, setGroupCategory, revertLabel,
 };
