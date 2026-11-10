@@ -207,8 +207,31 @@ const readQueue = async (conn) => {
   }
 };
 
+/**
+ * Reprend, au premier passage après un démarrage, l'état de la file déjà signalé.
+ * Gardé en mémoire seulement, il repartait de zéro à chaque redémarrage du backend
+ * (donc à chaque déploiement) : les mêmes événements en échec, déjà annoncés,
+ * renvoyaient leur récapitulatif à chaque fois (10 orphelines du 06/11, re-signalées
+ * le 09/11 après un déploiement). Il est relu AVANT d'être réécrit par noteQueueState.
+ */
+let alertStateRestored = false;
+const restoreAlertState = async () => {
+  if (alertStateRestored) return;
+  alertStateRestored = true;
+  try {
+    const saved = JSON.parse((await appConfigModel.get(HEARTBEAT_KEYS.queue))?.config_value || 'null');
+    if (saved !== null && typeof saved === 'object') {
+      alertedFailedCount = Number(saved.failed) || 0;
+      pauseAlerted = saved.paused === true;
+    }
+  } catch (err) {
+    console.error('🔄 WC Sync: état des alertes de la file illisible, repris de zéro :', err.message);
+  }
+};
+
 /** État de la file vu du site, et alertes qui en découlent. */
 const noteQueueState = async ({ protocol, paused, stats }) => {
+  await restoreAlertState();
   await heartbeat(HEARTBEAT_KEYS.queue, JSON.stringify({
     protocol,
     paused,

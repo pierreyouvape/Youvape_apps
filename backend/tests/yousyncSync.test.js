@@ -169,6 +169,25 @@ const quiet = async (fn) => {
     assert.strictEqual(JSON.parse(config.get('wc_sync_queue')).failed, 2);
   });
 
+  await test('redémarrage du backend : les échecs déjà signalés ne repartent pas', async () => {
+    const stats = { pending: 0, failed: 10, failed_sample: [{ type: 'product', wp_id: 1274828, code: 'INVALID_PAYLOAD' }] };
+    route('GET yousync/v2/queue', queue([], { stats }));
+    await quiet(() => wcSyncService.poll());
+    assert.strictEqual(state.alerts.filter(a => /en echec/.test(a.subject)).length, 1);
+
+    // Même état de file relu par un backend fraîchement démarré (déploiement).
+    const modulePath = require.resolve('../src/services/wcSyncService');
+    delete require.cache[modulePath];
+    const restarted = require('../src/services/wcSyncService');
+    await quiet(() => restarted.poll());
+    assert.strictEqual(state.alerts.filter(a => /en echec/.test(a.subject)).length, 1);
+
+    // Un nouvel échec, lui, est signalé.
+    route('GET yousync/v2/queue', queue([], { stats: { ...stats, failed: 11 } }));
+    await quiet(() => restarted.poll());
+    assert.strictEqual(state.alerts.filter(a => /en echec/.test(a.subject)).length, 2);
+  });
+
   await test('pause : signalée, rien n\'est traité', async () => {
     route('GET yousync/v2/queue', queue([], { paused: true }));
     await quiet(() => wcSyncService.poll());
