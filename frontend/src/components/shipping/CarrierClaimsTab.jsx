@@ -463,8 +463,8 @@ export default function CarrierClaimsTab({ token }) {
       }}>
         <div style={{ flex: '1 1 420px', fontSize: 13.5, color: C.dark, lineHeight: 1.55 }}>
           Chaque jour à <strong>16 h</strong> (lundi → samedi), on juge les colis dus <strong>la veille</strong>
-          (ceux dus le samedi, le lundi) : <strong>Chrono 13</strong> pas livrés avant 13 h le lendemain ouvré du
-          bordereau, <strong>Chrono Relais</strong> pas mis à disposition dans la journée du lendemain ouvré,
+          (ceux dus le samedi, le lundi) : <strong>Chrono 13</strong> pas livrés dans la journée du lendemain ouvré
+          du bordereau, <strong>Chrono Relais</strong> pas mis à disposition dans la journée du lendemain ouvré,
           <strong> Chrono Express</strong> pas livrés dans la journée à J+3 ouvrés. Ils sont réclamés : <strong>RT</strong> retard,
           ou <strong>PC</strong> s'ils n'ont jamais été pris en charge. Le fichier part à contact@youvape.fr, à
           importer dans le Service Client en ligne Chronopost (Import de tickets) ; une note privée est posée dans

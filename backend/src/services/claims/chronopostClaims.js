@@ -15,15 +15,14 @@
 const { addBusinessDays, addDays } = require('../../utils/frenchHolidays');
 
 /**
- * Produits Chronopost suivis, et l'heure limite du jour dû (décisions Pierre) :
- *   - Chrono 13 : lendemain ouvré AVANT 13 h (contrat) ;
- *   - Chrono Relais : lendemain ouvré, TOUTE LA JOURNÉE (09/11/2026 ; le
- *     contrat dit « Chrono Relais 13 », on laisse la journée) ;
- *   - Chrono Express (international) : J+3 ouvrés, toute la journée (03/11/2026).
- * `before` absent = jusqu'à minuit. 2Shop n'est jamais réclamé.
+ * Produits Chronopost suivis. Tous ont TOUTE LA JOURNÉE du jour dû, jusqu'à
+ * minuit : Chronopost ne rembourse pas un Chrono 13 livré après 13 h tant qu'il
+ * l'est dans la journée (appris le 10/11/2026 ; expédié le 2, livré le 3 à 17 h
+ * = rien à réclamer). Chrono 13 et Relais : lendemain ouvré ; Chrono Express
+ * (international) : J+3 ouvrés (03/11/2026). 2Shop n'est jamais réclamé.
  */
 const PRODUCTS = {
-  '01': { label: 'Chrono 13', days: 1, before: '13:00' },
+  '01': { label: 'Chrono 13', days: 1 },
   '86': { label: 'Chrono Relais', days: 1, relay: true },
   '17': { label: 'Chrono Express', days: 3 },
 };
@@ -81,14 +80,11 @@ const parisInstant = (day, hhmm) => {
 };
 
 /**
- * L'heure limite d'un colis dû ce jour-là : 13 h pour Chrono 13, minuit (fin du
- * jour dû) pour les autres. C'est l'heure de l'ÉVÈNEMENT qui compte, pas celle
- * où l'API le publie.
+ * L'heure limite d'un colis dû ce jour-là : minuit, à la fin du jour dû, pour
+ * tous les produits. C'est l'heure de l'ÉVÈNEMENT qui compte, pas celle où
+ * l'API le publie.
  */
-const deadline = (methodCode, day) => {
-  const product = PRODUCTS[parseMethod(methodCode).code];
-  return product?.before ? parisInstant(day, product.before) : parisInstant(addDays(day, 1), '00:00');
-};
+const deadline = (_methodCode, day) => parisInstant(addDays(day, 1), '00:00');
 
 /** À partir de quand un colis dû ce jour-là est jugé : le lendemain, 16 h. */
 const judgeInstant = (day) => parisInstant(addDays(day, 1), CHECK_TIME);
@@ -155,11 +151,8 @@ const buildComment = ({ object, label, depositDay, bordereauNumber, day, lastEve
   if (object === 'PC') {
     return `${depot}, aucune prise en charge enregistrée depuis. Merci de localiser le colis. ${REFUND_REQUEST}`;
   }
-  const hour = product.before ? `${Number(product.before.slice(0, 2))}h` : null;
   const due = `livraison due le ${frDay(day)}`
-    + (hour ? ` avant ${hour}, non livré à ${hour}`
-      : product.relay ? ', pas mis à disposition au relais ce jour-là'
-        : ', non livré ce jour-là');
+    + (product.relay ? ', pas mis à disposition au relais ce jour-là' : ', non livré ce jour-là');
   const last = lastEvent
     ? ` Dernier évènement : ${frStamp(lastEvent.occurred_at)} ${lastEvent.label || lastEvent.event_key}`
       + `${lastEvent.location ? ` (${lastEvent.location})` : ''}.`

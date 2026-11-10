@@ -444,9 +444,9 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
 (fériés sautés, samedi seulement avec l'option `-SAMEDI`). **2Shop jamais.** Règles pures dans
 `services/claims/chronopostClaims.js` (testées : `tests/chronopostClaims.test.js`).
 
-- **Heure limite** (`deadline`, 09/11/2026) : Chrono 13 **avant 13 h** (contrat), Relais et Express **toute la
-  journée** (minuit) — le contrat dit « Chrono Relais 13 », Pierre laisse la journée. Seule compte l'heure de
-  l'évènement (rattrapage = même réponse).
+- **Heure limite** (`deadline`, 10/11/2026) : **toute la journée du jour dû (minuit), pour TOUS**, Chrono 13
+  compris — Chronopost ne rembourse pas un Chrono 13 livré après 13 h tant qu'il l'est dans la journée
+  (expédié le 2, livré le 3 à 17 h = rien). Seule compte l'heure de l'évènement (rattrapage = même réponse).
 - ⚠️ **Jugé le LENDEMAIN du jour dû à 16 h** (`judgeInstant`), jamais le jour même : l'API de suivi Chronopost
   publie des évènements avec retard (constaté). Dû le samedi (option) = jugé le **lundi**. Relecture en direct
   des colis non livrés dont l'heure limite date de moins de 3 jours. Lendemain de férié : réclamé quand même.
