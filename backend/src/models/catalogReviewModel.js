@@ -29,7 +29,9 @@ const list = async ({ reason, q, offset = 0, limit = 100, same = false, near = f
             p.sku, p.post_title AS name, p.regular_price, COALESCE(p.stock, 0) AS stock,
             COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
             COALESCE(p.image_url, pp.image_url) AS image_url,
-            np.name AS nx_name, np.price AS nx_price
+            np.name AS nx_name, np.price AS nx_price,
+            (SELECT st.stock::float FROM nextore_stock st WHERE st.product_id = r.nx_product_id AND st.warehouse_id = 2) AS cast_stock,
+            (SELECT st.stock::float FROM nextore_stock st WHERE st.product_id = r.nx_product_id AND st.warehouse_id = 1) AS mtp_stock
        FROM boutique_catalog_reviews r
        JOIN products p ON p.id = r.product_id
        LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id

@@ -661,6 +661,17 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
 - **Prix** : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »
   (Aligner / Garder = `price_locked`) ; ensuite un changement du prix du site est envoyé seul. Résistances au pack exclues.
 - Écran Boutique › Catalogue caisse (`CatalogueTab.jsx`), « Rattacher les N » pour les noms identiques (`link-same`).
+- ⚠️ `isSameName` exige aussi des **marques compatibles** (marque caisse ou nom caisse ↔ marque/sous-marque du site,
+  une lettre d'écart tolérée) et compte les **mots répétés** : relecture du 10/11, 5 fausses paires sur 81
+  (Don Cristo / Dotmod, LE M Roykin / Liquideo, Feelin / Feelin 2…).
+- **Résistances jamais créées depuis le site** (`isResistance` : « Pack N Résistances… » ou catégorie RESISTANCES) :
+  pack sur le site, unité en boutique (décision Maxime, laissées de côté). Les « Pack 10 Coils » et cartouches
+  à résistance intégrée, eux, se créent.
+- **Étiquettes à refaire** (`boutique_price_labels`) : tout prix changé dans la caisse par `pushPrice` (aligné à la main
+  ou auto) ; « faite » cochée séparément par boutique (`done_mtp_at`, `done_cast_at`). Onglet « Étiquettes à refaire ».
+- **Création en masse** (« Créer tous », `createAllAbsent`) des existants absents restants, le 10/11/2026 : 2 137 fiches.
+  `createInNextore({ quiet })` ne relit ni le stock BMS ni le catalogue : `POST /products` renvoie la fiche (id compris),
+  rangée directement dans `nextore_products`.
 - Tests : `tests/catalogSync.test.js` (cas réels de la simulation).
 
 ### Doutes sur une table/colonne

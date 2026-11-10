@@ -30,6 +30,34 @@ const REASONS = [
 
 const fmtDate = (s) => new Date(s).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
+/* Tri par colonne : un clic trie, un second inverse. `get` lit la valeur d'une ligne. */
+const useSort = (initial) => {
+  const [sort, setSort] = useState(initial); // { key, dir: 1 | -1 }
+  const toggle = (key, firstDir = 1) => setSort((s) => (s.key === key ? { key, dir: -s.dir } : { key, dir: firstDir }));
+  const apply = (rows, getters) => {
+    const get = getters[sort.key];
+    if (!get) return rows;
+    return [...rows].sort((a, b) => {
+      const x = get(a);
+      const y = get(b);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;   // vides toujours en bas
+      if (y == null) return -1;
+      return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'fr')) * sort.dir;
+    });
+  };
+  return { sort, toggle, apply };
+};
+
+function Th({ label, k, sorter, firstDir = 1 }) {
+  const on = sorter.sort.key === k;
+  return (
+    <th onClick={() => sorter.toggle(k, firstDir)} style={{ padding: 6, cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', color: on ? C.primary : C.greyT }}>
+      {label}{on ? (sorter.sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+    </th>
+  );
+}
+
 /* Étiquettes de prix à refaire dans CETTE boutique. */
 function LabelRows({ shop, call, onCount }) {
   const [data, setData] = useState({ rows: [], counts: {} });
@@ -46,6 +74,17 @@ function LabelRows({ shop, call, onCount }) {
   }, [showAll]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
 
+  // Par défaut : ce qui est en stock dans la boutique d'abord (les étiquettes à refaire en premier).
+  const sorter = useSort({ key: 'stock', dir: -1 });
+  const rows = sorter.apply(data.rows, {
+    name: (r) => r.nx_name || r.name,
+    category: (r) => r.category,
+    old: (r) => (r.old_price == null ? null : Number(r.old_price)),
+    new: (r) => Number(r.new_price),
+    diff: (r) => (r.old_price == null ? null : Number(r.new_price) - Number(r.old_price)),
+    stock: (r) => Number(r.shop_stock || 0),
+    date: (r) => new Date(r.changed_at).getTime(),
+  });
   const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
   const mark = async (list, done = true) => {
     if (!list.length) return;
@@ -69,20 +108,29 @@ function LabelRows({ shop, call, onCount }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr style={{ textAlign: 'left', color: C.greyT, fontSize: 12 }}>
-            <th /><th style={{ padding: 6 }}>Produit (caisse)</th><th style={{ padding: 6 }}>Catégorie</th>
-            <th style={{ padding: 6 }}>Ancien prix</th><th style={{ padding: 6 }}>Nouveau prix</th><th style={{ padding: 6 }}>Stock boutique</th>
-            <th style={{ padding: 6 }}>Changé le</th><th style={{ padding: 6 }}>Étiquette</th>
+            <th />
+            <Th label="Produit (caisse)" k="name" sorter={sorter} />
+            <Th label="Catégorie" k="category" sorter={sorter} />
+            <Th label="Ancien prix" k="old" sorter={sorter} firstDir={-1} />
+            <Th label="Nouveau prix" k="new" sorter={sorter} firstDir={-1} />
+            <Th label="Écart" k="diff" sorter={sorter} firstDir={-1} />
+            <Th label={`Stock ${shop.label}`} k="stock" sorter={sorter} firstDir={-1} />
+            <Th label="Changé le" k="date" sorter={sorter} firstDir={-1} />
+            <th style={{ padding: 6 }}>Étiquette</th>
           </tr>
         </thead>
         <tbody>
-          {data.rows.map((r) => (
+          {rows.map((r) => (
             <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}` }}>
               <td style={{ padding: 6 }}><input type="checkbox" checked={!!sel[r.id]} onChange={(e) => setSel((s) => ({ ...s, [r.id]: e.target.checked }))} /></td>
               <td style={{ padding: 6 }}>{r.nx_name || r.name}<div style={{ fontSize: 11, color: C.greyT }}>{r.sku}</div></td>
               <td style={{ padding: 6, fontSize: 12 }}>{r.category || '—'}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap', color: C.greyT, textDecoration: 'line-through' }}>{eur(r.old_price)}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap', fontWeight: 700 }}>{eur(r.new_price)}</td>
-              <td style={{ padding: 6 }}>{r.shop_stock ?? 0}</td>
+              <td style={{ padding: 6, whiteSpace: 'nowrap', fontSize: 12, color: r.old_price == null ? C.greyT : Number(r.new_price) > Number(r.old_price) ? C.red : C.green }}>
+                {r.old_price == null ? '—' : `${Number(r.new_price) > Number(r.old_price) ? '+' : ''}${eur(Number(r.new_price) - Number(r.old_price))}`}
+              </td>
+              <td style={{ padding: 6, fontWeight: Number(r.shop_stock) > 0 ? 700 : 400, color: Number(r.shop_stock) > 0 ? C.dark : C.greyM }}>{r.shop_stock ?? 0}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap', fontSize: 12 }}>{fmtDate(r.changed_at)}</td>
               <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                 {r[col]
@@ -209,8 +257,17 @@ function ReviewRow({ row, call, onDone }) {
 }
 
 /* Prix différents : cases à cocher, aligner ou garder. */
-function PriceRows({ rows, call, onDone }) {
+function PriceRows({ rows: raw, call, onDone, shop }) {
   const [sel, setSel] = useState({});
+  const stockOf = (r) => Number((shop.id === 1 ? r.mtp_stock : r.cast_stock) || 0);
+  const sorter = useSort({ key: 'gap', dir: -1 });
+  const rows = sorter.apply(raw, {
+    name: (r) => r.name,
+    site: (r) => Number(r.regular_price),
+    caisse: (r) => Number(r.nx_price),
+    gap: (r) => Math.abs(Number(r.detail?.ecart_pct)),
+    stock: stockOf,
+  });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const chosen = Object.keys(sel).filter((k) => sel[k]).map(Number);
@@ -241,8 +298,14 @@ function PriceRows({ rows, call, onDone }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr style={{ textAlign: 'left', color: C.greyT, fontSize: 12 }}>
-            <th /><th style={{ padding: 6 }}>Produit du site</th><th style={{ padding: 6 }}>Fiche caisse</th>
-            <th style={{ padding: 6 }}>Site</th><th style={{ padding: 6 }}>Caisse</th><th style={{ padding: 6 }}>Écart</th><th />
+            <th />
+            <Th label="Produit du site" k="name" sorter={sorter} />
+            <th style={{ padding: 6 }}>Fiche caisse</th>
+            <Th label="Site" k="site" sorter={sorter} firstDir={-1} />
+            <Th label="Caisse" k="caisse" sorter={sorter} firstDir={-1} />
+            <Th label="Écart" k="gap" sorter={sorter} firstDir={-1} />
+            <Th label={`Stock ${shop.label}`} k="stock" sorter={sorter} firstDir={-1} />
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -259,6 +322,7 @@ function PriceRows({ rows, call, onDone }) {
                 <td style={{ padding: 6, whiteSpace: 'nowrap', color: suspect ? C.red : C.dark, fontWeight: suspect ? 700 : 400 }}>
                   {gap > 0 ? '+' : ''}{gap} %{suspect && <div style={{ fontSize: 11 }}>même article ?</div>}
                 </td>
+                <td style={{ padding: 6, fontWeight: stockOf(r) > 0 ? 700 : 400, color: stockOf(r) > 0 ? C.dark : C.greyM }}>{stockOf(r)}</td>
                 <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
                   <Btn bg={C.green} disabled={busy} onClick={() => act('align', [r.id])}>Aligner</Btn>{' '}
                   <Btn bg={C.greyT} disabled={busy} onClick={() => act('keep', [r.id])}>Garder</Btn>
@@ -363,7 +427,7 @@ export default function CatalogueTab({ shop, token }) {
         {error && <div style={{ color: C.red }}>{error}</div>}
         {reason === 'absent' && <CreateAll call={call} onDone={load} />}
         {reason === 'labels' && <LabelRows shop={shop} call={call} onCount={setLabelCount} />}
-        {reason === 'prix' && <PriceRows rows={data.rows} call={call} onDone={load} />}
+        {reason === 'prix' && <PriceRows rows={data.rows} call={call} onDone={load} shop={shop} />}
         {reason !== 'prix' && reason !== 'labels' && data.rows.map((row) => <ReviewRow key={row.id} row={row} call={call} onDone={load} />)}
         {reason !== 'labels' && !data.rows.length && <div style={{ color: C.greyT, padding: 10 }}>Rien à vérifier ici.</div>}
         {reason !== 'labels' && data.rows.length >= 100 && <div style={{ color: C.greyT, fontSize: 12, paddingTop: 8 }}>100 premières lignes : filtrez pour voir les autres.</div>}
