@@ -132,6 +132,9 @@ const purchasesController = {
         WHERE
           p.product_type IN ('simple', 'variation')
           AND p.post_status = 'publish'
+          -- Une déclinaison « publiée » d'un parent en brouillon (produit dupliqué
+          -- puis laissé de côté) n'est pas en vente : le catalogue l'ignore, ici aussi.
+          AND (parent.id IS NULL OR parent.post_status = 'publish')
           AND ${clause}
           ${supplierClause}
         ORDER BY
