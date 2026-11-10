@@ -231,18 +231,26 @@ function parseHeader(text) {
     payments.push({ paidAt: `${p[3]}-${p[2]}-${p[1]}`, amount: toNumber(p[4]) });
   }
 
+  // DEVIS (LIPS S05955, 10/11/2026) : « Devis # S05955 », « Date du devis ».
+  // Son numéro EST celui de la commande. Il se dépose comme un pro forma :
+  // il contrôle les tarifs de la commande sans compter comme une facture.
+  const factureNo = grab(/(?:Facture|Avoir)\s+([A-Z0-9][A-Z0-9/\-.]*)/i);
+  const devisNo = factureNo ? null : grab(/\bDevis\s*#\s*([A-Z0-9][A-Z0-9/\-.]*)/i);
+
   return {
     isCreditNote,
-    docType: isCreditNote ? 'credit_note' : 'invoice',
-    number: grab(/(?:Facture|Avoir)\s+([A-Z0-9][A-Z0-9/\-.]*)/i),
+    docType: isCreditNote ? 'credit_note' : (devisNo ? 'proforma' : 'invoice'),
+    number: factureNo || devisNo,
     // « Extourne de : V3/2026/33473 » : la facture que cet avoir corrige.
     correctsInvoice: grab(/Extourne de\s*:?\s*([A-Z0-9][A-Z0-9/\-.]*)/i),
-    isProforma: /PRO\s*FORMA/i.test(text),
+    isProforma: Boolean(devisNo) || /PRO\s*FORMA/i.test(text),
     // « Date de la facture », « Date de facturation », « Date de l'avoir ».
-    date: date(/Date\s+de\s+(?:Date\s+de\s+)?(?:la\s+|l')?(?:factur\w*|avoir)(?:\s+factur\w*)?(?:\s+n+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
-    dueDate: date(/Date\s+(?:Date\s+)?d'échéanc\w*(?:\s+d'échéanc\w*)?(?:\s+e+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
+    date: date(/Date\s+de\s+(?:Date\s+de\s+)?(?:la\s+|l')?(?:factur\w*|avoir)(?:\s+factur\w*)?(?:\s+n+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i)
+      || date(/Date\s+du\s+devis\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i),
+    dueDate: date(/Date\s+(?:Date\s+)?d'échéanc\w*(?:\s+d'échéanc\w*)?(?:\s+e+)?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i)
+      || (devisNo ? date(/\bEch[ée]ance\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i) : null),
     // « Origine » chez JoshNoa et Levest, « Source » chez LIPS et Cloud Vapor.
-    orderRefOnDoc: grab(/(?:Origine|Source)\s*:?\s+(?:(?:Origine|Source)\s+)?(\S+)/i),
+    orderRefOnDoc: grab(/(?:Origine|Source)\s*:?\s+(?:(?:Origine|Source)\s+)?(\S+)/i) || devisNo,
     // Celui-ci reste sur le texte d'origine : à plat, la capture avalerait
     // l'étiquette suivante (« Transfert bancaire À régler avant le… »).
     statedPaymentMethod: grab(/Mode de paiement\s*:?\s*\n\s*([^\n]+)/i, 1, text),

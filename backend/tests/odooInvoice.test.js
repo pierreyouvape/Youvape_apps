@@ -144,6 +144,28 @@ test('l\'expédition gratuite est classée en port, à zéro euro', () => {
   assert.strictEqual(port.lineTotalHt, 0);
 });
 
+/* ─── LIPS — devis S05955, PDF réel ──────────────────────────────────────── */
+
+const devis = parseInvoice(fixture('lips-devis-S05955.txt'));
+
+console.log('\nLIPS — devis S05955 (PDF réel)');
+
+test('un devis se lit comme un pro forma, son numéro désigne la commande', () => {
+  assert.strictEqual(devis.number, 'S05955');
+  assert.strictEqual(devis.orderRefOnDoc, 'S05955');
+  assert.strictEqual(devis.docType, 'proforma');
+  assert.strictEqual(devis.date, '2026-11-10');
+  assert.strictEqual(devis.dueDate, '2026-12-10');
+});
+
+test('les lignes du devis retombent sur le total imprimé', () => {
+  const produits = devis.lines.filter((l) => l.kind === 'product');
+  assert.strictEqual(produits.length, 12);
+  const somme = devis.lines.reduce((s, l) => s + l.lineTotalHt, 0);
+  assert.ok(close(somme, 902.98, 0.02), `somme ${somme}`);
+  assert.ok(byRef(devis, 'BADBUNNIZ-PACK-GOLDXL-00'), 'ligne du pack absente');
+});
+
 /* ─── Cloud Vapor — INV/2025/04126, PDF réel ─────────────────────────────── */
 
 const cv = parseInvoice(fixture('cloudvapor-INV-2025-04126.txt'));
