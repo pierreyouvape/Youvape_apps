@@ -377,9 +377,11 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
   le plugin ne pose que trois statuts (expédiée, retrait boutique, livrée) et ne refuse que les reculs
   et les interdits. L'app envoie une étape (`pickup`, `step`), plus de nom de statut. « À expédier »
   ne pilote rien tant que la liste du Picking vient de BMS.
-- **Interrupteur `status_changes_enabled`** (0.5.0, 05/11, coupé par défaut, réglé dans l'écran, détenu par
-  le plugin) : coupé, le plugin écrit seulement métas et note, sans statut ni mail ; `order/status` refusé.
-  Permet de l'activer en prod pendant que BMS pose les statuts.
+- **Deux interrupteurs, section « Action sur WooCommerce »** de l'écran (coupés par défaut, détenus par le
+  plugin) : `status_changes_enabled` (0.5.0) — coupé, métas et note seulement, sans statut ni mail,
+  `order/status` refusé ; `stock_changes_enabled` (0.6.0, 10/11) — coupé, `stock/adjust` refusé
+  (`STOCK_CHANGES_DISABLED`), sinon conflit avec BMS qui réécrit le stock la nuit. Permettent d'activer
+  le plugin en prod pendant que BMS gère statuts et stock. « État » = réglage enregistré.
 - **Un seul colis par commande.** Étiquette refaite = `order/ship` avec `replace: true` : suivi écrasé,
   mail d'expédition renvoyé en rejouant la transition d'origine (Probance), lié au prestataire actuel.
 - **Plus aucune méta `bms_*` écrite**, uniquement `_yv_*`. `_yv_tracking_url` = lien complet construit

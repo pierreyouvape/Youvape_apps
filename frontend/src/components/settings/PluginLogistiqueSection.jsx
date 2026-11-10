@@ -21,6 +21,43 @@ const STATUS_INTRO = 'Dans les deux sens : les commandes qui arrivent (« à exp
   + 'Chaque changement dit si le client est prévenu ; sans mail, le plugin bloque aussi Probance et '
   + 'Guaranteed Reviews, les prestataires actuels du site.';
 
+// Ce que le plugin a le droit de faire sur le site. Coupés par défaut, tant que BMS gère statuts et stock.
+const SWITCHES = [
+  {
+    key: 'status_changes_enabled',
+    title: 'Changements de statut des commandes',
+    label: 'Autoriser le plugin à changer le statut des commandes',
+    help: 'Coupé : le plugin écrit seulement le suivi (métas et note) sur la commande, sans changer son statut ni envoyer de mail. À garder coupé tant que BMS pose les statuts.',
+    warning: 'Activé : chaque expédition envoyée par l\'app change le statut de la commande et peut prévenir le client.',
+  },
+  {
+    key: 'stock_changes_enabled',
+    title: 'Mouvements de stock',
+    label: 'Autoriser le plugin à modifier le stock des produits',
+    help: 'Coupé : le plugin refuse tout mouvement de stock, rien ne bouge. À garder coupé tant que BMS gère le stock : il le réécrit chaque nuit, nos écarts seraient effacés.',
+    warning: 'Activé : chaque mouvement envoyé par l\'app modifie le stock du site.',
+  },
+];
+
+/** « État » = ce que fait le plugin maintenant (réglage enregistré) ; la case = ce qu'on veut. */
+const SwitchControl = ({ saved, value, label, onChange }) => (
+  <div>
+    <div style={{ fontSize: 13.5, marginBottom: 8 }}>
+      État :{' '}
+      <strong style={{ color: saved ? C.green : C.red }}>{saved ? 'Activé' : 'Coupé'}</strong>
+      {saved !== value && (
+        <span style={{ marginLeft: 8, fontSize: 12.5, color: C.accent }}>
+          → {value ? 'activé' : 'coupé'} à l&apos;enregistrement
+        </span>
+      )}
+    </div>
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13.5 }}>
+      <input type="checkbox" checked={value} onChange={e => onChange(e.target.checked)} style={{ width: 16, height: 16 }} />
+      {label}
+    </label>
+  </div>
+);
+
 // Libellés du site, quand le plugin ne répond pas encore (prod avant la bascule).
 const FALLBACK_LABELS = {
   processing: 'En cours',
@@ -511,6 +548,32 @@ export default function PluginLogistiqueSection({ token }) {
         </div>
       )}
 
+      {data?.installed && draft && (
+        <>
+          <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Action sur WooCommerce</h3>
+          <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>
+            Ce que le plugin a le droit de faire sur le site. Le suivi des colis (métas et note) s&apos;écrit toujours ;
+            le reste attend la sortie de BMS.
+          </div>
+          {SWITCHES.map(sw => (
+            <Setting
+              key={sw.key}
+              title={sw.title}
+              help={sw.help}
+              warning={draft[sw.key] ? sw.warning : undefined}
+              {...props(sw.key)}
+            >
+              <SwitchControl
+                saved={!!data.settings[sw.key]}
+                value={!!draft[sw.key]}
+                label={sw.label}
+                onChange={v => set(sw.key, v)}
+              />
+            </Setting>
+          ))}
+        </>
+      )}
+
       {data && (
         <>
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Statuts des commandes</h3>
@@ -532,22 +595,6 @@ export default function PluginLogistiqueSection({ token }) {
 
       {data?.installed && draft && (
         <>
-          <Setting
-            title="Changements de statut par le plugin"
-            help="Coupé : le plugin écrit seulement le suivi (métas et note) sur la commande, sans changer son statut ni envoyer de mail. C'est le mode à garder tant que BMS pose les statuts. Activé : le plugin pose les statuts ci-dessous, le jour de la sortie de BMS."
-            warning={draft.status_changes_enabled ? 'Activé : chaque expédition envoyée par l\'app change le statut de la commande et peut prévenir le client.' : undefined}
-            {...props('status_changes_enabled')}
-          >
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13.5 }}>
-              <input
-                type="checkbox"
-                checked={!!draft.status_changes_enabled}
-                onChange={e => set('status_changes_enabled', e.target.checked)}
-                style={{ width: 16, height: 16 }}
-              />
-              {draft.status_changes_enabled ? 'Activés' : 'Coupés'}
-            </label>
-          </Setting>
           {SINGLE_STATUSES.map(item => (
             <Setting key={item.key} title={item.title} help={item.help} {...props(item.key)}>
               <StatusSelect value={draft[item.key]} onChange={v => set(item.key, v)} options={options} error={errors[item.key]} />

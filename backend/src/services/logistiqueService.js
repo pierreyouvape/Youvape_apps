@@ -38,7 +38,7 @@ const FORBIDDEN_STATUSES = ['refunded', 'cancelled', 'failed', 'pending', 'check
 
 // Les réglages que l'app a le droit de modifier : ceux de l'expédition.
 const EDITABLE_SETTINGS = [
-  'status_changes_enabled', 'ship_status', 'pickup_status', 'delivered_status',
+  'status_changes_enabled', 'stock_changes_enabled', 'ship_status', 'pickup_status', 'delivered_status',
   'meta_keys',
   'batch_max', 'time_budget',
 ];
