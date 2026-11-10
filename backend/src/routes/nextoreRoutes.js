@@ -123,6 +123,7 @@ router.post('/:shop/catalogue/products/:productId/link', boutiquePerm('write'), 
 router.post('/:shop/catalogue/products/:productId/create-nextore', boutiquePerm('write'), catalogController.createInNextore);
 router.post('/:shop/catalogue/reviews/:id/ignore', boutiquePerm('write'), catalogController.ignore);
 router.post('/:shop/catalogue/prices/align', boutiquePerm('write'), catalogController.alignPrices);
+router.post('/:shop/catalogue/link-same', boutiquePerm('write'), catalogController.linkSame);
 router.post('/:shop/catalogue/prices/keep', boutiquePerm('write'), catalogController.keepPrices);
 router.post('/:shop/catalogue/run', boutiquePerm('write'), catalogController.run);
 

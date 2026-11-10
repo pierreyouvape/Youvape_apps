@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -32,6 +32,18 @@ const list = [
   { id: '3', name: 'MENTHE VERTE 10ML', brand: '' },
 ];
 assert.deepStrictEqual(closest(site, list).map((c) => c.id), ['1', '2'], 'les plus proches d\'abord, sans les éloignées');
+
+// ── Même article sous un autre nom (cas réels de la simulation du 10/11/2026) ─
+const same = (a, ab, b, bb) => isSameName({ name: a, brand: ab }, { name: b, brand: bb });
+assert.ok(same('Box Aegis Solo 5 - Red', 'Geekvape', 'BOX AEGIS SOLO 5 - GEEKVAPE - RED', 'Geekvape'), 'même box, marque recopiée dans le nom caisse');
+assert.ok(same('Fruizee Fraise Kiwi 10ml', 'Fruizee', 'FRAISE KIWI 10ML - FRUIZEE', 'Eliquid France'), 'mots dans un autre ordre');
+assert.ok(same('Pack 5 Résistances B Series Coils MTL - 1.20 Ω', 'Geekvape', 'Pack 5 Résistances B Series Coils - 1.20 Ω MTL', ''), 'même résistance');
+assert.ok(same('Kit Pod Kiwi 2 - Iron Gate', 'Kiwi Vapor', 'KIT KIWI 2 - KIWI VAPOR - IRON GATE', 'Kiwi Vapor'), '« pod » ne distingue pas');
+assert.ok(!same('Puff JNR Falcon Mini 20K - Strawberry Watermelon Ice', 'JNR', 'Puff JNR Falcon Mini 20K - Watermelon Ice', 'JNR'), 'un parfum de plus');
+assert.ok(!same('Dead Rabbit 4 RDA - Black Silver', 'Hellvape', 'Dead Rabbit 4 RDA - Black Red', 'Hellvape'), 'autre couleur');
+assert.ok(!same('Pack 3 Cartouches Klypse V2 - 1.20 Ω', 'Innokin', 'Pack 3 Cartouches Klypse V2 - 0.60 Ω', 'Innokin'), 'autre résistance');
+assert.ok(!same('Puff CBD Wilo 10% - White Window', 'Wilo', 'Recharges Wilo CBD 10% - White Window', 'Wilo'), 'puff ≠ recharge');
+assert.ok(!same('Puff JNR Gorilla X 43k sans Nicotine - Cherry Ice', 'JNR', 'Gorilla X 43K - 20mg - Cherry Ice', 'JNR'), 'autre dosage');
 
 // ── Catégorie ───────────────────────────────────────────────────────────────
 const stats = [

@@ -643,6 +643,26 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).
 - Tests : `tests/prelevement.test.js`.
 
+### Catalogue caisse : produits du site → Nextore (10/11/2026)
+
+`nextoreCatalogSyncService`, cron `20 8-20 * * *`, **éteint tant que `app_config.nextore_autocreate_since`
+n'existe pas**. Simulation sans écriture : `run({ dryRun: true, since: 'YYYY-MM-DD' })`. Décisions Maxime :
+création à la **1re réception** (pas à la publication), existants **jamais créés seuls** (liste « absent »),
+prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web).
+
+- Paire (produit du site, fiche caisse) = `boutique_site_links`, sinon UNE fiche par code-barres.
+- **Nouveau produit** (1re réception ≥ la date) sans fiche : liste « doublon » si une fiche a un **nom identique**
+  (`catalogSyncRules.isSameName` : mêmes mots hors marque et « pod »), « categorie » si la catégorie apprise des paires
+  n'est pas sûre (≥ 90 % et ≥ 10 paires), « sans_ean » sans code-barres ; sinon **créé** (`createInNextore`).
+  ⚠️ Un score de ressemblance ne suffit PAS pour un doublon : simulation du 10/11, 19 alertes dont 11 fausses
+  (« Falcon Mini Strawberry Watermelon » ≠ « Falcon Mini Watermelon »). La règle stricte : 8 alertes, 8 vraies.
+- **Codes-barres** du site ajoutés à la fiche liée (jamais retirés) ; un code déjà sur une AUTRE fiche → « ean_conflit ».
+  Un code du site sur plusieurs fiches → « ean_multiple » (doublons déjà présents dans Nextore).
+- **Prix** : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »
+  (Aligner / Garder = `price_locked`) ; ensuite un changement du prix du site est envoyé seul. Résistances au pack exclues.
+- Écran Boutique › Catalogue caisse (`CatalogueTab.jsx`), « Rattacher les N » pour les noms identiques (`link-same`).
+- Tests : `tests/catalogSync.test.js` (cas réels de la simulation).
+
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 

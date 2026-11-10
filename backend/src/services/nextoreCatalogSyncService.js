@@ -123,7 +123,8 @@ const syncMissing = async (since, stats, nxCatalog, report) => {
       continue;
     }
     const near = rules.closest(r, nxCatalog);
-    if (near.length && near[0].score >= rules.DOUBLON_SCORE) {
+    // Doublon : une fiche caisse au nom identique (mêmes mots, hors marque).
+    if (near.some((c) => c.same)) {
       await upsertReview(r.id, 'doublon', { candidates: near, categoryId: rules.pickCategory(stats, r.cat, r.sub).categoryId });
       report.reviews += 1;
       continue;

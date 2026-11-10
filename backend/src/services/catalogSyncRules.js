@@ -75,13 +75,33 @@ const closest = (site, nx, { min = 0.4, limit = 3 } = {}) => {
     for (const t of s._n) for (const e of nx.byToken.get(t) || []) if (!seen.has(e)) { seen.add(e); pool.push(e); }
   }
   return pool
-    .map((e) => ({ id: e.id, name: e.name, score: similarity(s, e) }))
-    .filter((c) => c.score >= min)
-    .sort((x, y) => y.score - x.score)
+    .map((e) => ({ id: e.id, name: e.name, score: similarity(s, e), same: isSameName(s, e) }))
+    .filter((c) => c.same || c.score >= min)
+    .sort((x, y) => Number(y.same) - Number(x.same) || y.score - x.score)
     .slice(0, limit);
 };
 
 const DOUBLON_SCORE = 0.7;
+
+// Mots qui ne distinguent pas deux articles (« Kit Pod Kiwi 2 » = « KIT KIWI 2 »).
+const NEUTRAL = new Set(['pod']);
+
+/**
+ * Même article sous un autre nom ? Il faut EXACTEMENT les mêmes mots, dans
+ * n'importe quel ordre, hors marque (des deux côtés) et mots neutres. Un mot de
+ * parfum, couleur, résistance ou dosage en plus ou en moins = un autre article
+ * (simulation du 10/11/2026 : « Falcon Mini Strawberry Watermelon » n'est pas
+ * « Falcon Mini Watermelon » ; « BOX AEGIS SOLO 5 - GEEKVAPE - RED » est bien
+ * « Box Aegis Solo 5 - Red »).
+ */
+const isSameName = (site, nx) => {
+  const brand = new Set([...tokens(site.brand), ...tokens(nx.brand)]);
+  const keep = (set) => new Set([...set].filter((t) => !brand.has(t) && !NEUTRAL.has(t)));
+  const a = keep(site._n || tokens(site.name));
+  const b = keep(nx._n || tokens(nx.name));
+  if (a.size < 2 || b.size < 2) return false;
+  return a.size === b.size && [...a].every((t) => b.has(t));
+};
 
 /**
  * Catégorie caisse d'un produit du site, apprise sur les paires déjà reconnues
@@ -117,5 +137,5 @@ const priceDecision = ({ sitePrice, nxPrice, state }) => {
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 };

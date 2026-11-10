@@ -23,7 +23,7 @@ const ids = (body) => (Array.isArray(body?.ids) ? body.ids.map((x) => parseInt(x
 module.exports = {
   reviews: handle(async (req, res) => {
     res.json(await catalogReviewModel.list({
-      reason: req.query.reason, q: req.query.q, offset: req.query.offset, limit: req.query.limit,
+      reason: req.query.reason, q: req.query.q, offset: req.query.offset, limit: req.query.limit, same: req.query.same === '1',
     }));
   }),
   ignore: handle(async (req, res) => {
@@ -34,6 +34,9 @@ module.exports = {
   }),
   keepPrices: handle(async (req, res) => {
     res.json(await catalogReviewModel.keepPrices(ids(req.body), req.user.id));
+  }),
+  linkSame: handle(async (req, res) => {
+    res.json(await catalogReviewModel.linkSame(ids(req.body), req.user.id));
   }),
   product: handle(async (req, res) => {
     res.json(await prelevementModel.productView(parseInt(req.params.productId, 10), WH, req.user.id));

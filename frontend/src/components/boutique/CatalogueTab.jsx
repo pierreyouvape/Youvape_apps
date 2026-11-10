@@ -82,7 +82,12 @@ function ReviewRow({ row, call, onDone }) {
         <div style={{ margin: '8px 0 0 54px' }}>
           {candidates.map((c) => (
             <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '3px 0', fontSize: 13 }}>
-              <span style={{ flex: 1 }}>{c.name} {c.score != null && <span style={{ color: C.greyT }}>· ressemblance {Math.round(c.score * 100)} %</span>}</span>
+              <span style={{ flex: 1 }}>
+                {c.name}{' '}
+                {c.same
+                  ? <span style={{ color: C.green, fontWeight: 700 }}>· nom identique</span>
+                  : c.score != null && <span style={{ color: C.greyT }}>· ressemblance {Math.round(c.score * 100)} %</span>}
+              </span>
               <Btn onClick={() => linkTo(c)}>C'est le même</Btn>
             </div>
           ))}
@@ -174,14 +179,18 @@ export default function CatalogueTab({ shop, token }) {
   };
   const [reason, setReason] = useState('doublon');
   const [q, setQ] = useState('');
+  const [onlySame, setOnlySame] = useState(false);
   const [data, setData] = useState({ rows: [], counts: {} });
   const [error, setError] = useState(null);
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState(null);
 
   const load = useCallback(async () => {
-    try { setData(await call.get(`/catalogue/reviews?reason=${reason}&q=${encodeURIComponent(q)}`)); setError(null); } catch (e) { setError(errMsg(e)); }
-  }, [reason, q]); // eslint-disable-line react-hooks/exhaustive-deps
+    try {
+      setData(await call.get(`/catalogue/reviews?reason=${reason}&q=${encodeURIComponent(q)}${onlySame ? '&same=1' : ''}`));
+      setError(null);
+    } catch (e) { setError(errMsg(e)); }
+  }, [reason, q, onlySame]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
@@ -191,6 +200,20 @@ export default function CatalogueTab({ shop, token }) {
       const r = await call.post('/catalogue/run', {});
       setReport(r.disabled ? 'La synchro automatique n\'est pas encore activée.'
         : `${r.created} fiche(s) créée(s) · ${r.barcodes} code(s)-barres ajouté(s) · ${r.prices} prix alignés · ${r.reviews} à vérifier${r.errors?.length ? ` · ${r.errors.length} erreur(s)` : ''}`);
+      load();
+    } catch (e) { setReport(errMsg(e)); } finally { setRunning(false); }
+  };
+
+  // Lignes dont UNE fiche caisse porte exactement le même nom : rattachables d'un coup.
+  const sameRows = (reason === 'doublon' || reason === 'absent')
+    ? data.rows.filter((r) => (r.candidates || []).filter((c) => c.same).length === 1) : [];
+  const linkAllSame = async () => {
+    const lines = sameRows.slice(0, 15).map((r) => `• ${r.name}  →  ${r.candidates.find((c) => c.same).name}`).join('\n');
+    if (!window.confirm(`Rattacher ${sameRows.length} produit(s) à la fiche caisse au nom identique ?\n\n${lines}${sameRows.length > 15 ? '\n…' : ''}\n\nLes codes-barres du site seront ajoutés aux fiches.`)) return;
+    setRunning(true); setReport(null);
+    try {
+      const r = await call.post('/catalogue/link-same', { ids: sameRows.map((x) => x.id) });
+      setReport(`${r.done} rattaché(s)${r.errors?.length ? ` · ${r.errors.length} erreur(s) : ${r.errors.slice(0, 3).join(' ; ')}` : ''}`);
       load();
     } catch (e) { setReport(errMsg(e)); } finally { setRunning(false); }
   };
@@ -211,8 +234,19 @@ export default function CatalogueTab({ shop, token }) {
 
       <div style={{ background: C.white, borderRadius: 14, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
         <div style={{ fontSize: 13, color: C.greyT, marginBottom: 8 }}>{def.hint}</div>
+        {sameRows.length > 0 && (
+          <div style={{ background: '#ECFDF5', borderRadius: 10, padding: '8px 12px', marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
+            <span style={{ flex: 1, fontSize: 13 }}>{sameRows.length} produit(s) affiché(s) ont une fiche caisse au <b>nom identique</b> (mêmes mots, hors marque).</span>
+            <Btn bg={C.green} disabled={running} onClick={linkAllSame}>Rattacher les {sameRows.length}</Btn>
+          </div>
+        )}
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrer (nom, SKU, marque)…"
           style={{ width: '100%', padding: 9, borderRadius: 8, border: `1px solid ${C.greyB}`, fontSize: 14, boxSizing: 'border-box', marginBottom: 6 }} />
+        {(reason === 'doublon' || reason === 'absent') && (
+          <label style={{ fontSize: 13, display: 'block', marginBottom: 6 }}>
+            <input type="checkbox" checked={onlySame} onChange={(e) => setOnlySame(e.target.checked)} /> Seulement ceux qui ont une fiche caisse au nom identique
+          </label>
+        )}
         {error && <div style={{ color: C.red }}>{error}</div>}
         {reason === 'prix'
           ? <PriceRows rows={data.rows} call={call} onDone={load} />

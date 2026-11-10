@@ -11,10 +11,10 @@ const httpError = (status, message) => Object.assign(new Error(message), { statu
 
 const REASONS = ['doublon', 'categorie', 'sans_ean', 'ean_multiple', 'ean_conflit', 'prix', 'absent'];
 
-const list = async ({ reason, q, offset = 0, limit = 100 }) => {
+const list = async ({ reason, q, offset = 0, limit = 100, same = false }) => {
   if (!REASONS.includes(reason)) throw httpError(400, 'Motif inconnu.');
   const args = [reason];
-  let filter = '';
+  let filter = same ? ` AND r.candidates @> '[{"same": true}]'::jsonb` : '';
   const words = String(q || '').trim().split(/\s+/).filter(Boolean).slice(0, 6);
   for (const w of words) {
     args.push(`%${w}%`);
@@ -93,4 +93,31 @@ const keepPrices = async (ids, userId) => {
   return { done: rows.length };
 };
 
-module.exports = { list, ignore, alignPrices, keepPrices, REASONS };
+/**
+ * Rattache d'un coup les lignes dont UNE fiche caisse porte exactement le même
+ * nom (candidat `same`, mêmes mots hors marque). Validé à l'écran sur la liste.
+ */
+const linkSame = async (ids, userId) => {
+  const prelevementModel = require('./prelevementModel');
+  const { rows } = await pool.query(
+    `SELECT r.id, r.product_id, r.candidates, p.sku FROM boutique_catalog_reviews r JOIN products p ON p.id = r.product_id
+      WHERE r.id = ANY($1::bigint[]) AND r.status = 'open' AND r.reason IN ('doublon', 'absent')`,
+    [ids]
+  );
+  let done = 0;
+  const errors = [];
+  for (const r of rows) {
+    const same = (r.candidates || []).filter((c) => c.same);
+    if (same.length !== 1) continue;
+    try {
+      await prelevementModel.link(2, r.product_id, same[0].id, userId);
+      done += 1;
+    } catch (error) {
+      errors.push(`${r.sku} : ${error.message}`);
+    }
+    await new Promise((res) => setTimeout(res, 250));
+  }
+  return { done, errors };
+};
+
+module.exports = { list, ignore, alignPrices, keepPrices, linkSame, REASONS };
