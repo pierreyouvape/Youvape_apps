@@ -64,6 +64,17 @@ const resolveNx = (link, eanMatches) => {
 /** Une erreur d'API qui n'a rien écrit (refus net) : on peut renvoyer sans risque. */
 const isCleanRefusal = (msg) => /HTTP 4\d\d|BMS API error: 4\d\d|Too Many Attempts/i.test(String(msg || ''));
 
+/**
+ * SQL : le code-barres `b` n'est porté que par CE produit du site. Un code sur
+ * plusieurs produits (erreur de saisie : 13 codes / 26 produits au 10/11/2026,
+ * « Sweet Cream » et « Green Dragon » sous le même EAN) ne prouve rien : il ne
+ * sert ni à rattacher, ni n'est envoyé à une fiche caisse.
+ */
+const uniqueSiteBarcodeSql = (b = 'b') => `NOT EXISTS (
+  SELECT 1 FROM product_barcodes ob JOIN products op ON op.id = ob.product_id
+   WHERE ob.barcode = ${b}.barcode AND ob.product_id <> ${b}.product_id AND op.wc_deleted_at IS NULL)`;
+
 module.exports = {
+  uniqueSiteBarcodeSql,
   siteUnitCost, boutiqueQty, nextoreProductPayload, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, round2,
 };

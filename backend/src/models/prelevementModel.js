@@ -29,7 +29,7 @@ const SITE_SQL = `
          p.computed_cost, p.wc_cog_cost, p.product_type, p.post_status,
          COALESCE(p.image_url, pp.image_url) AS image_url,
          COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
-         array_remove(ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' ORDER BY b.id), NULL) AS barcodes
+         array_remove(ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' AND ${rules.uniqueSiteBarcodeSql('b')} ORDER BY b.id), NULL) AS barcodes
     FROM products p
     LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
    WHERE p.id = $1`;
@@ -63,7 +63,7 @@ const resolveNxFor = async (productId, db = pool) => {
          FROM product_barcodes b
          JOIN nextore_product_barcodes nb ON nb.barcode = b.barcode
          JOIN nextore_products np ON np.product_id = nb.product_id AND COALESCE(np.status, '') <> 'deleted'
-        WHERE b.product_id = $1`,
+        WHERE b.product_id = $1 AND ${rules.uniqueSiteBarcodeSql('b')}`,
       [productId]
     ),
   ]);

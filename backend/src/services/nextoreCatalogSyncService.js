@@ -25,6 +25,8 @@ const MAX_WRITES = 150;     // ajouts de codes-barres + prix, par passage
 const PAUSE_MS = 300;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Code-barres porté par ce seul produit du site (cf. prelevementRules.uniqueSiteBarcodeSql).
+const UNIQUE_B = prelevementRules.uniqueSiteBarcodeSql('b');
 const SITE_SCOPE = `p.product_type IN ('simple', 'variation') AND p.wc_deleted_at IS NULL AND p.post_status = 'publish'`;
 const SITE_COLS = `
   p.id, p.sku, p.post_title AS name, p.regular_price,
@@ -32,13 +34,13 @@ const SITE_COLS = `
   COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand,
   COALESCE(NULLIF(p.category, ''), pp.category) AS cat,
   COALESCE(NULLIF(p.sub_category, ''), pp.sub_category) AS sub,
-  ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' ORDER BY b.id) AS barcodes`;
+  ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' AND ${UNIQUE_B} ORDER BY b.id) AS barcodes`;
 const PARENT_JOIN = `LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id`;
 // Fiches caisse (non supprimées) qui portent un code-barres du produit.
 const NX_BY_EAN = `ARRAY(SELECT DISTINCT nb.product_id FROM product_barcodes b
                            JOIN nextore_product_barcodes nb ON nb.barcode = b.barcode
                            JOIN nextore_products np ON np.product_id = nb.product_id AND COALESCE(np.status, '') <> 'deleted'
-                          WHERE b.product_id = p.id)`;
+                          WHERE b.product_id = p.id AND ${UNIQUE_B})`;
 
 // Simulation (run({ dryRun: true })) : on compte ce qui serait fait, rien n'est écrit.
 let DRY = false;
@@ -69,7 +71,7 @@ const categoryStats = async () => {
         JOIN product_barcodes b ON b.product_id = p.id
         JOIN nextore_product_barcodes nb ON nb.barcode = b.barcode
         JOIN nextore_products np ON np.product_id = nb.product_id AND np.category_id IS NOT NULL
-       WHERE p.product_type IN ('simple', 'variation')),
+       WHERE p.product_type IN ('simple', 'variation') AND ${UNIQUE_B}),
     agg AS (
       SELECT cat, sub, category_id AS nx_category_id, count(*) AS n,
              sum(count(*)) OVER (PARTITION BY cat, sub) AS tot,
