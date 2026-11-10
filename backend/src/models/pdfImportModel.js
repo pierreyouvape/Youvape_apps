@@ -4,6 +4,8 @@ const parserRegistry = require('../parsers');
 const { findUnparsedRows, findLinesMissedByImport } = require('./parseAudit');
 const invoiceParsers = require('../parsers/invoices');
 const supplierRefModel = require('./supplierRefModel');
+const supplierKitModel = require('./supplierKitModel');
+const { explodeKits } = require('../utils/invoiceKits');
 const { convertLine } = require('../utils/importLineConversion');
 // Reconstitution des références tronquées : partagée avec le contrôle de
 // facture, qui lit exactement les mêmes documents (utils/refResolution.js).
@@ -258,6 +260,52 @@ const pdfImportModel = {
   },
 
   /**
+   * Remplace chaque ligne de PACK du fournisseur par ses composants (même
+   * découpage que le contrôle de facture, `utils/invoiceKits`) : quantité =
+   * packs × quantité du composant, montant de la ligne réparti au centime au
+   * prorata du prix de réf. de chaque composant (prix à la pièce). Le montant
+   * part du total imprimé (net de remise) : les composants n'ont plus de remise.
+   * Les commandes portent ainsi les réfs que le contrôle de la facture compare.
+   */
+  explodeKitItems: async (supplierId, items, db = pool) => {
+    const kits = await supplierKitModel.kitMap(supplierId, db);
+    if (kits.size === 0) return items;
+    const kitNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!items.some((i) => kits.has(kitNorm(i.supplier_sku)))) return items;
+
+    const { rows } = await db.query(
+      `SELECT supplier_sku, pack_price, pack_qty FROM supplier_refs
+        WHERE supplier_id = $1 AND pack_price IS NOT NULL`,
+      [supplierId],
+    );
+    const prixPiece = new Map(rows.map((r) => [kitNorm(r.supplier_sku), Number(r.pack_price) / (Number(r.pack_qty) || 1)]));
+
+    return items.flatMap((item) => {
+      const kit = kits.get(kitNorm(item.supplier_sku));
+      if (!kit) return [item];
+      const qty = Number(item.qty_ordered) || 0;
+      const total = Number(item.total_ht) > 0
+        ? Number(item.total_ht)
+        : qty * (Number(item.unit_price_net) || 0) * (1 - (Number(item.discount_percent) || 0) / 100);
+      const lignes = explodeKits(
+        [{ ref: item.supplier_sku, label: item.designation, qty, lineTotalHt: total }],
+        kits,
+        (ref) => prixPiece.get(kitNorm(ref)) ?? null,
+      );
+      return lignes.map((l) => ({
+        ...item,
+        supplier_sku: l.ref,
+        designation: `${l.label || l.ref} — pack ${kit.ref}`,
+        qty_ordered: l.qty,
+        unit_price_net: l.qty > 0 ? Math.round((l.lineTotalHt / l.qty) * 10000) / 10000 : 0,
+        discount_percent: 0,
+        total_ht: l.lineTotalHt,
+        kit_ref: kit.ref,
+      }));
+    });
+  },
+
+  /**
    * Mapping manuel d'une ligne d'import : l'opérateur choisit le produit et le
    * conditionnement de la réf. Renvoie la ligne convertie (même calcul que
    * parsePdf) et, si la réf est déjà portée par un autre produit, ce produit :
@@ -368,6 +416,11 @@ const pdfImportModel = {
     // Document sans n° de commande imprimé (page commande LCA en vue étroite) :
     // le navigateur l'a enregistré sous « Commande #362022.pdf ».
     if (!parsed.orderNumber) parsed.orderNumber = orderNumberFromFileName(fileName);
+
+    // 4b. Packs du fournisseur (supplier_ref_kits) : la ligne du pack devient une
+    //     ligne par composant, comme au contrôle de facture. Sans ça, elle ne
+    //     trouvait aucun produit (LIPS BADBUNNIZ-PACK-GOLDXL-00, devis S05955).
+    parsed.items = await pdfImportModel.explodeKitItems(supplierId, parsed.items);
 
     // 5. Matcher les réfs dans supplier_refs. Une réf ne désigne qu'un produit
     //    (index unique sur la réf normalisée) : plus d'arbitrage entre candidats.
