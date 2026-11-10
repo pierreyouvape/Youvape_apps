@@ -99,8 +99,12 @@ const keepPrices = async (ids, userId) => {
  */
 const linkSame = async (ids, userId) => {
   const prelevementModel = require('./prelevementModel');
+  const { isSameName } = require('../services/catalogSyncRules');
   const { rows } = await pool.query(
-    `SELECT r.id, r.product_id, r.candidates, p.sku FROM boutique_catalog_reviews r JOIN products p ON p.id = r.product_id
+    `SELECT r.id, r.product_id, r.candidates, p.sku, p.post_title AS name,
+            COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand, COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand
+       FROM boutique_catalog_reviews r JOIN products p ON p.id = r.product_id
+       LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
       WHERE r.id = ANY($1::bigint[]) AND r.status = 'open' AND r.reason IN ('doublon', 'absent')`,
     [ids]
   );
@@ -109,6 +113,11 @@ const linkSame = async (ids, userId) => {
   for (const r of rows) {
     const same = (r.candidates || []).filter((c) => c.same);
     if (same.length !== 1) continue;
+    // Revérifié à l'instant avec les fiches caisse à jour, jamais sur la seule suggestion enregistrée.
+    const { rows: [nx] } = await pool.query(
+      `SELECT name, brand FROM nextore_products WHERE product_id = $1 AND COALESCE(status, '') <> 'deleted'`, [same[0].id]
+    );
+    if (!nx || !isSameName(r, nx)) { errors.push(`${r.sku} : nom plus identique, non rattaché`); continue; }
     try {
       await prelevementModel.link(2, r.product_id, same[0].id, userId);
       done += 1;

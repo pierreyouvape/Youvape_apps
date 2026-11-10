@@ -44,6 +44,15 @@ assert.ok(!same('Dead Rabbit 4 RDA - Black Silver', 'Hellvape', 'Dead Rabbit 4 R
 assert.ok(!same('Pack 3 Cartouches Klypse V2 - 1.20 Ω', 'Innokin', 'Pack 3 Cartouches Klypse V2 - 0.60 Ω', 'Innokin'), 'autre résistance');
 assert.ok(!same('Puff CBD Wilo 10% - White Window', 'Wilo', 'Recharges Wilo CBD 10% - White Window', 'Wilo'), 'puff ≠ recharge');
 assert.ok(!same('Puff JNR Gorilla X 43k sans Nicotine - Cherry Ice', 'JNR', 'Gorilla X 43K - 20mg - Cherry Ice', 'JNR'), 'autre dosage');
+// 2e passe (même jour) : marques différentes et mots répétés
+assert.ok(!same('Don Cristo Custard 50ml', 'Don Cristo', 'CUSTARD 50ML - DOTMOD', 'DOTMOD'), 'autre marque');
+assert.ok(!same('LE M - 3mg', 'Roykin', 'LE M  - LIQUIDEO - 3 MG', 'liquideo'), 'autre marque (Roykin / Liquideo)');
+assert.ok(!same('Pack 2 Cartouches Pod Feelin', 'Nevoks', 'PACK 2 CARTOUCHES FEELIN 2 - NEVOKS', 'Nevoks'), 'Feelin ≠ Feelin 2');
+assert.ok(!isSameName({ name: 'Mangue Passion 50ml', brand: 'Eliquid France', sub_brand: 'Fruizee Max' }, { name: 'PASSION MANGUE 50ML - PRODIGY', brand: 'PRODIGY' }), 'Fruizee ≠ Prodigy');
+assert.ok(isSameName({ name: 'Babagada - 3mg', brand: 'Maison Fuel', sub_brand: 'Cupide' }, { name: 'BABAGADA - CUPIDE - 3 MG', brand: 'Cupide' }), 'la sous-marque du site compte');
+assert.ok(same('Beginning 50ml Hors Série', 'Dilligaf', 'BEGINNING HORS SERIE 50ML - DILIGAF', 'DILIGAF'), 'faute de frappe sur la marque');
+assert.ok(same('USA Classic - 6mg', 'Dlice', 'USA CLASSIC - DLIC - 6MG', 'DLIC'), 'DLIC / Dlice');
+assert.ok(same('Bouteille Twist Graduée 120ml', 'Oem', 'BOUTEILLE GRADUEE TWIST 120ML', ''), 'caisse sans marque');
 
 // ── Catégorie ───────────────────────────────────────────────────────────────
 const stats = [

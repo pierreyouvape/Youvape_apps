@@ -94,13 +94,41 @@ const NEUTRAL = new Set(['pod']);
  * « Falcon Mini Watermelon » ; « BOX AEGIS SOLO 5 - GEEKVAPE - RED » est bien
  * « Box Aegis Solo 5 - Red »).
  */
+/** Mots d'un nom, AVEC répétitions (« Pack 2 … Feelin 2 » a deux « 2 »). */
+const wordList = (s) => normalize(s).split(/\s+/).filter((t) => t && !STOP.has(t) && t !== '.');
+
+/** Deux mots de marque qui se valent : égaux, ou une lettre d'écart (DILIGAF / Dilligaf, DLIC / Dlice). */
+const lev1 = (a, b) => {
+  if (a === b) return true;
+  if (Math.min(a.length, b.length) < 4 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i += 1;
+  return a.slice(i + 1) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i) || a.slice(i) === b.slice(i + 1);
+};
+
+/**
+ * Marques compatibles : si la caisse a une marque, un de ses mots doit se
+ * retrouver dans la marque ou la sous-marque du site (« LE M - LIQUIDEO » n'est
+ * pas le « LE M » de Roykin ; « CUSTARD - DOTMOD » n'est pas le Custard de Don Cristo).
+ */
+const brandsMatch = (site, nx) => {
+  const nb = [...tokens(nx.brand)];
+  const sb = [...tokens(site.brand), ...tokens(site.sub_brand)];
+  if (!nb.length || !sb.length) return true;
+  // La marque de la caisse, ou la marque du site écrite dans le nom caisse.
+  const inName = [...tokens(nx.name)];
+  return [...nb, ...inName].some((t) => sb.some((u) => lev1(t, u)));
+};
+
 const isSameName = (site, nx) => {
-  const brand = new Set([...tokens(site.brand), ...tokens(nx.brand)]);
-  const keep = (set) => new Set([...set].filter((t) => !brand.has(t) && !NEUTRAL.has(t)));
-  const a = keep(site._n || tokens(site.name));
-  const b = keep(nx._n || tokens(nx.name));
-  if (a.size < 2 || b.size < 2) return false;
-  return a.size === b.size && [...a].every((t) => b.has(t));
+  if (!brandsMatch(site, nx)) return false;
+  const brand = [...tokens(site.brand), ...tokens(site.sub_brand), ...tokens(nx.brand)];
+  const isBrand = (t) => brand.some((u) => lev1(t, u));
+  const keep = (list) => list.filter((t) => !isBrand(t) && !NEUTRAL.has(t)).sort();
+  const a = keep(wordList(site.name));
+  const b = keep(wordList(nx.name));
+  if (a.length < 2 || b.length < 2) return false;
+  return a.length === b.length && a.every((t, i) => t === b[i]);
 };
 
 /**

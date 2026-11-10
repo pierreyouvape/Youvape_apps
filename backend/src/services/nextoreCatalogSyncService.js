@@ -29,6 +29,7 @@ const SITE_SCOPE = `p.product_type IN ('simple', 'variation') AND p.wc_deleted_a
 const SITE_COLS = `
   p.id, p.sku, p.post_title AS name, p.regular_price,
   COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
+  COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand,
   COALESCE(NULLIF(p.category, ''), pp.category) AS cat,
   COALESCE(NULLIF(p.sub_category, ''), pp.sub_category) AS sub,
   ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' ORDER BY b.id) AS barcodes`;
@@ -47,9 +48,13 @@ const upsertReview = (productId, reason, { nxProductId = null, candidates = null
   byReason[reason] = (byReason[reason] || 0) + 1;
   if (DRY) return Promise.resolve();
   return pool.query(
+    // Ligne encore ouverte : suggestions recalculées (règles et catalogue caisse
+    // évoluent). Ligne réglée ou ignorée : on n'y touche plus.
     `INSERT INTO boutique_catalog_reviews (product_id, reason, nx_product_id, candidates, suggested_category_id, detail)
      VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (product_id, reason) DO NOTHING`,
+     ON CONFLICT (product_id, reason) DO UPDATE SET nx_product_id = EXCLUDED.nx_product_id,
+       candidates = EXCLUDED.candidates, suggested_category_id = EXCLUDED.suggested_category_id, detail = EXCLUDED.detail
+     WHERE boutique_catalog_reviews.status = 'open'`,
     [productId, reason, nxProductId, candidates ? JSON.stringify(candidates) : null, categoryId, detail ? JSON.stringify(detail) : null]
   );
 };
@@ -94,7 +99,8 @@ const missingProducts = async () => {
      WHERE ${SITE_SCOPE}
        AND NOT EXISTS (SELECT 1 FROM boutique_site_links l WHERE l.product_id = p.id)
        AND NOT EXISTS (SELECT 1 FROM boutique_catalog_reviews r
-                        WHERE r.product_id = p.id AND r.reason IN ('doublon', 'categorie', 'sans_ean', 'ean_multiple', 'absent'))`);
+                        WHERE r.product_id = p.id AND r.status <> 'open'
+                          AND r.reason IN ('doublon', 'categorie', 'sans_ean', 'ean_multiple', 'absent'))`);
   // Absent = aucune fiche caisse par code-barres (une seule = déjà une paire).
   return rows.filter((r) => r.nx_ids.length !== 1);
 };
