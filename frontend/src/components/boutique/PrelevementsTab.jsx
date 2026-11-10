@@ -214,7 +214,7 @@ export default function PrelevementsTab({ shop, token }) {
       setMsg({ ok: true, text: `${qty} × ${product.name} prélevé${qty > 1 ? 's' : ''}.` });
       setProduct(null); setQty(1);
       load();
-      scanRef.current?.focus();
+      scanRef.current?.blur();
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); } finally { setBusy(false); }
   };
 
@@ -250,7 +250,9 @@ export default function PrelevementsTab({ shop, token }) {
       {/* ── Scan ── */}
       <div style={{ background: C.white, borderRadius: 14, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input ref={scanRef} autoFocus value={scanVal} onChange={(e) => setScanVal(e.target.value)}
+          {/* Pas d'autoFocus : sur le PDA il ouvre le clavier tactile. La douchette
+              est écoutée sur toute la page (useScanner), le champ sert à chercher. */}
+          <input ref={scanRef} value={scanVal} onChange={(e) => setScanVal(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); doLookup(scanVal); setScanVal(''); } }}
             placeholder="Scannez le produit pris au site, ou cherchez-le…"
             style={{ flex: 1, padding: 13, fontSize: 16, borderRadius: 10, border: `1px solid ${C.greyB}`, minWidth: 0 }} />
