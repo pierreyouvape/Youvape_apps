@@ -437,7 +437,16 @@ async function listDocuments({ supplierId, status, paymentStatus, from, to, docT
             ${ORDER_REFS_SQL} AS order_refs,
             (SELECT max(p.paid_at) FROM supplier_payment_allocations a
                JOIN supplier_payments p ON p.id = a.payment_id
-              WHERE a.document_id = d.id) AS paid_at
+              WHERE a.document_id = d.id) AS paid_at,
+            -- Note du document et notes des règlements qui lui sont imputés
+            -- (« payé par Castelnau » se saisit en référence du règlement) :
+            -- lisibles depuis la liste, sans ouvrir le document.
+            NULLIF(concat_ws(' · ', NULLIF(btrim(d.notes), ''),
+              (SELECT string_agg(DISTINCT n, ' · ')
+                 FROM supplier_payment_allocations a
+                 JOIN supplier_payments p ON p.id = a.payment_id,
+                      LATERAL unnest(ARRAY[NULLIF(btrim(p.reference), ''), NULLIF(btrim(p.notes), '')]) AS n
+                WHERE a.document_id = d.id AND n IS NOT NULL)), '') AS note
        FROM supplier_documents d
        JOIN suppliers s ON s.id = d.supplier_id
        LEFT JOIN supplier_document_balances b ON b.document_id = d.id

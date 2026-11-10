@@ -2041,12 +2041,13 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
                 <th style={th}>Échéance</th>
                 <th style={th}>Payée le</th>
                 <th style={th}>Paiement</th>
+                <th style={th}>Note</th>
                 <th style={th}></th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={16}>
+                <tr><td style={{ ...td, textAlign: 'center', color: C.greyM, padding: 26 }} colSpan={17}>
                   Aucun document. Dépose une facture depuis l'onglet Contrôle.
                 </td></tr>
               )}
@@ -2119,6 +2120,13 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
                         : <Badge tone={r.payment_status === 'paid' ? 'green' : (r.payment_status === 'partial' ? 'orange' : 'red')}>
                             {PAYMENT_LABELS[r.payment_status] || '—'}
                           </Badge>}
+                    </td>
+                    <td
+                      style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: r.note ? C.dark : C.greyM }}
+                      title={r.note || ''}
+                      onClick={() => openDetail(r.id)}
+                    >
+                      {r.note || '—'}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                       <Btn small variant="ghost" onClick={() => downloadFile(r.id, r.number)}>PDF</Btn>
