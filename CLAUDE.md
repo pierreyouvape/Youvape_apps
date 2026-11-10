@@ -175,6 +175,9 @@ Trois chiffres par ligne, et il ne faut jamais les confondre (`utils/invoiceComp
   `kitNote` (`supplier_document_lines.kit_note`) et leur tarif est **`orderLineOnly`** : on
   corrige la ligne de commande (FIFO), **jamais `supplier_refs.pack_price`** — le prix de
   l'offre n'est pas celui de l'article vendu seul.
+  **L'import PDF d'une commande découpe aussi le pack** (`pdfImportModel.explodeKitItems`,
+  10/11/2026, LIPS `BADBUNNIZ-PACK-GOLDXL-00`) : la commande porte les réfs des composants,
+  celles que le contrôle de facture comparera.
 
 ### Commandes d'achat : la sémantique BMS (vérifiée le 29/09/2026)
 
