@@ -51,24 +51,24 @@ function Chip({ status }) {
 }
 
 /* Produit absent de la caisse : le rattacher à une fiche existante, ou la créer. */
-function NotInCaisse({ product, call, onDone }) {
-  const [mode, setMode] = useState(null); // 'link' | 'create'
+export function NotInCaisse({ product, call, onDone, base = '/prelevements', defaultCategory = '', defaultMode = null }) {
+  const [mode, setMode] = useState(defaultMode); // 'link' | 'create'
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [cats, setCats] = useState([]);
-  const [cat, setCat] = useState('');
+  const [cat, setCat] = useState(defaultCategory || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (mode === 'create' && !cats.length) call.get('/prelevements/categories').then((r) => setCats(r.categories || [])).catch(() => {});
+    if (mode === 'create' && !cats.length) call.get(`${base}/categories`).then((r) => setCats(r.categories || [])).catch(() => {});
     if (mode === 'link' && !q) setQ(product.name.split(/\s+/).slice(0, 3).join(' '));
   }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (mode !== 'link' || q.trim().length < 2) { setResults([]); return undefined; }
     const t = setTimeout(() => {
-      call.get(`/prelevements/nextore-search?q=${encodeURIComponent(q)}`).then(setResults).catch((e) => setError(errMsg(e)));
+      call.get(`${base}/nextore-search?q=${encodeURIComponent(q)}`).then(setResults).catch((e) => setError(errMsg(e)));
     }, 250);
     return () => clearTimeout(t);
   }, [q, mode]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -76,7 +76,7 @@ function NotInCaisse({ product, call, onDone }) {
   // Un mauvais rattachement fausse le stock de la caisse : on fait relire les deux noms.
   const linkTo = (nx) => {
     if (!window.confirm(`Rattacher\n« ${product.name} » (site)\nà\n« ${nx.name} » (caisse) ?\n\nCe doit être exactement le même article.`)) return;
-    run(() => call.post(`/prelevements/products/${product.id}/link`, { nxProductId: nx.id }));
+    run(() => call.post(`${base}/products/${product.id}/link`, { nxProductId: nx.id }));
   };
 
   const run = async (fn) => {
@@ -139,7 +139,7 @@ function NotInCaisse({ product, call, onDone }) {
               {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <Btn small disabled={!cat || busy} bg={C.orange}
-              onClick={() => run(() => call.post(`/prelevements/products/${product.id}/create-nextore`, { categoryId: cat }))}>
+              onClick={() => run(() => call.post(`${base}/products/${product.id}/create-nextore`, { categoryId: cat }))}>
               {busy ? 'Création…' : 'Créer'}
             </Btn>
           </div>

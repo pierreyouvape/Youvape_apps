@@ -889,10 +889,27 @@ const runNextoreNightly = async () => {
 
 // Prélèvements boutique (EMC → EMC2) : sortie du stock du site + entrée Nextore.
 const prelevementPushService = require('./prelevementPushService');
+const nextoreCatalogSyncService = require('./nextoreCatalogSyncService');
 let prelevementJob = null;
+let catalogSyncJob = null;
 
 const setupNextoreCrons = () => {
   prelevementJob?.stop();
+  catalogSyncJob?.stop();
+  // Catalogue caisse : produits du site → Nextore, à :20 de 8h à 20h, juste
+  // avant la synchro catalogue de :30 qui relit les fiches. Éteint tant que
+  // app_config.nextore_autocreate_since n'existe pas.
+  catalogSyncJob = cron.schedule('20 8-20 * * *', async () => {
+    try {
+      const r = await nextoreCatalogSyncService.run();
+      if (!r.disabled && !r.skipped) {
+        console.log(`Catalogue caisse : ${r.created} créé(s), ${r.barcodes} code(s)-barres, ${r.prices} prix, ${r.reviews} à vérifier${r.errors.length ? `, ${r.errors.length} erreur(s)` : ''}`);
+        if (r.errors.length) sendAlert('Catalogue caisse : erreurs', r.errors.slice(0, 30).join('\n'));
+      }
+    } catch (error) {
+      console.error('Erreur cron catalogue caisse:', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
   prelevementJob = cron.schedule('* 7-21 * * *', () => {
     prelevementPushService.processQueue().catch((error) => console.error('Erreur cron prélèvements boutique:', error.message));
   }, { timezone: 'Europe/Paris' });

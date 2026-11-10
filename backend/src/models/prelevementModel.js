@@ -261,8 +261,19 @@ const link = async (warehouseId, productId, nxProductId, userId) => {
   );
   const barcodes = await addSiteBarcodesToNx(nx.id, p.barcodes);
   const released = await releaseWaiting(p.id, warehouseId);
+  await closeReviews(p.id, 'linked', userId);
   return { product: await productView(p.id, warehouseId), barcodes, released };
 };
+
+/**
+ * Produit désormais dans la caisse : ses lignes « à vérifier » de catalogue sont
+ * réglées (sauf le prix, comparé au passage suivant de la synchro).
+ */
+const closeReviews = (productId, resolution, userId) => pool.query(
+  `UPDATE boutique_catalog_reviews SET status = 'done', resolution = $2, resolved_by = $3, resolved_at = NOW()
+    WHERE product_id = $1 AND status = 'open' AND reason <> 'prix'`,
+  [productId, resolution, userId || null]
+);
 
 const creating = new Set();
 
@@ -306,6 +317,14 @@ const createInNextore = async (warehouseId, productId, categoryId, userId) => {
       [p.id, nxId, userId || null]
     );
     const released = await releaseWaiting(p.id, warehouseId);
+    await closeReviews(p.id, 'created', userId);
+    // Fiche créée au prix normal du site : c'est le prix « aligné » de départ.
+    await pool.query(
+      `INSERT INTO boutique_nx_sync (product_id, nx_product_id, price_pushed) VALUES ($1, $2, $3)
+       ON CONFLICT (product_id) DO UPDATE SET nx_product_id = EXCLUDED.nx_product_id, price_pushed = EXCLUDED.price_pushed,
+         price_locked = false, updated_at = NOW()`,
+      [p.id, nxId, payload.price]
+    );
     return { product: await productView(p.id, warehouseId), released, nxProductId: nxId };
   } finally {
     creating.delete(productId);
@@ -384,4 +403,5 @@ const exportRows = async (warehouseId, from, to) => {
 
 module.exports = {
   lookup, productView, searchNextore, record, link, createInNextore, list, resolveStep, exportRows, releaseWaiting,
+  addSiteBarcodesToNx,
 };

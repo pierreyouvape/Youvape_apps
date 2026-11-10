@@ -8,6 +8,7 @@ const multer = require('multer');
 const router = express.Router();
 const nextoreController = require('../controllers/nextoreController');
 const prelevementController = require('../controllers/prelevementController');
+const catalogController = require('../controllers/catalogController');
 const authMiddleware = require('../middleware/authMiddleware');
 const { checkPermission } = require('../middleware/permissionMiddleware');
 const { resolveWarehouse } = require('../config/nextore');
@@ -112,5 +113,17 @@ router.post('/:shop/prelevements', prelevementPerm('write'), prelevementControll
 router.post('/:shop/prelevements/products/:productId/link', prelevementPerm('write'), prelevementController.link);
 router.post('/:shop/prelevements/products/:productId/create-nextore', prelevementPerm('write'), prelevementController.createInNextore);
 router.post('/:shop/prelevements/:id/resolve', prelevementPerm('write'), prelevementController.resolveStep);
+
+// Catalogue caisse : produits du site → Nextore (catalogController). Droit de la boutique.
+router.get('/:shop/catalogue/reviews', boutiquePerm('read'), catalogController.reviews);
+router.get('/:shop/catalogue/categories', boutiquePerm('read'), nextoreController.getCategories);
+router.get('/:shop/catalogue/nextore-search', boutiquePerm('read'), catalogController.searchNextore);
+router.get('/:shop/catalogue/products/:productId', boutiquePerm('read'), catalogController.product);
+router.post('/:shop/catalogue/products/:productId/link', boutiquePerm('write'), catalogController.link);
+router.post('/:shop/catalogue/products/:productId/create-nextore', boutiquePerm('write'), catalogController.createInNextore);
+router.post('/:shop/catalogue/reviews/:id/ignore', boutiquePerm('write'), catalogController.ignore);
+router.post('/:shop/catalogue/prices/align', boutiquePerm('write'), catalogController.alignPrices);
+router.post('/:shop/catalogue/prices/keep', boutiquePerm('write'), catalogController.keepPrices);
+router.post('/:shop/catalogue/run', boutiquePerm('write'), catalogController.run);
 
 module.exports = router;

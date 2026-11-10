@@ -11,6 +11,7 @@ import StatsTab from '../components/boutique/StatsTab';
 import DormantsTab from '../components/boutique/DormantsTab';
 import CoffreTab from '../components/boutique/CoffreTab';
 import PrelevementsTab from '../components/boutique/PrelevementsTab';
+import CatalogueTab from '../components/boutique/CatalogueTab';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -52,6 +53,8 @@ const SECTIONS = [
   { key: 'comptage', label: 'Comptage', color: '#7C3AED', Icon: IcCount, ready: true },
   // Castelnau seulement (EMC2) : Montpellier est dans la même société que le site.
   { key: 'prelevements', label: 'Prélèvements site', color: '#C2410C', Icon: IcTake, ready: true, shops: ['castelnau'] },
+  // Catalogue Nextore commun aux deux boutiques : produits du site → caisse.
+  { key: 'catalogue', label: 'Catalogue caisse', color: '#0F766E', Icon: IcDoc, ready: true },
   // Droit à part `stats-boutiques` (Conseiller / Responsable), en plus du droit boutique.
   { key: 'stats',    label: 'Statistiques', color: '#A21CAF', Icon: IcStats, ready: true, permKey: 'stats-boutiques' },
   { key: 'dormants', label: 'Produits dormants', color: '#4338CA', Icon: IcSleep, ready: true, permKey: 'stats-boutiques' },
@@ -263,6 +266,13 @@ export default function BoutiqueApp() {
           <>
             <ShopHeader shop={shop} subtitle="Comptage — inventaire (écrit dans Nextore)" onBack={goHome} />
             <ComptageTab shop={shop} token={token} />
+          </>
+        )}
+
+        {section === 'catalogue' && (
+          <>
+            <ShopHeader shop={shop} subtitle="Catalogue caisse — produits du site vers Nextore : à vérifier, prix, codes-barres" onBack={goHome} />
+            <CatalogueTab shop={shop} token={token} />
           </>
         )}
 
