@@ -171,9 +171,34 @@ const priceDecision = ({ sitePrice, nxPrice, state }) => {
 const isResistance = (siteName, nxCategoryName) => String(nxCategoryName || '').toUpperCase() === 'RESISTANCES'
   || /^pack\s+\d+\s*x?\s*r[ée]sistances?\b/i.test(String(siteName || '').trim());
 
+/**
+ * Marque à écrire sur une fiche caisse (champ Nextore `cf1`, texte libre). On
+ * reprend l'orthographe d'une marque DÉJÀ dans Nextore si la sous-marque ou la
+ * marque du site y correspond (« Cupide », « FRUITY FUEL », « Liquideo »), pour
+ * ne pas créer « ASPIRE » à côté de « Aspire » ; sinon la sous-marque du site,
+ * à défaut sa marque. `nxBrands` : marques Nextore existantes (texte).
+ */
+const pickBrand = (site, nxBrands) => {
+  const key = (s) => normalize(s).replace(/[^a-z0-9]/g, '');
+  const byKey = new Map();
+  for (const b of nxBrands) {
+    const k = key(b);
+    if (k && !byKey.has(k)) byKey.set(k, b);
+  }
+  const keys = [...byKey.keys()];
+  for (const cand of [site.sub_brand, site.brand]) {
+    const k = key(cand);
+    if (!k) continue;
+    if (byKey.has(k)) return byKey.get(k);
+    const near = keys.find((x) => lev1(x, k));
+    if (near) return byKey.get(near);
+  }
+  return String(site.sub_brand || site.brand || '').trim() || null;
+};
+
 /** Écart relatif caisse / site, en % (signe : caisse plus chère = positif). */
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 };

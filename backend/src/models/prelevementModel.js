@@ -29,6 +29,7 @@ const SITE_SQL = `
          p.computed_cost, p.wc_cog_cost, p.product_type, p.post_status,
          COALESCE(p.image_url, pp.image_url) AS image_url,
          COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
+         COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand,
          array_remove(ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' AND ${rules.uniqueSiteBarcodeSql('b')} ORDER BY b.id), NULL) AS barcodes
     FROM products p
     LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
@@ -349,7 +350,12 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
     // Sans code-barres, le SKU en tient lieu : la fiche se retrouve en caisse par sa saisie.
     const barcodes = p.barcodes.length ? p.barcodes : [p.sku].filter(Boolean);
     if (!barcodes.length) throw httpError(400, 'Produit sans code-barres ni SKU.');
-    const payload = rules.nextoreProductPayload(p, { categoryId, barcodes });
+    // Marque (champ Nextore cf1) : orthographe Nextore reprise si elle existe déjà.
+    const { rows: nxBrands } = await pool.query(
+      `SELECT DISTINCT brand FROM nextore_products WHERE COALESCE(brand, '') <> '' AND COALESCE(status, '') <> 'deleted'`
+    );
+    const brand = require('../services/catalogSyncRules').pickBrand(p, nxBrands.map((r) => r.brand));
+    const payload = rules.nextoreProductPayload(p, { categoryId, barcodes, brand });
     const response = await nextoreApi.createProduct(payload);
     const nxId = await findCreatedId(response, barcodes);
     if (!nxId) {
@@ -359,13 +365,13 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
     // miroir local tout de suite, au lieu de relire tout le catalogue (5 000 fiches).
     if (response && typeof response === 'object' && String(response.id) === String(nxId)) {
       await pool.query(
-        `INSERT INTO nextore_products (product_id, code, name, unit, cost, price, category_id, barcode, tax_rate, type, status, synced_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        `INSERT INTO nextore_products (product_id, code, name, unit, cost, price, category_id, barcode, tax_rate, type, status, brand, synced_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (product_id) DO NOTHING`,
         [nxId, response.code ?? null, response.name ?? payload.name, response.unit ?? null,
           Number(response.cost ?? payload.cost) || null, Number(response.price ?? payload.price) || null,
           String(response.category_id ?? payload.category_id), response.barcode ?? payload.barcode ?? null,
-          String(response.tax_rate ?? payload.tax_rate), response.type ?? 'standard', response.status ?? '']
+          String(response.tax_rate ?? payload.tax_rate), response.type ?? 'standard', response.status ?? '', response.cf1 ?? payload.cf1 ?? null]
       );
       for (const b of rules.splitBarcodes(response.barcode ?? payload.barcode)) {
         await pool.query('INSERT INTO nextore_product_barcodes (product_id, barcode) VALUES ($1, $2) ON CONFLICT DO NOTHING', [nxId, b]);

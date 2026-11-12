@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, isSameName, isResistance, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -71,6 +71,15 @@ assert.ok(isResistance('Pack 5 Résistances M Series Coils - 0.15 Ω', 'RESISTAN
 assert.ok(isResistance('Pack 5 Résistances GTX - 1.20 Ω Mesh', null), 'par le nom seul');
 assert.ok(!isResistance('Pack 10 Coils Dual Core Fused Clapton Ni80', 'COIL'), 'fils montés : créables');
 assert.ok(!isResistance('Pack 3 Cartouches Xlim - résistance intégrée 1.20 Ω', 'CARTOUCHES'), 'cartouches : créables');
+
+// ── Marque écrite sur la fiche caisse ───────────────────────────────────────
+const nxBrands = ['Cupide', 'FRUITY FUEL', 'Liquideo', 'ASPIRE', 'Aspire', 'DILIGAF'];
+assert.strictEqual(pickBrand({ brand: 'Maison Fuel', sub_brand: 'Cupide' }, nxBrands), 'Cupide', 'sous-marque connue');
+assert.strictEqual(pickBrand({ brand: 'Maison Fuel', sub_brand: 'Fruity Fuel' }, nxBrands), 'FRUITY FUEL', 'orthographe Nextore reprise');
+assert.strictEqual(pickBrand({ brand: 'Liquideo', sub_brand: 'Wpuff' }, nxBrands), 'Liquideo', 'sous-marque inconnue, marque connue');
+assert.strictEqual(pickBrand({ brand: 'Dilligaf', sub_brand: null }, nxBrands), 'DILIGAF', 'une lettre d\'écart');
+assert.strictEqual(pickBrand({ brand: 'JNR', sub_brand: '' }, nxBrands), 'JNR', 'marque nouvelle : celle du site');
+assert.strictEqual(pickBrand({ brand: '', sub_brand: '' }, nxBrands), null);
 
 // ── Prix ────────────────────────────────────────────────────────────────────
 assert.strictEqual(priceDecision({ sitePrice: 5.9, nxPrice: 5.9, state: null }), 'same');

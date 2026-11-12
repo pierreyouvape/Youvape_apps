@@ -24,7 +24,7 @@ const boutiqueQty = (qty, siteTitle, nxProduct) => qty * boutiquePack(1, siteTit
  * site (sans remise WDR ni promo), cost = coût d'achat HT. Une seule pièce
  * boutique = une pièce site (une résistance en pack se crée au pack).
  */
-const nextoreProductPayload = (p, { categoryId, barcodes, taxRate = '4' }) => {
+const nextoreProductPayload = (p, { categoryId, barcodes, taxRate = '4', brand = null }) => {
   const price = Number(p.regular_price) > 0 ? Number(p.regular_price) : Number(p.price);
   if (!(price > 0)) throw Object.assign(new Error('Produit sans prix de vente sur le site : impossible de le créer dans la caisse.'), { statusCode: 400 });
   if (!categoryId) throw Object.assign(new Error('Choisissez une catégorie caisse.'), { statusCode: 400 });
@@ -38,6 +38,7 @@ const nextoreProductPayload = (p, { categoryId, barcodes, taxRate = '4' }) => {
     type: 'standard',
     ...(barcodes.length ? { barcode: barcodes.join(';') } : {}),
     ...(p.wp_product_id ? { link_code: String(p.wp_product_id) } : {}),
+    ...(brand ? { cf1: String(brand).slice(0, 100) } : {}),
   };
 };
 

@@ -182,6 +182,10 @@ const pairs = async () => {
 };
 
 const syncPairs = async (report) => {
+  const { rows: [flag] } = await pool.query(
+    `SELECT config_value FROM app_config WHERE config_key = 'nextore_price_sync'`
+  );
+  const priceSyncOn = flag?.config_value === 'on';
   const rows = await pairs();
   const { rows: owners } = await pool.query('SELECT barcode, product_id FROM nextore_product_barcodes');
   const ownerOf = new Map();
@@ -218,7 +222,11 @@ const syncPairs = async (report) => {
       writes += 1;
     }
 
-    // 4. Prix. Résistances au pack (1 article site = N pièces boutique) : pas comparables.
+    // 4. Prix — COUPÉ depuis le 12/11/2026 (Maxime : les prix caisse ne bougent plus
+    // à cause du site ; seules les fiches CRÉÉES prennent le prix du site). Se rallume
+    // par app_config.nextore_price_sync = 'on'.
+    if (!priceSyncOn) continue;
+    // Résistances au pack (1 article site = N pièces boutique) : pas comparables.
     if (prelevementRules.boutiqueQty(1, r.name, r) > 1) continue;
     // Fiche caisse changée depuis le dernier alignement : on recompare comme la 1re fois.
     const state = r.state_nx && r.state_nx !== r.nx_id ? null : (r.state_nx ? r : null);
