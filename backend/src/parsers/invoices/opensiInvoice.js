@@ -115,6 +115,22 @@ function readNumbers(nums) {
       ? { qty, unitPriceNet: price, total: round2(last), discountPercent }
       : null;
 
+  // Code-barres devant la quantité : LCA l'imprime depuis F2611423428
+  // (11/11/2026) — « 3760230720792 30 1.32 1.32 39.60 », ou six nombres avec
+  // la remise. Aucun gabarit ne commençait par lui : zéro ligne lue. Le
+  // DERNIER nombre à 8 chiffres et plus marque le début du tableau ; ce qui le
+  // suit se lit comme une ligne LCA sans code-barres (ou LVP).
+  if (n >= 5) {
+    let anchor = -1;
+    for (let i = 0; i < n - 3; i++) {
+      if (Number.isInteger(nums[i]) && String(nums[i]).length >= 8) anchor = i;
+    }
+    if (anchor !== -1) {
+      const r = readNumbers(nums.slice(anchor + 1));
+      if (r) return r;
+    }
+  }
+
   if (n === 5) {
     // qté, PU brut, remise %, PU net, montant.
     // Deux lectures à tenter, et la seconde n'est pas un luxe : LCA imprime le PU

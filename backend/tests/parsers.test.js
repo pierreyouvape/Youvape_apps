@@ -367,6 +367,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['lca-F2609412942.txt', 'lcaParser', 'opensiInvoice'],
     ['lca-F2610415472.txt', 'lcaParser', 'opensiInvoice'],
     ['lca-F2610418141.txt', 'lcaParser', 'opensiInvoice'],
+    ['lca-F2611423428.txt', 'lcaParser', 'opensiInvoice'],
     ['levest-FAC-2025-11-0470.txt', 'levestParser', 'odooInvoice'],
     ['lips-FAC-2026-04162.txt', 'lipsParser', 'lipsInvoice'],
     ['lips-FAC-2026-04474.txt', 'lipsParser', 'lipsInvoice'],
@@ -693,6 +694,24 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
     assert.strictEqual(minuscules.orderNumber, '361704');
     assert.strictEqual(minuscules.orderDate, '2026-10-19');
     assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2610418141.txt'), minuscules.items), []);
+  });
+
+  // F2611423428 (11/11/2026) : LCA imprime une colonne « Code barre » devant la
+  // quantité (5 nombres, 6 avec la remise). Aucune lecture ne commençait par
+  // lui : 0 ligne sur 76.
+  const codeBarre = lca.parse(fixture('lca-F2611423428.txt'));
+  test('LCA F2611423428 : colonne Code barre, 76 lignes et total juste', () => {
+    assert.strictEqual(codeBarre.items.length, 76);
+    assert.deepStrictEqual(codeBarre.warnings, []);
+    assert.strictEqual(codeBarre.orderNumber, '363742');
+    const total = Math.round(codeBarre.items.reduce((s, i) => s + i.total_ht, 0) * 100) / 100;
+    assert.strictEqual(total, 4489.87);
+    const wenax = codeBarre.items.find((i) => i.supplier_sku === '#REF11862-38930');
+    assert.strictEqual(wenax.qty_ordered, 20);
+    assert.strictEqual(wenax.total_ht, 99.14);
+    const accu = codeBarre.items.find((i) => i.supplier_sku === '#REF511');
+    assert.deepStrictEqual([accu.designation, accu.qty_ordered], ['Accu HG2 18650 30A 3000mah', 18]);
+    assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2611423428.txt'), codeBarre.items), []);
   });
 
   // F2609412942 : désignations sur deux lignes, 3 pages.
