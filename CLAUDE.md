@@ -658,7 +658,12 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
   (« Falcon Mini Strawberry Watermelon » ≠ « Falcon Mini Watermelon »). La règle stricte : 8 alertes, 8 vraies.
 - **Codes-barres** du site ajoutés à la fiche liée (jamais retirés) ; un code déjà sur une AUTRE fiche → « ean_conflit ».
   Un code du site sur plusieurs fiches → « ean_multiple » (doublons déjà présents dans Nextore).
-- **Prix** : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »
+- ⚠️ **Alignement des prix COUPÉ depuis le 12/11/2026** (Maxime : plus aucun prix caisse modifié à cause du site ;
+  les 282 changements du 10/11 ont tous été annulés, vérifié fiche par fiche dans Nextore). Seules les fiches CRÉÉES
+  prennent le prix normal du site. Rallumage : `app_config.nextore_price_sync = 'on'` (ne pas le faire sans lui).
+- **Marque** : champ Nextore `cf1` (texte libre, pas de liste à créer), écrit à la création par `pickBrand`
+  (orthographe Nextore reprise). Les 2 166 fiches créées le 10/11 sans marque : `scripts/backfillNextoreBrands.js`.
+- **Prix** (quand l'alignement est actif) : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »
   (Aligner / Garder = `price_locked`) ; ensuite un changement du prix du site est envoyé seul. Résistances au pack exclues.
 - Écran Boutique › Catalogue caisse (`CatalogueTab.jsx`), « Rattacher les N » pour les noms identiques (`link-same`).
 - ⚠️ `isSameName` exige aussi des **marques compatibles** (marque caisse ou nom caisse ↔ marque/sous-marque du site,

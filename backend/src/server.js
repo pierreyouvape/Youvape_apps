@@ -47,6 +47,7 @@ const mollieRoutes = require('./routes/mollieRoutes');
 const transporteursRoutes = require('./routes/transporteursRoutes');
 const competitorRoutes = require('./routes/competitorRoutes');
 const seoRoutes = require('./routes/seoRoutes');
+const productWriterRoutes = require('./routes/productWriterRoutes');
 const receptionRoutes = require('./routes/receptionRoutes');
 const inscritsRoutes = require('./routes/inscritsRoutes');
 const relanceCodeRoutes = require('./routes/relanceCodeRoutes');
@@ -147,11 +148,17 @@ app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé 
 // Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,
 // sans session), écriture seule, contrôles dans le routeur.
 app.use('/api/stories-collect', storyCollectRoutes);
+// Module « création de fiche produit » : appelé par l'extension WordPress yv-fiche-redaction,
+// secret partagé PRODUCT_WRITER_SECRET (pas de JWT utilisateur), contrôles dans le routeur.
+app.use('/api/product-writer', productWriterRoutes);
 app.use('/api/stories', authMiddleware, storyRoutes); // Stories : vidéos sur R2, remplace Join Stories (droit `stories` dans le routeur)
 
 // Start server
 app.listen(PORT, async () => {
   console.log(`✓ Backend server running on port ${PORT}`);
+
+  // Module fiche produit : reprend les demandes interrompues par un redémarrage.
+  require('./services/productWriterService').resumeJobs().catch((e) => console.error('[Fiche produit] reprise', e.message));
 
   // Initialiser le cron pour la récupération automatique des avis
   await setupCron();

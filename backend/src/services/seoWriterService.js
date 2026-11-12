@@ -633,7 +633,8 @@ MÉTHODE
 3. Reprends naturellement les requêtes visées dans le title, les H2, le gras et les questions de la FAQ (variantes d'écriture comprises : « e-liquide », « eliquide », « liquide »), sans bourrage.
 
 LIVRABLE
-- title Yoast : garde le terme du H1 et ajoute formats ou requête principale ; 70 caractères maximum.
+- title Yoast : garde le terme du H1 et ajoute formats ou requête principale ; 70 caractères maximum. Jamais « YouVape » : Google affiche déjà le nom du site à part.
+- N'écris pas « YouVape », « youvape.fr », « chez nous » ni « notre boutique » dans le title, la méta ni le texte, sauf si le sujet de la page est YouVape ou un de ses produits (Packs YouVape).
 - méta-description : 160 caractères maximum, factuelle.
 - H1 : en général on garde celui en place.
 - intro (champ « Description » du terme) : 2 à 3 phrases factuelles, en <p>.
@@ -669,7 +670,8 @@ ${THEME_TABLE}
 
 RÈGLES DE FOND (litige en cours avec la DNF sur la publicité pour le vapotage : impératives)
 - Rédaction neutre et factuelle : caractéristiques, compatibilités, mode d'emploi, conservation.
-- JAMAIS : arôme décrit, fruit, fraîcheur, « ice », noms de recettes, prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
+- Les noms de fruits et d'arômes sont permis pour dire de quoi un produit est composé (décision du 06/11/2026), jamais pour décrire un goût ou une sensation.
+- JAMAIS : goût décrit, fraîcheur ressentie, « ice », prix, promo, « pas cher », gratuit, offert, avis, meilleur, superlatifs et adjectifs marketing, santé, danger, sevrage, comparaison avec le tabac. Écarte les requêtes qui contiennent ces mots.
 - Les mots « goût » et « saveur » sont génériques et très recherchés (« gout jnr », « double gout », « puff 4 saveurs ») : ils sont permis, mais SEULEMENT de façon neutre — « double goût », « 4 saveurs » pour un modèle à plusieurs cartouches, nombre de goûts disponibles tiré des fiches, renvoi à la liste de la fiche. Ne jamais décrire un goût ni une saveur (fruit, fraîcheur, recette). Signale chaque emploi dans "points_a_verifier" pour l'avocat.
 - Le shortcode [annee] affiche l'année en cours : à utiliser plutôt qu'une année écrite en dur.
 - Cartouche : n'écris « cartouche remplaçable » que pour les modèles dont la fiche le dit, et précise lesquels fonctionnent avec un réservoir. « Cartouches interchangeables » est permis pour dire qu'on change la cartouche sur le même appareil (le mot aide les clients à comprendre) ; ne laisse jamais entendre qu'une cartouche passe d'un modèle à l'autre.
@@ -790,6 +792,7 @@ const lintDraft = async (draft, page, data = null) => {
   const add = (level, text) => out.push({ level, text });
   const html = [draft.intro_html, draft.body_html].filter(Boolean).join('\n');
   const plain = norm(textOf(`${draft.title || ''} ${draft.meta || ''} ${html}`));
+  if (/you ?vape/i.test(`${draft.title || ''} ${draft.meta || ''} ${textOf(html)}`)) add('warn', 'Le texte cite YouVape : à retirer, sauf si c\'est le sujet de la page.');
   if (draft.title && draft.title.length > 70) add('warn', `Title de ${draft.title.length} caractères (70 maximum conseillés).`);
   if (draft.meta && draft.meta.length > 160) add('warn', `Méta de ${draft.meta.length} caractères (160 maximum conseillés).`);
   const words = new Set(plain.split(/[^a-z0-9]+/));
