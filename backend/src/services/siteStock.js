@@ -1,5 +1,5 @@
 /**
- * Stock du SITE (EMC) — point unique pour en retirer des pièces.
+ * Stock du SITE (EMC) — point unique pour en retirer (ou y remettre) des pièces.
  *
  * Aujourd'hui le stock du site fait foi dans BMS : on y crée un mouvement de
  * SORTIE (jamais une quantité absolue, pour ne pas écraser une vente web passée
@@ -15,19 +15,24 @@
 const bmsApiModel = require('../models/bmsApiModel');
 const pdaProductModel = require('../models/pdaProductModel');
 
-const removeFromSite = async ({ sku, qty, comment }) => {
+const move = async ({ sku, qty, comment, direction }) => {
   if (!sku) throw new Error('Produit sans SKU : inconnu du stock du site.');
-  const stock = await pdaProductModel.readBmsStock(sku);
-  if (qty > stock.physical) {
-    throw new Error(`Stock physique du site (${stock.physical}) inférieur au prélèvement (${qty}) : à vérifier.`);
+  if (direction === 'out') {
+    const stock = await pdaProductModel.readBmsStock(sku);
+    if (qty > stock.physical) {
+      throw new Error(`Stock physique du site (${stock.physical}) inférieur au prélèvement (${qty}) : à vérifier.`);
+    }
   }
   const comments = String(comment).slice(0, 100);
   const bmsProductId = await pdaProductModel.findBmsProductId(sku);
+  const warehouse = direction === 'out'
+    ? { from_warehouse_id: pdaProductModel.BMS_WAREHOUSE_ID }
+    : { to_warehouse_id: pdaProductModel.BMS_WAREHOUSE_ID };
   let created;
   try {
     created = await bmsApiModel.apiCall('/v2/stock-movements', 'POST', {
       product_id: bmsProductId,
-      from_warehouse_id: pdaProductModel.BMS_WAREHOUSE_ID,
+      ...warehouse,
       qty,
       category: 'miscellaneous',
       comments,
@@ -43,6 +48,11 @@ const removeFromSite = async ({ sku, qty, comment }) => {
   return { ref: ref == null ? null : String(ref) };
 };
 
+const removeFromSite = (args) => move({ ...args, direction: 'out' });
+
+/** Annulation d'un prélèvement : les pièces reviennent au site (mouvement d'ENTRÉE). */
+const returnToSite = (args) => move({ ...args, direction: 'in' });
+
 /**
  * Stock du site d'un produit, en direct : { available, physical, reserved }.
  * `available` = ce qui n'est pas déjà réservé par une commande internet en cours.
@@ -52,4 +62,4 @@ const readSiteStock = async (sku) => {
   return { available: Number(s.available) || 0, physical: Number(s.physical) || 0, reserved: Number(s.reserved) || 0 };
 };
 
-module.exports = { removeFromSite, readSiteStock };
+module.exports = { removeFromSite, returnToSite, readSiteStock };

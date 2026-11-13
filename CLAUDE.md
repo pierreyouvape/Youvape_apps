@@ -638,6 +638,19 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   Règle : **celui qui sort la pièce du stock du site la scanne, une fois** ; la vente en caisse ne touche que le
   stock boutique. L'écran avertit (sans bloquer) si le produit a été prélevé par une AUTRE personne dans les
   2 dernières heures (24 h et tout le monde : l'alerte sonnait à chaque booster).
+- **Annuler un prélèvement** (13/11/2026, client qui change d'avis : la pièce retourne au site) : bouton « Annuler »
+  de l'historique, `POST …/prelevements/:id/cancel`, règles pures `prelevementRules.cancelPlan`. Étape déjà faite →
+  écriture **inverse** en file (`site_undo` = mouvement d'ENTRÉE BMS, `nx_undo` = `PUT /stocks` en delta négatif) ;
+  étape pas encore partie (`queued`, `waiting`, erreur nette) → statut `cancelled`, rien n'est envoyé. **Refusé** si
+  une étape est en `sending` ou en erreur « VÉRIFIEZ » (on ne sait pas si elle est passée). `cancelled_at` = hors
+  refacturation (export) et hors garde-fou « déjà prélevé ». La ligne n'est jamais supprimée. Lignes `origin = 'pda'`
+  (reprise) non annulables. Migration `add_boutique_prelevements_cancel.sql` AVANT le code.
+  **Seulement si rien n'est vendu en caisse** (`rules.allocateSales`) : chaque vente Nextore du produit caisse consomme
+  les prélèvements du plus ancien au plus récent, ceux faits jusqu'à **30 min après** elle (vendeur qui encaisse avant
+  de scanner) ; le stock propre de la boutique est ignoré exprès (doute = vendu). Ventes : `nextore_sales` jusqu'au jour
+  de la dernière synchro (23h40), **Nextore en direct** ensuite (cache 1 min pour la liste, relu sans cache à
+  l'annulation). ⚠️ Un jour sans vente, `GET /sale_items` répond `false`, pas `[]`. Ventes illisibles = pas d'annulation.
+  Mesuré le 13/11/2026 : 30 prélèvements sur 32 retrouvent leur vente, en général 1 à 3 min après.
 - Écran : `/boutique/castelnau/prelevements` et `/pda/prelevement` (même composant `PrelevementsTab.jsx`), export
   CSV « refacturation » (mois, catégorie, marque, coût, prix site). **Vendeurs de Castelnau = utilisateurs du PDA** :
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).

@@ -66,6 +66,81 @@ const resolveNx = (link, eanMatches) => {
 const isCleanRefusal = (msg) => /HTTP 4\d\d|BMS API error: 4\d\d|Too Many Attempts/i.test(String(msg || ''));
 
 /**
+ * Annulation d'un prélèvement (le client change d'avis, la pièce retourne au
+ * site). Pour chaque étape : 'undo' = déjà faite, on envoie l'écriture inverse ;
+ * 'cancel' = rien n'est parti, elle ne partira pas ; 'none' = rien à faire.
+ * Refus (409) quand on ne sait pas si l'écriture est passée : envoi en cours,
+ * ou erreur « VÉRIFIEZ » (réponse incertaine, serveur coupé pendant l'appel).
+ * Une erreur sans « VÉRIFIEZ » est un refus net : rien n'a été écrit.
+ */
+const cancelPlan = (r) => {
+  const refuse = (message) => { throw Object.assign(new Error(message), { statusCode: 409 }); };
+  if (r.cancelled_at) refuse('Ce prélèvement est déjà annulé.');
+  if (r.origin !== 'boutique') refuse('Reprise de l\'ancien « Vente boutique » : rien à annuler ici.');
+  const plan = (status, error, what) => {
+    if (status === 'queued' || status === 'waiting') return 'cancel';
+    if (status === 'sent') return 'undo';
+    if (status === 'skipped' || status === 'cancelled') return 'none';
+    if (status === 'error' && !/VÉRIFIEZ/.test(String(error || ''))) return 'cancel';
+    if (status === 'error') {
+      return refuse(`${what} est en erreur « à vérifier ». Regardez d'abord si elle est passée : oui → « Fait à la main », non → « Réessayer » ; puis annulez.`);
+    }
+    return refuse(`${what} est en cours d'envoi : réessayez dans quelques secondes.`);
+  };
+  return {
+    site: plan(r.site_status, r.site_error, 'La sortie du stock du site'),
+    nx: plan(r.nx_status, r.nx_error, 'L\'entrée dans la caisse'),
+  };
+};
+
+/**
+ * Rapprochement prélèvements ↔ ventes de la caisse : pièces boutique VENDUES
+ * de chaque prélèvement. Sert à n'autoriser l'annulation que d'un prélèvement
+ * dont rien n'est passé en caisse.
+ *
+ * Par produit caisse, chaque vente consomme les prélèvements dans l'ordre (le
+ * plus ancien d'abord), parmi ceux faits avant elle — avec une tolérance de
+ * `toleranceMin` : un vendeur qui encaisse avant de scanner le prélèvement ne
+ * doit pas rendre annulable une pièce vendue. Le stock que la boutique avait
+ * déjà est ignoré exprès : en cas de doute, la pièce est comptée vendue (une
+ * annulation à tort fausse le site ET la caisse ; un refus à tort se corrige).
+ * Mesuré sur les 32 premiers prélèvements : vente 1 à 3 min après, en général.
+ *
+ * Dates : chaînes 'YYYY-MM-DD HH:MM:SS' heure de Paris (format Nextore).
+ * prelevements : [{ id, nx_product_id, at, nx_qty }]   sales : [{ product_id, at, quantity }]
+ * Renvoie Map id → pièces vendues (0 si rien).
+ */
+const allocateSales = (prelevements, sales, { toleranceMin = 30 } = {}) => {
+  const ms = (s) => Date.parse(`${String(s).replace(' ', 'T').slice(0, 19)}Z`);
+  const tol = toleranceMin * 60000;
+  const sold = new Map(prelevements.map((p) => [p.id, 0]));
+  const byProduct = new Map();
+  for (const p of prelevements) {
+    if (!p.nx_product_id) continue;
+    const k = String(p.nx_product_id);
+    if (!byProduct.has(k)) byProduct.set(k, []);
+    byProduct.get(k).push({ id: p.id, t: ms(p.at), left: Number(p.nx_qty) || 0 });
+  }
+  for (const list of byProduct.values()) list.sort((a, b) => a.t - b.t || a.id - b.id);
+  const ordered = sales
+    .map((s) => ({ k: String(s.product_id), t: ms(s.at), q: Number(s.quantity) || 0 }))
+    .filter((s) => s.q > 0 && byProduct.has(s.k))
+    .sort((a, b) => a.t - b.t);
+  for (const s of ordered) {
+    let q = s.q;
+    for (const p of byProduct.get(s.k)) {
+      if (q <= 0) break;
+      if (p.left <= 0 || p.t - tol > s.t) continue;
+      const take = Math.min(p.left, q);
+      p.left -= take;
+      q -= take;
+      sold.set(p.id, sold.get(p.id) + take);
+    }
+  }
+  return sold;
+};
+
+/**
  * SQL : le code-barres `b` n'est porté que par CE produit du site. Un code sur
  * plusieurs produits (erreur de saisie : 13 codes / 26 produits au 10/11/2026,
  * « Sweet Cream » et « Green Dragon » sous le même EAN) ne prouve rien : il ne
@@ -76,6 +151,6 @@ const uniqueSiteBarcodeSql = (b = 'b') => `NOT EXISTS (
    WHERE ob.barcode = ${b}.barcode AND ob.product_id <> ${b}.product_id AND op.wc_deleted_at IS NULL)`;
 
 module.exports = {
-  uniqueSiteBarcodeSql,
+  uniqueSiteBarcodeSql, cancelPlan, allocateSales,
   siteUnitCost, boutiqueQty, nextoreProductPayload, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, round2,
 };

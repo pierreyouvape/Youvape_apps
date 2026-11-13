@@ -67,6 +67,10 @@ module.exports = {
     res.json(await prelevementModel.list(wh.id, { from, to, problems: req.query.problems === '1' }));
   }),
 
+  cancel: handle(async (req, res, wh) => {
+    res.json(await prelevementModel.cancel(wh.id, parseInt(req.params.id, 10), req.user.id));
+  }),
+
   resolveStep: handle(async (req, res, wh) => {
     const { step, action } = req.body || {};
     res.json(await prelevementModel.resolveStep(wh.id, parseInt(req.params.id, 10), step, action));

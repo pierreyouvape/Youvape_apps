@@ -33,7 +33,18 @@ const STEP = {
   error: { label: 'Erreur', color: C.red, bg: C.redL },
   waiting: { label: 'Produit absent de la caisse', color: C.orange, bg: C.orangeL },
   skipped: { label: 'Reprise (déjà vendu)', color: C.greyT, bg: C.grey },
+  cancelled: { label: 'Annulé, rien envoyé', color: C.greyT, bg: C.grey },
 };
+
+// Étapes d'un prélèvement, et leurs inverses quand il est annulé.
+const STEP_LABEL = {
+  site: 'la sortie du stock du site',
+  nx: 'l\'entrée dans la caisse',
+  site_undo: 'la remise dans le stock du site',
+  nx_undo: 'le retrait de la caisse',
+};
+const UNDO_TITLE = { site: 'Remise au site', nx: 'Retrait caisse' };
+const isPending = (s) => s === 'queued' || s === 'sending';
 
 function Btn({ children, onClick, disabled, bg = C.primary, small, style }) {
   return (
@@ -179,7 +190,7 @@ export default function PrelevementsTab({ shop, token }) {
   useEffect(() => { load(); }, [load]);
   // Les écritures partent en arrière-plan : on rafraîchit l'état tant qu'il en reste.
   useEffect(() => {
-    const pending = data.rows.some((r) => ['queued', 'sending'].includes(r.site_status) || ['queued', 'sending'].includes(r.nx_status));
+    const pending = data.rows.some((r) => ['site_status', 'nx_status', 'site_undo_status', 'nx_undo_status'].some((k) => isPending(r[k])));
     if (!pending) return undefined;
     const t = setTimeout(load, 4000);
     return () => clearTimeout(t);
@@ -218,8 +229,33 @@ export default function PrelevementsTab({ shop, token }) {
     } catch (e) { setMsg({ ok: false, text: errMsg(e) }); } finally { setBusy(false); }
   };
 
+  // Le client change d'avis : la pièce retourne au site. On dit ce qui va se passer, étape par étape.
+  const cancelRow = async (row) => {
+    const n = row.qty;
+    const s = n > 1 ? 's' : '';
+    const caisseQty = Number(row.nx_qty) || n;
+    const lines = [
+      row.site_status === 'sent'
+        ? `• ${n} pièce${s} remise${s} dans le stock du site`
+        : `• ${n} pièce${s} ne sortir${n > 1 ? 'ont' : 'a'} pas du stock du site`,
+      row.nx_status === 'sent'
+        ? `• ${caisseQty} pièce${caisseQty > 1 ? 's' : ''} retirée${caisseQty > 1 ? 's' : ''} du stock de la caisse`
+        : '• rien n\'entrera dans la caisse',
+      '• la ligne sort de la refacturation',
+    ];
+    if (!window.confirm(
+      `Annuler le prélèvement de ${n} × ${row.name} (${fmtDate(row.created_at)}) ?\n\n${lines.join('\n')}\n\n`
+      + `À faire seulement si ${n > 1 ? 'les pièces retournent' : 'la pièce retourne'} au site.`
+    )) return;
+    try {
+      await call.post(`/prelevements/${row.id}/cancel`, {});
+      setMsg({ ok: true, text: `Prélèvement annulé : ${n} × ${row.name}.` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: errMsg(e) }); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  };
+
   const resolve = async (row, step, action) => {
-    const what = step === 'site' ? 'la sortie du stock du site' : 'l\'entrée dans la caisse';
+    const what = STEP_LABEL[step];
     const question = action === 'retry'
       ? `Renvoyer ${what} ?${/VÉRIFIEZ/.test(row[`${step}_error`] || '') ? '\n\nVérifiez d\'abord qu\'elle n\'est pas déjà passée.' : ''}`
       : `Déclarer ${what} comme faite à la main ?`;
@@ -240,8 +276,23 @@ export default function PrelevementsTab({ shop, token }) {
   // Stock illisible (panne BMS) : on ne bloque pas.
   const unavailable = !!product?.siteStock && !product.siteStock.error && product.siteStock.free < qty;
   const { counts = {} } = data;
-  const totalHt = data.rows.reduce((s, r) => s + r.qty * Number(r.unit_cost_ht || 0), 0);
-  const missingCost = data.rows.filter((r) => r.unit_cost_ht == null).length;
+  // Les prélèvements annulés restent affichés mais ne comptent plus (hors refacturation).
+  const active = data.rows.filter((r) => !r.cancelled_at);
+  const cancelledCount = data.rows.length - active.length;
+  const totalHt = active.reduce((s, r) => s + r.qty * Number(r.unit_cost_ht || 0), 0);
+  const missingCost = active.filter((r) => r.unit_cost_ht == null).length;
+
+  const stepActions = (r, step) => (
+    <>
+      {r[`${step}_error`] && <div style={{ fontSize: 11, color: C.red, marginTop: 3 }}>{r[`${step}_error`]}</div>}
+      {r[`${step}_status`] === 'error' && (
+        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+          <Btn small onClick={() => resolve(r, step, 'retry')}>Réessayer</Btn>
+          <Btn small bg={C.greyT} onClick={() => resolve(r, step, 'done')}>Fait à la main</Btn>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -337,13 +388,14 @@ export default function PrelevementsTab({ shop, token }) {
       </div>
 
       {/* ── À traiter ── */}
-      {(counts.site_errors > 0 || counts.nx_errors > 0 || counts.nx_waiting > 0) && (
+      {(counts.site_errors > 0 || counts.nx_errors > 0 || counts.nx_waiting > 0 || counts.undo_errors > 0) && (
         <div style={{ background: C.orangeL, color: C.orange, borderRadius: 12, padding: '10px 14px', marginTop: 16, fontWeight: 600, cursor: 'pointer' }}
           onClick={() => setProblems(true)}>
           À traiter : {[
             counts.nx_waiting > 0 && `${counts.nx_waiting} prélèvement(s) de ${counts.nx_waiting_products} produit(s) absent(s) de la caisse`,
             counts.site_errors > 0 && `${counts.site_errors} sortie(s) du site en erreur`,
             counts.nx_errors > 0 && `${counts.nx_errors} entrée(s) en caisse en erreur`,
+            counts.undo_errors > 0 && `${counts.undo_errors} annulation(s) en erreur`,
           ].filter(Boolean).join(' · ')}
         </div>
       )}
@@ -358,8 +410,13 @@ export default function PrelevementsTab({ shop, token }) {
           <Btn small onClick={exportCsv}>Export refacturation</Btn>
         </div>
         <div style={{ fontSize: 13, color: C.greyT, marginBottom: 8 }}>
-          {data.rows.length} ligne(s) · {data.rows.reduce((s, r) => s + r.qty, 0)} pièce(s) · {eur(totalHt)} HT au coût du site
+          {active.length} ligne(s) · {active.reduce((s, r) => s + r.qty, 0)} pièce(s) · {eur(totalHt)} HT au coût du site
           {missingCost > 0 && <span style={{ color: C.red }}> · {missingCost} sans coût d'achat</span>}
+          {cancelledCount > 0 && ` · ${cancelledCount} annulé(s), non comptés`}
+        </div>
+        {data.salesError && <div style={{ fontSize: 13, color: C.orange, marginBottom: 8 }}>{data.salesError}</div>}
+        <div style={{ fontSize: 12, color: C.greyT, marginBottom: 8 }}>
+          « Annuler » n'apparaît que sur un prélèvement dont rien n'est encore vendu en caisse.
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
@@ -370,29 +427,47 @@ export default function PrelevementsTab({ shop, token }) {
               </tr>
             </thead>
             <tbody>
-              {data.rows.map((r) => (
-                <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}`, verticalAlign: 'top' }}>
-                  <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{fmtDate(r.created_at)}<div style={{ fontSize: 11, color: C.greyT }}>{r.origin === 'pda' ? 'Ancien « Vente boutique »' : 'Prélèvement'} · {r.user_name || '—'}</div></td>
-                  <td style={{ padding: 6 }}>{r.name}<div style={{ fontSize: 11, color: C.greyT }}>{r.sku}{r.nx_name ? ` → ${r.nx_name}` : ''}</div></td>
-                  <td style={{ padding: 6 }}>{r.qty}{r.nx_qty && Number(r.nx_qty) !== r.qty ? <div style={{ fontSize: 11, color: C.orange }}>{Number(r.nx_qty)} en caisse</div> : null}</td>
-                  <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{r.unit_cost_ht == null ? <span style={{ color: C.red }}>inconnu</span> : eur(r.qty * Number(r.unit_cost_ht))}</td>
-                  {['site', 'nx'].map((step) => (
-                    <td key={step} style={{ padding: 6, maxWidth: 240 }}>
-                      <Chip status={r[`${step}_status`]} />
-                      {r[`${step}_error`] && <div style={{ fontSize: 11, color: C.red, marginTop: 3 }}>{r[`${step}_error`]}</div>}
-                      {r[`${step}_status`] === 'error' && (
-                        <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                          <Btn small onClick={() => resolve(r, step, 'retry')}>Réessayer</Btn>
-                          <Btn small bg={C.greyT} onClick={() => resolve(r, step, 'done')}>Fait à la main</Btn>
-                        </div>
-                      )}
-                      {step === 'nx' && r.nx_status === 'waiting' && (
-                        <div style={{ marginTop: 4 }}><Btn small bg={C.orange} onClick={() => pick(r.product_id)}>Mettre en caisse</Btn></div>
-                      )}
+              {data.rows.map((r) => {
+                const cancelled = !!r.cancelled_at;
+                const dim = cancelled ? { textDecoration: 'line-through', color: C.greyM } : null;
+                return (
+                  <tr key={r.id} style={{ borderTop: `1px solid ${C.greyB}`, verticalAlign: 'top', background: cancelled ? C.grey : undefined }}>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>
+                      <span style={dim}>{fmtDate(r.created_at)}</span>
+                      <div style={{ fontSize: 11, color: C.greyT }}>{r.origin === 'pda' ? 'Ancien « Vente boutique »' : 'Prélèvement'} · {r.user_name || '—'}</div>
+                      {cancelled
+                        ? <div style={{ fontSize: 11, color: C.red, fontWeight: 700, marginTop: 2 }}>Annulé le {fmtDate(r.cancelled_at)}{r.cancelled_by_name ? ` par ${r.cancelled_by_name}` : ''}</div>
+                        : r.origin === 'boutique' && !data.salesError && r.sold_qty === 0 && (
+                          <div style={{ marginTop: 4 }}><Btn small bg={C.red} onClick={() => cancelRow(r)}>Annuler</Btn></div>
+                        )}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    <td style={{ padding: 6 }}><span style={dim}>{r.name}</span><div style={{ fontSize: 11, color: C.greyT }}>{r.sku}{r.nx_name ? ` → ${r.nx_name}` : ''}</div></td>
+                    <td style={{ padding: 6 }}><span style={dim}>{r.qty}</span>{r.nx_qty && Number(r.nx_qty) !== r.qty ? <div style={{ fontSize: 11, color: C.orange }}>{Number(r.nx_qty)} en caisse</div> : null}</td>
+                    <td style={{ padding: 6, whiteSpace: 'nowrap' }}>{r.unit_cost_ht == null ? <span style={{ color: C.red }}>inconnu</span> : <span style={dim}>{eur(r.qty * Number(r.unit_cost_ht))}</span>}</td>
+                    {['site', 'nx'].map((step) => (
+                      <td key={step} style={{ padding: 6, maxWidth: 240 }}>
+                        <Chip status={r[`${step}_status`]} />
+                        {stepActions(r, step)}
+                        {step === 'nx' && !cancelled && r.sold_qty > 0 && (
+                          <div style={{ fontSize: 11, color: C.green, fontWeight: 700, marginTop: 3 }}>
+                            {r.sold_qty >= (Number(r.nx_qty) || r.qty) ? 'Vendu en caisse' : `${r.sold_qty} / ${Number(r.nx_qty) || r.qty} vendu(s) en caisse`}
+                          </div>
+                        )}
+                        {step === 'nx' && r.nx_status === 'waiting' && (
+                          <div style={{ marginTop: 4 }}><Btn small bg={C.orange} onClick={() => pick(r.product_id)}>Mettre en caisse</Btn></div>
+                        )}
+                        {r[`${step}_undo_status`] && (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 11, color: C.greyT, marginBottom: 2 }}>{UNDO_TITLE[step]}</div>
+                            <Chip status={r[`${step}_undo_status`]} />
+                            {stepActions(r, `${step}_undo`)}
+                          </div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -110,7 +110,7 @@ const productView = async (productId, warehouseId, userId = null) => {
     `SELECT b.qty, b.origin, b.created_at, u.name AS user_name
        FROM boutique_prelevements b LEFT JOIN users u ON u.id = b.created_by
       WHERE b.product_id = $1 AND b.warehouse_id = $2 AND b.created_at > NOW() - INTERVAL '2 hours'
-        AND b.created_by IS DISTINCT FROM $3
+        AND b.created_by IS DISTINCT FROM $3 AND b.cancelled_at IS NULL
       ORDER BY b.created_at DESC LIMIT 5`,
     [p.id, warehouseId, userId ?? null]
   );
@@ -402,12 +402,81 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
   }
 };
 
+// ── Rapprochement avec les ventes de la caisse ──────────────────────────────
+
+const SALES_TOLERANCE_MIN = 30;
+const LIVE_SALES_TTL_MS = 60000;
+let liveSalesCache = null; // { key, at, items }
+
+const parisDay = (d) => new Date(d).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+
+/**
+ * Ventes Nextore lues en direct (la synchro locale n'a lieu qu'à 23h40). Un jour
+ * sans vente, Nextore répond `false` (constaté le 13/11/2026) ; toute autre
+ * réponse qu'une liste est une erreur. Cache d'une minute : l'écran se
+ * rafraîchit toutes les 4 s tant qu'une écriture est en cours.
+ */
+const liveSaleItems = async (from, to, fresh) => {
+  const key = `${from}|${to}`;
+  if (!fresh && liveSalesCache?.key === key && Date.now() - liveSalesCache.at < LIVE_SALES_TTL_MS) {
+    return liveSalesCache.items;
+  }
+  const r = await nextoreApi.getSaleItems(from, to);
+  if (r !== false && !Array.isArray(r)) throw new Error('Réponse inattendue de Nextore pour les ventes.');
+  const items = r || [];
+  liveSalesCache = { key, at: Date.now(), items };
+  return items;
+};
+
+/**
+ * Pièces boutique vendues en caisse de chaque prélèvement en cours (non annulé,
+ * entré ou à entrer en caisse) des produits caisse `nxIds`. Ventes : base locale
+ * jusqu'au jour de la dernière synchro, Nextore en direct à partir de ce jour.
+ * Lève si Nextore est illisible : sans ventes, on ne sait pas, on n'annule pas.
+ */
+const soldByPrelevement = async (warehouseId, nxIds, { fresh = false } = {}) => {
+  const ids = [...new Set(nxIds.filter(Boolean).map(String))];
+  if (!ids.length) return new Map();
+  const { rows: prels } = await pool.query(
+    `SELECT id, nx_product_id, nx_qty,
+            to_char(created_at AT TIME ZONE 'Europe/Paris', 'YYYY-MM-DD HH24:MI:SS') AS at
+       FROM boutique_prelevements
+      WHERE warehouse_id = $1 AND nx_product_id = ANY($2::text[])
+        AND cancelled_at IS NULL AND nx_status NOT IN ('skipped', 'cancelled')`,
+    [warehouseId, ids]
+  );
+  if (!prels.length) return new Map();
+  const { rows: [cfg] } = await pool.query(
+    `SELECT config_value FROM app_config WHERE config_key = 'nextore_last_sales_sync_at'`
+  );
+  const today = parisDay(Date.now());
+  const synced = cfg?.config_value ? parisDay(cfg.config_value) : today;
+  const liveFrom = synced < today ? synced : today;
+  const oldest = prels.reduce((m, p) => (p.at < m ? p.at : m), prels[0].at);
+  const [{ rows: local }, live] = await Promise.all([
+    pool.query(
+      `SELECT product_id, quantity, to_char(sold_at, 'YYYY-MM-DD HH24:MI:SS') AS at
+         FROM nextore_sales
+        WHERE warehouse_id = $1 AND product_id = ANY($2::text[])
+          AND sold_at >= $3::timestamp - make_interval(mins => $4) AND sold_at < $5::date`,
+      [warehouseId, ids, oldest, SALES_TOLERANCE_MIN, liveFrom]
+    ),
+    liveSaleItems(liveFrom, today, fresh),
+  ]);
+  const wanted = new Set(ids);
+  const liveRows = live
+    .filter((s) => Number(s.warehouse_id) === warehouseId && wanted.has(String(s.product_id)))
+    .map((s) => ({ product_id: s.product_id, quantity: s.quantity, at: s.date }));
+  return rules.allocateSales(prels, [...local, ...liveRows], { toleranceMin: SALES_TOLERANCE_MIN });
+};
+
 // ── Liste, reprise, export ──────────────────────────────────────────────────
 
 const LIST_SQL = `
-  SELECT b.*, u.name AS user_name, np.name AS nx_name
+  SELECT b.*, u.name AS user_name, cu.name AS cancelled_by_name, np.name AS nx_name
     FROM boutique_prelevements b
     LEFT JOIN users u ON u.id = b.created_by
+    LEFT JOIN users cu ON cu.id = b.cancelled_by
     LEFT JOIN nextore_products np ON np.product_id = b.nx_product_id`;
 
 const list = async (warehouseId, { from, to, problems } = {}) => {
@@ -415,7 +484,10 @@ const list = async (warehouseId, { from, to, problems } = {}) => {
   const args = [warehouseId];
   if (from) { args.push(from); where.push(`(b.created_at AT TIME ZONE 'Europe/Paris')::date >= $${args.length}::date`); }
   if (to) { args.push(to); where.push(`(b.created_at AT TIME ZONE 'Europe/Paris')::date <= $${args.length}::date`); }
-  if (problems) where.push(`(b.site_status = 'error' OR b.nx_status IN ('error', 'waiting'))`);
+  if (problems) {
+    where.push(`(b.site_status = 'error' OR b.nx_status IN ('error', 'waiting')
+                 OR b.site_undo_status = 'error' OR b.nx_undo_status = 'error')`);
+  }
   const { rows } = await pool.query(
     `${LIST_SQL} WHERE ${where.join(' AND ')} ORDER BY b.created_at DESC LIMIT 500`, args
   );
@@ -423,23 +495,89 @@ const list = async (warehouseId, { from, to, problems } = {}) => {
     `SELECT count(*) FILTER (WHERE site_status = 'error')::int AS site_errors,
             count(*) FILTER (WHERE nx_status = 'error')::int AS nx_errors,
             count(*) FILTER (WHERE nx_status = 'waiting')::int AS nx_waiting,
-            count(DISTINCT product_id) FILTER (WHERE nx_status = 'waiting')::int AS nx_waiting_products
+            count(DISTINCT product_id) FILTER (WHERE nx_status = 'waiting')::int AS nx_waiting_products,
+            count(*) FILTER (WHERE site_undo_status = 'error' OR nx_undo_status = 'error')::int AS undo_errors
        FROM boutique_prelevements WHERE warehouse_id = $1`,
     [warehouseId]
   );
-  return { rows, counts };
+  // Pièces vendues en caisse : seul un prélèvement dont rien n'est vendu s'annule.
+  let salesError = null;
+  try {
+    const sold = await soldByPrelevement(warehouseId, rows.filter((r) => !r.cancelled_at).map((r) => r.nx_product_id));
+    for (const r of rows) r.sold_qty = sold.get(r.id) ?? 0;
+  } catch (error) {
+    salesError = `Ventes de la caisse illisibles pour l'instant : annulation indisponible (${error.message}).`;
+  }
+  return { rows, counts, salesError };
 };
+
+/**
+ * Annule un prélèvement : le client a changé d'avis, la pièce retourne au site.
+ * Ce qui est déjà parti est défait par la file (remise au site, retrait de la
+ * caisse) ; ce qui ne l'est pas encore ne partira pas. Règles : rules.cancelPlan.
+ * La ligne sort de la refacturation. Verrou sur la ligne : la file, qui réclame
+ * une étape par UPDATE … WHERE status = 'queued', attend puis la trouve annulée.
+ */
+const cancel = async (warehouseId, id, userId) => {
+  // Ventes relues en direct (pas de cache), avant le verrou : pas d'appel HTTP
+  // pendant qu'on tient la ligne.
+  const { rows: [pre] } = await pool.query(
+    'SELECT nx_product_id FROM boutique_prelevements WHERE id = $1 AND warehouse_id = $2', [id, warehouseId]
+  );
+  if (!pre) throw httpError(404, 'Prélèvement introuvable.');
+  let sold;
+  try {
+    sold = (await soldByPrelevement(warehouseId, [pre.nx_product_id], { fresh: true })).get(id) ?? 0;
+  } catch (error) {
+    throw httpError(503, `Ventes de la caisse illisibles, impossible de vérifier que rien n'est vendu : réessayez (${error.message}).`);
+  }
+  if (sold > 0) {
+    throw httpError(409, `Déjà vendu en caisse (${sold} pièce${sold > 1 ? 's' : ''}) : ce prélèvement ne s'annule plus.`);
+  }
+  const client = await pool.connect();
+  let plan;
+  let row;
+  try {
+    await client.query('BEGIN');
+    const { rows: [r] } = await client.query(
+      'SELECT * FROM boutique_prelevements WHERE id = $1 AND warehouse_id = $2 FOR UPDATE', [id, warehouseId]
+    );
+    if (!r) throw httpError(404, 'Prélèvement introuvable.');
+    plan = rules.cancelPlan(r);
+    const set = ['cancelled_at = NOW()', 'cancelled_by = $3'];
+    for (const step of ['site', 'nx']) {
+      if (plan[step] === 'cancel') set.push(`${step}_status = 'cancelled', ${step}_error = NULL`);
+      if (plan[step] === 'undo') set.push(`${step}_undo_status = 'queued', ${step}_undo_error = NULL`);
+    }
+    ({ rows: [row] } = await client.query(
+      `UPDATE boutique_prelevements SET ${set.join(', ')} WHERE id = $1 AND warehouse_id = $2 RETURNING *`,
+      [id, warehouseId, userId || null]
+    ));
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+  if (plan.site === 'undo' || plan.nx === 'undo') kick();
+  return { row, plan };
+};
+
+const RESOLVABLE_STEPS = ['site', 'nx', 'site_undo', 'nx_undo'];
 
 /**
  * Reprise d'une étape en erreur : `retry` la renvoie (après vérification dans
  * BMS / la caisse si le message dit VÉRIFIEZ), `done` la déclare faite à la main.
+ * Vaut aussi pour les étapes d'annulation (site_undo, nx_undo).
  */
 const resolveStep = async (warehouseId, id, step, action) => {
-  const col = step === 'site' ? 'site' : step === 'nx' ? 'nx' : null;
+  const col = RESOLVABLE_STEPS.includes(step) ? step : null;
   if (!col || !['retry', 'done'].includes(action)) throw httpError(400, 'Action inconnue.');
+  const hasRef = col === 'site' || col === 'site_undo';
   const set = action === 'retry'
     ? `${col}_status = 'queued', ${col}_error = NULL`
-    : `${col}_status = 'sent', ${col}_error = NULL, ${col}_at = NOW()${col === 'site' ? ", site_ref = COALESCE(site_ref, 'manuel')" : ''}`;
+    : `${col}_status = 'sent', ${col}_error = NULL, ${col}_at = NOW()${hasRef ? `, ${col}_ref = COALESCE(${col}_ref, 'manuel')` : ''}`;
   const { rows: [row] } = await pool.query(
     `UPDATE boutique_prelevements SET ${set}
       WHERE id = $1 AND warehouse_id = $2 AND ${col}_status = 'error' RETURNING id`,
@@ -466,6 +604,7 @@ const exportRows = async (warehouseId, from, to) => {
        LEFT JOIN products p ON p.id = b.product_id
        LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
       WHERE b.warehouse_id = $1 AND (b.created_at AT TIME ZONE 'Europe/Paris')::date BETWEEN $2::date AND $3::date
+        AND b.cancelled_at IS NULL
       ORDER BY b.created_at`,
     [warehouseId, from, to]
   );
@@ -473,6 +612,6 @@ const exportRows = async (warehouseId, from, to) => {
 };
 
 module.exports = {
-  lookup, productView, searchNextore, record, link, createInNextore, list, resolveStep, exportRows, releaseWaiting,
+  lookup, productView, searchNextore, record, link, createInNextore, list, cancel, resolveStep, exportRows, releaseWaiting,
   addSiteBarcodesToNx, unlink,
 };

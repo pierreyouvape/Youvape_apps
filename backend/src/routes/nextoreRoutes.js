@@ -114,6 +114,7 @@ router.post('/:shop/prelevements/products/:productId/link', prelevementPerm('wri
 router.post('/:shop/prelevements/products/:productId/unlink', prelevementPerm('write'), catalogController.unlink);
 router.post('/:shop/prelevements/products/:productId/create-nextore', prelevementPerm('write'), prelevementController.createInNextore);
 router.post('/:shop/prelevements/:id/resolve', prelevementPerm('write'), prelevementController.resolveStep);
+router.post('/:shop/prelevements/:id/cancel', prelevementPerm('write'), prelevementController.cancel);
 
 // Catalogue caisse : produits du site → Nextore (catalogController). Droit de la boutique.
 router.get('/:shop/catalogue/reviews', boutiquePerm('read'), catalogController.reviews);
