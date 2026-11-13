@@ -1880,6 +1880,11 @@ export default function ChronopostApp() {
                             </tr>
                           </thead>
                           <tbody>
+                            {creditOrders.length === 0 && (
+                              <tr><td colSpan={5} style={{ padding: '12px', color: C.greyT, fontSize: 13 }}>
+                                Aucun colis sur cet avoir (remboursement commercial ou global) : seul le total du document est enregistré.
+                              </td></tr>
+                            )}
                             {creditOrders.map((o, i) => (
                               <tr key={i} style={{
                                 background: i % 2 === 0 ? C.white : C.grey,
@@ -1903,7 +1908,9 @@ export default function ChronopostApp() {
                             <tr style={{ borderTop: `2px solid ${C.greyB}` }}>
                               <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, textAlign: 'right' }}>TOTAL AVOIR</td>
                               <td style={{ padding: '10px 12px', fontWeight: 800, color: C.red, fontSize: 15 }}>
-                                {fmtEur(creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0))}
+                                {fmtEur(creditOrders.length === 0 && creditResult.creditTotalHt != null
+                                  ? creditResult.creditTotalHt
+                                  : creditOrders.reduce((s, o) => s + (o.amount_ht != null ? getCreditAmount(o) : 0), 0))}
                               </td>
                             </tr>
                           </tfoot>
@@ -1942,7 +1949,7 @@ export default function ChronopostApp() {
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{c.credit_date || '—'}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT }}>{c.related_invoice_number || '—'}</td>
                               <td style={{ padding: '9px 12px', textAlign: 'center' }}>{c.lines_count}</td>
-                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{fmtEur(c.total_ht)}</td>
+                              <td style={{ padding: '9px 12px', fontWeight: 700, color: C.red }}>{fmtEur(creditHt(c))}</td>
                               <td style={{ padding: '9px 12px', color: C.greyT, fontSize: 12 }}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
                               <td style={{ padding: '9px 8px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                 <button onClick={e => handleDownloadCreditPdf(c, e)} title="Télécharger le PDF" style={{ background: 'none', border: `1px solid ${C.greyB}`, borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 14, marginRight: 4 }}>⬇️</button>

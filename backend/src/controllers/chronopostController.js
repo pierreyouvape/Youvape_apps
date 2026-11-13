@@ -1126,6 +1126,14 @@ exports.getTotals = async (req, res) => {
       LEFT JOIN carrier_invoices o ON o.carrier = 'chronopost' AND o.invoice_number = d.related_invoice_number
       WHERE c.carrier = 'chronopost'
       GROUP BY 1
+      UNION ALL
+      -- Avoir sans ligne colis (remboursement commercial, 40986605) : seul le total du document compte
+      SELECT COALESCE(o.invoice_date, d.credit_date) AS period_date, SUM(d.total_ht) AS amount_ht
+      FROM carrier_credit_documents d
+      LEFT JOIN carrier_invoices o ON o.carrier = 'chronopost' AND o.invoice_number = d.related_invoice_number
+      WHERE d.carrier = 'chronopost' AND d.total_ht IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM carrier_invoice_credits c WHERE c.carrier = d.carrier AND c.credit_number = d.credit_number)
+      GROUP BY 1
     `);
 
     res.json({ success: true, invoices: invoices.rows, credits: credits.rows });
