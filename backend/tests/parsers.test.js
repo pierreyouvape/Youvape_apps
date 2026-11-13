@@ -714,6 +714,18 @@ console.log('LCA — facture OpenSi (Rist. % / PU Net HT)');
     assert.deepStrictEqual(findUnparsedRows(fixture('lca-F2611423428.txt'), codeBarre.items), []);
   });
 
+  // F2611423443 : code-barres « 00002530 », 2530 une fois converti. La ligne
+  // Dictator (6 × 5,50) n'était pas lue et prêtait sa réf au Macaron suivant.
+  const zeros = lca.parse(fixture('lca-F2611423443.txt'));
+  test('LCA F2611423443 : code-barres à zéros de tête, total juste', () => {
+    assert.strictEqual(zeros.items.length, 42);
+    assert.deepStrictEqual(zeros.warnings, []);
+    const dictator = zeros.items.find((i) => i.supplier_sku === '#REF9559-30472');
+    assert.deepStrictEqual([dictator.qty_ordered, dictator.total_ht], [6, 33]);
+    const macaron = zeros.items.find((i) => i.supplier_sku === '#REF17235-56872');
+    assert.deepStrictEqual([macaron.qty_ordered, macaron.unit_price_net, macaron.total_ht], [3, 3.9, 11.7]);
+  });
+
   // F2609412942 : désignations sur deux lignes, 3 pages.
   const multi = lca.parse(fixture('lca-F2609412942.txt'));
   test('LCA F2609412942 : désignations sur deux lignes lues, réf. et quantité justes', () => {

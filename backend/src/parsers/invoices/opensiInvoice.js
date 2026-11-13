@@ -311,7 +311,19 @@ function parseInvoice(text) {
 
     // Deux lectures possibles quand un nombre porte un séparateur de milliers
     // (« 1 008.50 ») : on retient celle dont l'arithmétique tombe juste.
-    const lectures = numberReadings(tail[1].trim().split(/\s+/));
+    const tokens = tail[1].trim().split(/\s+/);
+    const lectures = numberReadings(tokens);
+    // Code-barres à zéros de tête : « 00002530 6 5.50 5.50 33.00 » (F2611423443).
+    // Converti en nombre, il devient 2530 — 4 chiffres, plus reconnu comme
+    // code-barres par readNumbers. La ligne Dictator n'était pas lue, et sa
+    // désignation se collait au Macaron suivant, qui prenait sa référence.
+    // C'est donc le JETON imprimé qui compte : 8 chiffres et plus, suivi d'au
+    // moins trois nombres. Sa lecture passe en premier.
+    let code = -1;
+    for (let i = 0; i < tokens.length - 3; i++) {
+      if (/^\d{8,}$/.test(tokens[i])) code = i;
+    }
+    if (code !== -1) lectures.unshift(...numberReadings(tokens.slice(code + 1)));
     let nums = lectures[0];
     let read = null;
     for (const candidate of lectures) {
