@@ -52,7 +52,14 @@ function parseInvoice(text) {
     .replace(/^[^\S\n]*\d+[^\S\n]*\/[^\S\n]*\d+[^\S\n]*$/gm, '');
 
   // Scan : chaque bloc REF Designation TAUX% PRIX_UNIT€ QTE TOTAL€
-  const pricePattern = /([A-Z0-9][\w]+)([\s\S]*?)(\d+)\s*%\s+([\d,]+)\s*€\s+(\d+)\s+([\d,]+)\s*€/g;
+  // Les montants ≥ 1 000 € portent une espace des milliers ("1 848,00 €") :
+  // l'ancien motif ([\d,]+) ne la lisait pas et la ligne disparaissait en
+  // silence (FA087056, YOUBOOST 50/50 × 8400 = 1 848,00 € HT).
+  const amount = '\\d+(?:[ \\u00a0\\u202f]\\d{3})*,\\d{2}';
+  const pricePattern = new RegExp(
+    `([A-Z0-9][\\w]+)([\\s\\S]*?)(\\d+)\\s*%\\s+(${amount})\\s*€\\s+(\\d+)\\s+(${amount})\\s*€`,
+    'g',
+  );
 
   let m;
   while ((m = pricePattern.exec(scanText)) !== null) {

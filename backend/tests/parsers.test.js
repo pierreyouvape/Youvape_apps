@@ -106,6 +106,15 @@ const CASES = [
     mustContain: null, // réf. tronquée par la mise en page, recollée plus tard en BDD
   },
   {
+    label: 'e.tasty FA087056 (total de ligne à 4 chiffres : « 1 848,00 € »)',
+    parser: require('../src/parsers/etastyParser'),
+    text: fixture('etasty-FA087056.txt'),
+    orderNumber: 'JLERWQVVS',
+    expectedItems: 2,
+    expectedTotal: 2181.74,
+    mustContain: 'YOY5001020', // perdue en silence avant correction (espace des milliers)
+  },
+  {
     label: 'e.tasty confirmation UOPZIWQDN (email Gmail, HOMAN05000 à cheval sur 2 pages)',
     parser: require('../src/parsers/etastyParser'),
     text: fixture('etasty-UOPZIWQDN.txt'),
@@ -359,6 +368,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['curieux-FA072952.txt', 'curieuxParser', 'prestashopInvoice'],
     ['etasty-FA060440.txt', 'etastyParser', 'prestashopInvoice'],
     ['etasty-FA072725.txt', 'etastyParser', 'prestashopInvoice'],
+    ['etasty-FA087056.txt', 'etastyParser', 'prestashopInvoice'],
     ['gfc-F2511358971.txt', 'gfcParser', 'opensiInvoice'],
     ['gfc-F2610427525.txt', 'gfcParser', 'opensiInvoice'],
     ['highbuy-FA018841.txt', 'highbuyParser', 'prestashopInvoice'],
