@@ -14,6 +14,10 @@ const fail = (res, err, fallback) => {
 /** Les fichiers produits, et depuis quand le contrôle tourne. */
 const list = async (req, res) => {
   try {
+    // ?q : recherche dans toutes les réclamations, à la place des fichiers.
+    if (String(req.query.q || '').trim()) {
+      return res.json(await claimModel.searchClaims(req.query.q));
+    }
     const [batches, since] = await Promise.all([claimModel.listBatches(), claimModel.getSince()]);
     res.json({ batches, since });
   } catch (err) {

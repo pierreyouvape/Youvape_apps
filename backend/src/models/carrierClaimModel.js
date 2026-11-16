@@ -146,6 +146,48 @@ const listBatches = async (limit = 60) => {
   return rows;
 };
 
+/**
+ * Recherche dans TOUTES les réclamations (pas seulement les fichiers affichés) :
+ * n° de suivi, de commande, ticket Chronopost, ticket SAV (celui de la
+ * réclamation ou n'importe quel ticket de la commande). Sert à répondre à
+ * « ce colis a-t-il été réclamé ? » ; `parcels` dit si le colis existe chez
+ * nous, pour distinguer « jamais réclamé » de « inconnu ».
+ */
+const searchClaims = async (raw) => {
+  const q = String(raw || '').trim().replace(/^(sav\s*)?#\s*/i, '');
+  if (!q) return { claims: [], parcels: 0 };
+  const params = [`%${q}%`];
+  const conds = ['c.tracking_number ILIKE $1', 'c.order_number ILIKE $1', 'c.carrier_ticket ILIKE $1'];
+  if (/^\d{1,9}$/.test(q)) {
+    params.push(Number(q));
+    conds.push('c.sav_ticket_id = $2',
+      'EXISTS (SELECT 1 FROM sav_tickets t WHERE t.id = $2 AND t.order_id = c.order_number)');
+  }
+  const [{ rows: claims }, { rows: [{ n }] }] = await Promise.all([
+    pool.query(
+      `SELECT c.id, c.label_id, c.order_number, c.tracking_number, c.object_code,
+              c.comment, c.deposit_day, c.due_day, c.carrier_ticket, c.carrier_error,
+              c.sav_ticket_id, c.sav_error, c.indemnity_status, c.indemnity_at,
+              ku.name AS indemnity_by_name, c.indemnity_credit_number,
+              (${INDEMNITY_AMOUNT_SQL}) AS indemnity_amount_ht,
+              c.batch_id, b.created_at AS batch_at, b.imported_at AS batch_imported_at
+         FROM carrier_claims c
+         LEFT JOIN carrier_claim_batches b ON b.id = c.batch_id
+         LEFT JOIN users ku ON ku.id = c.indemnity_by
+        WHERE ${conds.join(' OR ')}
+        ORDER BY c.created_at DESC
+        LIMIT 100`,
+      params
+    ),
+    pool.query(
+      `SELECT COUNT(*)::int AS n FROM shipment_labels
+        WHERE tracking_number ILIKE $1 OR order_number ILIKE $1`,
+      [params[0]]
+    ),
+  ]);
+  return { claims, parcels: n };
+};
+
 const getBatchFile = async (id) => {
   const { rows: [row] } = await pool.query(
     'SELECT id, file_name, csv_data FROM carrier_claim_batches WHERE id = $1',
@@ -256,5 +298,5 @@ const unlinkedIndemnities = async () => {
 module.exports = {
   setIndemnity, listIndemnities, findByTracking, setIndemnityCredit, clearIndemnityCredit, unlinkedIndemnities,
   getSince, candidates, loadOrder, createBatch, markMailed, setSavResult, pendingSav,
-  listBatches, getBatchFile, claimsOfBatch, setCarrierResult, markImported, forLabel,
+  listBatches, searchClaims, getBatchFile, claimsOfBatch, setCarrierResult, markImported, forLabel,
 };

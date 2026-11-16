@@ -43,6 +43,60 @@ const bouton = (variant = 'primary') => ({
     : { background: '#fff', color: C.dark, border: `1px solid ${C.greyB}` }),
 });
 
+/**
+ * Les réclamations, une ligne chacune. `withBatch` ajoute la date du fichier :
+ * dans les résultats d'une recherche, on ne sait pas de quel jour elles sont.
+ */
+function ClaimsTable({ claims, token, onChanged, withBatch = false }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: C.grey, textAlign: 'left', color: C.greyT, fontSize: 11.5, textTransform: 'uppercase' }}>
+            {withBatch && <th style={th}>Réclamé le</th>}
+            <th style={th}>Commande</th>
+            <th style={th}>Colis</th>
+            <th style={th}>Objet</th>
+            <th style={th}>Déposé / dû</th>
+            <th style={th}>Commentaire envoyé</th>
+            <th style={th}>Ticket Chronopost</th>
+            <th style={th}>SAV</th>
+            <th style={th}>Indemnisation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {claims.map(c => (
+            <tr key={c.id} style={{ borderTop: `1px solid ${C.greyB}`, verticalAlign: 'top' }}>
+              {withBatch && (
+                <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                  {fmt(c.batch_at)}
+                  {!c.batch_imported_at && <div style={{ marginTop: 4 }}><Chip color={C.amber} bg={C.amberL}>À importer chez Chronopost</Chip></div>}
+                </td>
+              )}
+              <td style={td}><Link to={`/orders/${c.order_number}`}>#{c.order_number}</Link></td>
+              <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{c.tracking_number}</td>
+              <td style={td}><Chip color={C.white} bg={c.object_code === 'PC' ? C.red : C.amber}>{c.object_code} {OBJETS[c.object_code]}</Chip></td>
+              <td style={{ ...td, whiteSpace: 'nowrap', color: C.greyT }}>{fmtJour(c.deposit_day)} → {fmtJour(c.due_day)}</td>
+              <td style={{ ...td, maxWidth: 420, color: C.dark }}>{c.comment}</td>
+              <td style={td}>
+                {c.carrier_ticket && <strong>{c.carrier_ticket}</strong>}
+                {c.carrier_error && <span style={{ color: C.red }}>{c.carrier_error}</span>}
+                {!c.carrier_ticket && !c.carrier_error && <span style={{ color: C.greyM }}>—</span>}
+              </td>
+              <td style={td}>
+                {c.sav_ticket_id
+                  ? <Link to={`/tickets/${c.sav_ticket_id}`}>#{c.sav_ticket_id}</Link>
+                  : <span style={{ color: C.red }} title={c.sav_error || ''}>non posée</span>}
+              </td>
+              <td style={td}><Indemnite claim={c} token={token} onChanged={onChanged} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Fichier({ batch, token, onChanged }) {
   const [ouvert, setOuvert] = useState(false);
   const [coller, setColler] = useState(false);
@@ -143,43 +197,8 @@ function Fichier({ batch, token, onChanged }) {
       )}
 
       {ouvert && (
-        <div style={{ overflowX: 'auto', borderTop: `1px solid ${C.greyB}` }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: C.grey, textAlign: 'left', color: C.greyT, fontSize: 11.5, textTransform: 'uppercase' }}>
-                <th style={th}>Commande</th>
-                <th style={th}>Colis</th>
-                <th style={th}>Objet</th>
-                <th style={th}>Déposé / dû</th>
-                <th style={th}>Commentaire envoyé</th>
-                <th style={th}>Ticket Chronopost</th>
-                <th style={th}>SAV</th>
-                <th style={th}>Indemnisation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {batch.claims.map(c => (
-                <tr key={c.id} style={{ borderTop: `1px solid ${C.greyB}`, verticalAlign: 'top' }}>
-                  <td style={td}><Link to={`/orders/${c.order_number}`}>#{c.order_number}</Link></td>
-                  <td style={{ ...td, fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{c.tracking_number}</td>
-                  <td style={td}><Chip color={C.white} bg={c.object_code === 'PC' ? C.red : C.amber}>{c.object_code} {OBJETS[c.object_code]}</Chip></td>
-                  <td style={{ ...td, whiteSpace: 'nowrap', color: C.greyT }}>{fmtJour(c.deposit_day)} → {fmtJour(c.due_day)}</td>
-                  <td style={{ ...td, maxWidth: 420, color: C.dark }}>{c.comment}</td>
-                  <td style={td}>
-                    {c.carrier_ticket && <strong>{c.carrier_ticket}</strong>}
-                    {c.carrier_error && <span style={{ color: C.red }}>{c.carrier_error}</span>}
-                    {!c.carrier_ticket && !c.carrier_error && <span style={{ color: C.greyM }}>—</span>}
-                  </td>
-                  <td style={td}>
-                    {c.sav_ticket_id
-                      ? <Link to={`/tickets/${c.sav_ticket_id}`}>#{c.sav_ticket_id}</Link>
-                      : <span style={{ color: C.red }} title={c.sav_error || ''}>non posée</span>}
-                  </td>
-                  <td style={td}><Indemnite claim={c} token={token} onChanged={onChanged} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ borderTop: `1px solid ${C.greyB}` }}>
+          <ClaimsTable claims={batch.claims} token={token} onChanged={onChanged} />
         </div>
       )}
     </div>
@@ -401,7 +420,55 @@ function Indemnisations({ token }) {
 const th = { padding: '8px 12px', fontWeight: 700 };
 const td = { padding: '8px 12px' };
 
-export default function CarrierClaimsTab({ token }) {
+/** Résultat de la recherche : « ce colis a-t-il été réclamé ? » */
+function Recherche({ q, token }) {
+  const [data, setData] = useState(null);
+  const [erreur, setErreur] = useState(null);
+
+  const charger = useCallback(async () => {
+    setErreur(null);
+    try {
+      const res = await axios.get(`${API_URL}/shipment-history/claims`, { ...authHeaders(token), params: { q } });
+      setData({ q, ...res.data });
+    } catch (err) {
+      setErreur(erreurApi(err, 'Erreur de recherche'));
+    }
+  }, [token, q]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  if (erreur) return <div style={{ color: C.red, fontSize: 13.5 }}>{erreur}</div>;
+  if (!data || data.q !== q) return <div style={{ color: C.greyT, fontSize: 13.5 }}>Recherche…</div>;
+
+  if (data.claims.length === 0) {
+    return (
+      <div style={{
+        background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: '18px 16px',
+        fontSize: 14, color: C.dark,
+      }}>
+        <strong>Aucune réclamation</strong> pour « {q} ».
+        <div style={{ fontSize: 13, color: C.greyT, marginTop: 4 }}>
+          {data.parcels
+            ? `Le colis existe (${data.parcels} étiquette${data.parcels > 1 ? 's' : ''} de l'app) : il n'a jamais été réclamé.`
+            : "Aucun colis de l'app ne correspond non plus : vérifiez le numéro (les colis emballés dans BMS ne sont jamais réclamés)."}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: C.greyT, marginBottom: 8 }}>
+        {data.claims.length} réclamation{data.claims.length > 1 ? 's' : ''} pour « {q} », sur tout l'historique.
+      </div>
+      <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, overflow: 'hidden' }}>
+        <ClaimsTable claims={data.claims} token={token} onChanged={charger} withBatch />
+      </div>
+    </div>
+  );
+}
+
+export default function CarrierClaimsTab({ token, q = '' }) {
   const [data, setData] = useState(null);
   const [erreur, setErreur] = useState(null);
   const [controle, setControle] = useState(false);
@@ -449,6 +516,8 @@ export default function CarrierClaimsTab({ token }) {
       ))}
     </div>
   );
+
+  if (q) return <Recherche q={q} token={token} />;
 
   if (vue === 'indemnites') {
     return <div>{onglets}<Indemnisations token={token} /></div>;

@@ -566,27 +566,6 @@ const ShipmentHistoryApp = () => {
             }}>Historique d'expédition</h1>
           </div>
 
-          {/* Recherche : un colis précis, sur tout l'historique. Les résultats
-              sont des colis, d'où le retour sur l'onglet Colis. */}
-          <div style={{ position: 'relative', marginBottom: 14 }}>
-            <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.greyT}
-              strokeWidth="2.2" strokeLinecap="round" style={{
-                position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none',
-              }}>
-              <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
-            </svg>
-            <input
-              type="search" value={qInput} autoFocus
-              onChange={e => { setQInput(e.target.value); if (e.target.value.trim()) setVue('colis'); }}
-              placeholder="N° de suivi, ticket Chronopost, ticket SAV, n° de commande, client…"
-              style={{
-                ...champ, width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px',
-                fontSize: 14.5, borderRadius: 10, background: C.white,
-                border: `1px solid ${qInput ? TEAL : C.greyB}`,
-              }}
-            />
-          </div>
-
           <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
             {[['colis', 'Colis'], ['reclamations', 'Réclamations']].map(([key, label]) => (
               <button key={key} onClick={() => setVue(key)} style={{
@@ -597,7 +576,30 @@ const ShipmentHistoryApp = () => {
             ))}
           </div>
 
-          {vue === 'reclamations' ? <CarrierClaimsTab token={token} /> : (<>
+          {/* Recherche dans l'onglet ouvert, sur tout l'historique : les colis,
+              ou les réclamations (« ce colis a-t-il été réclamé ? »). */}
+          <div style={{ position: 'relative', marginBottom: 16 }}>
+            <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.greyT}
+              strokeWidth="2.2" strokeLinecap="round" style={{
+                position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none',
+              }}>
+              <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+            </svg>
+            <input
+              type="search" value={qInput} autoFocus
+              onChange={e => setQInput(e.target.value)}
+              placeholder={vue === 'reclamations'
+                ? 'Réclamation : n° de suivi, ticket Chronopost, ticket SAV, n° de commande…'
+                : 'Colis : n° de suivi, n° de commande, client, ticket Chronopost, ticket SAV…'}
+              style={{
+                ...champ, width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px',
+                fontSize: 14.5, borderRadius: 10, background: C.white,
+                border: `1px solid ${qInput ? TEAL : C.greyB}`,
+              }}
+            />
+          </div>
+
+          {vue === 'reclamations' ? <CarrierClaimsTab token={token} q={q} /> : (<>
           {/* Filtres */}
           <div style={{
             background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12,
