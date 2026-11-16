@@ -43,6 +43,19 @@ const EDITABLE_SETTINGS = [
   'batch_max', 'time_budget',
 ];
 
+/*
+ * Envoi du suivi des colis au site (route order/ship) : un interrupteur de
+ * l'APP, pas du plugin. `since` = moment de l'allumage : seules les étiquettes
+ * émises après partent, jamais le passé. Coupé tout seul quand l'adresse du
+ * site change : les étiquettes de la prod ne partent jamais vers une copie.
+ */
+const SHIP_PUSH_KEY = 'logistique_ship_push';
+const SHIP_PUSH_OFF = { enabled: false, since: null, by: null };
+
+// Une écriture répond APRÈS time_budget (27 s mesurées pour 20 s) : le délai des
+// lectures (15 s) ferait raccrocher pendant que le plugin écrit encore.
+const WRITE_TIMEOUT_MS = 90000;
+
 const serviceError = (message, statusCode = 502) => Object.assign(new Error(message), { statusCode });
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
@@ -150,10 +163,40 @@ const saveToShipStatuses = async (input) => {
 
 /** @returns {{ errors: string[] } | { connection: object }} la vue publique, sans secret */
 const saveConnection = async (input) => {
-  const merged = mergeConnection(await readConnection(), input);
+  const current = await readConnection();
+  const merged = mergeConnection(current, input);
   if (merged.errors) return merged;
   await appConfigModel.upsert(CONNECTION_KEY, JSON.stringify(merged.connection));
-  return { connection: publicConnection(merged.connection) };
+  // Autre site visé : l'envoi du suivi s'arrête, il faudra le rallumer en connaissance de cause.
+  let shipPushStopped = false;
+  if (current?.url !== merged.connection.url && (await getShipPush()).enabled) {
+    await appConfigModel.upsert(SHIP_PUSH_KEY, JSON.stringify(SHIP_PUSH_OFF));
+    shipPushStopped = true;
+  }
+  return { connection: publicConnection(merged.connection), shipPushStopped };
+};
+
+/** @returns {Promise<{enabled: boolean, since: ?string, by: ?string}>} */
+const getShipPush = async () => {
+  const row = await appConfigModel.get(SHIP_PUSH_KEY);
+  if (!row) return { ...SHIP_PUSH_OFF };
+  try {
+    const v = JSON.parse(row.config_value);
+    if (!isObject(v) || v.enabled !== true || !v.since || Number.isNaN(Date.parse(v.since))) return { ...SHIP_PUSH_OFF };
+    return { enabled: true, since: v.since, by: v.by || null };
+  } catch {
+    return { ...SHIP_PUSH_OFF };
+  }
+};
+
+/** Allumer fixe le départ à maintenant ; rallumer après une coupure repart de maintenant. */
+const saveShipPush = async (enabled, by) => {
+  if (typeof enabled !== 'boolean') return { errors: ['enabled vaut true ou false.'] };
+  const current = await getShipPush();
+  if (enabled && current.enabled) return { shipPush: current };
+  const next = enabled ? { enabled: true, since: new Date().toISOString(), by: by || null } : { ...SHIP_PUSH_OFF };
+  await appConfigModel.upsert(SHIP_PUSH_KEY, JSON.stringify(next));
+  return { shipPush: next };
 };
 
 /** Le site visé et ses clés : le seul endroit qui les lit pour appeler le plugin. */
@@ -269,8 +312,36 @@ const updateSettings = async (patch) => {
   }
 };
 
+/**
+ * Envoi d'un lot à une route d'écriture (`order/ship`…). Une ligne de résultat
+ * par ligne envoyée, dans l'ordre : sinon la réponse n'est pas celle du plugin
+ * (page de pare-feu, version inattendue) et rien n'est tenu pour fait.
+ *
+ * @returns {Promise<object[]>} results[], rangés par `index`
+ * @throws {Error & {statusCode, code?}} code 'PLUGIN_ABSENT' si la route n'existe pas
+ */
+const postBatch = async (path, key, lines) => {
+  const { baseUrl, options } = await connection();
+  let data;
+  try {
+    ({ data } = await axios({
+      method: 'post', url: `${baseUrl}/wp-json/${PLUGIN_NAMESPACE}${path}`, data: { [key]: lines },
+      ...options, timeout: WRITE_TIMEOUT_MS,
+    }));
+  } catch (error) {
+    if (isNoRoute(error)) throw Object.assign(serviceError('Plugin non installé ou pas encore activé sur le site.'), { code: 'PLUGIN_ABSENT' });
+    throw siteError(error);
+  }
+  const results = isObject(data) && Array.isArray(data.results) ? data.results : null;
+  if (!results || results.length !== lines.length || results.some(r => !isObject(r) || !Number.isInteger(r.index))) {
+    throw serviceError('Réponse inattendue du site pour un envoi au plugin.');
+  }
+  return [...results].sort((a, b) => a.index - b.index);
+};
+
 module.exports = {
   getStatus, getSettings, updateSettings, getConnection, saveConnection, mergeConnection,
+  getShipPush, saveShipPush, postBatch,
   getToShipStatuses, saveToShipStatuses, cleanToShipStatuses,
   EDITABLE_SETTINGS, PLUGIN_NAMESPACE, DEFAULT_TO_SHIP, FORBIDDEN_STATUSES,
 };

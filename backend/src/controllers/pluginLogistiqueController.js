@@ -22,16 +22,19 @@ const handle = (fn) => async (req, res) => {
  * rester utilisable, c'est lui qui permet de corriger la connexion.
  */
 const getPluginLogistique = handle(async (req, res) => {
-  const [conn, toShip, knownStatuses] = await Promise.all([
+  const [conn, toShip, knownStatuses, shipPush, shipQueue] = await Promise.all([
     logistiqueService.getConnection(),
     logistiqueService.getToShipStatuses(),
     knownOrderStatuses(),
+    logistiqueService.getShipPush(),
+    shipQueueCounts(),
   ]);
-  // Le réglage « à expédier » est à nous : il s'affiche même sans plugin ni connexion.
+  // Les réglages de l'app : ils s'affichent même sans plugin ni connexion.
   const app = {
     to_ship_statuses: toShip,
     to_ship_default: logistiqueService.DEFAULT_TO_SHIP,
     known_statuses: knownStatuses,
+    ship_push: { ...shipPush, queue: shipQueue },
   };
   if (!conn.configured) return res.json({ connection: conn, app, installed: false });
   try {
@@ -42,6 +45,33 @@ const getPluginLogistique = handle(async (req, res) => {
     if (!error.statusCode) throw error;
     res.json({ connection: conn, app, installed: false, site_error: error.message });
   }
+});
+
+/** Étiquettes envoyées au site / en attente / en erreur. Null tant que la migration n'est pas passée. */
+const shipQueueCounts = async () => {
+  try {
+    const { rows: [r] } = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE site_ship_status = 'sent')::int  AS sent,
+              COUNT(*) FILTER (WHERE site_ship_status = 'retry')::int AS retry,
+              COUNT(*) FILTER (WHERE site_ship_status = 'error' AND status = 'active')::int AS error,
+              MAX(site_shipped_at) AS last_sent_at
+         FROM shipment_labels
+        WHERE site_ship_status IS NOT NULL`
+    );
+    return r;
+  } catch (error) {
+    if (error.code === '42703') return null; // colonne absente : migration pas encore passée
+    throw error;
+  }
+};
+
+/** Envoi du suivi des colis au site : interrupteur de l'app. */
+const saveShipPush = handle(async (req, res) => {
+  const result = await logistiqueService.saveShipPush(req.body?.enabled, req.user.email);
+  if (result.errors) return res.status(400).json({ error: result.errors.join(' ') });
+  const conn = await logistiqueService.getConnection();
+  console.log(`[Plugin logistique] Envoi du suivi au site ${result.shipPush.enabled ? 'ALLUMÉ' : 'coupé'} par ${req.user.email} (site : ${conn.host || 'aucun'})`);
+  res.json({ ship_push: result.shipPush });
 });
 
 /** Statuts vus dans nos commandes, sans « wc- » ni statuts interdits : choix proposés sans le plugin. */
@@ -62,8 +92,8 @@ const saveToShipStatuses = handle(async (req, res) => {
 const savePluginLogistiqueConnection = handle(async (req, res) => {
   const result = await logistiqueService.saveConnection(req.body);
   if (result.errors) return res.status(400).json({ error: 'Connexion refusée, rien n\'a été enregistré.', errors: result.errors });
-  console.log(`[Plugin logistique] Connexion modifiée par ${req.user.email} : ${result.connection.host}`);
-  res.json({ connection: result.connection });
+  console.log(`[Plugin logistique] Connexion modifiée par ${req.user.email} : ${result.connection.host}${result.shipPushStopped ? ' — envoi du suivi coupé' : ''}`);
+  res.json({ connection: result.connection, ship_push_stopped: result.shipPushStopped });
 });
 
 /** Mise à jour partielle : seules les clés envoyées changent, et seulement celles de l'expédition. */
@@ -88,4 +118,4 @@ const updatePluginLogistiqueSettings = handle(async (req, res) => {
   res.json({ settings: result.settings, warnings: result.warnings });
 });
 
-module.exports = { getPluginLogistique, savePluginLogistiqueConnection, saveToShipStatuses, updatePluginLogistiqueSettings };
+module.exports = { getPluginLogistique, savePluginLogistiqueConnection, saveToShipStatuses, saveShipPush, updatePluginLogistiqueSettings };

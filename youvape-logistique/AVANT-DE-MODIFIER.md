@@ -536,6 +536,13 @@ et l'a marquée payée au passage « Terminée ».
 
 ## 11. Côté app et prérequis de la bascule
 
+**Client d'écriture `order/ship`, en service le 16/11/2026** (`backend/src/services/logistiqueShipService.js`, règles
+pures `logistiqueShipRules.js`, test `tests/logistiqueShip.test.js`) : file sur `shipment_labels.site_ship_*`, cron
+toutes les 5 min, lots de 50, délai HTTP 90 s, `shipment_id = label-<id>`, `notify_customer: false` toujours.
+Allumé par un interrupteur de l'APP (`app_config.logistique_ship_push`, depuis = moment de l'allumage), coupé tout
+seul quand l'adresse du site change. Codes `ORDER_LOCKED`, `EXCEPTION`, `DB_ERROR`, `TIME_BUDGET` = renvoi (48 fois
+au plus) ; tout autre refus = erreur affichée dans `/expeditions`, renvoyable à la main.
+
 **Fait** : réglages et connexion au site depuis `/settings`, onglet « Paramètres WooCommerce »
 (`backend/src/services/logistiqueService.js`, connexion dans `app_config.logistique_connection`),
 lecture de `_yv_*` avec repli sur `bms_*` dans yousync et `wcOrderImportService.js`.

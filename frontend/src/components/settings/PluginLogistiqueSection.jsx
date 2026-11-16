@@ -58,6 +58,82 @@ const SwitchControl = ({ saved, value, label, onChange }) => (
   </div>
 );
 
+const fmtParis = (iso) => (iso
+  ? new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' })
+  : '');
+
+/**
+ * Envoi du suivi des colis au site : interrupteur de l'APP (enregistré chez
+ * nous), avec son propre bouton. Allumé, chaque étiquette émise depuis part au
+ * plugin, sans mail. Coupé tout seul si l'adresse du site change.
+ */
+const ShipPushSetting = ({ token, shipPush, host, canEnable, onSaved }) => {
+  const [value, setValue] = useState(shipPush.enabled);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState(null);
+
+  useEffect(() => { setValue(shipPush.enabled); }, [shipPush.enabled]);
+
+  const changed = value !== shipPush.enabled;
+  const blocked = value && !shipPush.enabled && !canEnable;
+  const q = shipPush.queue;
+
+  const save = async () => {
+    setSaving(true);
+    setFailure(null);
+    try {
+      const { data: r } = await axios.put(`${API_URL}/plugin-logistique/ship-push`, { enabled: value }, authHeaders(token));
+      onSaved(r.ship_push);
+    } catch (err) {
+      setFailure(err.response?.data?.error || err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Setting
+      title="Envoi du suivi des colis au site"
+      help="Réglage de l'app. Pour chaque étiquette émise, l'app écrit le suivi sur la commande du site : transporteur, n° et lien de suivi, date (les 5 métas) et une note privée. Jamais de mail. Seules les étiquettes émises après l'activation partent. Se coupe tout seul si l'adresse du site change."
+      warning={value && !shipPush.enabled ? `Les étiquettes partiront vers ${host || '(aucun site)'} : vérifier que c'est bien le site de production.` : undefined}
+      changed={changed}
+      isDefault
+    >
+      <SwitchControl
+        saved={shipPush.enabled}
+        value={value}
+        label="Envoyer au site le suivi de chaque étiquette émise"
+        onChange={v => { setValue(v); setFailure(null); }}
+      />
+      {shipPush.enabled && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: C.greyT }}>
+          Depuis le {fmtParis(shipPush.since)}{shipPush.by ? ` (${shipPush.by})` : ''}
+          {q && (
+            <>
+              {' — '}{q.sent} écrite(s) sur le site
+              {q.retry > 0 && <>, <strong style={{ color: C.amber }}>{q.retry} en attente</strong></>}
+              {q.error > 0 && <>, <strong style={{ color: C.red }}>{q.error} en erreur</strong> (voir l&apos;historique des expéditions)</>}
+              {q.last_sent_at && <>. Dernière : {fmtParis(q.last_sent_at)}</>}
+            </>
+          )}
+          {!q && <> — <strong style={{ color: C.red }}>migration pas encore passée : rien ne part</strong></>}
+        </div>
+      )}
+      {blocked && (
+        <div style={{ marginTop: 8, fontSize: 12.5, color: C.red }}>
+          Le plugin doit être installé et activé sur ce site avant d&apos;allumer l&apos;envoi.
+        </div>
+      )}
+      {failure && <div style={{ marginTop: 8 }}><Box kind="error">{failure}</Box></div>}
+      <div style={{ marginTop: 10 }}>
+        <button onClick={save} disabled={!changed || blocked || saving} style={btn(true, !changed || blocked || saving)}>
+          {saving ? 'Enregistrement…' : 'Enregistrer l\'envoi du suivi'}
+        </button>
+      </div>
+    </Setting>
+  );
+};
+
 // Libellés du site, quand le plugin ne répond pas encore (prod avant la bascule).
 const FALLBACK_LABELS = {
   processing: 'En cours',
@@ -367,7 +443,8 @@ const ConnectionForm = ({ token, connection, onSaved }) => {
     setSaving(true);
     setFailure(null);
     try {
-      await axios.put(`${API_URL}/plugin-logistique/connection`, form, authHeaders(token));
+      const { data: r } = await axios.put(`${API_URL}/plugin-logistique/connection`, form, authHeaders(token));
+      if (r.ship_push_stopped) alert('Le site visé a changé : l\'envoi du suivi des colis a été coupé. Le rallumer une fois le bon site vérifié.');
       onSaved();
     } catch (err) {
       const body = err.response?.data;
@@ -548,13 +625,25 @@ export default function PluginLogistiqueSection({ token }) {
         </div>
       )}
 
-      {data?.installed && draft && (
+      {data && (
         <>
           <h3 style={{ margin: '14px 0 2px', fontSize: 15, color: C.primary }}>Action sur WooCommerce</h3>
           <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 4 }}>
-            Ce que le plugin a le droit de faire sur le site. Le suivi des colis (métas et note) s&apos;écrit toujours ;
-            le reste attend la sortie de BMS.
+            Ce que l&apos;app envoie au site, et ce que le plugin a le droit d&apos;y faire. Le suivi des colis peut
+            s&apos;écrire dès maintenant ; statuts et stock attendent la sortie de BMS.
           </div>
+          <ShipPushSetting
+            token={token}
+            shipPush={data.app.ship_push}
+            host={data.connection.host}
+            canEnable={!!data.installed}
+            onSaved={(sp) => setData(d => ({ ...d, app: { ...d.app, ship_push: { ...sp, queue: d.app.ship_push.queue } } }))}
+          />
+        </>
+      )}
+
+      {data?.installed && draft && (
+        <>
           {SWITCHES.map(sw => (
             <Setting
               key={sw.key}

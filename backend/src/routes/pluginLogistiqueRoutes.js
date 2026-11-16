@@ -11,6 +11,7 @@ router.use(checkAdmin);
 router.get('/', pluginLogistiqueController.getPluginLogistique);
 router.put('/connection', pluginLogistiqueController.savePluginLogistiqueConnection);
 router.put('/to-ship-statuses', pluginLogistiqueController.saveToShipStatuses);
+router.put('/ship-push', pluginLogistiqueController.saveShipPush);
 router.post('/settings', pluginLogistiqueController.updatePluginLogistiqueSettings);
 
 module.exports = router;

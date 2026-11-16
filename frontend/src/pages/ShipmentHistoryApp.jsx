@@ -160,6 +160,14 @@ function Etats({ row, vide = null }) {
     chips.push(<Chip key="b" color={C.amber} bg={C.amberL}
       title={`${row.bms_attempts || 0} tentative(s). Dernière erreur : ${row.bms_last_error || 'aucune'}`}>BMS non confirmé</Chip>);
   }
+  if (row.status === 'active' && row.site_ship_status === 'error') {
+    chips.push(<Chip key="site" color={C.red} bg={C.redL}
+      title={`Suivi non écrit sur le site : ${row.site_ship_error || 'erreur inconnue'}`}>Site : erreur</Chip>);
+  }
+  if (row.status === 'active' && row.site_ship_status === 'retry') {
+    chips.push(<Chip key="site" color={C.amber} bg={C.amberL}
+      title={`${row.site_ship_attempts || 0} tentative(s). Dernière erreur : ${row.site_ship_error || 'aucune'}`}>Site : en attente</Chip>);
+  }
   (row.incidents || []).forEach(a => chips.push(
     <Chip key={a} color={C.red} bg={C.redL}>{a === 'set_aside' ? 'Mise de côté' : 'Incomplète'}</Chip>
   ));
@@ -216,6 +224,19 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
       onChanged();
     } catch (err) {
       alert(erreurApi(err, 'Confirmation BMS impossible'));
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const renvoyerSite = async () => {
+    setAction('site');
+    try {
+      await axios.post(`${API_URL}/shipment-history/${id}/site-ship/retry`, {}, authHeaders(token));
+      await charger();
+      onChanged();
+    } catch (err) {
+      alert(erreurApi(err, 'Relance impossible'));
     } finally {
       setAction(null);
     }
@@ -287,6 +308,19 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
               <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12.5 }}>{l.tracking_number || '—'}</span>
               <span style={{ color: C.greyT }}>Suivi</span>
               <span><TrackingStateBadge state={l.tracking_state} at={l.tracking_state_at} error={l.tracking_error} compact /></span>
+              {l.site_ship_status && l.site_ship_status !== 'skipped' && (
+                <>
+                  <span style={{ color: C.greyT }}>Suivi sur le site</span>
+                  <span style={{ color: { sent: C.green, retry: C.amber, error: C.red }[l.site_ship_status] }}>
+                    {l.site_ship_status === 'sent' && `Écrit le ${fmtDateHeure(l.site_shipped_at)}, sans mail`}
+                    {l.site_ship_status === 'retry' && `En attente (${l.site_ship_attempts} tentative(s))`}
+                    {l.site_ship_status === 'error' && 'Refusé par le site'}
+                    {l.site_ship_error && l.site_ship_status !== 'sent' && (
+                      <span style={{ display: 'block', fontSize: 12, color: C.greyT }}>{l.site_ship_error}</span>
+                    )}
+                  </span>
+                </>
+              )}
               <span style={{ color: C.greyT }}>Bordereau</span>
               <span><Etats row={l} vide="—" /></span>
               {data.claim && (
@@ -323,6 +357,12 @@ function Parcours({ id, source, token, onClose, onChanged, reimprimer, reimpress
                 <Btn variant="accent" onClick={confirmerBms} disabled={action === 'bms'}
                   title="Rejouer la confirmation d'expédition dans BMS">
                   {action === 'bms' ? '…' : 'Confirmer BMS'}
+                </Btn>
+              )}
+              {l.status === 'active' && l.site_ship_status === 'error' && (
+                <Btn variant="accent" onClick={renvoyerSite} disabled={action === 'site'}
+                  title="Renvoyer le suivi de ce colis à la commande du site (prochain passage, 5 min)">
+                  {action === 'site' ? '…' : 'Renvoyer au site'}
                 </Btn>
               )}
               {l.source !== 'bms' && l.status === 'active' && (

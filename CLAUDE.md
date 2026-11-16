@@ -361,7 +361,7 @@ ticket SAV le plus récent de la commande, s'il existe.
 
 ### Plugin `youvape-logistique` : ses réglages depuis l'app (27/10/2026, révisé le 30/10)
 
-Le plugin (racine du dépôt, **pas encore installé**, activé le jour de la sortie de BMS) gère tous
+Le plugin (racine du dépôt, 0.6.0 commité le 13/11/2026, **installation en prod le 16/11**, interrupteurs coupés) gère tous
 les statuts d'expédition et remplace `vikings-update-order-status-automatically` : notre backend
 suivra les colis et posera « Livrée » par `order/status`. Il garde ses réglages dans WordPress.
 L'app les lit et les modifie depuis les paramètres généraux : **`/settings`, onglet « Paramètres
@@ -393,6 +393,15 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
 - ⚠️ **Les mails clients partent par Probance (API HTTP), pas par `wp_mail`.** Le mode muet bloque aussi
   Probance et Guaranteed Reviews (`youvape_logistique_silent_hosts`), liste liée aux prestataires
   actuels. Il ne bloque ni les points WPLoyalty, ni VosFactures, ni la capture Mollie.
+- **Envoi du suivi au site** (16/11/2026, 1re étape en prod) : `services/logistiqueShipService.js`, cron `*/5 7-21`.
+  Chaque étiquette **émise après l'allumage** (`app_config.logistique_ship_push`, interrupteur de l'APP dans
+  « Action sur WooCommerce ») part en `order/ship`, **toujours `notify_customer: false`** : statuts coupés = 5 métas
+  `_yv_*` + note privée, rien d'autre. File sur `shipment_labels.site_ship_status` (NULL, `sent`, `retry`, `error`,
+  `skipped` = référence qui n'est pas une commande) ; `shipment_id = label-<id>`, donc un lot renvoyé revient
+  `already`. Étiquette refaite = `replace`. Libellé = titre BMS, sauf « Mondial Relay » → « Mondial Relay - Point
+  Relais » et « Retrait magasin » → « Store Pickup - Entrepot » (`logistiqueShipRules`, testé). **Changer l'adresse
+  du site coupe l'envoi** (jamais d'étiquettes de prod vers une copie). Erreurs : puce « Site : erreur » + bouton
+  « Renvoyer au site » dans `/expeditions`. Migration `add_shipment_labels_site_ship.sql` AVANT le code.
 - Case « Restocker » de l'admin : cochée seulement si la commande n'est pas expédiée, pas un réglage.
 - Plugin absent = 404 `rest_no_route` → `installed: false`, affiché comme normal. Un 200 dont le
   corps n'a pas la forme attendue est une erreur ; un 401 du site devient un 502 chez nous (un 401

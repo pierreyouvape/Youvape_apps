@@ -7,6 +7,7 @@
  */
 
 const shipmentHistoryModel = require('../models/shipmentHistoryModel');
+const logistiqueShipService = require('../services/logistiqueShipService');
 const { getAdapter, listCarrierCodes } = require('../services/carriers');
 const { supportsDepositSlip } = require('../services/carriers/contract');
 
@@ -79,6 +80,10 @@ const buildTimeline = ({ label, order, wave, incidents, bordereau, claim = null 
     push(label.bms_confirmed_at, 'bms', 'Expédition confirmée dans BMS');
   }
 
+  if (label.site_ship_status === 'sent') {
+    push(label.site_shipped_at, 'bms', 'Suivi écrit sur la commande du site', null, 'Sans mail au client');
+  }
+
   if (bordereau) {
     push(bordereau.created_at, 'deposit', `Déposée — bordereau ${bordereau.bordereau_number}`, bordereau.created_by_name);
   }
@@ -136,4 +141,19 @@ const detail = detailOf('app');
 /** GET /bms/:id — colis emballé dans BMS. */
 const detailBms = detailOf('bms');
 
-module.exports = { list, detail, detailBms, buildTimeline };
+/** POST /:id/site-ship/retry — une étiquette refusée par le site repart au prochain passage (5 min). */
+const retrySiteShip = async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Identifiant invalide' });
+    const ok = await logistiqueShipService.requeue(id);
+    if (!ok) return res.status(409).json({ error: 'Cette étiquette n\'est pas en erreur d\'envoi au site.' });
+    console.log(`[${LOG_TAG}] Envoi au site relancé pour l'étiquette ${id} par ${req.user.email}`);
+    res.json({ site_ship_status: 'retry' });
+  } catch (error) {
+    console.error(`[${LOG_TAG}] Erreur relance envoi site :`, error.message);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+};
+
+module.exports = { list, detail, detailBms, buildTimeline, retrySiteShip };

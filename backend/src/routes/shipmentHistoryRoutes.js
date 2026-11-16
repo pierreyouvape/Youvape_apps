@@ -36,5 +36,6 @@ router.get('/bms/:id', checkPackingRead, shipmentHistoryController.detailBms);
 router.get('/:id', checkPackingRead, shipmentHistoryController.detail);
 // Réinterroge le transporteur pour ce colis, sans attendre le passage suivant.
 router.post('/:id/tracking/refresh', checkPackingRead, trackingController.refresh);
+router.post('/:id/site-ship/retry', checkPackingWrite, shipmentHistoryController.retrySiteShip);
 
 module.exports = router;

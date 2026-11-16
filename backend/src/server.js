@@ -61,7 +61,7 @@ const storyRoutes = require('./routes/storyRoutes');
 const storyCollectRoutes = require('./routes/storyCollectRoutes');
 const storyProcessingService = require('./services/storyProcessingService');
 const authMiddleware = require('./middleware/authMiddleware');
-const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderReconcileCron, setupOrderDuplicatesCron, setupDishonestOrdersCron, setupTableauRemindersCron, setupShipmentTrackingCron, setupChronopostClaimsCron } = require('./services/cronService');
+const { setupCron, setupBmsCron, setupComputedCostCron, setupBmsBarcodeCron, setupBmsShelfLocationCron, setupStockResyncCron, setupSavAutomationsCron, setupProductDbSyncCron, setupBmsTagRetryCron, setupBmsShipmentConfirmCron, setupLogistiqueShipCron, setupReportEmailCron, setupStockValuationSnapshotCron, setupDraftStockReportCron, setupCompetitorMonitorCron, setupSeoCrons, setupBrandMapCron, setupNextoreCrons, setupProductSuppliersLinkCron, setupPickingSyncCron, setupBmsShipmentSyncCron, setupInventoryRefCron, setupReturnsRefundCron, setupRefundLinesCron, setupOrderReconcileCron, setupOrderDuplicatesCron, setupDishonestOrdersCron, setupTableauRemindersCron, setupShipmentTrackingCron, setupChronopostClaimsCron } = require('./services/cronService');
 const rewardService = require('./services/rewardService');
 const emailService = require('./services/emailService');
 const wcSyncService = require('./services/wcSyncService');
@@ -196,6 +196,7 @@ app.listen(PORT, async () => {
   // Initialiser la reprise des confirmations d'expedition BMS (etiquette emise,
   // colis parti, mais BMS jamais prevenu) + la synthese du soir
   setupBmsShipmentConfirmCron();
+  setupLogistiqueShipCron();
 
   // Photo des commandes à préparer pour le Picking (toutes les 2 min, 9h-19h, lun-ven)
   setupPickingSyncCron();

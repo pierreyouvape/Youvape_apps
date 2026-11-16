@@ -527,6 +527,28 @@ const setupBmsTagRetryCron = () => {
   console.log('Cron BMS tag retry configure: toutes les 15 min, 9h-19h, lun-ven');
 };
 
+// ==================== SUIVI DES COLIS → SITE (plugin youvape-logistique) ====================
+
+const logistiqueShipService = require('./logistiqueShipService');
+
+let logistiqueShipCronJob = null;
+
+const runLogistiqueShip = async () => {
+  try {
+    await logistiqueShipService.runDue();
+  } catch (error) {
+    console.error('Erreur cron envoi du suivi au site :', error.message);
+  }
+};
+
+// Toutes les 5 min, 7h-21h : l'envoi est éteint tant qu'il n'est pas allumé dans les
+// réglages (Paramètres WooCommerce), et ne part que pour les étiquettes émises depuis.
+const setupLogistiqueShipCron = () => {
+  if (logistiqueShipCronJob) logistiqueShipCronJob.stop();
+  logistiqueShipCronJob = cron.schedule('*/5 7-21 * * *', runLogistiqueShip, { timezone: 'Europe/Paris' });
+  console.log('Cron envoi du suivi au site configure: toutes les 5 min, 7h-21h (Europe/Paris)');
+};
+
 // ==================== CONFIRMATION D'EXPEDITION BMS ====================
 
 const bmsShipmentConfirmService = require('./bmsShipmentConfirmService');
@@ -1287,6 +1309,7 @@ module.exports = {
   setupProductDbSyncCron,
   setupBmsTagRetryCron,
   setupBmsShipmentConfirmCron,
+  setupLogistiqueShipCron,
   setupReportEmailCron,
   setupStockValuationSnapshotCron,
   setupDraftStockReportCron,
