@@ -67,11 +67,11 @@ const loadDue = async (since) => {
 
 const mark = (id, status, error, { attempt = true } = {}) => pool.query(
   `UPDATE shipment_labels
-      SET site_ship_status = $2,
-          site_ship_error = $3,
-          site_ship_attempts = site_ship_attempts + $4,
-          site_ship_last_attempt_at = CASE WHEN $4 = 1 THEN NOW() ELSE site_ship_last_attempt_at END,
-          site_shipped_at = CASE WHEN $2 = 'sent' THEN COALESCE(site_shipped_at, NOW()) ELSE site_shipped_at END
+      SET site_ship_status = $2::varchar,
+          site_ship_error = $3::text,
+          site_ship_attempts = site_ship_attempts + $4::int,
+          site_ship_last_attempt_at = CASE WHEN $4::int = 1 THEN NOW() ELSE site_ship_last_attempt_at END,
+          site_shipped_at = CASE WHEN $2::varchar = 'sent' THEN COALESCE(site_shipped_at, NOW()) ELSE site_shipped_at END
     WHERE id = $1`,
   [id, status, error, attempt ? 1 : 0]
 );
