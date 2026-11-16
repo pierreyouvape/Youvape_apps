@@ -50,6 +50,7 @@ const BASE_APP = `
          w.id AS wave_id, w.wave_number, w.picker_id, w.picker_name,
          inc.actions AS incidents,
          cc.object_code AS claim_object, cc.carrier_ticket AS claim_ticket, cc.created_at AS claim_at,
+         cc.sav_ticket_id AS claim_sav_ticket,
          (SELECT MAX(cr.id) FROM customer_returns cr
            WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
          (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
@@ -105,6 +106,7 @@ const BASE_BMS = `
          NULL::int AS wave_id, NULL::varchar AS wave_number, NULL::int AS picker_id, NULL::varchar AS picker_name,
          NULL::varchar[] AS incidents,
          NULL::varchar AS claim_object, NULL::varchar AS claim_ticket, NULL::timestamptz AS claim_at,
+         NULL::int AS claim_sav_ticket,
          (SELECT MAX(cr.id) FROM customer_returns cr
            WHERE cr.wp_order_id = o.wp_order_id AND cr.reason = 'colis_perdu' AND cr.cancelled_at IS NULL) AS lost_return_id,
          (SELECT MAX(cr.wp_order_id) FROM customer_returns cr
@@ -121,7 +123,8 @@ const BASE = `${BASE_APP} UNION ALL ${BASE_BMS}`;
 /**
  * Filtres → clause WHERE sur la CTE `base`.
  *
- * La recherche (n° de commande, de suivi, nom) porte sur TOUT l'historique :
+ * La recherche (n° de commande, de suivi, nom, ticket Chronopost, ticket SAV)
+ * porte sur TOUT l'historique :
  * on cherche un colis précis sans savoir quand il est parti.
  *
  * @param {object} f
@@ -133,10 +136,23 @@ const buildWhere = (f, depositCarriers, { withUser = true } = {}) => {
   const params = [];
   const p = (v) => { params.push(v); return `$${params.length}`; };
 
-  const q = String(f.q || '').trim();
+  // « #1273687 » ou « SAV #9901384 » : on cherche ce qui suit le dièse.
+  const q = String(f.q || '').trim().replace(/^(sav\s*)?#\s*/i, '');
   if (q) {
     const like = p(`%${q}%`);
-    conds.push(`(order_number ILIKE ${like} OR tracking_number ILIKE ${like} OR customer_name ILIKE ${like})`);
+    const recherche = [
+      `order_number ILIKE ${like}`, `tracking_number ILIKE ${like}`, `customer_name ILIKE ${like}`,
+      // Ticket Chronopost de la réclamation (compte-rendu d'import).
+      `claim_ticket ILIKE ${like}`,
+    ];
+    // Ticket SAV, n° exact : celui de la réclamation, ou n'importe quel ticket
+    // de la commande (le client qui écrit « pas reçu mon colis »).
+    if (/^\d{1,9}$/.test(q)) {
+      const id = p(Number(q));
+      recherche.push(`claim_sav_ticket = ${id}`,
+        `EXISTS (SELECT 1 FROM sav_tickets t WHERE t.id = ${id} AND t.order_id = base.order_number)`);
+    }
+    conds.push(`(${recherche.join(' OR ')})`);
   } else {
     // Bornes en heure de Paris, converties en UTC : le serveur est en UTC et
     // les colis du soir basculeraient sur le lendemain.
