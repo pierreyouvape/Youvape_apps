@@ -29,10 +29,12 @@ const { addDays } = require('../utils/frenchHolidays');
 const { FINAL_STATES } = require('./tracking/states');
 
 const LOG_TAG = 'Réclamations Chronopost';
-const AGENT = 'Réclamations transporteur';
+const AGENT = rules.CLAIM_AGENT;
 
 /** Le statut SAV que prend un ticket rouvert pour une réclamation. */
 const WAITING_CARRIER = 'en_attente_réponse_transporteur';
+/** Statut d'un ticket fermé par la conclusion d'une réclamation (« Résolu »). */
+const RESOLVED = 'terminé';
 /** Statuts remis en « Attente réponse transporteur » ; les autres ne bougent pas. */
 const REOPEN_FROM = ['terminé', 'en_attente_réponse_client'];
 
@@ -263,9 +265,23 @@ const applyImportReport = async (batchId, text, userId) => {
 
 const INDEMNITY_LABELS = { accepted: 'acceptée', refused: 'refusée' };
 
+/** Le ticket ne contient que nos notes et n'est pas déjà résolu. */
+const shouldResolve = async (ticketId) => {
+  const pool = require('../config/database');
+  const { rows: [t] } = await pool.query(
+    `SELECT sav_status, description, description_attachments, messages
+       FROM sav_tickets WHERE id = $1 AND merged_into_id IS NULL AND COALESCE(is_spam, false) = false`,
+    [ticketId]
+  );
+  return !!t && t.sav_status !== RESOLVED && rules.isClaimOnlyTicket(t);
+};
+
 /**
  * Réponse de Chronopost sur le remboursement du port (sans montant, rapproché
- * plus tard). Note privée dans le ticket SAV, statut du ticket inchangé.
+ * plus tard). Note privée dans le ticket SAV. Une conclusion (acceptée ou
+ * refusée) passe le ticket en Résolu s'il ne contient que les notes des
+ * réclamations (rules.isClaimOnlyTicket) ; sinon, et à l'annulation, le statut
+ * ne bouge pas.
  *
  * @param {number} claimId
  * @param {?('accepted'|'refused')} status - null annule la saisie
@@ -286,13 +302,22 @@ const setIndemnity = async (claimId, status, user) => {
   if (claim.sav_ticket_id && claim.previous_status !== status) {
     const who = user?.name ? ` par ${escapeHtml(user.name)}` : '';
     const ticket = claim.carrier_ticket ? ` (ticket Chronopost ${escapeHtml(claim.carrier_ticket)})` : '';
+    const close = status
+      ? await shouldResolve(claim.sav_ticket_id).catch(e => { console.warn(`[${LOG_TAG}] Ticket SAV non relu :`, e.message); return false; })
+      : false;
     const body = status
       ? `<p><strong>Indemnisation Chronopost ${INDEMNITY_LABELS[status]}</strong> pour le colis `
         + `${escapeHtml(claim.tracking_number)}${ticket}, saisie${who}.</p>`
+        + (close ? '<p>Ticket passé en Résolu : il ne contient que les notes de la réclamation.</p>' : '')
       : `<p>Réponse d'indemnisation Chronopost annulée pour le colis ${escapeHtml(claim.tracking_number)}`
         + `${ticket} (elle était « ${INDEMNITY_LABELS[claim.previous_status] || '—'} »)${who}.</p>`;
-    await savModel.addMessage(claim.sav_ticket_id, { from: AGENT, body, is_agent: true, is_private: true, attachments: [] })
-      .catch(e => console.warn(`[${LOG_TAG}] Note SAV d'indemnisation non posée :`, e.message));
+    const noted = await savModel.addMessage(claim.sav_ticket_id, { from: AGENT, body, is_agent: true, is_private: true, attachments: [] })
+      .then(() => true)
+      .catch(e => { console.warn(`[${LOG_TAG}] Note SAV d'indemnisation non posée :`, e.message); return false; });
+    if (close && noted) {
+      await savModel.updateStatus(claim.sav_ticket_id, RESOLVED)
+        .catch(e => console.warn(`[${LOG_TAG}] Ticket SAV ${claim.sav_ticket_id} non passé en Résolu :`, e.message));
+    }
   }
   return claim;
 };

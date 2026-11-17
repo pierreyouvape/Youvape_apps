@@ -214,8 +214,27 @@ const parseImportReport = (text) => {
   return results;
 };
 
+/** Signature des notes posées par les réclamations dans le SAV. */
+const CLAIM_AGENT = 'Réclamations transporteur';
+
+/**
+ * Un ticket qui ne contient QUE les notes privées des réclamations : aucun
+ * message du client, aucune réponse, aucune note d'une personne, pas de
+ * description (un ticket ouvert par le formulaire porte son texte là, avec
+ * des messages parfois vides). C'est celui que la conclusion ferme.
+ *
+ * @param {{description?: ?string, description_attachments?: any[], messages?: any[]}} ticket
+ */
+const isClaimOnlyTicket = (ticket) => {
+  if (!ticket) return false;
+  if (String(ticket.description || '').trim()) return false;
+  if ((ticket.description_attachments || []).length) return false;
+  const messages = ticket.messages || [];
+  return messages.length > 0 && messages.every(m => m && m.is_private === true && m.from === CLAIM_AGENT);
+};
+
 module.exports = {
-  PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME, REFUND_REQUEST,
+  PRODUCTS, OBJECTS, FAMILY, CSV_HEADER, CHECK_TIME, REFUND_REQUEST, CLAIM_AGENT,
   parseMethod, dueDay, parisInstant, deadline, judgeInstant, decide, buildComment,
-  csvRow, buildCsv, parseImportReport, frDay,
+  csvRow, buildCsv, parseImportReport, frDay, isClaimOnlyTicket,
 };

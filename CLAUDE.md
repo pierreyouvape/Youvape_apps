@@ -470,6 +470,10 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
 - SAV : **toujours une note PRIVÉE, jamais de mail client**. Ticket le plus récent de la commande (hors
   fusionné/spam) ; aucun → créé en « Attente réponse transporteur » ; `terminé` et
   `en_attente_réponse_client` y repassent ; les autres statuts ne bougent pas.
+- **La conclusion (indemnisation acceptée OU refusée) ferme le ticket** (17/11/2026) s'il ne contient QUE les
+  notes privées « Réclamations transporteur » et aucune description (`rules.isClaimOnlyTicket`) : passé en
+  `terminé`, sans mail. Sinon (client, humain, formulaire) et à l'annulation : statut inchangé. Avant, l'automatisation
+  SAV « Relance enquête transporteur » (72 h) le passait en « Vérifier enquête » alors que le dossier était clos.
 - **Éteint tant que `app_config.chronopost_claims_since` n'existe pas** ; aucune échéance antérieure n'est réclamée.
 
 ### Coût de livraison réel d'une commande (04/11/2026)

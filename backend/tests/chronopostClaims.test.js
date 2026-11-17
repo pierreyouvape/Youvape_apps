@@ -225,6 +225,24 @@ test('lit les n° de ticket de la notice, garde les refus', () => {
   ]);
 });
 
+// ── Conclusion : fermer un ticket qui ne contient que nos notes ─────────────
+const note = (extra = {}) => ({ from: rules.CLAIM_AGENT, body: '<p>…</p>', is_agent: true, is_private: true, attachments: [], ...extra });
+
+test('#9901515 : réclamation, n° Chronopost, conclusion → fermable', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: null, description_attachments: [], messages: [note(), note(), note()] }), true));
+test('un message du client empêche la fermeture', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: null, messages: [note(), { from: 'Client', is_agent: false, is_private: false }] }), false));
+test('une note privée d\'une personne empêche la fermeture', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: null, messages: [note(), note({ from: 'Pierre' })] }), false));
+test('une note publique signée réclamations empêche la fermeture', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: null, messages: [note({ is_private: false })] }), false));
+test('un ticket du formulaire (description) n\'est jamais fermé', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: 'Mon colis n\'est pas arrivé', messages: [note()] }), false));
+test('pièces jointes en description : pas fermé', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: '', description_attachments: [{ url: 'x' }], messages: [note()] }), false));
+test('ticket sans aucune note : pas fermé', () =>
+  assert.strictEqual(rules.isClaimOnlyTicket({ description: null, messages: [] }), false));
+
 if (failures) {
   console.error(`\n${failures} test(s) en échec.`);
   process.exit(1);
