@@ -77,6 +77,7 @@ router.get('/:shop/products/search', boutiquePerm('read'), nextoreController.sea
 // Onglet Produits : fiche, et désactivation (boutique par boutique)
 router.post('/:shop/products/disabled', boutiquePerm('write'), nextoreController.postProductsDisabled);
 router.get('/:shop/products/:productId', boutiquePerm('read'), nextoreController.getProduct);
+router.post('/:shop/products/:productId/suppliers', boutiquePerm('write'), nextoreController.postProductSupplier);
 
 // Comptage (inventaire) — écriture Nextore : count/validate en permission 'write'
 router.get('/:shop/comptages', boutiquePerm('read'), nextoreController.listComptages);

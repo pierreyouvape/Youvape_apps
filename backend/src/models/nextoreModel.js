@@ -25,6 +25,16 @@ const boutiqueOrderModel = require('./boutiqueOrderModel');
 // Fournisseurs fictifs des fiches Nextore : '0' = aucun, '2' = INVENTAIRE
 // (639 fiches). Jamais proposés comme fournisseur d'un besoin.
 const PSEUDO_SUPPLIERS = new Set(['0', '2']);
+// Écartements encore valables : aucun achat reçu chez ce fournisseur depuis.
+// (purchased_at = heure de Paris sans fuseau, excluded_at = timestamptz)
+const EXCLUDED_SQL = `
+  SELECT e.product_id, e.supplier_id, e.excluded_at, e.excluded_by
+  FROM nextore_product_supplier_exclusions e
+  WHERE NOT EXISTS (
+    SELECT 1 FROM nextore_purchase_items pi
+    WHERE pi.product_id = e.product_id AND pi.supplier_id = e.supplier_id
+      AND pi.status = 'received' AND pi.quantity_received > 0
+      AND pi.purchased_at > (e.excluded_at AT TIME ZONE 'Europe/Paris'))`;
 
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
@@ -104,6 +114,22 @@ async function setConfig(client, key) {
   );
 }
 
+// Fournisseurs d'une fiche Nextore : principal (supplier1) + liste dédupliquée
+function supplierIds(p) {
+  const ids = [s(p.supplier1), s(p.supplier2), s(p.supplier3), s(p.supplier4), s(p.supplier5)].filter(Boolean);
+  return [...new Set(ids)];
+}
+// Réf + prix par fournisseur : { "<id>": { ref, price } }
+function supplierRefs(p) {
+  const out = {};
+  for (let i = 1; i <= 5; i += 1) {
+    const id = s(p[`supplier${i}`]);
+    if (!id) continue;
+    out[id] = { ref: s(p[`supplier${i}ref`]), price: num(p[`supplier${i}price`]) };
+  }
+  return out;
+}
+
 // --- Synchro CATALOGUE (produits + catégories, global) ---------------------
 async function syncCatalog() {
   const started = Date.now();
@@ -113,22 +139,6 @@ async function syncCatalog() {
     api.getSubcategories(),
     api.getSuppliers(),
   ]);
-
-  // Fournisseurs d'un produit : principal (supplier1) + liste dédupliquée
-  const supplierIds = (p) => {
-    const ids = [s(p.supplier1), s(p.supplier2), s(p.supplier3), s(p.supplier4), s(p.supplier5)].filter(Boolean);
-    return [...new Set(ids)];
-  };
-  // Réf + prix par fournisseur : { "<id>": { ref, price } }
-  const supplierRefs = (p) => {
-    const out = {};
-    for (let i = 1; i <= 5; i += 1) {
-      const id = s(p[`supplier${i}`]);
-      if (!id) continue;
-      out[id] = { ref: s(p[`supplier${i}ref`]), price: num(p[`supplier${i}price`]) };
-    }
-    return out;
-  };
 
   const client = await pool.connect();
   try {
@@ -702,6 +712,12 @@ async function getNeedsData(warehouseId) {
        WHERE status = 'received' AND quantity_received > 0
        GROUP BY product_id
      ),
+     -- Fournisseurs retirés à la main (fiche produit), tant qu'aucun achat reçu après
+     excluded AS (
+       SELECT product_id, array_agg(supplier_id) AS supplier_ids
+       FROM (${EXCLUDED_SQL}) e
+       GROUP BY product_id
+     ),
      -- En commande : nos commandes ouvertes + les achats en attente saisis dans Nextore
      on_order AS (
        SELECT product_id, SUM(qty)::float AS qty FROM (
@@ -722,12 +738,14 @@ async function getNeedsData(warehouseId) {
             p.supplier_id AS fiche_supplier_id, p.supplier_ids AS fiche_supplier_ids, p.supplier_refs,
             lb.supplier_id AS bought_supplier_id, (lb.warehouse_id = $1) AS bought_here,
             lb.purchased_at::date::text AS last_purchase_at, b.supplier_ids AS bought_supplier_ids,
+            ex.supplier_ids AS excluded_supplier_ids,
             COALESCE(oo.qty, 0) AS on_order
      FROM nextore_stock st
      JOIN nextore_products p ON p.product_id = st.product_id
      LEFT JOIN nextore_categories c ON c.id = p.category_id
      LEFT JOIN received lb ON lb.product_id = p.product_id AND lb.rn = 1
      LEFT JOIN bought b ON b.product_id = p.product_id
+     LEFT JOIN excluded ex ON ex.product_id = p.product_id
      LEFT JOIN on_order oo ON oo.product_id = p.product_id
      WHERE st.warehouse_id = $1
        AND (p.name IS NULL OR p.name NOT ILIKE 'produit non cr%') AND ${ACTIVE}`,
@@ -764,12 +782,14 @@ async function getNeedsData(warehouseId) {
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
     if (p.stock === 0 && daily.length === 0) continue;
+    const excluded = new Set(p.excluded_supplier_ids || []);
     const ficheId = PSEUDO_SUPPLIERS.has(p.fiche_supplier_id) ? null : p.fiche_supplier_id;
-    const supplierId = p.bought_supplier_id || ficheId;
+    const boughtId = p.bought_supplier_id && !excluded.has(p.bought_supplier_id) ? p.bought_supplier_id : null;
+    const supplierId = boughtId || ficheId;
     // Filtre fournisseur : ceux des achats reçus + ceux de la fiche Nextore
-    // (17/11/2026) — un produit se commande chez chacun d'eux.
+    // (17/11/2026), moins ceux retirés à la main — un produit se commande chez chacun d'eux.
     const supplierIds = [...new Set([
-      ...(p.bought_supplier_ids || []),
+      ...(p.bought_supplier_ids || []).filter((x) => !excluded.has(x)),
       ...(p.fiche_supplier_ids || []).filter((x) => x && !PSEUDO_SUPPLIERS.has(x)),
     ])];
     for (const id of supplierIds) supCount.set(id, (supCount.get(id) || 0) + 1);
@@ -784,7 +804,7 @@ async function getNeedsData(warehouseId) {
       supplier_id: supplierId,
       supplier_name: supplierId ? (supName.get(supplierId) || null) : null,
       // 'boutique' | 'autre' (acheté par l'autre boutique) | 'fiche' (jamais acheté)
-      supplier_source: p.bought_supplier_id ? (p.bought_here ? 'boutique' : 'autre') : 'fiche',
+      supplier_source: boughtId ? (p.bought_here ? 'boutique' : 'autre') : 'fiche',
       last_purchase_at: p.last_purchase_at,
       on_order: p.on_order,
       supplier_ids: supplierIds,
@@ -1033,12 +1053,115 @@ async function getProductDetail(warehouseId, productId) {
 }
 
 /**
+ * Modifie les fournisseurs d'un produit depuis sa fiche (onglet Fournisseurs).
+ * action : 'add' | 'principal' | 'remove'. La fiche Nextore est relue EN DIRECT
+ * (jamais notre copie, qui peut dater de la dernière synchro) et seules les
+ * places supplierN qui changent sont écrites. AUCUN prix n'est envoyé : l'API
+ * Nextore arrondit supplierNprice à l'euro (mesuré le 17/11/2026) ; le prix
+ * reste attaché à sa place. Une place vidée vaut '0' chez Nextore.
+ */
+async function editProductSupplier(productId, action, supplierId, userEmail) {
+  const id = String(productId);
+  const sid = String(supplierId || '');
+  const fail = (status, error) => Object.assign(new Error(error), { status });
+  if (!['add', 'principal', 'remove'].includes(action)) throw fail(400, 'Action inconnue');
+  if (!sid || PSEUDO_SUPPLIERS.has(sid)) throw fail(400, 'Fournisseur invalide');
+  const { rows: known } = await pool.query('SELECT company FROM nextore_suppliers WHERE id = $1', [sid]);
+  if (action !== 'remove' && !known.length) throw fail(400, 'Fournisseur inconnu de Nextore');
+
+  const live = await api.getProducts({ product_id: id });
+  const fiche = Array.isArray(live) ? live[0] : live;
+  if (!fiche || s(fiche.id) !== id) throw fail(502, 'Fiche Nextore illisible');
+  const slots = [1, 2, 3, 4, 5].map((n) => s(fiche[`supplier${n}`]) || '0');
+  const isFree = (x) => x === '0';
+  const isPseudo = (x) => PSEUDO_SUPPLIERS.has(x);
+  const at = slots.indexOf(sid);
+  const fields = {};
+  // Vider = envoyer '' (testé : Nextore le relit '0')
+  const place = (i, v) => { fields[`supplier${i + 1}`] = v === '0' ? '' : v; slots[i] = v; };
+  // Place d'accueil : libre, sinon celle d'INVENTAIRE (fournisseur fictif)
+  const freeSlot = (from = 0) => {
+    const f = slots.findIndex((x, i) => i >= from && isFree(x));
+    return f >= 0 ? f : slots.findIndex((x, i) => i >= from && isPseudo(x));
+  };
+
+  if (action === 'add') {
+    if (at < 0) {
+      const f = freeSlot();
+      if (f < 0) throw fail(409, 'La fiche Nextore a déjà 5 fournisseurs : en retirer un d\'abord.');
+      place(f, sid);
+    }
+  } else if (action === 'principal') {
+    if (at !== 0) {
+      const old = slots[0];
+      if (at > 0) {
+        place(at, old); // échange des deux places
+      } else if (!isFree(old) && !isPseudo(old)) {
+        const f = freeSlot(1);
+        if (f < 0) throw fail(409, 'La fiche Nextore a déjà 5 fournisseurs : en retirer un d\'abord.');
+        place(f, old);
+      }
+      place(0, sid);
+    }
+  } else if (at >= 0) { // remove, présent sur la fiche
+    place(at, '0');
+    if (at === 0) { // le principal part : le suivant prend sa place
+      const next = slots.findIndex((x, i) => i > 0 && !isFree(x) && !isPseudo(x));
+      if (next > 0) { place(0, slots[next]); place(next, '0'); }
+    }
+  }
+
+  if (Object.keys(fields).length) await api.updateProduct(id, fields);
+
+  // Écartement local : seulement pour un retrait, levé par un ajout / principal
+  if (action === 'remove') {
+    const { rows: hasBought } = await pool.query(
+      `SELECT 1 FROM nextore_purchase_items
+       WHERE product_id = $1 AND supplier_id = $2 AND status = 'received' AND quantity_received > 0 LIMIT 1`,
+      [id, sid]
+    );
+    if (hasBought.length) {
+      await pool.query(
+        `INSERT INTO nextore_product_supplier_exclusions (product_id, supplier_id, excluded_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (product_id, supplier_id) DO UPDATE SET excluded_at = NOW(), excluded_by = EXCLUDED.excluded_by`,
+        [id, sid, userEmail || null]
+      );
+    }
+  } else {
+    await pool.query('DELETE FROM nextore_product_supplier_exclusions WHERE product_id = $1 AND supplier_id = $2', [id, sid]);
+  }
+
+  // Notre copie de la fiche, relue après écriture (sans attendre la synchro)
+  const after = Object.keys(fields).length ? await api.getProducts({ product_id: id }) : live;
+  const p = Array.isArray(after) ? after[0] : after;
+  if (p && s(p.id) === id) {
+    await pool.query(
+      `UPDATE nextore_products SET supplier_id = $2, supplier_ids = $3, supplier_refs = $4, synced_at = NOW()
+       WHERE product_id = $1`,
+      [id, s(p.supplier1), supplierIds(p), JSON.stringify(supplierRefs(p))]
+    );
+  }
+  return { written: fields };
+}
+
+/** Fournisseurs Nextore proposables (hors fictifs), pour « Ajouter ». */
+async function getSupplierChoices() {
+  const { rows } = await pool.query(
+    `SELECT id, company FROM nextore_suppliers
+     WHERE id <> ALL($1::text[]) ORDER BY company NULLS LAST`,
+    [[...PSEUDO_SUPPLIERS]]
+  );
+  return rows;
+}
+
+/**
  * Fournisseurs d'un produit : ceux de la fiche Nextore (supplier1..5, réf, prix)
  * + ceux des achats reçus, réunis. C'est la liste que les besoins proposent.
  */
 async function getProductSuppliers(productId) {
   const id = String(productId);
-  const [fiche, bought] = await Promise.all([
+  const [fiche, bought, excl] = await Promise.all([
     pool.query('SELECT supplier_ids, supplier_refs FROM nextore_products WHERE product_id = $1', [id]),
     pool.query(
       `SELECT pi.supplier_id, MAX(pi.supplier_name) AS supplier_name, COUNT(*)::int AS purchases,
@@ -1051,7 +1174,9 @@ async function getProductSuppliers(productId) {
        GROUP BY pi.supplier_id`,
       [id]
     ),
+    pool.query(`SELECT supplier_id, excluded_at, excluded_by FROM (${EXCLUDED_SQL}) x WHERE product_id = $1`, [id]),
   ]);
+  const exclBy = new Map(excl.rows.map((r) => [r.supplier_id, r]));
   const ficheIds = fiche.rows[0]?.supplier_ids || [];
   const refs = fiche.rows[0]?.supplier_refs || {};
   const ids = [...new Set([...ficheIds.filter((x) => !PSEUDO_SUPPLIERS.has(x)), ...bought.rows.map((r) => r.supplier_id)])]
@@ -1074,8 +1199,11 @@ async function getProductSuppliers(productId) {
       last_purchase_at: b?.last_purchase_at || null,
       last_unit_cost: b?.last_unit_cost ?? null,
       last_shop: b ? (WAREHOUSES.find((w) => w.id === b.last_warehouse_id)?.name || null) : null,
+      // Retiré à la main : hors des besoins tant qu'aucun achat reçu chez lui depuis
+      excluded_at: slot < 0 ? (exclBy.get(sid)?.excluded_at || null) : null,
+      excluded_by: slot < 0 ? (exclBy.get(sid)?.excluded_by || null) : null,
     };
-  }).sort((a, b) => (a.fiche_slot || 99) - (b.fiche_slot || 99)
+  }).sort((a, b) => (!!a.excluded_at) - (!!b.excluded_at) || (a.fiche_slot || 99) - (b.fiche_slot || 99)
     || String(b.last_purchase_at || '').localeCompare(String(a.last_purchase_at || '')));
 }
 
@@ -1127,6 +1255,8 @@ module.exports = {
   getBoutiqueStockByWcIds,
   getProductStockHistory,
   getProductDetail,
+  editProductSupplier,
+  getSupplierChoices,
   setProductsDisabled,
   getLastSyncAt,
 };

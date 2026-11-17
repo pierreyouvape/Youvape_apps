@@ -140,47 +140,119 @@ function Barcode({ code }) {
 
 /* ─── FICHE PRODUIT ─────────────────────────────────────── */
 /* Fournisseurs d'un produit : fiche Nextore + achats reçus, réunis.
-   Les besoins proposent le produit chez chacun d'eux. */
-function SuppliersPanel({ suppliers }) {
+   Les besoins proposent le produit chez chacun d'eux. Modifiable (droit
+   d'écriture) : la fiche Nextore est commune aux deux boutiques. */
+function SuppliersPanel({ shop, token, productId, suppliers, choices, canWrite, onUpdated }) {
+  const [busy, setBusy] = useState(null); // clé de l'action en cours
+  const [err, setErr] = useState(null);
+  const [addId, setAddId] = useState('');
   const fmtEur = (n) => (n == null ? '—' : `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
+  const onFiche = suppliers.filter((x) => x.fiche_slot).length;
+  const listed = new Set(suppliers.filter((x) => !x.excluded_at).map((x) => x.supplier_id));
+  const addable = (choices || []).filter((c) => !listed.has(c.id));
+
+  const act = async (action, supplierId, confirmText) => {
+    if (confirmText && !window.confirm(confirmText)) return;
+    setBusy(`${action}-${supplierId}`);
+    setErr(null);
+    try {
+      const res = await axios.post(`${API_URL}/nextore/${shop.slug}/products/${productId}/suppliers`,
+        { action, supplier_id: supplierId }, authHeaders(token));
+      if (action === 'add') setAddId('');
+      onUpdated(res.data.product);
+    } catch (e) {
+      setErr(e.response?.data?.error || e.message || 'Erreur');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const smallBtn = (label, onClick, key, color = C.primary) => (
+    <button onClick={onClick} disabled={!!busy} style={{
+      border: `1px solid ${color}`, background: C.white, color, borderRadius: 6, padding: '3px 9px',
+      fontSize: 12, fontWeight: 600, cursor: busy ? 'default' : 'pointer', opacity: busy && busy !== key ? 0.5 : 1, whiteSpace: 'nowrap',
+    }}>{busy === key ? '…' : label}</button>
+  );
+
   return (
     <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 10 }}>
         Fournisseurs de la fiche Nextore et fournisseurs chez qui le produit a été reçu.
         Dans les besoins, le produit est proposé chez chacun d'eux.
+        {canWrite && ' Les modifications changent la fiche Nextore, commune aux deux boutiques.'}
       </div>
+      {err && (
+        <div style={{ padding: '8px 12px', background: C.redL, color: C.red, borderRadius: 8, marginBottom: 10, fontSize: 13 }}>{err}</div>
+      )}
       {!suppliers.length ? (
-        <div style={{ fontSize: 13, color: C.greyM }}>Aucun fournisseur : ni sur la fiche Nextore, ni dans les achats reçus.</div>
+        <div style={{ fontSize: 13, color: C.greyM, marginBottom: 12 }}>Aucun fournisseur : ni sur la fiche Nextore, ni dans les achats reçus.</div>
       ) : (
-        <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
                   <Th>Fournisseur</Th><Th>Fiche Nextore</Th><Th align="right">Prix fiche</Th>
                   <Th>Dernier achat reçu</Th><Th align="right">Coût</Th><Th align="right">Achats</Th>
+                  {canWrite && <Th />}
                 </tr>
               </thead>
               <tbody>
-                {suppliers.map((s) => (
-                  <tr key={s.supplier_id}>
-                    <Td bold>{s.name}</Td>
-                    <Td color={s.fiche_slot ? C.dark : C.greyM}>
-                      {s.fiche_slot === 1 ? 'Principal' : s.fiche_slot ? `Fournisseur ${s.fiche_slot}` : 'absent'}
-                      {s.fiche_ref && <div style={{ fontSize: 12, color: C.greyT }}>Réf. {s.fiche_ref}</div>}
-                    </Td>
-                    <Td align="right">{s.fiche_slot ? fmtEur(s.fiche_price) : '—'}</Td>
-                    <Td color={s.last_purchase_at ? C.dark : C.greyM}>
-                      {s.last_purchase_at ? fmtDay(s.last_purchase_at) : 'jamais'}
-                      {s.last_shop && <div style={{ fontSize: 12, color: C.greyT }}>{s.last_shop}</div>}
-                    </Td>
-                    <Td align="right">{fmtEur(s.last_unit_cost)}</Td>
-                    <Td align="right" color={C.greyT}>{s.purchases ? `${fmtNum(s.purchases)} · ${fmtNum(s.qty)} pcs` : '—'}</Td>
-                  </tr>
-                ))}
+                {suppliers.map((x) => {
+                  const off = !!x.excluded_at;
+                  return (
+                    <tr key={x.supplier_id} style={{ opacity: off ? 0.55 : 1 }}>
+                      <Td bold>
+                        {x.name}
+                        {off && <div style={{ fontSize: 12, fontWeight: 400, color: C.red }}>
+                          Retiré le {fmtStamp(x.excluded_at)}{x.excluded_by ? ` par ${x.excluded_by}` : ''} — revient s'il est reçu à nouveau
+                        </div>}
+                      </Td>
+                      <Td color={x.fiche_slot ? C.dark : C.greyM}>
+                        {x.fiche_slot === 1 ? <b>Principal</b> : x.fiche_slot ? `Fournisseur ${x.fiche_slot}` : 'absent'}
+                        {x.fiche_ref && <div style={{ fontSize: 12, color: C.greyT }}>Réf. {x.fiche_ref}</div>}
+                      </Td>
+                      <Td align="right">{x.fiche_slot ? fmtEur(x.fiche_price) : '—'}</Td>
+                      <Td color={x.last_purchase_at ? C.dark : C.greyM}>
+                        {x.last_purchase_at ? fmtDay(x.last_purchase_at) : 'jamais'}
+                        {x.last_shop && <div style={{ fontSize: 12, color: C.greyT }}>{x.last_shop}</div>}
+                      </Td>
+                      <Td align="right">{fmtEur(x.last_unit_cost)}</Td>
+                      <Td align="right" color={C.greyT}>{x.purchases ? `${fmtNum(x.purchases)} · ${fmtNum(x.qty)} pcs` : '—'}</Td>
+                      {canWrite && (
+                        <Td align="right">
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            {off ? smallBtn('Remettre', () => act('add', x.supplier_id), `add-${x.supplier_id}`) : (
+                              <>
+                                {x.fiche_slot !== 1 && smallBtn('Principal', () => act('principal', x.supplier_id), `principal-${x.supplier_id}`)}
+                                {smallBtn('Retirer', () => act('remove', x.supplier_id,
+                                  `Retirer ${x.name} des fournisseurs de ce produit ?`
+                                  + (x.fiche_slot ? '\nIl sort de la fiche Nextore (les deux boutiques).' : '')
+                                  + (x.purchases ? '\nIl ne sera plus proposé dans les besoins, sauf s\'il est reçu à nouveau.' : '')),
+                                  `remove-${x.supplier_id}`, C.red)}
+                              </>
+                            )}
+                          </div>
+                        </Td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      {canWrite && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={addId} onChange={(e) => setAddId(e.target.value)} disabled={!!busy || onFiche >= 5}
+                  style={{ padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.greyB}`, fontSize: 13, minWidth: 220 }}>
+            <option value="">{onFiche >= 5 ? 'Fiche pleine (5 fournisseurs)' : 'Ajouter un fournisseur…'}</option>
+            {addable.map((c) => <option key={c.id} value={c.id}>{c.company || `#${c.id}`}</option>)}
+          </select>
+          {smallBtn('Ajouter', () => addId && act('add', addId), `add-${addId}`)}
+          <span style={{ fontSize: 12, color: C.greyM }}>
+            Le prix fiche ne se modifie pas d'ici : l'API Nextore l'arrondit à l'euro.
+          </span>
         </div>
       )}
     </div>
@@ -192,12 +264,14 @@ function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged })
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState('general'); // 'general' | 'fournisseurs'
+  const [choices, setChoices] = useState([]);
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const res = await axios.get(`${API_URL}/nextore/${shop.slug}/products/${productId}`, authHeaders(token));
       setP(res.data.product);
+      setChoices(res.data.supplier_choices || []);
     } catch (e) {
       setError(e.response?.data?.error || e.message || 'Erreur de chargement');
     }
@@ -273,7 +347,11 @@ function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged })
           </div>
         )}
 
-        {p && tab === 'fournisseurs' && <SuppliersPanel suppliers={p.suppliers || []} />}
+        {p && tab === 'fournisseurs' && (
+          <SuppliersPanel shop={shop} token={token} productId={productId} suppliers={p.suppliers || []}
+                          choices={choices} canWrite={canWrite && !p.deleted}
+                          onUpdated={(np) => { if (np) setP(np); }} />
+        )}
 
         {p && tab === 'general' && (
           <>

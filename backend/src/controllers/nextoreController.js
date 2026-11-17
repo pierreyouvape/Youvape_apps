@@ -295,10 +295,29 @@ async function getProduct(req, res) {
   try {
     const product = await nextoreModel.getProductDetail(wh.id, req.params.productId);
     if (!product) return res.status(404).json({ error: 'Produit inconnu' });
-    res.json({ warehouse: wh, product });
+    const supplierChoices = await nextoreModel.getSupplierChoices();
+    res.json({ warehouse: wh, product, supplier_choices: supplierChoices });
   } catch (err) {
     console.error('Nextore getProduct:', err);
     res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// POST /:shop/products/:productId/suppliers — { action: add|principal|remove, supplier_id }
+// Écrit la fiche Nextore (commune aux deux boutiques) ; retirer écarte aussi des besoins.
+async function postProductSupplier(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const result = await nextoreModel.editProductSupplier(
+      req.params.productId, req.body?.action, req.body?.supplier_id, req.user?.email
+    );
+    const product = await nextoreModel.getProductDetail(wh.id, req.params.productId);
+    res.json({ ...result, product });
+  } catch (err) {
+    if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+    console.error('Nextore postProductSupplier:', err);
+    res.status(502).json({ error: err.message || 'Erreur Nextore' });
   }
 }
 
@@ -457,6 +476,7 @@ module.exports = {
   postSync,
   getStock,
   getNeeds,
+  postProductSupplier,
   getNeedsData,
   postPurchase,
   getImportSuppliers,
