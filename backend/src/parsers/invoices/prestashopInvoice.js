@@ -177,7 +177,15 @@ function parseHeader(text) {
   // PrestaShop auraient vu le leur rangé comme une facture, avec des montants
   // POSITIFS — donc une dette au lieu d'un crédit. Repéré à l'audit du
   // 28/09/2026, faute d'avoir un exemplaire sous la main.
-  const isCreditNote = /^\s*AVOIR\b/im.test(text) || /\bAvoir\s+n°/i.test(flat);
+  //
+  // Seul le TITRE du document le dit (première ligne : « FACTURE » ou
+  // « AVOIR »). Une réduction de pied peut s'appeler « Avoir Maxime
+  // Coglitore - 71,10 € » : la chercher en début de N'IMPORTE QUELLE ligne
+  // rangeait la facture Highbuy #FA021993 en avoir, tous montants en négatif.
+  const title = (text.match(/^\s*(\S[^\n]*)/) || [])[1] || '';
+  const isCreditNote = /^AVOIR\b/i.test(title.trim())
+    || (!/^FACTURE\b/i.test(title.trim()) && /^\s*AVOIR\s*$/im.test(text))
+    || /\bAvoir\s+n°/i.test(flat);
   const amount = (re, source = text) => {
     const m = source.match(re);
     return m ? toNumber(m[1]) : null;

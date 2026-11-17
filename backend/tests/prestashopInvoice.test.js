@@ -216,6 +216,18 @@ test('pied de page Highbuy : il ne se colle pas à l\'article qui ouvre la page 
   assert.ok(/^WHITE RABBIT x TORNADO/.test(l.label), `libellé pollué : ${l.label}`);
 });
 
+test('Highbuy : une réduction « Avoir Maxime Coglitore » ne fait pas de la facture un avoir (#FA021993)', () => {
+  // La ligne de réduction commence par « Avoir » : la facture sortait en avoir,
+  // toutes ses lignes en négatif face à la commande.
+  const r = parse('highbuy-FA021993.txt');
+  assert.strictEqual(r.isCreditNote, false);
+  assert.strictEqual(r.docType, 'invoice');
+  assert.strictEqual(r.number, '#FA021993');
+  assert.ok(close(r.totalHt, 2663.30), `HT ${r.totalHt}`);
+  assert.ok(r.lines.filter((l) => l.kind !== 'discount').every((l) => l.lineTotalHt > 0), 'ligne négative');
+  assert.ok(close(somme(r), 2663.30, 0.02), `somme ${somme(r).toFixed(2)} ≠ 2663.30`);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

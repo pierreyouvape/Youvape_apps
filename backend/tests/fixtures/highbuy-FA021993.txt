@@ -1,0 +1,134 @@
+FACTURE
+17/11/2026
+#FA021993
+Adresse de livraison
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Adresse de facturation
+Maxime COGLITORE
+YOUVAPE SITE
+580 avenue de l'aube rouge
+34170 Castelnau le Lez
+France
+0695975267
+Numéro de facture Date de facturation Réf. de commande Date de commande
+#FA021993 17/11/2026 CGWZWKGPZ 17/11/2026
+Référence Produit Taux de
+taxe
+Prix de base
+(HT)
+Prix unitaire
+(HT)
+Quantit
+é
+Total
+(HT)
+HB1634 BATTERIE - WEKANN x CannBro – 400
+mAh - Voltage Réglable
+20 % 9,90 € 8,90 € 40 356,00 €
+HB1347 CANAPUFF - VAPE PEN 9H-HHC -
+Super Lemon Haze 95 % - 1 ml
+20 % -- 16,00 € 2 32,00 €
+HB1251 WHITE RABBIT - CARTOUCHE VMAC
+HYPER STRONG - AMNESIA HAZE
+20 % 12,90 € 11,00 € 25 275,00 €
+HB0945 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Blue
+Mint
+20 % -- 7,90 € 5 39,50 €
+HB0936 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Blue
+Razz Cherry
+20 % -- 7,90 € 3 23,70 €
+HB0951 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Dragon
+Blue Razz Lemonade Ice
+20 % -- 7,90 € 3 23,70 €
+HB0949 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Dragon
+Bubble Gum Ice
+20 % -- 7,90 € 2 15,80 €
+HB1084 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Fizzy
+Peach
+20 % -- 7,90 € 3 23,70 €
+HB0937 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Passion
+Bubble
+20 % -- 7,90 € 1 7,90 €
+HB0948 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur : Red
+Berries Pineapple
+20 % -- 7,90 € 7 55,30 €
+HB0939 WHITE RABBIT - E-liquide 10ml - 2%
+nicotine (display de 10) - Saveur :
+Strawberry Slush
+20 % -- 7,90 € 2 15,80 €
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 1 of 2 --
+
+FACTURE
+17/11/2026
+#FA021993
+HB1284 WHITE RABBIT - E-Liquide CBD 1000MG
+10ML - Saveur : Purple Haze
+20 % 4,90 € 3,90 € 10 39,00 €
+HB1285 WHITE RABBIT - E-Liquide CBD 1000MG
+10ML - Saveur : Silver Haze
+20 % 4,90 € 3,90 € 10 39,00 €
+HB1286 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur :
+Amnesia
+20 % 17,30 € 14,90 € 40 596,00 €
+HB1481 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur : Jack
+Herer
+20 % 17,30 € 14,90 € 20 298,00 €
+HB1288 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur : Lemon
+Kush
+20 % 17,30 € 14,90 € 40 596,00 €
+HB1482 WHITE RABBIT - E-Liquide VMAC
+HYPER STRONG 10ML - Saveur : Mixed
+Berries
+20 % 17,30 € 14,90 € 20 298,00 €
+Réductions
+Avoir Maxime Coglitore - 71,10 €
+Détail des taxes Taux de taxe Taxe totale
+Produits 20.000 % 532,66 €
+Total produits 2 734,40 €
+Total Réductions - 71,10 €
+Frais de livraison Livraison gratuite
+Total (HT) 2 663,30 €
+Taxe totale 532,66 €
+Total 3 195,96 €
+Moyen de paiement
+Transporteur Chronopost - Livraison express. Commande
+avant 13h.
+RÉSERVÉ DE PROPRIÉTÉ : loi du 12/05/1980 N°80335 - le matériel livré
+reste l'entière propriété de HIGHBUY SAS jusqu'au paiement l'intégral du prix
+fixé ci-dessus.
+IBAN : FR76 3000 3012 6900 0257 1967 924
+BIC-ADRESSE SWIFT : SOGEFRPP
+Intérêt de retard : A défaut et conformément à la loi 2008-776 du 4 Août 2008,
+un intérêt de retard égal à 5 fois le taux légal sera appliqué, ainsi qu'une
+indemnité forfaitaire pour frais de recouvrement de 40 euros ( Décret
+2012-1115 du 02/10/20212).
+Powered by TCPDF (www.tcpdf.org)
+Highbuy - 116 boulevard de la Pomme - master park lot 25 - 13011 Marseille - France
+Pour toute assistance, merci de nous contacter :
+Tél. : 0611789827
+88401742700011
+VAT/ FR28884017427
+
+-- 2 of 2 --
+
