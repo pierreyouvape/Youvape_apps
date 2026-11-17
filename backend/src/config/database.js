@@ -7,6 +7,12 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
   port: process.env.DB_PORT,
+  // JIT coupé (17/11/2026). Le planificateur surestime le coût des requêtes
+  // à sous-requêtes corrélées et les compile à la volée : la liste des
+  // factures fournisseurs (142 lignes) passait 14,3 s à compiler pour 0,13 s
+  // d'exécution réelle. Sur des requêtes de quelques ms à quelques s, la
+  // compilation coûte toujours plus qu'elle ne rapporte.
+  options: '-c jit=off',
 });
 
 pool.on('connect', () => {
