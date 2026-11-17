@@ -1922,6 +1922,14 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
 
   const totalDu = rows.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0);
   const totalEcarts = rows.reduce((s, r) => s + (Number(r.difference_count) || 0), 0);
+  // Factures et avoirs séparés, en TTC. Un avoir est stocké en négatif : son
+  // total s'affiche donc négatif, comme il vient en déduction.
+  const factures = rows.filter((r) => r.doc_type !== 'credit_note' && r.doc_type !== 'proforma');
+  const avoirs = rows.filter((r) => r.doc_type === 'credit_note');
+  const nbFactures = factures.length;
+  const nbAvoirs = avoirs.length;
+  const totalFactures = factures.reduce((s, r) => s + (Number(r.total_ttc) || 0), 0);
+  const totalAvoirs = avoirs.reduce((s, r) => s + (Number(r.total_ttc) || 0), 0);
   /* ─── TVA déductible ───────────────────────────────────────
    * La TVA que les fournisseurs ont facturée, donc celle qu'on récupère. Elle
    * est lue sur le document lui-même (`total_tva`), jamais recalculée depuis le
@@ -2008,7 +2016,16 @@ function FilingTab({ suppliers, mobile, reloadKey, onSaved, initialDocId }) {
           title={"TVA facturée par les fournisseurs sur les documents affichés, telle qu'elle est imprimée dessus."
             + ' Les avoirs viennent en déduction. Les filtres Du / Au portent sur la date du document.'}
         />
-        <Kpi label="Reste à payer" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'} />
+        {/* Le « Reste à payer » déduit les avoirs : sans leur total à côté,
+            on ne peut pas refaire le calcul de tête ni le rapprocher du relevé
+            du fournisseur. Tout est en TTC, ce qui sort de la banque. */}
+        <Kpi label="Factures TTC" value={eur(totalFactures)}
+          hint={`${nbFactures} facture${nbFactures > 1 ? 's' : ''}`} />
+        <Kpi label="Avoirs TTC" value={eur(totalAvoirs)} tone="blue"
+          hint={`${nbAvoirs} avoir${nbAvoirs > 1 ? 's' : ''}, à déduire`} />
+        <Kpi label="Reste à payer TTC" value={eur(totalDu)} tone={totalDu > 0 ? 'orange' : 'green'}
+          hint="avoirs déduits, règlements déduits"
+          title="Total TTC des documents affichés, moins les avoirs et ce qui est déjà réglé." />
         <Kpi label="Différences relevées" value={totalEcarts} tone={totalEcarts > 0 ? 'red' : 'green'} />
         <div style={{ alignSelf: 'center' }}>
           <Btn variant="ghost" onClick={zipVisible} disabled={zipping || rows.length === 0}>
