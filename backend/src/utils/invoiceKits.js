@@ -70,6 +70,9 @@ function explodeKits(lines, kits, priceOf = () => null) {
         ...line,
         ref: c.ref,
         label: c.label || null,
+        // Le produit du composant : il apparie la ligne à la commande quand
+        // les réfs diffèrent (SKU provisoire d'un côté, vraie réf. de l'autre).
+        productId: c.productId || null,
         qty: qtyPacks * (Number(c.qty) || 1),
         lineTotalHt: parts[i],
         kit: origine,

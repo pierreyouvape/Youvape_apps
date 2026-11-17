@@ -393,7 +393,33 @@ function KitForm({ supplierId, kitRef, label, onSaved, onCancel }) {
   const [texte, setTexte] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [recherche, setRecherche] = useState('');
+  const [resultats, setResultats] = useState([]);
+  const minuteur = useRef(null);
   const composants = lireComposants(texte);
+
+  // Un article jamais acheté chez ce fournisseur n'a pas encore de réf. chez
+  // lui : on le cherche dans le catalogue, et c'est notre SKU qui le désigne.
+  const chercher = (v) => {
+    setRecherche(v);
+    clearTimeout(minuteur.current);
+    if (v.trim().length < 2) { setResultats([]); return; }
+    minuteur.current = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`${API}/purchases/products/search`, {
+          params: { q: v.trim(), limit: 8, supplier_id: supplierId, all_suppliers: 1 },
+        });
+        setResultats(data.data || []);
+      } catch { setResultats([]); }
+    }, 300);
+  };
+  const refDe = (p) => (p.supplier_refs && p.supplier_refs[0] && p.supplier_refs[0].supplier_sku) || p.sku;
+  const ajouter = (p) => {
+    const ref = refDe(p);
+    if (!ref) return;
+    setTexte((t) => (t.trim() ? `${t.replace(/\s+$/, '')}\n${ref}` : ref));
+    setRecherche(''); setResultats([]);
+  };
 
   const enregistrer = async () => {
     setBusy(true); setError(null);
@@ -411,12 +437,45 @@ function KitForm({ supplierId, kitRef, label, onSaved, onCancel }) {
   return (
     <div style={{ background: C.blueL, border: `1px solid ${C.blue}55`, borderRadius: 10, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ fontSize: 12.5, color: C.dark }}>
-        <strong>{kitRef}</strong> contient, pour <strong>un</strong> pack, les réfs suivantes de ce fournisseur
-        (une par ligne ou séparées par des virgules, « 2 × réf » pour plusieurs pièces) :
+        <strong>{kitRef}</strong> contient, pour <strong>un</strong> pack, les articles suivants
+        (une réf. par ligne ou séparées par des virgules, « 2 × réf » pour plusieurs pièces).
+        Réf. de ce fournisseur, ou <strong>notre SKU</strong> si elle n'est pas encore connue :
+        le pack prendra la vraie réf. dès qu'elle sera enregistrée.
+      </div>
+      <div style={{ position: 'relative' }}>
+        <input value={recherche} onChange={(e) => chercher(e.target.value)}
+          placeholder="Chercher un produit (nom, marque, SKU) pour l'ajouter…"
+          aria-label="Chercher un produit à ajouter au pack"
+          style={{ ...inputStyle, width: '100%' }} />
+        {resultats.length > 0 && (
+          <div style={{
+            position: 'absolute', zIndex: 5, left: 0, right: 0, top: '100%', marginTop: 2,
+            background: '#fff', border: `1px solid ${C.blue}55`, borderRadius: 8, maxHeight: 260, overflowY: 'auto',
+            boxShadow: '0 4px 14px rgba(0,0,0,.08)',
+          }}>
+            {resultats.map((p) => {
+              const ref = refDe(p);
+              const connue = !!(p.supplier_refs && p.supplier_refs.length);
+              return (
+                <button key={p.id} type="button" onClick={() => ajouter(p)} disabled={!ref}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none',
+                    borderBottom: `1px solid ${C.grey}`, background: 'none', cursor: ref ? 'pointer' : 'default', fontSize: 12.5,
+                  }}>
+                  <div style={{ color: C.dark }}>{p.post_title}</div>
+                  <div style={{ fontSize: 11, color: connue ? C.green : C.orange }}>
+                    {!ref ? 'Ni réf. ni SKU : impossible à désigner'
+                      : connue ? `Réf. fournisseur ${ref}` : `Pas de réf. chez ce fournisseur — SKU ${ref}`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3} autoFocus
         aria-label={`Composants du pack ${kitRef}`}
-        placeholder="josh00013021, josh00013020, josh00014503, josh00014497"
+        placeholder="josh00013021, josh00013020, 2 × 1275896"
         style={{ ...inputStyle, width: '100%', fontFamily: 'inherit', resize: 'vertical' }} />
       {error && <div style={{ fontSize: 12, color: C.red }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

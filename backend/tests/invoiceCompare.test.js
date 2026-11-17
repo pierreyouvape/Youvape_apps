@@ -1502,6 +1502,27 @@ test('pack : montant réparti au prorata des prix quand ils diffèrent', () => {
   assert.ok(close(sansPrix[0].lineTotalHt, 3.33) && close(sansPrix[1].lineTotalHt, 6.67));
 });
 
+test('pack : composant désigné par notre SKU, apparié à la commande par le produit', () => {
+  // Composant déclaré par SKU (réf. JoshNoa inconnue), produit 42 ; la commande,
+  // elle, porte la vraie réf. apprise depuis.
+  const kits = new Map([['pk', { ref: 'PK', components: [
+    { ref: '1275896', qty: 1, productId: 42 }, { ref: 'josh1', qty: 1, productId: 7 },
+  ] }]]);
+  const lignes = explodeKits([{ ref: 'PK', qty: 2, lineTotalHt: 20 }], kits, () => null);
+  assert.strictEqual(lignes[0].productId, 42);
+  const keyed = attachMatchKeys({
+    invoiceLines: lignes,
+    orderLines: [{ ref: 'josh99', qty: 2, price: 5 }, { ref: 'josh1', qty: 2, price: 5 }],
+    refProducts: new Map([['josh99', 42], ['josh1', 7]]),
+  });
+  const sku = keyed.invoiceLines.find((l) => l.ref === '1275896');
+  const cmd = keyed.orderLines.find((l) => l.ref === 'josh99');
+  assert.ok(sku.matchKey && sku.matchKey === cmd.matchKey, 'apparié par le produit');
+  // Une ligne ordinaire ne prend jamais un productId venu d'ailleurs.
+  const brut = attachMatchKeys({ invoiceLines: [{ ref: 'X', productId: 42 }], orderLines: [] });
+  assert.strictEqual(brut.invoiceLines[0].productId, null);
+});
+
 if (failures > 0) {
   console.log(`\n${failures} test(s) en échec.`);
   process.exit(1);

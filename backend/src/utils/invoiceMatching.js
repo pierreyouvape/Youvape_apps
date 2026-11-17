@@ -33,7 +33,8 @@ function attachMatchKeys({ invoiceLines = [], orderLines = [], refProducts = new
   // arrivait pas — deux clés différentes pour une même référence, et trente
   // lignes déclarées à la fois commandées non facturées et facturées non
   // commandées.
-  const invoice = invoiceLines.map((l) => ({ ...l, productId: refProducts.get(norm(l.ref)) || null }));
+  // Une ligne issue d'un pack découpé porte déjà son produit (cf. invoiceKits).
+  const invoice = invoiceLines.map((l) => ({ ...l, productId: refProducts.get(norm(l.ref)) || (l.kit && l.productId) || null }));
   const order = orderLines.map((l) => ({
     ...l,
     productId: refProducts.get(norm(l.ref)) || skuProducts.get(norm(l.sku || l.ref)) || null,
