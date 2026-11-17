@@ -419,7 +419,7 @@ function AutomationRow({ auto, statuses, activeStatuses, onToggle, onUpdate, onD
 }
 
 // ─── Section création repliée ────────────────────────────────────────────────
-function CreateAutomationForm({ statuses, onCreate }) {
+function CreateAutomationForm({ statuses, activeStatuses, onCreate }) {
   const [open, setOpen] = useState(false);
   if (!open) {
     return (
