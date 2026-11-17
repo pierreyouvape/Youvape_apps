@@ -33,6 +33,12 @@ const AGENT = rules.CLAIM_AGENT;
 
 /** Le statut SAV que prend un ticket rouvert pour une réclamation. */
 const WAITING_CARRIER = 'en_attente_réponse_transporteur';
+/**
+ * Le statut d'un ticket CRÉÉ par la réclamation (aucun ticket pour la commande).
+ * Statut créé dans le SAV le 17/11/2026 ; s'il venait à disparaître, repli sur
+ * WAITING_CARRIER plutôt qu'un échec (qui ferait reposer la note au passage suivant).
+ */
+const AUTO_CLAIM_STATUS = 'réclamation_automatique';
 /** Statut d'un ticket fermé par la conclusion d'une réclamation (« Résolu »). */
 const RESOLVED = 'terminé';
 /** Statuts remis en « Attente réponse transporteur » ; les autres ne bougent pas. */
@@ -132,9 +138,10 @@ const findTicket = async (orderNumber) => {
 };
 
 /**
- * Note privée dans le ticket de la commande, créé au besoin en « Attente
- * réponse transporteur ». Un ticket Résolu ou en attente du client y repasse ;
- * Nouveau, Ouvert, Réponse client et les autres statuts ne bougent pas.
+ * Note privée dans le ticket de la commande, créé au besoin en « Réclamation
+ * automatique ». Un ticket existant Résolu ou en attente du client repasse en
+ * « Attente réponse transporteur » ; Nouveau, Ouvert, Réponse client et les
+ * autres statuts ne bougent pas.
  */
 const notifySav = async (claim) => {
   try {
@@ -150,7 +157,10 @@ const notifySav = async (claim) => {
         ? `Colis non pris en charge par Chronopost : ${claim.tracking_number}`
         : `Retard Chronopost : colis ${claim.tracking_number}`;
       ticket = await createTicket(order, subject, note, AGENT);
-      await savModel.updateStatus(ticket.id, WAITING_CARRIER);
+      await savModel.updateStatus(ticket.id, AUTO_CLAIM_STATUS).catch((e) => {
+        console.warn(`[${LOG_TAG}] Statut « ${AUTO_CLAIM_STATUS} » refusé (${e.message}), repli sur ${WAITING_CARRIER}`);
+        return savModel.updateStatus(ticket.id, WAITING_CARRIER);
+      });
     }
     await claimModel.setSavResult(claim.id, ticket.id, null);
     return ticket.id;
@@ -322,4 +332,4 @@ const setIndemnity = async (claimId, status, user) => {
   return claim;
 };
 
-module.exports = { findClaims, run, applyImportReport, setIndemnity, notifySav, todayParis, REOPEN_FROM, WAITING_CARRIER };
+module.exports = { findClaims, run, applyImportReport, setIndemnity, notifySav, todayParis, REOPEN_FROM, WAITING_CARRIER, AUTO_CLAIM_STATUS };

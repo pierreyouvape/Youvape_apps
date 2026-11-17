@@ -468,8 +468,9 @@ bordereau : Chrono 13 (`01`) et Relais (`86`) dus le **lendemain ouvré**, Expre
   importé **à la main** chez Chronopost ; le compte-rendu collé dans `/expeditions` → Réclamations donne
   les n° de ticket.
 - SAV : **toujours une note PRIVÉE, jamais de mail client**. Ticket le plus récent de la commande (hors
-  fusionné/spam) ; aucun → créé en « Attente réponse transporteur » ; `terminé` et
-  `en_attente_réponse_client` y repassent ; les autres statuts ne bougent pas.
+  fusionné/spam) ; aucun → créé en « Réclamation automatique » (`réclamation_automatique`, 17/11/2026 — hors de
+  l'automatisation « Relance enquête transporteur » de 72 h) ; ticket existant `terminé` ou
+  `en_attente_réponse_client` → « Attente réponse transporteur » ; les autres statuts ne bougent pas.
 - **La conclusion (indemnisation acceptée OU refusée) ferme le ticket** (17/11/2026) s'il ne contient QUE les
   notes privées « Réclamations transporteur » et aucune description (`rules.isClaimOnlyTicket`) : passé en
   `terminé`, sans mail. Sinon (client, humain, formulaire) et à l'annulation : statut inchangé. Avant, l'automatisation
