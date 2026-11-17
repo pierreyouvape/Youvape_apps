@@ -22,6 +22,10 @@ const ACTIVE = activeSql('p', 'st');
 const ACTIVE_S = activeSql('p', 's'); // requêtes où le stock s'appelle `s`
 const boutiqueOrderModel = require('./boutiqueOrderModel');
 
+// Fournisseurs fictifs des fiches Nextore : '0' = aucun, '2' = INVENTAIRE
+// (639 fiches). Jamais proposés comme fournisseur d'un besoin.
+const PSEUDO_SUPPLIERS = new Set(['0', '2']);
+
 // --- Nettoyage des valeurs Nextore (tout est string, vide = 'None' ou '') ---
 function s(v) {
   if (v === undefined || v === null) return null;
@@ -715,7 +719,7 @@ async function getNeedsData(warehouseId) {
      )
      SELECT p.product_id, p.name, p.code AS sku, st.stock::float AS stock,
             p.category_id, c.name AS category_name, p.cost::float AS cost,
-            p.supplier_id AS fiche_supplier_id, p.supplier_refs,
+            p.supplier_id AS fiche_supplier_id, p.supplier_ids AS fiche_supplier_ids, p.supplier_refs,
             lb.supplier_id AS bought_supplier_id, (lb.warehouse_id = $1) AS bought_here,
             lb.purchased_at::date::text AS last_purchase_at, b.supplier_ids AS bought_supplier_ids,
             COALESCE(oo.qty, 0) AS on_order
@@ -760,10 +764,14 @@ async function getNeedsData(warehouseId) {
   for (const p of prods) {
     const daily = salesByProduct.get(p.product_id) || [];
     if (p.stock === 0 && daily.length === 0) continue;
-    const ficheId = p.fiche_supplier_id === '0' ? null : p.fiche_supplier_id; // '0' = aucun chez Nextore
+    const ficheId = PSEUDO_SUPPLIERS.has(p.fiche_supplier_id) ? null : p.fiche_supplier_id;
     const supplierId = p.bought_supplier_id || ficheId;
-    // Filtre fournisseur : seulement ceux chez qui on a réellement acheté
-    const supplierIds = p.bought_supplier_ids || (ficheId ? [ficheId] : []);
+    // Filtre fournisseur : ceux des achats reçus + ceux de la fiche Nextore
+    // (17/11/2026) — un produit se commande chez chacun d'eux.
+    const supplierIds = [...new Set([
+      ...(p.bought_supplier_ids || []),
+      ...(p.fiche_supplier_ids || []).filter((x) => x && !PSEUDO_SUPPLIERS.has(x)),
+    ])];
     for (const id of supplierIds) supCount.set(id, (supCount.get(id) || 0) + 1);
     products.push({
       id: p.product_id,
@@ -997,6 +1005,7 @@ async function getProductDetail(warehouseId, productId) {
     ),
     getProductStockHistory(warehouseId, id, 200),
   ]);
+  const suppliers = await getProductSuppliers(id);
 
   const stockBy = new Map(stocks.rows.map((r) => [r.warehouse_id, r]));
   const salesBy = new Map(sales.rows.map((r) => [r.warehouse_id, r]));
@@ -1018,8 +1027,56 @@ async function getProductDetail(warehouseId, productId) {
     last_purchase: purchase.rows[0]
       ? { ...purchase.rows[0], shop: WAREHOUSES.find((w) => w.id === purchase.rows[0].warehouse_id)?.name || null }
       : null,
+    suppliers,
     history,
   };
+}
+
+/**
+ * Fournisseurs d'un produit : ceux de la fiche Nextore (supplier1..5, réf, prix)
+ * + ceux des achats reçus, réunis. C'est la liste que les besoins proposent.
+ */
+async function getProductSuppliers(productId) {
+  const id = String(productId);
+  const [fiche, bought] = await Promise.all([
+    pool.query('SELECT supplier_ids, supplier_refs FROM nextore_products WHERE product_id = $1', [id]),
+    pool.query(
+      `SELECT pi.supplier_id, MAX(pi.supplier_name) AS supplier_name, COUNT(*)::int AS purchases,
+              SUM(pi.quantity_received)::float AS qty,
+              MAX(pi.purchased_at)::text AS last_purchase_at,
+              (ARRAY_AGG(pi.unit_cost::float ORDER BY pi.purchased_at DESC, pi.id DESC))[1] AS last_unit_cost,
+              (ARRAY_AGG(pi.warehouse_id ORDER BY pi.purchased_at DESC, pi.id DESC))[1] AS last_warehouse_id
+       FROM nextore_purchase_items pi
+       WHERE pi.product_id = $1 AND pi.status = 'received' AND pi.quantity_received > 0
+       GROUP BY pi.supplier_id`,
+      [id]
+    ),
+  ]);
+  const ficheIds = fiche.rows[0]?.supplier_ids || [];
+  const refs = fiche.rows[0]?.supplier_refs || {};
+  const ids = [...new Set([...ficheIds.filter((x) => !PSEUDO_SUPPLIERS.has(x)), ...bought.rows.map((r) => r.supplier_id)])]
+    .filter(Boolean);
+  if (!ids.length) return [];
+  const { rows: names } = await pool.query('SELECT id, company FROM nextore_suppliers WHERE id = ANY($1::text[])', [ids]);
+  const nameBy = new Map(names.map((r) => [r.id, r.company]));
+  const boughtBy = new Map(bought.rows.map((r) => [r.supplier_id, r]));
+  return ids.map((sid) => {
+    const b = boughtBy.get(sid);
+    const slot = ficheIds.indexOf(sid);
+    return {
+      supplier_id: sid,
+      name: nameBy.get(sid) || b?.supplier_name || `#${sid}`,
+      fiche_slot: slot >= 0 ? slot + 1 : null, // 1 = principal de la fiche Nextore
+      fiche_ref: refs[sid]?.ref || null,
+      fiche_price: refs[sid]?.price ?? null,
+      purchases: b?.purchases || 0,
+      qty: b?.qty || 0,
+      last_purchase_at: b?.last_purchase_at || null,
+      last_unit_cost: b?.last_unit_cost ?? null,
+      last_shop: b ? (WAREHOUSES.find((w) => w.id === b.last_warehouse_id)?.name || null) : null,
+    };
+  }).sort((a, b) => (a.fiche_slot || 99) - (b.fiche_slot || 99)
+    || String(b.last_purchase_at || '').localeCompare(String(a.last_purchase_at || '')));
 }
 
 /**

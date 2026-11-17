@@ -139,10 +139,59 @@ function Barcode({ code }) {
 }
 
 /* ─── FICHE PRODUIT ─────────────────────────────────────── */
+/* Fournisseurs d'un produit : fiche Nextore + achats reçus, réunis.
+   Les besoins proposent le produit chez chacun d'eux. */
+function SuppliersPanel({ suppliers }) {
+  const fmtEur = (n) => (n == null ? '—' : `${Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 10 }}>
+        Fournisseurs de la fiche Nextore et fournisseurs chez qui le produit a été reçu.
+        Dans les besoins, le produit est proposé chez chacun d'eux.
+      </div>
+      {!suppliers.length ? (
+        <div style={{ fontSize: 13, color: C.greyM }}>Aucun fournisseur : ni sur la fiche Nextore, ni dans les achats reçus.</div>
+      ) : (
+        <div style={{ border: `1px solid ${C.greyB}`, borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <Th>Fournisseur</Th><Th>Fiche Nextore</Th><Th align="right">Prix fiche</Th>
+                  <Th>Dernier achat reçu</Th><Th align="right">Coût</Th><Th align="right">Achats</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {suppliers.map((s) => (
+                  <tr key={s.supplier_id}>
+                    <Td bold>{s.name}</Td>
+                    <Td color={s.fiche_slot ? C.dark : C.greyM}>
+                      {s.fiche_slot === 1 ? 'Principal' : s.fiche_slot ? `Fournisseur ${s.fiche_slot}` : 'absent'}
+                      {s.fiche_ref && <div style={{ fontSize: 12, color: C.greyT }}>Réf. {s.fiche_ref}</div>}
+                    </Td>
+                    <Td align="right">{s.fiche_slot ? fmtEur(s.fiche_price) : '—'}</Td>
+                    <Td color={s.last_purchase_at ? C.dark : C.greyM}>
+                      {s.last_purchase_at ? fmtDay(s.last_purchase_at) : 'jamais'}
+                      {s.last_shop && <div style={{ fontSize: 12, color: C.greyT }}>{s.last_shop}</div>}
+                    </Td>
+                    <Td align="right">{fmtEur(s.last_unit_cost)}</Td>
+                    <Td align="right" color={C.greyT}>{s.purchases ? `${fmtNum(s.purchases)} · ${fmtNum(s.qty)} pcs` : '—'}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged }) {
   const [p, setP] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState('general'); // 'general' | 'fournisseurs'
 
   const load = useCallback(async () => {
     setError(null);
@@ -213,6 +262,20 @@ function ProductDetail({ shop, token, productId, canWrite, onClose, onChanged })
         )}
 
         {p && (
+          <div style={{ display: 'flex', gap: 4, borderBottom: `2px solid ${C.greyB}`, margin: '14px 0 4px' }}>
+            {[['general', 'Général'], ['fournisseurs', `Fournisseurs${p.suppliers?.length ? ` (${p.suppliers.length})` : ''}`]].map(([k, label]) => (
+              <button key={k} onClick={() => setTab(k)} style={{
+                border: 'none', background: 'transparent', padding: '8px 14px', marginBottom: -2, cursor: 'pointer',
+                fontSize: 14, fontWeight: 700, color: tab === k ? C.primary : C.greyT,
+                borderBottom: `2px solid ${tab === k ? C.primary : 'transparent'}`,
+              }}>{label}</button>
+            ))}
+          </div>
+        )}
+
+        {p && tab === 'fournisseurs' && <SuppliersPanel suppliers={p.suppliers || []} />}
+
+        {p && tab === 'general' && (
           <>
             {/* Désactivation */}
             <div style={{
