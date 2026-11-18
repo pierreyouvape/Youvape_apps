@@ -4,6 +4,7 @@ import axios from 'axios';
 import { formatDateUTC } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
+import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1368,20 +1369,29 @@ function AddLineModal({ token, supplierId, busy, onClose, onAdd }) {
             )}
             {resultats.map((p) => (
               <button key={p.id} type="button" onClick={() => setChoisi(p)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '11px 14px',
-                  border: 'none', borderBottom: `1px solid ${C.greyB}`, background: 'transparent',
-                  cursor: 'pointer', fontSize: 13.5 }}>
-                <strong>{p.post_title}</strong>
-                <div style={{ fontSize: 12, color: C.greyT }}>{p.sku} · stock {p.stock}</div>
+                style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+                  padding: '9px 14px', border: 'none', borderBottom: `1px solid ${C.greyB}`,
+                  background: 'transparent', cursor: 'pointer', fontSize: 13.5 }}>
+                <ProductThumb src={p.image_url} size={40} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <strong>{p.post_title}</strong>
+                  <SiteStatusBadge product={p} />
+                  <div style={{ fontSize: 12, color: C.greyT }}>{p.sku} · stock {p.stock}</div>
+                </div>
               </button>
             ))}
           </div>
         </>
       ) : (
         <div>
-          <div style={{ background: C.grey, borderRadius: 9, padding: '12px 14px', marginBottom: 14 }}>
-            <strong style={{ fontSize: 14 }}>{choisi.post_title}</strong>
-            <div style={{ fontSize: 12.5, color: C.greyT }}>{choisi.sku}</div>
+          <div style={{ background: C.grey, borderRadius: 9, padding: '12px 14px', marginBottom: 14,
+            display: 'flex', alignItems: 'center', gap: 12 }}>
+            <ProductThumb src={choisi.image_url} size={48} />
+            <div>
+              <strong style={{ fontSize: 14 }}>{choisi.post_title}</strong>
+              <SiteStatusBadge product={choisi} />
+              <div style={{ fontSize: 12.5, color: C.greyT }}>{choisi.sku}</div>
+            </div>
           </div>
           <label style={{ display: 'block', fontSize: 12.5, color: C.greyT, marginBottom: 6 }}>
             Quantité reçue, en pièces

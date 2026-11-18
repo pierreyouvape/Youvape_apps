@@ -330,6 +330,9 @@ commande pas un parent) ; le lien tarifé garde le repli sur le parent, car c'es
   donné, et les produits du fournisseur sont **triés en premier**. Proposer un produit
   jamais commandé là est légitime ; le proposer **sans le dire** ne l'est pas — l'écran le
   marque « jamais commandé ici ».
+- **Produits privés inclus** (18/11/2026) : `post_status IN ('publish','private')`, classés après
+  les publiés, badge « Privé » / « Déclinaison désactivée » (`components/purchases/ProductSearchBits`).
+  Une fiche créée en privé en attendant la marchandise doit pouvoir se commander. Brouillons exclus.
 - **Ne jamais « réparer » ça en supprimant les liens vides** : la donnée BMS est juste,
   c'est la prendre pour une preuve d'achat qui était faux.
 

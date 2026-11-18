@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { formatPrice, formatInt } from '../../utils/formatNumber';
 import { LinkBox } from '../../utils/navHelpers';
 import { brandLabel } from '../../utils/productBrand';
+import { ProductThumb, SiteStatusBadge } from './ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -146,6 +147,9 @@ const OrdersTab = ({ token }) => {
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTimeout, setSearchTimeout] = useState(null);
+  // Même porte que CreateOrderPage : par défaut, le catalogue PROUVÉ du
+  // fournisseur ; la case ouvre au reste (produit jamais commandé chez lui).
+  const [editToutCatalogue, setEditToutCatalogue] = useState(false);
   // Rematch inline d'un item existant
   const [rematchItemId, setRematchItemId] = useState(null); // id ou ref unique de l'item en cours de rematch
   const [rematchSearch, setRematchSearch] = useState('');
@@ -411,6 +415,7 @@ const OrdersTab = ({ token }) => {
       items: (selectedOrder.items || []).map((item, idx) => ({ ...item, _delete: false, _tmpId: item.id || `tmp-${idx}` }))
     });
     setEditMode(true);
+    setEditToutCatalogue(false);
     setProductSearch('');
     setSearchResults([]);
   };
@@ -466,25 +471,41 @@ const OrdersTab = ({ token }) => {
     }
   };
 
+  const searchUrl = (value, tout) => {
+    const params = new URLSearchParams({ q: value, limit: '20' });
+    if (editData?.supplier_id) {
+      params.set('supplier_id', editData.supplier_id);
+      if (tout) params.set('all_suppliers', '1');
+    }
+    return `${API_URL}/purchases/products/search?${params}`;
+  };
+
+  const lancerRechercheEdit = async (value, tout) => {
+    setSearchLoading(true);
+    try {
+      const existingIds = editData.items.filter(i => !i._delete && !i.id).map(i => i.product_id);
+      const response = await axios.get(searchUrl(value, tout), {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSearchResults((response.data.data || []).filter(p => !existingIds.includes(p.id)));
+    } catch (err) {
+      console.error('Erreur recherche:', err);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   const handleProductSearch = (value) => {
     setProductSearch(value);
     if (searchTimeout) clearTimeout(searchTimeout);
     if (value.length < 2) { setSearchResults([]); return; }
-    setSearchTimeout(setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const existingIds = editData.items.filter(i => !i._delete && !i.id).map(i => i.product_id);
-        const supplierParam = editData.supplier_id ? `&supplier_id=${editData.supplier_id}` : '';
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20${supplierParam}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setSearchResults((response.data.data || []).filter(p => !existingIds.includes(p.id)));
-      } catch (err) {
-        console.error('Erreur recherche:', err);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300));
+    setSearchTimeout(setTimeout(() => lancerRechercheEdit(value, editToutCatalogue), 300));
+  };
+
+  // Cocher/décocher relance la recherche en cours, sans retaper une lettre.
+  const basculerPerimetreEdit = (tout) => {
+    setEditToutCatalogue(tout);
+    if (productSearch.trim().length >= 2) lancerRechercheEdit(productSearch, tout);
   };
 
   const addProductToEdit = (product) => {
@@ -514,8 +535,7 @@ const OrdersTab = ({ token }) => {
     setRematchTimeout(setTimeout(async () => {
       setRematchLoading(true);
       try {
-        const supplierParam = editData?.supplier_id ? `&supplier_id=${editData.supplier_id}` : '';
-        const response = await axios.get(`${API_URL}/purchases/products/search?q=${encodeURIComponent(value)}&limit=20${supplierParam}`, {
+        const response = await axios.get(searchUrl(value, editToutCatalogue), {
           headers: { Authorization: `Bearer ${token}` }
         });
         setRematchResults(response.data.data || []);
@@ -1350,15 +1370,19 @@ const OrdersTab = ({ token }) => {
                                       <div
                                         key={product.id}
                                         onClick={() => applyRematch(product)}
-                                        style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: '13px' }}
+                                        style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #eee', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px' }}
                                         onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'white'}
                                       >
-                                        <div style={{ fontWeight: 500 }}>
-                                          {product.post_title}
-                                          {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
+                                        <ProductThumb src={product.image_url} size={36} />
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ fontWeight: 500 }}>
+                                            {product.post_title}
+                                            {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
+                                            <SiteStatusBadge product={product} />
+                                          </div>
+                                          <div style={{ color: '#888', fontSize: '12px' }}>SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}</div>
                                         </div>
-                                        <div style={{ color: '#888', fontSize: '12px' }}>SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}</div>
                                       </div>
                                     ))}
                                   </div>
@@ -1444,6 +1468,18 @@ const OrdersTab = ({ token }) => {
                   </table>
 
                   {/* Recherche pour ajouter une ligne */}
+                  {editData.supplier_id && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', fontSize: '12px', color: '#555', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={editToutCatalogue}
+                        onChange={e => basculerPerimetreEdit(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      Chercher dans tout le catalogue
+                      <span style={{ color: '#888' }}>— pour un produit jamais commandé chez ce fournisseur</span>
+                    </label>
+                  )}
                   <div style={{ position: 'relative', marginBottom: '8px' }}>
                     <input
                       type="text"
@@ -1461,20 +1497,32 @@ const OrdersTab = ({ token }) => {
                       <div style={{
                         position: 'absolute', top: '100%', left: 0, right: 0, background: 'white',
                         border: '1px solid #ccc', borderRadius: '4px', boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-                        zIndex: 100, maxHeight: '200px', overflowY: 'auto'
+                        zIndex: 100, maxHeight: '320px', overflowY: 'auto'
                       }}>
                         {searchResults.map(p => (
                           <div
                             key={p.id}
                             onClick={() => addProductToEdit(p)}
-                            style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: '13px' }}
+                            style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '10px' }}
                             onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
                             onMouseLeave={e => e.currentTarget.style.background = 'white'}
                           >
-                            <strong>{p.post_title}</strong>
-                            {brandLabel(p) && <span style={{ color: '#888', marginLeft: '8px' }}>— {brandLabel(p)}</span>}
-                            {p.sku && <span style={{ color: '#666', marginLeft: '8px' }}>{p.sku}</span>}
-                            {p.stock != null && <span style={{ color: '#999', marginLeft: '8px' }}>Stock : {p.stock}</span>}
+                            <ProductThumb src={p.image_url} size={40} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600 }}>
+                                {p.post_title}
+                                {brandLabel(p) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(p)}</span>}
+                                {p.in_supplier_catalogue === false && (
+                                  <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: 600, color: '#B45309', background: '#FEF3C7', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap' }}>
+                                    jamais commandé ici
+                                  </span>
+                                )}
+                                <SiteStatusBadge product={p} />
+                              </div>
+                              <div style={{ color: '#888', fontSize: '12px' }}>
+                                SKU: {p.sku || '-'} | Stock: {p.stock ?? '-'}
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>

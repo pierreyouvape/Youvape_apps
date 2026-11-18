@@ -4,6 +4,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import { brandLabel } from '../utils/productBrand';
+import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1187,10 +1188,12 @@ const ImportPdfPage = () => {
                                       return searchingIdx === idx && searchResults.length > 0 && (
                                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: C.blanc, border: `1px solid ${C.grisCL}`, borderRadius: '0 0 8px 8px', maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.12)' }}>
                                         {searchResults.map(product => (
-                                          <div key={product.id} onClick={() => handleMatchProduct(idx, product)} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}`, fontSize: 13 }}
+                                          <div key={product.id} onClick={() => handleMatchProduct(idx, product)} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: `1px solid ${C.grisTL}`, fontSize: 13, display: 'flex', alignItems: 'center', gap: 10 }}
                                             onMouseEnter={e => e.currentTarget.style.background = C.grisTL}
                                             onMouseLeave={e => e.currentTarget.style.background = C.blanc}
                                           >
+                                            <ProductThumb src={product.image_url} size={36} />
+                                            <div style={{ flex: 1, minWidth: 0 }}>
                                             <div style={{ fontWeight: 600 }}>
                                               {product.post_title}
                                               {/* Marque : « Fruit du Dragon - 3mg » existe chez Pulp
@@ -1198,10 +1201,12 @@ const ImportPdfPage = () => {
                                               {brandLabel(product) && (
                                                 <span style={{ fontWeight: 500, color: C.grisM }}> — {brandLabel(product)}</span>
                                               )}
+                                              <SiteStatusBadge product={product} />
                                             </div>
                                             <div style={{ color: C.grisM, fontSize: 12 }}>
                                               SKU: {product.sku || '—'} | Stock: {product.stock ?? '—'}
                                               {usedProductIds.has(product.id) && <span style={{ color: C.orangeDark, fontWeight: 600 }}> · déjà sur une autre ligne</span>}
+                                            </div>
                                             </div>
                                           </div>
                                         ))}

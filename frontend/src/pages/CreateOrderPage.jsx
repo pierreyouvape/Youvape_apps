@@ -5,6 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import { brandLabel } from '../utils/productBrand';
+import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -474,11 +475,13 @@ const CreateOrderPage = () => {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
+                      gap: '12px',
                       transition: 'background 0.15s'
                     }}
                     onMouseEnter={e => e.currentTarget.style.background = '#f5f5f5'}
                     onMouseLeave={e => e.currentTarget.style.background = 'white'}
                   >
+                    <ProductThumb src={product.image_url} size={48} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 500, marginBottom: '4px' }}>
                         {product.post_title}
@@ -494,6 +497,7 @@ const CreateOrderPage = () => {
                             jamais commandé ici
                           </span>
                         )}
+                        <SiteStatusBadge product={product} />
                       </div>
                       <div style={{ fontSize: '13px', color: '#666', display: 'flex', gap: '15px' }}>
                         <span>SKU: <code>{product.sku || '-'}</code></span>

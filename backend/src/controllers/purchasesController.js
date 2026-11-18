@@ -115,8 +115,14 @@ const purchasesController = {
           COALESCE(p.computed_cost, p.wc_cog_cost) as cost_price,
           p.product_type,
           p.wp_parent_id,
-          p.image_url,
+          -- Une déclinaison sans image propre montre celle de son parent : c'est
+          -- celle que le site affiche.
+          COALESCE(NULLIF(p.image_url, ''), parent.image_url) as image_url,
           parent.post_title as parent_title,
+          -- Statut sur le site, pour signaler un produit privé (ou une déclinaison
+          -- désactivée, que WooCommerce range en « private »).
+          p.post_status,
+          parent.post_status as parent_status,
           -- Marque et sous-marque, pour departager les homonymes dans les listes de
           -- choix (« Fruit du Dragon - 3mg » existe chez Pulp ET chez Liquideo).
           -- Une declinaison ne les porte pas : elles vivent sur le parent variable.
@@ -131,10 +137,15 @@ const purchasesController = {
         LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
         WHERE
           p.product_type IN ('simple', 'variation')
-          AND p.post_status = 'publish'
-          -- Une déclinaison « publiée » d'un parent en brouillon (produit dupliqué
-          -- puis laissé de côté) n'est pas en vente : le catalogue l'ignore, ici aussi.
-          AND (parent.id IS NULL OR parent.post_status = 'publish')
+          -- Les produits PRIVÉS se commandent aussi (18/11/2026) : une fiche est
+          -- souvent créée en privé en attendant la marchandise, et restait
+          -- introuvable au moment de la commander (SKU 1277892 chez Highbuy).
+          -- Ils sont signalés à l'écran et classés après les produits publiés.
+          -- Les brouillons restent dehors.
+          AND p.post_status IN ('publish', 'private')
+          -- Une déclinaison d'un parent en brouillon (produit dupliqué puis laissé
+          -- de côté) n'est pas en vente : le catalogue l'ignore, ici aussi.
+          AND (parent.id IS NULL OR parent.post_status IN ('publish', 'private'))
           AND ${clause}
           ${supplierClause}
         ORDER BY
@@ -144,6 +155,11 @@ const purchasesController = {
           -- Les produits du fournisseur d'abord : en recherche ouverte, ce sont
           -- eux qu'on cherche neuf fois sur dix.
           ${catalogueExpr ? `${catalogueExpr} DESC,` : ''}
+          -- Les produits en vente avant les privés.
+          CASE WHEN p.post_status = 'publish'
+                AND (parent.id IS NULL OR parent.post_status = 'publish')
+               THEN 0 ELSE 1
+          END,
           p.post_title
         LIMIT $${limitIdx}
       `;
