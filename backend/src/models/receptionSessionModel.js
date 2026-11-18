@@ -515,6 +515,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     const { previenirEcarts } = require('../services/receptionEmailService');
     await previenirEcarts({
       purchaseOrderId: session.purchase_order_id,
+      sessionId,
       manquants: resultat.missing,
       surplus: resultat.over,
       nonEnvoyes,

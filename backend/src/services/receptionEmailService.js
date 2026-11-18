@@ -37,15 +37,30 @@ async function destinataires() {
     .filter(Boolean);
 }
 
-async function entete(purchaseOrderId) {
+async function entete(purchaseOrderId, sessionId) {
   const { rows } = await pool.query(
-    `SELECT po.order_number, po.bms_po_id, s.name AS supplier
+    `SELECT po.order_number, po.bms_po_id, s.name AS supplier,
+            COALESCE(uo.name, uo.email) AS ouverte_par,
+            COALESCE(uv.name, uv.email) AS validee_par
        FROM purchase_orders po
        LEFT JOIN suppliers s ON s.id = po.supplier_id
+       LEFT JOIN reception_sessions r ON r.id = $2
+       LEFT JOIN users uo ON uo.id = r.started_by
+       LEFT JOIN users uv ON uv.id = r.validated_by
       WHERE po.id = $1`,
-    [purchaseOrderId],
+    [purchaseOrderId, sessionId || null],
   );
   return rows[0] || {};
+}
+
+// Qui a traité la réception : celui qui l'a validée, et celui qui l'a ouverte
+// quand ce n'est pas le même (comptage commencé par l'un, fini par l'autre).
+function traitePar(cmd) {
+  const v = cmd.validee_par;
+  const o = cmd.ouverte_par;
+  if (!v && !o) return '';
+  if (v && o && v !== o) return `${v} (réception ouverte par ${o})`;
+  return v || o;
 }
 
 const echapper = (v) => String(v == null ? '' : v)
@@ -80,7 +95,7 @@ ${lignes.map((l) => `<tr>${cellules(l).map((c) => `<td style="border:1px solid #
  * Prévient des écarts d'une réception validée. Ne lève jamais : l'appelant a
  * déjà mis la marchandise en stock.
  */
-async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], nonEnvoyes = [] }) {
+async function previenirEcarts({ purchaseOrderId, sessionId, manquants = [], surplus = [], nonEnvoyes = [] }) {
   if (manquants.length === 0 && surplus.length === 0 && nonEnvoyes.length === 0) {
     return { sent: false, reason: 'aucun_ecart' };
   }
@@ -96,7 +111,8 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
   surplus = surplus.map((l) => ({ ...l, stocked: Number.isFinite(l.stocked) ? l.stocked : 0 }));
   const surplusToutEnStock = surplus.every((l) => l.stocked >= l.units);
 
-  const cmd = await entete(purchaseOrderId);
+  const cmd = await entete(purchaseOrderId, sessionId);
+  const par = traitePar(cmd);
   const nom = cmd.order_number || `commande ${purchaseOrderId}`;
   // Le refus de BMS passe devant : c'est de la marchandise physiquement là et
   // absente du stock, donc le seul écart qui demande une action tout de suite.
@@ -113,6 +129,7 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
     `<p>Réception de <strong>${echapper(nom)}</strong>`
       + (cmd.supplier ? ` chez <strong>${echapper(cmd.supplier)}</strong>` : '')
       + (cmd.bms_po_id ? ` (bon BMS ${cmd.bms_po_id})` : '') + '.</p>',
+    par ? `<p style="margin:4px 0 0">Traitée par <strong>${echapper(par)}</strong>.</p>` : '',
     nonEnvoyes.length > 0
       ? '<div style="margin-top:14px;padding:12px;border-left:4px solid #dc2626;background:#fef2f2">'
         + '<strong>BMS a refusé une partie de ce qui a été compté.</strong> Il n\'accepte pas de '
@@ -138,6 +155,7 @@ async function previenirEcarts({ purchaseOrderId, manquants = [], surplus = [], 
 
   const texte = [
     `Réception ${nom}${cmd.supplier ? ` chez ${cmd.supplier}` : ''}.`,
+    par ? `Traitée par ${par}.` : '',
     nonEnvoyes.length > 0 ? `\nREFUSÉ PAR BMS (pas en stock) :\n${nonEnvoyes.map((n) => `- ${n.ref || n.product} : ${n.envoyees}/${n.comptees} enregistrées, ${n.refusees} refusées`).join('\n')}` : '',
     manquants.length > 0 ? `\nManquants :\n${manquants.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (${LIBELLE_MOTIF[l.motif] || l.motif || 'sans motif'})`).join('\n')}` : '',
     surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart}) — en stock : ${l.stocked >= l.units ? `oui, ${l.stocked}` : `NON pour ${l.units - l.stocked} (${l.stocked}/${l.units})`}`).join('\n')}\n${surplusToutEnStock ? 'Le surplus EST en stock' : 'Une partie du surplus N\'EST PAS en stock'} : vérifier avec un responsable qu'il nous est dû.` : '',
