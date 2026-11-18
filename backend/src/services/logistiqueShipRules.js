@@ -13,6 +13,10 @@ const { buildTrackingUrl } = require('./trackingService');
  * BMS écrit aujourd'hui (`orders.shipping_carrier`) : detectCarrier() et nos
  * stats le lisent. Le titre envoyé à BMS est déjà le bon, sauf deux, que BMS
  * traduit lui-même (mesuré sur 20 jours d'étiquettes, le 16/11/2026).
+ *
+ * BMS renomme aussi certains envois hors de France (Allemagne avec signature →
+ * « La Poste : Colissimo - Expert International ») : volontairement NON recopié,
+ * le titre de l'étiquette dit le service réellement acheté (décision Pierre, 18/11/2026).
  */
 const SITE_LABEL_FROM_BMS_TITLE = {
   'Mondial Relay': 'Mondial Relay - Point Relais',

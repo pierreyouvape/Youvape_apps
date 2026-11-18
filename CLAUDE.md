@@ -401,7 +401,9 @@ WooCommerce »** (section `components/settings/PluginLogistiqueSection.jsx`).
   `_yv_*` + note privée, rien d'autre. File sur `shipment_labels.site_ship_status` (NULL, `sent`, `retry`, `error`,
   `skipped` = référence qui n'est pas une commande) ; `shipment_id = label-<id>`, donc un lot renvoyé revient
   `already`. Étiquette refaite = `replace`. Libellé = titre BMS, sauf « Mondial Relay » → « Mondial Relay - Point
-  Relais » et « Retrait magasin » → « Store Pickup - Entrepot » (`logistiqueShipRules`, testé). **Changer l'adresse
+  Relais » et « Retrait magasin » → « Store Pickup - Entrepot » (`logistiqueShipRules`, testé). BMS renomme aussi
+  certains envois hors de France (DE avec signature → « Expert International ») : **on garde le titre de l'étiquette**,
+  qui dit le service acheté (décision Pierre, 18/11/2026 ; vérifié sur 314 commandes, 313 identiques à BMS). **Changer l'adresse
   du site coupe l'envoi** (jamais d'étiquettes de prod vers une copie). Erreurs : puce « Site : erreur » + bouton
   « Renvoyer au site » dans `/expeditions`. Migration `add_shipment_labels_site_ship.sql` AVANT le code.
 - Case « Restocker » de l'admin : cochée seulement si la commande n'est pas expédiée, pas un réglage.
