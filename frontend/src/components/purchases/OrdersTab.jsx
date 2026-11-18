@@ -5,7 +5,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { formatPrice, formatInt } from '../../utils/formatNumber';
 import { LinkBox } from '../../utils/navHelpers';
 import { brandLabel } from '../../utils/productBrand';
-import { ProductThumb, SiteStatusBadge } from './ProductSearchBits';
+import { ProductThumb } from './ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1379,7 +1379,6 @@ const OrdersTab = ({ token }) => {
                                           <div style={{ fontWeight: 500 }}>
                                             {product.post_title}
                                             {brandLabel(product) && <span style={{ fontWeight: 400, color: '#888' }}> — {brandLabel(product)}</span>}
-                                            <SiteStatusBadge product={product} />
                                           </div>
                                           <div style={{ color: '#888', fontSize: '12px' }}>SKU: {product.sku || '-'} | Stock: {product.stock ?? '-'}</div>
                                         </div>
@@ -1517,7 +1516,6 @@ const OrdersTab = ({ token }) => {
                                     jamais commandé ici
                                   </span>
                                 )}
-                                <SiteStatusBadge product={p} />
                               </div>
                               <div style={{ color: '#888', fontSize: '12px' }}>
                                 SKU: {p.sku || '-'} | Stock: {p.stock ?? '-'}

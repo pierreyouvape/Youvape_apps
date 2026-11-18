@@ -4,7 +4,7 @@ import axios from 'axios';
 import { formatDateUTC } from '../utils/dateUtils';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
-import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
+import { ProductThumb } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1375,7 +1375,6 @@ function AddLineModal({ token, supplierId, busy, onClose, onAdd }) {
                 <ProductThumb src={p.image_url} size={40} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <strong>{p.post_title}</strong>
-                  <SiteStatusBadge product={p} />
                   <div style={{ fontSize: 12, color: C.greyT }}>{p.sku} · stock {p.stock}</div>
                 </div>
               </button>
@@ -1389,7 +1388,6 @@ function AddLineModal({ token, supplierId, busy, onClose, onAdd }) {
             <ProductThumb src={choisi.image_url} size={48} />
             <div>
               <strong style={{ fontSize: 14 }}>{choisi.post_title}</strong>
-              <SiteStatusBadge product={choisi} />
               <div style={{ fontSize: 12.5, color: C.greyT }}>{choisi.sku}</div>
             </div>
           </div>

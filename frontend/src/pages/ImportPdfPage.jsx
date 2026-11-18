@@ -4,7 +4,7 @@ import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import { brandLabel } from '../utils/productBrand';
-import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
+import { ProductThumb } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -1201,7 +1201,6 @@ const ImportPdfPage = () => {
                                               {brandLabel(product) && (
                                                 <span style={{ fontWeight: 500, color: C.grisM }}> — {brandLabel(product)}</span>
                                               )}
-                                              <SiteStatusBadge product={product} />
                                             </div>
                                             <div style={{ color: C.grisM, fontSize: 12 }}>
                                               SKU: {product.sku || '—'} | Stock: {product.stock ?? '—'}

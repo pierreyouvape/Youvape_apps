@@ -5,7 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 import { LinkBox } from '../utils/navHelpers';
 import AppShell from '../components/AppShell';
 import { brandLabel } from '../utils/productBrand';
-import { ProductThumb, SiteStatusBadge } from '../components/purchases/ProductSearchBits';
+import { ProductThumb } from '../components/purchases/ProductSearchBits';
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -497,7 +497,6 @@ const CreateOrderPage = () => {
                             jamais commandé ici
                           </span>
                         )}
-                        <SiteStatusBadge product={product} />
                       </div>
                       <div style={{ fontSize: '13px', color: '#666', display: 'flex', gap: '15px' }}>
                         <span>SKU: <code>{product.sku || '-'}</code></span>
