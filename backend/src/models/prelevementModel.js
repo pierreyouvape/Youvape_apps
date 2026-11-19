@@ -354,8 +354,14 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
     const { rows: nxBrands } = await pool.query(
       `SELECT DISTINCT brand FROM nextore_products WHERE COALESCE(brand, '') <> '' AND COALESCE(status, '') <> 'deleted'`
     );
-    const brand = require('../services/catalogSyncRules').pickBrand(p, nxBrands.map((r) => r.brand));
-    const payload = rules.nextoreProductPayload(p, { categoryId, barcodes, brand });
+    const { pickBrand } = require('../services/catalogSyncRules');
+    const known = nxBrands.map((r) => r.brand);
+    const brand = pickBrand(p, known);
+    // Le NOM porte toujours la sous-marque quand il y en a une (« … - BAD BUNNIZ »),
+    // même absente des marques Nextore : c'est elle qu'on tape pour retrouver la fiche.
+    const nameBrand = p.sub_brand ? pickBrand({ sub_brand: p.sub_brand }, known) : brand;
+    const { rows: [cat] } = await pool.query('SELECT name FROM nextore_categories WHERE id = $1', [String(categoryId || '')]);
+    const payload = rules.nextoreProductPayload(p, { categoryId, barcodes, brand, nameBrand, categoryName: cat?.name || null });
     const response = await nextoreApi.createProduct(payload);
     const nxId = await findCreatedId(response, barcodes);
     if (!nxId) {

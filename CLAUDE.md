@@ -692,6 +692,11 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
 - ⚠️ **Alignement des prix COUPÉ depuis le 12/11/2026** (Maxime : plus aucun prix caisse modifié à cause du site ;
   les 282 changements du 10/11 ont tous été annulés, vérifié fiche par fiche dans Nextore). Seules les fiches CRÉÉES
   prennent le prix normal du site. Rallumage : `app_config.nextore_price_sync = 'on'` (ne pas le faire sans lui).
+- **Nom des fiches créées** (19/11/2026, `prelevementRules.nextoreName`) : à la façon de l'équipe, MAJUSCULES sans
+  accents, « PRODUIT - SOUS-MARQUE (sinon marque) - VARIANTE » ; 50 ml + booster → « PACK … 60ML », e-liquide en taux
+  sans contenance → « … 10ML », sel → « … SALT 10ML ». Avant, le nom du site seul (« Pastèque Cerise Extra Frais 50ml ») :
+  introuvable en tapant « Bad Bunniz », les 6 fiches ont été recréées à la main le 17/11 avec les mêmes codes-barres.
+  La marque n'est jamais retirée du nom (« Gorilla Kong » de Gorilla resterait « KONG »).
 - **Marque** : champ Nextore `cf1` (texte libre, pas de liste à créer), écrit à la création par `pickBrand`
   (orthographe Nextore reprise). Les 2 166 fiches créées le 10/11 sans marque : `scripts/backfillNextoreBrands.js`.
 - **Prix** (quand l'alignement est actif) : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »

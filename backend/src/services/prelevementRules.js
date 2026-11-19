@@ -20,17 +20,65 @@ const siteUnitCost = (p) => {
 const boutiqueQty = (qty, siteTitle, nxProduct) => qty * boutiquePack(1, siteTitle, nxProduct).pack;
 
 /**
+ * Nom d'une fiche Nextore, à la façon de l'équipe (relevé sur ~150 paires site /
+ * caisse le 19/11/2026) : MAJUSCULES, sans accents, « PRODUIT - MARQUE - VARIANTE »,
+ * la marque étant la sous-marque quand il y en a une (`brand` = pickBrand).
+ * Sans la marque dans le nom, personne ne retrouve la fiche en caisse : les 6
+ * Bad Bunniz créées le 13/11 (« Pastèque Cerise Extra Frais 50ml ») ont été
+ * recréées à la main le 17/11 avec les mêmes codes-barres.
+ *   Box Zelos X80 - Gun Metal            → BOX ZELOS X80 - ASPIRE - GUN METAL
+ *   Thé Pêche 50ml + Booster - 3mg       → PACK THE PECHE 60ML - LE POD LIQUIDE - 3MG
+ *   Avant Première - 6mg (e-liquide)     → AVANT PREMIERE 10ML - MOONSHINERS - 6MG
+ *   Myrtille Glacée Salt - 10mg          → MYRTILLE GLACEE SALT 10ML - E-VAPOR - 10MG
+ */
+const nxText = (s) => String(s || '')
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/Ω/g, 'OHM').replace(/[’'`]/g, ' ')
+  .toUpperCase()
+  .replace(/(\d)\s+(ML|MG|K)\b/g, '$1$2')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const nextoreName = (siteName, { brand = null, categoryName = null } = {}) => {
+  const title = String(siteName || '').trim();
+  const label = nxText(brand);
+  if (!label) return nxText(title).slice(0, 255);
+  const cut = title.indexOf(' - ');
+  // La marque déjà présente dans le nom n'en est pas retirée : « Gorilla Kong »
+  // (marque Gorilla) deviendrait « KONG ». Une marque répétée ne gêne personne.
+  const base = nxText(cut >= 0 ? title.slice(0, cut) : title);
+  const variant = nxText(cut >= 0 ? title.slice(cut + 3) : '');
+  const isMg = /^\d+(?:[.,]\d+)?MG$/.test(variant);
+  const isLiquid = /E-?LIQUIDE/i.test(String(categoryName || ''));
+  const parts = (head, tail) => [head, label, tail].filter(Boolean).join(' - ').slice(0, 255);
+
+  // 50 ml + booster : la caisse vend le pack de 60 ml.
+  const boost = /^(.*?)\s*(\d+)ML\s*\+\s*BOOSTER$/.exec(base);
+  if (boost) {
+    const ml = Number(boost[2]) === 50 ? 60 : Number(boost[2]);
+    return parts(`PACK ${boost[1]} ${ml}ML`, variant);
+  }
+  // Sel de nicotine en 10 ml.
+  if (/\bSALT$/.test(base) && (isMg || !variant) && !/\d+ML\b/.test(base)) {
+    return parts(`${base} 10ML`, variant);
+  }
+  // E-liquide décliné en taux, sans contenance dans le nom : un 10 ml.
+  if (isLiquid && isMg && !/\d+ML\b/.test(base)) return parts(`${base} 10ML`, variant);
+  return parts(base, variant);
+};
+
+/**
  * Fiche Nextore créée depuis un produit du site. Prix boutique = prix normal du
  * site (sans remise WDR ni promo), cost = coût d'achat HT. Une seule pièce
  * boutique = une pièce site (une résistance en pack se crée au pack).
  */
-const nextoreProductPayload = (p, { categoryId, barcodes, taxRate = '4', brand = null }) => {
+const nextoreProductPayload = (p, { categoryId, barcodes, taxRate = '4', brand = null, nameBrand = undefined, categoryName = null }) => {
   const price = Number(p.regular_price) > 0 ? Number(p.regular_price) : Number(p.price);
   if (!(price > 0)) throw Object.assign(new Error('Produit sans prix de vente sur le site : impossible de le créer dans la caisse.'), { statusCode: 400 });
   if (!categoryId) throw Object.assign(new Error('Choisissez une catégorie caisse.'), { statusCode: 400 });
   const cost = siteUnitCost(p);
   return {
-    name: String(p.name || '').slice(0, 255),
+    name: nextoreName(p.name, { brand: nameBrand === undefined ? brand : nameBrand, categoryName }),
     price: round2(price),
     ...(cost ? { cost: round2(cost) } : {}),
     category_id: String(categoryId),
@@ -152,5 +200,5 @@ const uniqueSiteBarcodeSql = (b = 'b') => `NOT EXISTS (
 
 module.exports = {
   uniqueSiteBarcodeSql, cancelPlan, allocateSales,
-  siteUnitCost, boutiqueQty, nextoreProductPayload, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, round2,
+  siteUnitCost, boutiqueQty, nextoreProductPayload, nextoreName, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, round2,
 };

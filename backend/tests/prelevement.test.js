@@ -8,7 +8,7 @@
 
 const assert = require('assert');
 const {
-  siteUnitCost, boutiqueQty, nextoreProductPayload, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, cancelPlan, allocateSales,
+  siteUnitCost, boutiqueQty, nextoreProductPayload, splitBarcodes, barcodesToAdd, resolveNx, isCleanRefusal, cancelPlan, allocateSales, nextoreName,
 } = require('../src/services/prelevementRules');
 
 // ── Coût d'achat du site : même règle que la valeur de stock ────────────────
@@ -26,7 +26,7 @@ assert.strictEqual(boutiqueQty(3, 'Fruizee 50ml', null), 3, 'sans produit caisse
 const site = { name: 'Flacon Unicorn V3 10ml', regular_price: '1.50', price: '1.20', computed_cost: '0.31', wp_product_id: 4242 };
 const payload = nextoreProductPayload(site, { categoryId: 12, barcodes: ['3700000000011', '3700000000028'] });
 assert.deepStrictEqual(payload, {
-  name: 'Flacon Unicorn V3 10ml', price: 1.5, cost: 0.31, category_id: '12', tax_rate: '4', type: 'standard',
+  name: 'FLACON UNICORN V3 10ML', price: 1.5, cost: 0.31, category_id: '12', tax_rate: '4', type: 'standard',
   barcode: '3700000000011;3700000000028', link_code: '4242',
 }, 'prix normal du site (pas la promo), TVA 20 % = code 4');
 assert.strictEqual(nextoreProductPayload({ ...site, regular_price: '' }, { categoryId: 1, barcodes: [] }).price, 1.2, 'sans prix normal : prix courant');
@@ -85,4 +85,21 @@ assert.strictEqual(sold.get(4), 0, 'vente 1 h 20 avant : une autre pièce');
 sold = allocateSales([P(5, 'Z', '2026-11-13 09:00:00', 2), P(6, null, '2026-11-13 09:00:00', 1)], [S('Z', '2026-11-13 09:05:00', -1), S('Z', '2026-11-13 09:06:00', 1)]);
 assert.deepStrictEqual([sold.get(5), sold.get(6)], [1, 0], 'vendu en partie : plus annulable non plus');
 
+
+// ── Nom de la fiche Nextore, à la façon de l'équipe (paires réelles du 19/11/2026) ──
+const N = (title, brand, categoryName = null) => nextoreName(title, { brand, categoryName });
+assert.strictEqual(N('Pastèque Cerise Extra Frais 50ml', 'Bad Bunniz', 'E-LIQUIDES'), 'PASTEQUE CERISE EXTRA FRAIS 50ML - BAD BUNNIZ', 'la sous-marque dans le nom : retrouvable en caisse');
+assert.strictEqual(N('Box Zelos X80 - Gun Metal', 'ASPIRE'), 'BOX ZELOS X80 - ASPIRE - GUN METAL');
+assert.strictEqual(N('Kit Aegis Legend 5 - Earth Brown', 'GEEKVAPE'), 'KIT AEGIS LEGEND 5 - GEEKVAPE - EARTH BROWN');
+assert.strictEqual(N('Thé Pêche 50ml + Booster - 3mg', 'Le Pod Liquide', 'E-LIQUIDES'), 'PACK THE PECHE 60ML - LE POD LIQUIDE - 3MG', '50 ml + booster = pack 60 ml');
+assert.strictEqual(N('Avant Première - 6mg', 'MOONSHINERS', 'E-LIQUIDES'), 'AVANT PREMIERE 10ML - MOONSHINERS - 6MG', 'e-liquide en taux = 10 ml');
+assert.strictEqual(N('Myrtille Glacée Salt - 10mg', 'E-VAPOR', 'E-LIQUIDES'), 'MYRTILLE GLACEE SALT 10ML - E-VAPOR - 10MG');
+assert.strictEqual(N('Fizzy Cherry Cola Salt', 'JNR', 'E-LIQUIDES'), 'FIZZY CHERRY COLA SALT 10ML - JNR');
+assert.strictEqual(N('Jardin d\'Été 50 ml', 'Cupide', 'E-LIQUIDES'), 'JARDIN D ETE 50ML - CUPIDE', 'apostrophe et espace avant ml');
+assert.strictEqual(N('Puff Jnr 28k Falcon X - Mango Passion Fruit', 'JNR', 'PUFF'), 'PUFF JNR 28K FALCON X - JNR - MANGO PASSION FRUIT', 'marque gardée dans le nom : jamais amputé');
+assert.strictEqual(N('Gorilla Kong - 6mg', 'Gorilla', 'BOX ACCU'), 'GORILLA KONG - GORILLA - 6MG', 'hors e-liquide : pas de 10 ml ajouté');
+assert.strictEqual(N('Cartouche HyperMax - 0.40 Ω', null), 'CARTOUCHE HYPERMAX - 0.40 OHM', 'sans marque : nom du site normalisé');
+assert.strictEqual(nextoreProductPayload({ ...site, name: 'Cola Cerise Extra Frais Salt - 20mg' },
+  { categoryId: 1, barcodes: [], brand: 'Le French Liquide', nameBrand: 'Bad Bunniz', categoryName: 'E-LIQUIDES' }).name,
+  'COLA CERISE EXTRA FRAIS SALT 10ML - BAD BUNNIZ - 20MG', 'le nom porte la sous-marque, le champ marque garde la marque');
 console.log('✓ prelevement.test.js');
