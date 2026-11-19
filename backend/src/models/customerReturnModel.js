@@ -57,6 +57,30 @@ const noteTicket = async (ticketId, user, lines, files = []) => {
   }
 };
 
+// Statuts « clos » : un ticket rangé là n'apparaît plus dans les vues de travail.
+const CLOSED_TICKET_STATUSES = ['terminé', 'produit_jamais_retourné'];
+
+/**
+ * Le colis revient sur un ticket déjà résolu : personne ne le verrait (ticket
+ * #9901478, retour n°103 reçu et remis en stock le 17/11/2026 sur un ticket
+ * « Résolu »). On le repasse « Ouvert », sans mail au client.
+ * Renvoie l'ancien statut quand il a été rouvert, sinon null.
+ */
+const reopenClosedTicket = async (ticketId) => {
+  if (!ticketId) return null;
+  try {
+    const { rows: [t] } = await pool.query(
+      'SELECT sav_status FROM sav_tickets WHERE id = $1 AND merged_into_id IS NULL AND NOT is_spam', [ticketId]
+    );
+    if (!t || !CLOSED_TICKET_STATUSES.includes(t.sav_status)) return null;
+    await savModel.updateStatus(ticketId, 'ouvert');
+    return t.sav_status;
+  } catch (error) {
+    console.error(`[Retours] Ticket #${ticketId} non rouvert :`, error.message);
+    return null;
+  }
+};
+
 // ── Commande ────────────────────────────────────────────────────────────────
 
 const ORDER_SQL = `
@@ -724,9 +748,11 @@ const validate = async (id, destinations, user) => {
   if (restocked) parts.push(`${restocked} remis en stock`);
   if (sum('supplier')) parts.push(`${sum('supplier')} en SAV fournisseur`);
   if (sum('noRestock')) parts.push(`${sum('noRestock')} non remis en stock`);
+  const reopenedFrom = await reopenClosedTicket(r.ticket_id);
   await noteTicket(r.ticket_id, user, [
     `<strong>Retour n°${id} ${r.return_required ? 'reçu' : 'validé'}</strong>${parts.length ? ` — ${parts.join(', ')}` : ''}`,
     ...plan.filter(p => p.supplier).map(p => `SAV : ${p.supplier} × ${escapeHtml(p.line.name)} — ${escapeHtml(p.d.problem)}`),
+    ...(reopenedFrom ? ['Ticket rouvert : il était résolu.'] : []),
   ]);
 
   return { ...(await get(id)), restockErrors };
