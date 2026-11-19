@@ -2383,6 +2383,23 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
     reference: '',
   });
   const [busy, setBusy] = useState(false);
+  // Corriger un règlement déjà imputé (date, moyen, référence) sans le supprimer
+  // et le ressaisir. Le montant n'est pas proposé : il est réparti entre les
+  // factures qu'il solde.
+  const [edition, setEdition] = useState(null);
+  const [savingPay, setSavingPay] = useState(false);
+  const enregistrerReglement = async () => {
+    setSavingPay(true);
+    try {
+      await axios.put(`${BASE}/payments/${edition.id}`, {
+        method: edition.method, paid_at: edition.paid_at, reference: edition.reference,
+      });
+      setEdition(null);
+      if (onChanged) await onChanged();
+    } catch (e) {
+      window.alert(e.response?.data?.error || e.message);
+    } finally { setSavingPay(false); }
+  };
   /**
    * Accepter le tarif facturé, une fois la facture enregistrée.
    *
@@ -2502,12 +2519,50 @@ function DocumentPanel({ detail, mobile, onClose, onStatus, onDelete, onSettle, 
         {detail.payments?.length > 0 && (
           <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 10, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, marginBottom: 8 }}>RÈGLEMENTS IMPUTÉS</div>
-            {detail.payments.map((p) => (
-              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0' }}>
-                <span>{date(p.paid_at)} · {methodLabel(p.method)}{p.reference ? ` · ${p.reference}` : ''}</span>
-                <strong>{eur(p.allocated)}</strong>
+            {detail.payments.map((p) => (edition?.id === p.id ? (
+              <div key={p.id} style={{ padding: '6px 0' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <Field label="Date" width={150}>
+                    <input type="date" value={edition.paid_at}
+                      onChange={(e) => setEdition({ ...edition, paid_at: e.target.value })} style={inputStyle} />
+                  </Field>
+                  <Field label="Moyen" width={150}>
+                    <select value={edition.method} onChange={(e) => setEdition({ ...edition, method: e.target.value })} style={inputStyle}>
+                      {METHODS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Référence" width={180}>
+                    <input value={edition.reference} placeholder="relevé Amex, n° de virement…"
+                      onChange={(e) => setEdition({ ...edition, reference: e.target.value })} style={inputStyle} />
+                  </Field>
+                  <Btn small disabled={savingPay || !edition.paid_at} onClick={enregistrerReglement}>
+                    {savingPay ? 'Enregistrement…' : 'Enregistrer'}
+                  </Btn>
+                  <Btn small variant="ghost" disabled={savingPay} onClick={() => setEdition(null)}>Annuler</Btn>
+                </div>
+                {p.document_count > 1 && (
+                  <div style={{ fontSize: 11.5, color: C.orange, marginTop: 6 }}>
+                    Règlement groupé de {eur(p.payment_amount)} : la correction vaut pour ses {p.document_count} factures.
+                  </div>
+                )}
               </div>
-            ))}
+            ) : (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, fontSize: 13, padding: '4px 0' }}>
+                <span>{date(p.paid_at)} · {methodLabel(p.method)}{p.reference ? ` · ${p.reference}` : ''}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <strong>{eur(p.allocated)}</strong>
+                  {onChanged && (
+                    <Btn small variant="ghost" onClick={() => setEdition({
+                      id: p.id, method: p.method, reference: p.reference || '',
+                      // Relue à l'heure locale, comme `date()` l'affiche : une
+                      // coupe du texte ISO donnerait la veille si le serveur
+                      // passait à l'heure de Paris.
+                      paid_at: new Date(p.paid_at).toLocaleDateString('sv-SE'),
+                    })}>Modifier</Btn>
+                  )}
+                </span>
+              </div>
+            )))}
           </div>
         )}
 

@@ -27,6 +27,8 @@ router.get('/parsers', canRead, controller.getParsers);
 router.get('/unpaid', canRead, controller.listUnpaid);
 router.get('/payments', canRead, controller.listPayments);
 router.post('/payments', canWrite, controller.createPayment);
+// Corriger date, moyen ou référence — pas le montant, réparti entre les factures.
+router.put('/payments/:id', canWrite, controller.updatePayment);
 // Défaire un règlement : un essai, un doublon de relevé, un montant saisi de
 // travers. Les factures qu'il soldait redeviennent dues.
 router.delete('/payments/:id', canWrite, controller.deletePayment);

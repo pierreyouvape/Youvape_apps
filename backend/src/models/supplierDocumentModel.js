@@ -497,7 +497,10 @@ async function getDocument(id, db = pool) {
       [id],
     ),
     db.query(
-      `SELECT p.id, p.method, p.paid_at, p.amount AS payment_amount, p.reference, a.amount AS allocated
+      `SELECT p.id, p.method, p.paid_at, p.amount AS payment_amount, p.reference, a.amount AS allocated,
+              -- Un règlement groupé : le corriger ici le corrige pour toutes
+              -- ses factures, et l'écran doit le dire avant.
+              (SELECT count(*) FROM supplier_payment_allocations a2 WHERE a2.payment_id = p.id)::int AS document_count
          FROM supplier_payment_allocations a
          JOIN supplier_payments p ON p.id = a.payment_id
         WHERE a.document_id = $1
@@ -598,6 +601,32 @@ async function deletePayment(id, db = pool) {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Corrige un règlement saisi de travers : sa date, son moyen, sa référence.
+ *
+ * Il fallait le supprimer et le ressaisir, ou passer par la base (Etasty
+ * #FA086156/2026 : Amex daté du jour de la facture au lieu du 19/11/2026).
+ *
+ * Le MONTANT ne se corrige pas ici : il est réparti entre les factures qu'il
+ * solde, et le changer seul laisserait un « non imputé » ou une facture
+ * sur-réglée. Un montant faux se défait (suppression) et se ressaisit.
+ */
+async function updatePayment(id, { method, paidAt, reference }, db = pool) {
+  if (method !== undefined && !VALID_METHODS.includes(method)) throw new Error(`Moyen de paiement inconnu : ${method}`);
+  if (paidAt !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(paidAt))) throw new Error(`Date invalide : ${paidAt}`);
+  const { rows } = await db.query(
+    `UPDATE supplier_payments
+        SET method     = COALESCE($2, method),
+            paid_at    = COALESCE($3::date, paid_at),
+            reference  = CASE WHEN $4::boolean THEN NULLIF(btrim($5), '') ELSE reference END,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *`,
+    [id, method ?? null, paidAt ?? null, reference !== undefined, reference ?? null],
+  );
+  return rows[0] || null;
 }
 
 /** Règlements d'un fournisseur, avec ce que chacun solde. */
@@ -1147,6 +1176,7 @@ module.exports = {
   getDocument,
   updateStatus,
   createPayment,
+  updatePayment,
   deletePayment,
   listPayments,
   listUnpaid,

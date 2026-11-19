@@ -883,6 +883,19 @@ async function createPayment(req, res) {
   }
 }
 
+/** PUT /api/supplier-invoices/payments/:id — corriger date, moyen ou référence. */
+async function updatePayment(req, res) {
+  try {
+    const { method, paid_at: paidAt, reference } = req.body;
+    const payment = await supplierDocumentModel.updatePayment(parseInt(req.params.id, 10), { method, paidAt, reference });
+    if (!payment) return res.status(404).json({ error: 'Règlement introuvable' });
+    return res.json(payment);
+  } catch (error) {
+    console.error('[supplier-invoices] modification de règlement :', error.message);
+    return res.status(400).json({ error: error.message || 'Erreur serveur' });
+  }
+}
+
 /**
  * DELETE /api/supplier-invoices/payments/:id — supprimer un règlement.
  *
@@ -1019,6 +1032,7 @@ module.exports = {
   getClaimMessage,
   deleteDocument,
   createPayment,
+  updatePayment,
   deletePayment,
   listPayments,
   listUnpaid,
