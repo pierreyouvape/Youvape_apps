@@ -553,7 +553,7 @@ const CatalogApp = () => {
         <div style={{ marginBottom: '20px' }}>
           <input
             type="text"
-            placeholder="Rechercher par nom ou SKU..."
+            placeholder="Rechercher par nom, SKU ou réf. fournisseur..."
             value={searchTerm}
             onChange={handleSearch}
             style={{

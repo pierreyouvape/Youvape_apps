@@ -12,6 +12,13 @@ const brandMatch = (alias, param) => `(${alias}.brand = ${param} OR EXISTS (
   WHERE pb.wp_product_id = ${alias}.wp_product_id AND pb.brand = ${param}
 ))`;
 
+// Les réfs fournisseur d'un produit, cherchables dans le catalogue : « HB0936 »
+// doit trouver le Blue Razz Cherry Salt. Un parent variable n'en porte jamais,
+// ce sont ses déclinaisons qui répondent.
+const refsFournisseur = (alias) => `COALESCE((
+  SELECT string_agg(r.supplier_sku, ' ') FROM supplier_refs r WHERE r.product_id = ${alias}.id
+), '')`;
+
 
 /**
  * CTE communes aux deux lectures de l'onglet Produits : la liste (getAllForStats)
@@ -1309,8 +1316,8 @@ class ProductModel {
       const wordClauses = words.map((w, i) => {
         const p = paramIndex + i;
         const isShort = w.length <= 2;
-        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
+        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '') || ' ' || ${refsFournisseur('p')})`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, '') || ' ' || ${refsFournisseur('v')})`;
         const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
         const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         flatVarFilters.push(`(${pCond} OR ${vCond})`);
@@ -1553,7 +1560,7 @@ class ProductModel {
       if (search) {
         const words = search.trim().split(/\s+/).filter(Boolean);
         const pField = `unaccent(p_parent.post_title || ' ' || COALESCE(p_parent.sku, '') || ' ' || COALESCE(p_parent.brand, '') || ' ' || COALESCE(p_parent.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, '') || ' ' || ${refsFournisseur('v')})`;
         const wordClauses = words.map((w, i) => {
           const p = varParams.length + 1 + i;
           const isShort = w.length <= 2;
@@ -1760,8 +1767,8 @@ class ProductModel {
       const wordClauses = words.map((w, i) => {
         const p = idx + i;
         const isShort = w.length <= 2;
-        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, ''))`;
-        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, ''))`;
+        const pField = `unaccent(p.post_title || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.brand, '') || ' ' || COALESCE(p.sub_brand, '') || ' ' || ${refsFournisseur('p')})`;
+        const vField = `unaccent(v.post_title || ' ' || COALESCE(v.sku, '') || ' ' || COALESCE(v.brand, '') || ' ' || COALESCE(v.sub_brand, '') || ' ' || COALESCE(v.product_attributes::text, '') || ' ' || ${refsFournisseur('v')})`;
         const pCond = isShort ? `(' ' || ${pField} || ' ') ILIKE unaccent($${p})` : `${pField} ILIKE unaccent($${p})`;
         const vCond = isShort ? `(' ' || ${vField} || ' ') ILIKE unaccent($${p})` : `${vField} ILIKE unaccent($${p})`;
         return `(
