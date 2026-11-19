@@ -864,7 +864,14 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
   const pieces = Math.max(1, parseInt(qty, 10) || 1);
 
   const { rows: produits } = await db.query(
-    `SELECT p.id, p.sku, p.post_title, ps.supplier_price
+    `SELECT p.id, p.sku, p.post_title,
+            ps.supplier_price / NULLIF(ps.pack_qty, 0) AS prix_lien,
+            (SELECT r.pack_price / NULLIF(r.pack_qty, 0)
+               FROM supplier_refs r
+              WHERE r.product_id = p.id AND r.supplier_id = ps.supplier_id
+                AND r.pack_price IS NOT NULL
+              ORDER BY r.price_retained_at DESC NULLS LAST, r.pack_qty
+              LIMIT 1) AS prix_ref
        FROM products p
        LEFT JOIN product_suppliers ps ON ps.product_id = p.id AND ps.supplier_id = (
          SELECT supplier_id FROM purchase_orders WHERE id = $2)
@@ -887,12 +894,16 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
   const bmsPoId = (commandes[0] || {}).bms_po_id;
   if (!bmsPoId) throw new Error('Cette commande n\'existe pas dans BMS');
 
-  // Le prix : celui du lien fournisseur à défaut d'autre chose. Une ligne
+  // Le prix : celui de la réf. fournisseur, à défaut celui du lien. Une ligne
   // ajoutée à la réception n'a pas été négociée — le contrôle de facture
-  // corrigera.
+  // corrigera. Les deux sont des prix de PACK et la ligne est en pièces : on
+  // divise. Le lien seul ne suffit pas (20 sur 648 portent déjà le prix de la
+  // pièce), d'où la réf. d'abord. Highbuy HB0938, display de 10 à 7,90 €, était
+  // entré à 7,90 € la pièce le 18/11/2026, et le PMP du produit avec.
+  const prixConnu = produit.prix_ref ?? produit.prix_lien;
   const prix = unitPrice != null && unitPrice !== ''
     ? parseFloat(unitPrice)
-    : (produit.supplier_price != null ? parseFloat(produit.supplier_price) : 0);
+    : (prixConnu != null ? parseFloat(prixConnu) : 0);
 
   // BMS DÉSIGNE UN PRODUIT PAR SON `product_id`, JAMAIS PAR SON SKU.
   //
