@@ -145,10 +145,11 @@ function Fichier({ batch, token, onChanged }) {
   const tickets = batch.claims.filter(c => c.carrier_ticket).length;
   const refus = batch.claims.filter(c => c.carrier_error).length;
   // Réponse de Chronopost sur le remboursement, recalculée à chaque rechargement.
-  // Un colis refusé à l'import (pas de ticket) n'attend aucune réponse.
+  // Un colis refusé à l'import reste en attente : son ticket a pu être créé
+  // ailleurs (site Chronopost), la réponse viendra quand même.
   const acceptees = batch.claims.filter(c => c.indemnity_status === 'accepted').length;
   const refusees = batch.claims.filter(c => c.indemnity_status === 'refused').length;
-  const enAttente = batch.claims.filter(c => !c.indemnity_status && !c.carrier_error).length;
+  const enAttente = batch.claims.filter(c => !c.indemnity_status).length;
 
   return (
     <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
