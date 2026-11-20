@@ -144,6 +144,11 @@ function Fichier({ batch, token, onChanged }) {
 
   const tickets = batch.claims.filter(c => c.carrier_ticket).length;
   const refus = batch.claims.filter(c => c.carrier_error).length;
+  // Réponse de Chronopost sur le remboursement, recalculée à chaque rechargement.
+  // Un colis refusé à l'import (pas de ticket) n'attend aucune réponse.
+  const acceptees = batch.claims.filter(c => c.indemnity_status === 'accepted').length;
+  const refusees = batch.claims.filter(c => c.indemnity_status === 'refused').length;
+  const enAttente = batch.claims.filter(c => !c.indemnity_status && !c.carrier_error).length;
 
   return (
     <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
@@ -167,6 +172,9 @@ function Fichier({ batch, token, onChanged }) {
               Importé — {tickets} ticket(s){refus ? `, ${refus} refus` : ''}
             </Chip>
           : <Chip color={C.amber} bg={C.amberL}>À importer chez Chronopost</Chip>}
+        {acceptees > 0 && <Chip color={C.green} bg={C.greenL}>{acceptees} acceptée{acceptees > 1 ? 's' : ''}</Chip>}
+        {refusees > 0 && <Chip color={C.red} bg={C.redL}>{refusees} refusée{refusees > 1 ? 's' : ''}</Chip>}
+        {enAttente > 0 && <Chip color={C.greyT} bg={C.greyB}>{enAttente} en attente</Chip>}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
           <button onClick={telecharger} style={bouton('ghost')}>Télécharger</button>
           <button onClick={() => { setColler(c => !c); setMessage(null); }} style={bouton(coller ? 'ghost' : 'primary')}>
