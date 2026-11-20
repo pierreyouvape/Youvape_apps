@@ -12,6 +12,11 @@
  *    BMS a RÉELLEMENT mises en stock — il les prend en général toutes, sauf
  *    dépassement sur une ligne déjà réceptionnée — et qu'un responsable doit
  *    confirmer qu'elles nous sont dues.
+ *  - LES ARTICLES AJOUTÉS pendant la réception (« Ajouter un article ») : livrés
+ *    sans être sur le bon. La ligne est créée à la quantité saisie, donc ils ne
+ *    sont ni manquants ni en surplus — le mail n'en disait rien (CGWZWKGPZ,
+ *    18/11/2026). Ils ont leur propre tableau, avec le prix retenu : c'est la
+ *    marchandise à retrouver sur la facture.
  *
  * Le destinataire vit dans `app_config.reception_email_to`. Vide, rien ne part
  * et c'est écrit dans les journaux : une réception ne doit jamais échouer
@@ -91,12 +96,40 @@ ${lignes.map((l) => `<tr>${cellules(l).map((c) => `<td style="border:1px solid #
 </table>`;
 }
 
+const euros = (v) => (v == null || !Number.isFinite(Number(v)) || Number(v) <= 0
+  ? null
+  : Number(v).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' €');
+
+// Les articles ajoutés : pas d'« attendu » (rien n'était commandé), le prix
+// retenu à la création de la ligne et ce que BMS a mis en stock.
+function tableauAjoutes(lignes) {
+  const entetes = ['Référence', 'Produit', 'Reçu', 'Prix pièce HT', 'Montant HT', 'Mis en stock'];
+  const cellules = (l) => {
+    const prix = euros(l.unitPrice);
+    return [
+      echapper(l.ref || '—'),
+      echapper(l.product || '—'),
+      l.units,
+      prix || '<strong style="color:#dc2626">inconnu</strong>',
+      prix ? euros(Math.round(l.unitPrice * l.units * 100) / 100) : '—',
+      enStock(l),
+    ];
+  };
+  return `<h3 style="font:600 15px/1.4 Arial,sans-serif;color:#1f2937;margin:22px 0 8px">${lignes.length} article(s) ajouté(s) pendant la réception (absents du bon)</h3>
+<table cellpadding="8" cellspacing="0" style="border-collapse:collapse;font:14px/1.4 Arial,sans-serif;width:100%">
+<tr style="background:#f3f4f6">${entetes.map((h) => `<th align="left" style="border:1px solid #e5e7eb">${h}</th>`).join('')}</tr>
+${lignes.map((l) => `<tr>${cellules(l).map((c) => `<td style="border:1px solid #e5e7eb">${c}</td>`).join('')}</tr>`).join('\n')}
+</table>`;
+}
+
 /**
  * Prévient des écarts d'une réception validée. Ne lève jamais : l'appelant a
  * déjà mis la marchandise en stock.
  */
-async function previenirEcarts({ purchaseOrderId, sessionId, manquants = [], surplus = [], nonEnvoyes = [] }) {
-  if (manquants.length === 0 && surplus.length === 0 && nonEnvoyes.length === 0) {
+async function previenirEcarts({
+  purchaseOrderId, sessionId, manquants = [], surplus = [], ajoutes = [], nonEnvoyes = [],
+}) {
+  if (manquants.length === 0 && surplus.length === 0 && ajoutes.length === 0 && nonEnvoyes.length === 0) {
     return { sent: false, reason: 'aucun_ecart' };
   }
 
@@ -110,19 +143,21 @@ async function previenirEcarts({ purchaseOrderId, sessionId, manquants = [], sur
   // inconnu plutôt que d'affirmer une mise en stock.
   surplus = surplus.map((l) => ({ ...l, stocked: Number.isFinite(l.stocked) ? l.stocked : 0 }));
   const surplusToutEnStock = surplus.every((l) => l.stocked >= l.units);
+  ajoutes = ajoutes.map((l) => ({ ...l, stocked: Number.isFinite(l.stocked) ? l.stocked : 0 }));
 
   const cmd = await entete(purchaseOrderId, sessionId);
   const par = traitePar(cmd);
   const nom = cmd.order_number || `commande ${purchaseOrderId}`;
   // Le refus de BMS passe devant : c'est de la marchandise physiquement là et
   // absente du stock, donc le seul écart qui demande une action tout de suite.
+  const ecarts = [
+    manquants.length > 0 && 'articles manquants',
+    surplus.length > 0 && 'SURPLUS reçu',
+    ajoutes.length > 0 && 'articles ajoutés',
+  ].filter(Boolean);
   const sujet = nonEnvoyes.length > 0
     ? `Réception ${nom} : BMS a REFUSÉ des pièces comptées`
-    : surplus.length > 0 && manquants.length > 0
-      ? `Réception ${nom} : manquants et surplus`
-      : surplus.length > 0
-        ? `Réception ${nom} : SURPLUS reçu`
-        : `Réception ${nom} : articles manquants`;
+    : `Réception ${nom} : ${ecarts.length > 1 ? `${ecarts.slice(0, -1).join(', ')} et ${ecarts[ecarts.length - 1]}` : ecarts[0]}`;
 
   const corps = [
     `<div style="font:14px/1.6 Arial,sans-serif;color:#1f2937">`,
@@ -149,6 +184,14 @@ async function previenirEcarts({ purchaseOrderId, sessionId, manquants = [], sur
         + 'Rien ne dit en revanche qu\'il nous est dû sur ce bon de commande : à vérifier avec un '
         + 'responsable (facture, erreur d\'expédition du fournisseur).</p>'
       : '',
+    ajoutes.length > 0 ? tableauAjoutes(ajoutes) : '',
+    ajoutes.length > 0
+      ? '<p style="margin-top:14px;padding:12px;border-left:4px solid #2563eb;background:#eff6ff">'
+        + 'Ces articles n\'étaient <strong>pas sur le bon de commande</strong> : ils y ont été ajoutés '
+        + 'pendant la réception, à la quantité reçue. Le prix est celui de la référence fournisseur '
+        + '(à défaut, du catalogue) : à vérifier sur la facture, et à confirmer avec un responsable '
+        + 's\'ils nous sont bien dus.</p>'
+      : '',
     '<p style="margin-top:18px;color:#6b7280;font-size:13px">Envoyé automatiquement par l\'app Réception.</p>',
     '</div>',
   ].filter(Boolean).join('\n');
@@ -158,12 +201,16 @@ async function previenirEcarts({ purchaseOrderId, sessionId, manquants = [], sur
     par ? `Traitée par ${par}.` : '',
     nonEnvoyes.length > 0 ? `\nREFUSÉ PAR BMS (pas en stock) :\n${nonEnvoyes.map((n) => `- ${n.ref || n.product} : ${n.envoyees}/${n.comptees} enregistrées, ${n.refusees} refusées`).join('\n')}` : '',
     manquants.length > 0 ? `\nManquants :\n${manquants.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (${LIBELLE_MOTIF[l.motif] || l.motif || 'sans motif'})`).join('\n')}` : '',
+    ajoutes.length > 0 ? `\nAjoutés pendant la réception (absents du bon) :\n${ajoutes.map((l) => `- ${l.ref || l.product} : ${l.units} reçu(s) — prix pièce HT ${euros(l.unitPrice) || 'inconnu'} — en stock : ${l.stocked >= l.units ? `oui, ${l.stocked}` : `NON pour ${l.units - l.stocked} (${l.stocked}/${l.units})`}`).join('\n')}` : '',
     surplus.length > 0 ? `\nSurplus :\n${surplus.map((l) => `- ${l.ref || l.product} : ${l.units}/${l.expected} (+${l.ecart}) — en stock : ${l.stocked >= l.units ? `oui, ${l.stocked}` : `NON pour ${l.units - l.stocked} (${l.stocked}/${l.units})`}`).join('\n')}\n${surplusToutEnStock ? 'Le surplus EST en stock' : 'Une partie du surplus N\'EST PAS en stock'} : vérifier avec un responsable qu'il nous est dû.` : '',
   ].filter(Boolean).join('\n');
 
   const r = await sendMail({ to, subject: sujet, html: corps, text: texte });
   if (!r.success) console.error('[reception] mail d\'écart non parti :', r.error);
-  return { sent: r.success, to, manquants: manquants.length, surplus: surplus.length, nonEnvoyes: nonEnvoyes.length };
+  return {
+    sent: r.success, to,
+    manquants: manquants.length, surplus: surplus.length, ajoutes: ajoutes.length, nonEnvoyes: nonEnvoyes.length,
+  };
 }
 
 module.exports = { previenirEcarts };

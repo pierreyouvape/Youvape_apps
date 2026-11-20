@@ -286,9 +286,10 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   // manquant n'a rien à envoyer à BMS, mais il a un motif à donner et un mail à
   // déclencher. Ne lire que `units_counted > 0` le rendait invisible.
   const { rows: toutes } = await db.query(
-    `SELECT c.purchase_order_item_id, c.bms_line_id, c.units_counted,
+    `SELECT c.purchase_order_item_id, c.bms_line_id, c.units_counted, c.added_at_reception,
             poi.supplier_sku, poi.product_name, ${UNITS_EXPECTED} AS units_expected,
-            COALESCE(poi.units_received, 0) AS units_received
+            COALESCE(poi.units_received, 0) AS units_received,
+            poi.unit_price / GREATEST(COALESCE(poi.units_per_qty, 1), 1) AS piece_price
        FROM reception_counts c
        JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
       WHERE c.session_id = $1
@@ -308,6 +309,10 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
   const restantDe = (l) => Math.max(0, Number(l.units_expected) - Number(l.units_received));
   const manquants = toutes.filter((l) => l.units_counted < restantDe(l));
   const surplus = toutes.filter((l) => l.units_counted > restantDe(l));
+  // Les articles AJOUTÉS pendant la réception (absents du bon) : la ligne est
+  // créée à la quantité saisie, donc ils ne sont ni manquants ni en surplus, et
+  // le mail n'en disait rien. Ils ont pourtant été reçus sans être commandés.
+  const ajoutes = toutes.filter((l) => l.added_at_reception && l.units_counted > 0);
 
   // Le motif est exigé ICI et pas seulement à l'écran : l'API est la porte, et
   // une réception envoyée par un autre chemin perdrait l'explication du manquant.
@@ -502,6 +507,11 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
     // stock au lieu de le supposer (364991 : « pas en stock » pour 15 pièces
     // bel et bien entrées).
     over: surplus.map((l) => ({ ...decrire(l), stocked: envoye.get(l.purchase_order_item_id) || 0 })),
+    added: ajoutes.map((l) => ({
+      ...decrire(l),
+      unitPrice: l.piece_price == null ? null : Number(l.piece_price),
+      stocked: envoye.get(l.purchase_order_item_id) || 0,
+    })),
     notSent: nonEnvoyes,
     orderCompleted: terminee,
     purchaseOrderId: session.purchase_order_id,
@@ -518,6 +528,7 @@ async function validateSession(sessionId, userId, motifs = {}, db = pool) {
       sessionId,
       manquants: resultat.missing,
       surplus: resultat.over,
+      ajoutes: resultat.added,
       nonEnvoyes,
     });
   } catch (e) {
@@ -939,8 +950,11 @@ async function addLine(sessionId, { productId, qty, unitPrice }, db = pool) {
        produit.post_title, pieces, prix],
     );
     await client.query(
-      `INSERT INTO reception_counts (session_id, purchase_order_item_id, bms_line_id, units_counted)
-       VALUES ($1, $2, $3, 0)`,
+      // Marquée « ajoutée » : sans ça, reçu = attendu, et le mail de réception
+      // ne disait rien d'un article qu'on n'avait pas commandé (CGWZWKGPZ).
+      `INSERT INTO reception_counts
+         (session_id, purchase_order_item_id, bms_line_id, units_counted, added_at_reception)
+       VALUES ($1, $2, $3, 0, true)`,
       [sessionId, ligne.id, ligneBms.id || null],
     );
     await client.query('COMMIT');

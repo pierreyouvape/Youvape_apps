@@ -2196,7 +2196,7 @@ const purchaseOrderModel = {
           // nouvelles lignes par leur ligne BMS (à défaut, par la réf.).
           const { rows: aRattacher } = await client.query(
             `SELECT c.session_id, c.bms_line_id, c.units_counted, c.units_sent, c.motif,
-                    c.updated_at, poi.supplier_sku
+                    c.added_at_reception, c.updated_at, poi.supplier_sku
                FROM reception_counts c
                JOIN reception_sessions s ON s.id = c.session_id
                JOIN purchase_order_items poi ON poi.id = c.purchase_order_item_id
@@ -2361,10 +2361,12 @@ const purchaseOrderModel = {
           if (!cible) { perdus++; continue; }
           await client.query(
             `INSERT INTO reception_counts
-               (session_id, purchase_order_item_id, bms_line_id, units_counted, units_sent, motif, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
+               (session_id, purchase_order_item_id, bms_line_id, units_counted, units_sent, motif,
+                added_at_reception, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (session_id, purchase_order_item_id) DO NOTHING`,
-            [c.session_id, cible, c.bms_line_id, c.units_counted, c.units_sent, c.motif, c.updated_at]
+            [c.session_id, cible, c.bms_line_id, c.units_counted, c.units_sent, c.motif,
+             c.added_at_reception === true, c.updated_at]
           );
         }
         if (perdus > 0) {
