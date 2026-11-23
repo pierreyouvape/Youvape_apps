@@ -239,6 +239,27 @@ const PromoDetail = () => {
   const brandOptions = useMemo(() => distinctOptions(effBrand), [items]);
   const catOptions = useMemo(() => distinctOptions(effCategory), [items]);
 
+  /**
+   * Répartition par catégorie (filtre marque appliqué, pas le filtre catégorie :
+   * on garde toutes les pastilles pour pouvoir passer de l'une à l'autre).
+   * `products` = lignes de l'opé (déclinaisons), `parents` = produits distincts.
+   */
+  const catBreakdown = useMemo(() => {
+    const map = new Map();
+    for (const it of items) {
+      if (brandFilter && effBrand(it) !== brandFilter) continue;
+      const k = effCategory(it) || 'Sans catégorie';
+      if (!map.has(k)) map.set(k, { name: k, products: 0, parents: new Set(), stock: 0 });
+      const c = map.get(k);
+      c.products += 1;
+      c.parents.add(String(it.wp_parent_id || it.wp_product_id));
+      c.stock += parseInt(it.stock, 10) || 0;
+    }
+    return [...map.values()]
+      .map((c) => ({ ...c, parents: c.parents.size }))
+      .sort((a, b) => b.products - a.products || a.name.localeCompare(b.name, 'fr'));
+  }, [items, brandFilter]);
+
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
     const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price', 'current_price_ttc',
@@ -635,6 +656,32 @@ const PromoDetail = () => {
               </div>
             )}
 
+            {/* Répartition par catégorie (clic = filtre) */}
+            {catBreakdown.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                {catBreakdown.map((c) => {
+                  const value = c.name === 'Sans catégorie' ? null : c.name;
+                  const active = value && catFilter === value;
+                  return (
+                    <button key={c.name}
+                      onClick={() => value && setCatFilter(active ? '' : value)}
+                      title={`${c.products} produit${c.products > 1 ? 's' : ''} (déclinaisons) · ${c.parents} produit${c.parents > 1 ? 's' : ''} parent${c.parents > 1 ? 's' : ''} · stock ${int(c.stock)}`}
+                      style={{
+                        display: 'flex', alignItems: 'baseline', gap: 6, padding: '6px 12px', borderRadius: 999,
+                        border: `1px solid ${active ? C.promo : C.grisCL}`, background: active ? '#FDF2F8' : C.blanc,
+                        color: C.grisTF, fontSize: 12, cursor: value ? 'pointer' : 'default',
+                      }}>
+                      <span style={{ fontWeight: 600 }}>{c.name}</span>
+                      <span style={{ fontWeight: 800, color: C.promo }}>{int(c.products)}</span>
+                      {c.parents !== c.products && (
+                        <span style={{ color: C.grisM }}>({int(c.parents)} parent{c.parents > 1 ? 's' : ''})</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Barre d'actions */}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
               <button onClick={() => setPickerOpen(true)}
@@ -649,7 +696,10 @@ const PromoDetail = () => {
               <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
                 style={{ ...inputStyle, maxWidth: 260 }}>
                 <option value="">Toutes les catégories</option>
-                {catOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                {catOptions.map((o) => {
+                  const c = catBreakdown.find((x) => x.name === o);
+                  return <option key={o} value={o}>{o}{c ? ` (${c.products})` : ''}</option>;
+                })}
               </select>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}
                 title="Regrouper les déclinaisons sous leur produit parent">
