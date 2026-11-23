@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import axios from 'axios';
+import { AuthContext } from '../../context/AuthContext';
 import CameraScanner from './CameraScanner';
 import { useScanner, beep } from '../pda/pdaScan';
 
@@ -49,7 +50,21 @@ function Btn({ children, onClick, disabled, bg = C.primary, style }) {
   );
 }
 
-export default function ComptageTab({ shop, token }) {
+/**
+ * Comptage boutique (inventaire Nextore). Même écran au PC (Boutique › Comptage)
+ * et sur le PDA (`pda`, Boutiques › <boutique> › Comptage) :
+ * - plusieurs personnes comptent la même session : dès sa 1re quantité, un
+ *   produit appartient à celle qui l'a compté, grisé chez les autres
+ *   (« compté par Franck ») ; le serveur refuse les autres (409 LOCKED) ;
+ * - PDA : on compte, on crée (tournant, spontané, catégorie) et on envoie SES
+ *   produits (validation partielle). Validation finale, abandon, liste manuelle
+ *   et « Libérer » un produit : au PC seulement (décision Pierre, 23/11/2026).
+ */
+const REFRESH_MS = 15000; // les produits pris par les autres PDA apparaissent grisés
+
+export default function ComptageTab({ shop, token, pda = false }) {
+  const { user } = useContext(AuthContext);
+  const me = user?.email || null;
   const [view, setView] = useState('list');        // 'list' | 'create' | 'session'
   const [sessions, setSessions] = useState([]);
   const [session, setSession] = useState(null);
@@ -108,6 +123,25 @@ export default function ComptageTab({ shop, token }) {
       setSession(r.data.comptage); setView('session');
     } catch (e) { setError(e.response?.data?.error || e.message); }
   };
+
+  // Relecture silencieuse (verrous des autres, session clôturée au PC entre-temps).
+  // Passe par la file : jamais au milieu d'une saisie en route.
+  const refreshSession = useCallback((id) => {
+    queueRef.current = queueRef.current.catch(() => {}).then(async () => {
+      try {
+        const r = await axios.get(`${API_URL}/nextore/${shop.slug}/comptage/${id}`, auth(token));
+        setSession((s) => (s && s.id === r.data.comptage.id ? r.data.comptage : s));
+      } catch { /* réseau : la prochaine relecture rattrapera */ }
+    });
+  }, [shop.slug, token]);
+
+  const sessionId = session?.id;
+  const sessionOpen = view === 'session' && session?.status === 'en_cours';
+  useEffect(() => {
+    if (!sessionOpen || !sessionId) return undefined;
+    const t = setInterval(() => refreshSession(sessionId), REFRESH_MS);
+    return () => clearInterval(t);
+  }, [sessionOpen, sessionId, refreshSession]);
 
   const openCreate = async () => {
     setNewName(''); setCatFilter(''); setView('create');
@@ -216,6 +250,8 @@ export default function ComptageTab({ shop, token }) {
         if (data.code === 'AMBIGUOUS_BARCODE') setCameraOpen(false);
         setLastScan({ ok: false, msg: data.error || 'Code-barres inconnu', candidates: data.candidates });
         beep(false);
+        // Compté par quelqu'un d'autre / déjà envoyé : la ligne se grise tout de suite
+        if (data.code === 'LOCKED' || data.code === 'ALREADY_PUSHED') refreshSession(session.id);
       }
     });
   };
@@ -230,8 +266,10 @@ export default function ComptageTab({ shop, token }) {
         setLastScan({ ok: true, name: r.data.name, qty: r.data.counted_qty });
         beep(true);
       } catch (e) {
-        setLastScan({ ok: false, msg: e.response?.data?.error || e.message });
+        const data = e.response?.data || {};
+        setLastScan({ ok: false, msg: data.error || e.message });
         beep(false);
+        if (data.code === 'LOCKED' || data.code === 'ALREADY_PUSHED') refreshSession(session.id);
       }
     });
   };
@@ -314,12 +352,22 @@ export default function ComptageTab({ shop, token }) {
     }
   };
 
-  const validate = async (mode, zeroProductIds = []) => {
+  const validate = async (mode, zeroProductIds = [], { mine = false } = {}) => {
+    // PC : un produit en cours chez quelqu'un d'autre partirait à moitié compté
+    if (!mine) {
+      const busy = (session?.items || []).filter((i) => lockedByOther(i, me));
+      if (busy.length) {
+        const names = [...new Set(busy.map((i) => i.counted_by_name))].join(', ');
+        const ok = window.confirm(`${busy.length} produit(s) en cours de comptage par ${names}.\n\n`
+          + 'Ils seront envoyés dans Nextore avec la quantité comptée jusqu\'ici, et ne pourront plus être comptés dans ce comptage.\n\nContinuer ?');
+        if (!ok) { setReviewMode(false); return; }
+      }
+    }
     setValidating(true); setError(null);
     await queueRef.current.catch(() => {}); // les saisies en route d'abord
     try {
       const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/validate`,
-        { mode, zeroProductIds }, auth(token));
+        { mode, zeroProductIds, mine }, auth(token));
       setResult(r.data);
       if (mode === 'final') { await loadSessions(); }
       else { await openSession(session.id, { keep: true }); } // recharge l'état poussé
@@ -349,15 +397,39 @@ export default function ComptageTab({ shop, token }) {
     finally { setValidating(false); }
   };
 
+  // PDA : envoie dans Nextore les seuls produits comptés par cette personne
+  const sendMine = (n) => {
+    if (!window.confirm(`Envoyer dans Nextore vos ${n} produit(s) compté(s) ?\n\nIls ne pourront plus être modifiés dans ce comptage.`)) return;
+    validate('partial', [], { mine: true });
+  };
+
+  // PC : libère un produit verrouillé (quantité gardée)
+  const release = async (item) => {
+    if (!window.confirm(`Libérer « ${item.name || item.product_id} » ?\n\n${item.counted_by_name} ne le compte plus : `
+      + `la quantité déjà comptée (${fmt(item.counted_qty)}) est gardée, et la prochaine personne qui le scanne reprend depuis là.`)) return;
+    setError(null);
+    await queueRef.current.catch(() => {});
+    try {
+      const r = await axios.post(`${API_URL}/nextore/${shop.slug}/comptage/${session.id}/release`,
+        { product_id: item.product_id }, auth(token));
+      setSession(r.data.comptage);
+    } catch (e) {
+      setError(e.response?.data?.error || e.message);
+      await openSession(session.id, { keep: true });
+    }
+  };
+
   /* ─── Rendu ─── */
   if (view === 'list') {
+    // PDA : seulement les comptages ouverts (l'historique se lit au PC)
+    const shownSessions = pda ? sessions.filter((c) => c.status === 'en_cours') : sessions;
     return (
       <div>
         <Btn onClick={openCreate} bg={C.purple} style={{ marginBottom: 16 }}>+ Nouveau comptage</Btn>
         {error && <div style={{ background: C.redL, color: C.red, padding: 12, borderRadius: 8, marginBottom: 12 }}>{error}</div>}
-        {loading ? <div style={{ padding: 24, color: C.greyT }}>Chargement…</div> : sessions.length === 0 ? (
-          <div style={{ padding: 24, color: C.greyM, textAlign: 'center' }}>Aucun comptage.</div>
-        ) : sessions.map((c) => (
+        {loading ? <div style={{ padding: 24, color: C.greyT }}>Chargement…</div> : shownSessions.length === 0 ? (
+          <div style={{ padding: 24, color: C.greyM, textAlign: 'center' }}>{pda ? 'Aucun comptage en cours.' : 'Aucun comptage.'}</div>
+        ) : shownSessions.map((c) => (
           <div key={c.id} onClick={() => openSession(c.id)} style={{
             background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 14, marginBottom: 10, cursor: 'pointer',
           }}>
@@ -403,7 +475,9 @@ export default function ComptageTab({ shop, token }) {
 
         <Btn onClick={() => create('tournant')} bg={C.purple} style={{ marginBottom: 12 }}>🔄 Inventaire tournant (10 réfs proposées)</Btn>
         <Btn onClick={() => create('spontane')} bg={C.primary} style={{ marginBottom: 12 }}>✋ Comptage spontané (libre)</Btn>
-        <Btn onClick={openBuilder} bg="#2563EB" style={{ marginBottom: 18 }}>📝 Liste manuelle (rechercher & sélectionner)</Btn>
+        {/* La liste manuelle (recherche + cases à cocher) se construit au PC */}
+        {!pda && <Btn onClick={openBuilder} bg="#2563EB" style={{ marginBottom: 18 }}>📝 Liste manuelle (rechercher & sélectionner)</Btn>}
+        {pda && <div style={{ marginBottom: 18 }} />}
 
         <div style={{ background: C.white, border: `1px solid ${C.greyB}`, borderRadius: 12, padding: 14 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: C.greyT }}>Par catégorie / sous-catégorie</label>
@@ -500,6 +574,13 @@ export default function ComptageTab({ shop, token }) {
   const lastItem = lastId ? items.find((i) => i.product_id === lastId) : null;
   const isCategorie = session?.type === 'categorie';
   const validated = session?.status !== 'en_cours'; // validé ou clôturé (partiel) : lecture seule
+  const mineToSend = counted.filter((i) => !i.pushed && i.counted_by === me).length;
+  // Une ligne : grisée si un autre la compte ou si elle est déjà envoyée ; « Libérer » au PC
+  const rowProps = (i) => ({
+    item: i, me, onSet: (q) => setQty(i.product_id, q), onScan: doScan,
+    disabled: i.pushed || lockedByOther(i, me),
+    onRelease: !pda && lockedByOther(i, me) ? () => release(i) : null,
+  });
 
   return (
     <div>
@@ -557,7 +638,7 @@ export default function ComptageTab({ shop, token }) {
       {lastItem && !validated && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: C.greyT, textTransform: 'uppercase', margin: '6px 0' }}>Dernier scan</div>
-          <Row key={`last-${lastItem.product_id}`} item={lastItem} onSet={(q) => setQty(lastItem.product_id, q)} onScan={doScan} highlight />
+          <Row key={`last-${lastItem.product_id}`} {...rowProps(lastItem)} highlight />
         </div>
       )}
 
@@ -578,7 +659,7 @@ export default function ComptageTab({ shop, token }) {
             À compter ({filterWords.length ? `${shownUncounted.length}/${uncounted.length}` : uncounted.length})
           </div>
           {shownUncounted.map((i) => (
-            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} onScan={doScan} muted />
+            <Row key={i.product_id} {...rowProps(i)} muted />
           ))}
         </div>
       )}
@@ -593,14 +674,23 @@ export default function ComptageTab({ shop, token }) {
             Compté ({filterWords.length ? `${shownCounted.length}/${counted.length}` : counted.length})
           </div>
           {shownCounted.map((i) => (
-            <Row key={i.product_id} item={i} onSet={(q) => setQty(i.product_id, q)} onScan={doScan}
-              highlight={i.product_id === lastId} />
+            <Row key={i.product_id} {...rowProps(i)} highlight={i.product_id === lastId} />
           ))}
         </div>
       )}
 
       {/* Validation */}
-      {!validated && (
+      {!validated && pda && (
+        <div style={{ position: 'sticky', bottom: 0, background: C.grey, padding: '10px 0' }}>
+          <Btn onClick={() => sendMine(mineToSend)} disabled={validating || mineToSend === 0} bg={C.green}>
+            {validating ? 'Envoi en cours…' : `Envoyer mes produits dans Nextore (${mineToSend})`}
+          </Btn>
+          <div style={{ fontSize: 12, color: C.greyM, textAlign: 'center', marginTop: 6 }}>
+            La validation finale du comptage se fait au PC.
+          </div>
+        </div>
+      )}
+      {!validated && !pda && (
         <div style={{ position: 'sticky', bottom: 0, background: C.grey, padding: '10px 0', display: 'flex', gap: 10 }}>
           {isCategorie ? (
             <>
@@ -710,12 +800,18 @@ function EcartRow({ item, ecart }) {
   );
 }
 
+/** Ligne verrouillée par une AUTRE personne (comptée, pas encore envoyée). */
+function lockedByOther(item, me) {
+  return !item.pushed && !!item.counted_by && item.counted_by !== me;
+}
+
 /* Ligne produit avec quantité éditable : Entrée enregistre, Échap annule */
-function Row({ item, onSet, onScan, muted, disabled, highlight }) {
+function Row({ item, me, onSet, onScan, muted, disabled, highlight, onRelease }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState(item.counted_qty ?? '');
   const cancelRef = useRef(false);
   const reason = item.reason && REASON[item.reason];
+  const other = lockedByOther(item, me);
   const commit = () => {
     setEdit(false);
     if (cancelRef.current) { cancelRef.current = false; return; }
@@ -733,23 +829,32 @@ function Row({ item, onSet, onScan, muted, disabled, highlight }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-      background: highlight ? '#FFF7E6' : '#fff',
+      background: other ? C.grey : highlight ? '#FFF7E6' : '#fff',
       border: `${highlight ? 2 : 1}px solid ${highlight ? C.accent : C.greyB}`, borderRadius: 10, marginBottom: 6,
-      opacity: muted && !highlight ? 0.7 : 1,
+      opacity: muted && !highlight && !other ? 0.7 : 1,
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* Grisé (compté par un autre) : le texte et la quantité, pas le bouton « Libérer » */}
+      <div style={{ flex: 1, minWidth: 0, opacity: other ? 0.6 : 1 }}>
         <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{item.name || item.product_id}</div>
         <div style={{ fontSize: 12, color: C.greyM }}>
           {item.sku ? `#${item.sku}` : ''}{reason ? <span style={{ color: reason.color, marginLeft: 6 }}>· {reason.label}</span> : ''}
+          {other && <span style={{ color: C.orange, fontWeight: 700, marginLeft: 6 }}>· Compté par {item.counted_by_name}</span>}
+          {item.pushed && <span style={{ color: C.green, fontWeight: 700, marginLeft: 6 }}>· Envoyé dans Nextore</span>}
         </div>
       </div>
+      {onRelease && (
+        <button onClick={onRelease} title="Libérer ce produit (quantité gardée)" style={{
+          padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.orange}`, background: '#fff',
+          color: C.orange, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+        }}>Libérer</button>
+      )}
       {edit && !disabled ? (
         <input type="number" inputMode="numeric" value={v} autoFocus onChange={(e) => setV(e.target.value)}
           onFocus={(e) => e.target.select()} onKeyDown={onKey} onBlur={commit}
           style={{ width: 70, padding: 8, borderRadius: 8, border: `1px solid ${C.primary}`, fontSize: 16, textAlign: 'right' }} />
       ) : (
         <button onClick={() => !disabled && (setV(item.counted_qty ?? ''), setEdit(true))} disabled={disabled}
-          style={{ minWidth: 56, padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, background: item.counted_qty != null ? C.greenL : '#fff', fontSize: 16, fontWeight: 700, color: C.dark }}>
+          style={{ minWidth: 56, padding: '8px 10px', borderRadius: 8, border: `1px solid ${C.greyB}`, background: item.counted_qty != null ? C.greenL : '#fff', fontSize: 16, fontWeight: 700, color: C.dark, opacity: other ? 0.6 : 1 }}>
           {item.counted_qty != null ? fmt(item.counted_qty) : '—'}
         </button>
       )}

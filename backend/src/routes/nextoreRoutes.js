@@ -86,6 +86,8 @@ router.get('/:shop/comptage/:id', boutiquePerm('read'), nextoreController.getCom
 router.post('/:shop/comptage/:id/count', boutiquePerm('write'), nextoreController.countComptage);
 router.post('/:shop/comptage/:id/validate', boutiquePerm('write'), nextoreController.validateComptage);
 router.post('/:shop/comptage/:id/abandon', boutiquePerm('write'), nextoreController.abandonComptage);
+// Libère un produit verrouillé par la personne qui le comptait (quantité gardée)
+router.post('/:shop/comptage/:id/release', boutiquePerm('write'), nextoreController.releaseComptageItem);
 
 // Prélèvements au stock du site (Castelnau, EMC → EMC2) — prelevementController.
 // Les vendeurs de Castelnau sont les gens du PDA (décision Maxime, 10/11/2026) :

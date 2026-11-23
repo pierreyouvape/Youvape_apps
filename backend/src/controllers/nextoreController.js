@@ -429,11 +429,38 @@ async function countComptage(req, res) {
     const result = await comptageModel.recordCount(comptage.id, wh.id, String(productId), {
       qty: qty != null ? Number(qty) : 1,
       mode: mode === 'set' ? 'set' : 'scan',
+      countedBy: req.user?.email || null,
     });
     res.json({ ok: true, ...result });
   } catch (err) {
+    // 409 LOCKED (compté par quelqu'un d'autre) / ALREADY_PUSHED : refus attendus
+    if (err.status === 409) {
+      return res.status(409).json({
+        error: err.message, code: err.code, product_id: req.body?.product_id || null,
+        locked_by_name: err.lockedByName || null,
+      });
+    }
     console.error('Nextore countComptage:', err);
     res.status(500).json({ error: err.message || 'Erreur comptage' });
+  }
+}
+
+// POST /:shop/comptage/:id/release — {product_id} : libère une réf verrouillée
+// (la personne est partie ou s'est trompée). La quantité déjà comptée reste.
+async function releaseComptageItem(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const comptage = await loadOwned(req, res, wh);
+    if (!comptage || refuseIfClosed(comptage, res)) return;
+    const productId = req.body?.product_id;
+    if (!productId) return res.status(400).json({ error: 'product_id requis' });
+    const released = await comptageModel.releaseItem(comptage.id, productId);
+    if (!released) return res.status(409).json({ error: 'Ce produit n\'est plus verrouillé (déjà libéré ou envoyé)' });
+    res.json({ ok: true, comptage: await comptageModel.getComptage(comptage.id) });
+  } catch (err) {
+    console.error('Nextore releaseComptageItem:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
   }
 }
 
@@ -444,11 +471,17 @@ async function validateComptage(req, res) {
   try {
     const comptage = await loadOwned(req, res, wh);
     if (!comptage || refuseIfClosed(comptage, res)) return;
-    const { mode, zeroProductIds } = req.body || {};
+    const { mode, zeroProductIds, mine } = req.body || {};
+    // PDA : `mine` = envoyer seulement ses propres produits, en partiel. La
+    // validation finale (mise à 0 des non comptés, clôture) se fait au PC.
+    if (mine && mode === 'final') {
+      return res.status(400).json({ error: 'La validation finale se fait au PC' });
+    }
     const out = await comptageModel.validateComptage(comptage.id, wh.id, {
       mode: mode === 'final' ? 'final' : 'partial',
-      zeroProductIds: Array.isArray(zeroProductIds) ? zeroProductIds.map(String) : [],
+      zeroProductIds: !mine && Array.isArray(zeroProductIds) ? zeroProductIds.map(String) : [],
       validatedBy: req.user?.email || null,
+      onlyBy: mine ? req.user.email : null,
     });
     res.json({ ok: true, ...out });
   } catch (err) {
@@ -508,4 +541,5 @@ module.exports = {
   countComptage,
   validateComptage,
   abandonComptage,
+  releaseComptageItem,
 };

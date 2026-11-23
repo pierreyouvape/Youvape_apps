@@ -12,6 +12,7 @@ import DormantsTab from '../components/boutique/DormantsTab';
 import CoffreTab from '../components/boutique/CoffreTab';
 import PrelevementsTab from '../components/boutique/PrelevementsTab';
 import CatalogueTab from '../components/boutique/CatalogueTab';
+import { SHOPS } from '../components/boutique/shops';
 
 /* ─── PALETTE (alignée Rapport / SAV / Réception) ───────── */
 const C = {
@@ -19,11 +20,6 @@ const C = {
   dark: '#2a2e38', white: '#FFFFFF',
 };
 
-/* ─── BOUTIQUES (miroir de backend/src/config/nextore.js) ── */
-export const SHOPS = {
-  montpellier: { id: 1, slug: 'montpellier', label: 'Montpellier', permKey: 'boutique-mtp',  color: '#0D9488' },
-  castelnau:   { id: 2, slug: 'castelnau',   label: 'Castelnau',   permKey: 'boutique-cast', color: '#C2410C' },
-};
 
 /* ─── ICÔNES SECTIONS (style trait, comme AppIcons) ─────── */
 const Ic = ({ children }) => (

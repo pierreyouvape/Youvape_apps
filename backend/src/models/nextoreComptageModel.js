@@ -158,7 +158,10 @@ async function getComptage(comptageId) {
   if (!cs.length) return null;
   const comptage = cs[0];
   const { rows: items } = await pool.query(
-    `SELECT * FROM nextore_comptage_items WHERE comptage_id = $1 ORDER BY id ASC`,
+    `SELECT ci.*, COALESCE(u.name, split_part(ci.counted_by, '@', 1)) AS counted_by_name
+     FROM nextore_comptage_items ci
+     LEFT JOIN LATERAL (SELECT name FROM users WHERE email = ci.counted_by LIMIT 1) u ON TRUE
+     WHERE ci.comptage_id = $1 ORDER BY ci.id ASC`,
     [comptageId],
   );
   const info = await productInfo(items.map((i) => i.product_id));
@@ -198,16 +201,47 @@ async function resolveBarcode(comptageId, warehouseId, barcode) {
   return alive.length ? alive : rows;
 }
 
+const userName = (email) => pool.query(
+  'SELECT name FROM users WHERE email = $1 LIMIT 1', [email],
+).then((r) => r.rows[0]?.name || String(email || '').split('@')[0] || 'quelqu\'un');
+
+/**
+ * Pourquoi `countedBy` ne peut pas compter cette ligne (null = il peut) :
+ * - déjà envoyée dans Nextore : la recompter changerait la quantité en base
+ *   sans jamais la renvoyer (avant le 23/11/2026, c'est ce qui se passait) ;
+ * - verrouillée par une AUTRE personne, dès sa première quantité (plusieurs
+ *   PDA sur la même session : deux personnes ne comptent pas le même produit).
+ */
+async function countRefusal(item, countedBy) {
+  if (!item) return null;
+  if (item.pushed) {
+    const who = item.counted_by ? ` (compté par ${await userName(item.counted_by)})` : '';
+    const e = new Error(`Déjà envoyé dans Nextore${who} : il ne se recompte plus dans ce comptage`);
+    e.status = 409; e.code = 'ALREADY_PUSHED';
+    return e;
+  }
+  if (item.counted_by && item.counted_by !== countedBy) {
+    const name = await userName(item.counted_by);
+    const e = new Error(`Compté par ${name}`);
+    e.status = 409; e.code = 'LOCKED'; e.lockedBy = item.counted_by; e.lockedByName = name;
+    return e;
+  }
+  return null;
+}
+
 /**
  * Enregistre un comptage sur une réf. mode 'scan' → +qty (défaut 1) ; 'set' → =qty.
  * À la 1re saisie d'une réf, capture S_ref = stock Nextore LIVE.
+ * La 1re quantité verrouille la réf au nom de `countedBy` (voir countRefusal).
  */
-async function recordCount(comptageId, warehouseId, productId, { qty = 1, mode = 'scan' }) {
+async function recordCount(comptageId, warehouseId, productId, { qty = 1, mode = 'scan', countedBy = null }) {
   const { rows: ex } = await pool.query(
     'SELECT * FROM nextore_comptage_items WHERE comptage_id = $1 AND product_id = $2',
     [comptageId, productId],
   );
   const existing = ex[0];
+  const refusal = await countRefusal(existing, countedBy);
+  if (refusal) throw refusal;
 
   // S_ref : capturé au premier comptage effectif de la réf (proche du comptage physique)
   let sRef = existing?.s_ref;
@@ -217,35 +251,72 @@ async function recordCount(comptageId, warehouseId, productId, { qty = 1, mode =
 
   // L'addition se fait EN BASE : deux scans rapides du même article lisaient le
   // même « déjà compté » pendant l'appel Nextore du premier, et comptaient 1 au
-  // lieu de 2.
+  // lieu de 2. Le verrou aussi : deux PDA qui scannent le même produit au même
+  // instant ont tous deux passé la lecture ci-dessus, seul le premier écrit.
   const { rows: saved } = await pool.query(
-    `INSERT INTO nextore_comptage_items (comptage_id, product_id, s_ref, counted_qty)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO nextore_comptage_items (comptage_id, product_id, s_ref, counted_qty, counted_by, counted_by_at)
+     VALUES ($1, $2, $3, $4, $6, NOW())
      ON CONFLICT (comptage_id, product_id)
      DO UPDATE SET
        counted_qty = CASE WHEN $5::boolean THEN $4::numeric ELSE COALESCE(nextore_comptage_items.counted_qty, 0) + $4::numeric END,
-       s_ref = COALESCE(nextore_comptage_items.s_ref, $3)
-     RETURNING counted_qty::float AS counted_qty, s_ref::float AS s_ref`,
-    [comptageId, productId, sRef, qty, mode === 'set'],
+       s_ref = COALESCE(nextore_comptage_items.s_ref, $3),
+       counted_by = $6,
+       counted_by_at = CASE WHEN nextore_comptage_items.counted_by IS NOT DISTINCT FROM $6::text
+                            THEN COALESCE(nextore_comptage_items.counted_by_at, NOW()) ELSE NOW() END
+     WHERE NOT nextore_comptage_items.pushed
+       AND (nextore_comptage_items.counted_by IS NULL OR nextore_comptage_items.counted_by = $6::text)
+     RETURNING counted_qty::float AS counted_qty, s_ref::float AS s_ref, counted_by`,
+    [comptageId, productId, sRef, qty, mode === 'set', countedBy],
   );
+  if (!saved.length) {
+    // Pris (ou envoyé) entre la lecture et l'écriture
+    const { rows: now } = await pool.query(
+      'SELECT * FROM nextore_comptage_items WHERE comptage_id = $1 AND product_id = $2',
+      [comptageId, productId],
+    );
+    throw (await countRefusal(now[0], countedBy)) || new Error('Comptage non enregistré, réessayez');
+  }
   const { rows: pinfo } = await pool.query(
     'SELECT name, code AS sku, barcode FROM nextore_products WHERE product_id = $1',
     [productId],
   );
-  return { product_id: productId, counted_qty: saved[0].counted_qty, s_ref: saved[0].s_ref, ...(pinfo[0] || {}) };
+  return {
+    product_id: productId, counted_qty: saved[0].counted_qty, s_ref: saved[0].s_ref,
+    counted_by: saved[0].counted_by, ...(pinfo[0] || {}),
+  };
+}
+
+/**
+ * Libère une réf verrouillée (personne partie, erreur) : elle redevient libre et
+ * GARDE sa quantité. La prochaine personne qui la compte reprend depuis là.
+ */
+async function releaseItem(comptageId, productId) {
+  const { rowCount } = await pool.query(
+    `UPDATE nextore_comptage_items SET counted_by = NULL, counted_by_at = NULL
+     WHERE comptage_id = $1 AND product_id = $2 AND NOT pushed AND counted_by IS NOT NULL`,
+    [comptageId, String(productId)],
+  );
+  return rowCount > 0;
 }
 
 /**
  * Valide et POUSSE dans Nextore. mode 'partial' → pousse les lignes comptées non
  * encore poussées, session reste ouverte. mode 'final' → idem + clôture ;
  * `zeroProductIds` = réfs non comptées à mettre à 0 (type catégorie).
+ * `onlyBy` (PDA, partiel seulement) → ne pousse QUE les réfs comptées par cette
+ * personne : un autre PDA peut être au milieu d'un produit, l'envoyer à moitié
+ * compté écrirait un faux stock dans Nextore. Envoyée, la réf est libérée.
  */
-async function validateComptage(comptageId, warehouseId, { mode = 'partial', zeroProductIds = [], validatedBy = null }) {
+async function validateComptage(comptageId, warehouseId, { mode = 'partial', zeroProductIds = [], validatedBy = null, onlyBy = null }) {
   const comptage = await getComptage(comptageId);
   if (!comptage) throw new Error('Comptage introuvable');
+  if (onlyBy && (mode !== 'partial' || zeroProductIds.length)) {
+    throw new Error('Envoi limité à ses propres produits : validation partielle seulement');
+  }
 
   const results = [];
-  const toPush = comptage.items.filter((i) => !i.pushed && i.counted_qty != null);
+  const toPush = comptage.items.filter((i) => !i.pushed && i.counted_qty != null
+    && (!onlyBy || i.counted_by === onlyBy));
 
   for (const item of toPush) {
     try {
@@ -376,6 +447,7 @@ module.exports = {
   getComptage,
   resolveBarcode,
   recordCount,
+  releaseItem,
   validateComptage,
   abandonComptage,
   listComptages,

@@ -50,6 +50,7 @@ const PdaProduit = page('pda', () => import('./pages/PdaProduit'));
 const PdaInventaire = page('pda', () => import('./pages/PdaInventaire'));
 const PdaDebug = page('pda', () => import('./pages/PdaDebug'));
 const PdaPrelevement = page('pda', () => import('./pages/PdaPrelevement'));
+const PdaBoutique = page('pda', () => import('./pages/PdaBoutique'));
 const InventoryApp = page('inventaire', () => import('./pages/InventoryApp'));
 const ReturnsApp = page('retours', () => import('./pages/ReturnsApp'));
 const ReceptionApp = page('reception', () => import('./pages/ReceptionApp'));
@@ -440,6 +441,23 @@ function App() {
             element={
               <PrivateRoute>
                 <PdaPrelevement />
+              </PrivateRoute>
+            }
+          />
+          {/* PDA › Boutiques : les apps d'une boutique (droit de la boutique seul). */}
+          <Route
+            path="/pda/boutique/:shop"
+            element={
+              <PrivateRoute>
+                <PdaBoutique />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pda/boutique/:shop/:app"
+            element={
+              <PrivateRoute>
+                <PdaBoutique />
               </PrivateRoute>
             }
           />

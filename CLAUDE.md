@@ -674,6 +674,24 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).
 - Tests : `tests/prelevement.test.js`.
 
+### Boutiques sur le PDA : comptage à plusieurs (23/11/2026)
+
+Section « Boutiques » de l'accueil `/pda` (au-dessus du Diagnostic) : une tuile par boutique,
+**ouverte par le seul droit de la boutique** (`boutique-mtp` / `boutique-cast`, jamais `picking`),
+`pages/PdaBoutique.jsx` (`/pda/boutique/:shop[/:app]`). Le « Prélèvement boutique » reste une app à part.
+Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fiche produit. Pas d'étiquettes.
+
+- **Verrou par PERSONNE** (`nextore_comptage_items.counted_by`, email) : dès sa 1re quantité, un produit
+  appartient à qui l'a compté ; les autres le voient grisé « Compté par Franck » et le serveur les refuse
+  (409 `LOCKED`, contrôlé dans l'upsert lui-même : deux scans simultanés, un seul gagne). Même règle au PC.
+- **Un produit envoyé dans Nextore ne se recompte plus** (409 `ALREADY_PUSHED`). Avant, le recompter changeait
+  `counted_qty` sans jamais le renvoyer, en silence.
+- PDA : « Envoyer mes produits » = validation partielle **des seuls produits de la personne** (`mine`,
+  `onlyBy`) — jamais le produit d'un autre à moitié compté. Validation finale, abandon, liste manuelle : PC.
+- **« Libérer »** (PC, `POST …/comptage/:id/release`) : verrou retiré, quantité gardée. L'envoi libère aussi.
+- Le PC prévient avant d'envoyer des produits encore en cours chez quelqu'un d'autre.
+- Migration `add_nextore_comptage_lock.sql` AVANT le code.
+
 ### Catalogue caisse : produits du site → Nextore (10/11/2026)
 
 `nextoreCatalogSyncService`, cron `20 8-20 * * *`, **éteint tant que `app_config.nextore_autocreate_since`
