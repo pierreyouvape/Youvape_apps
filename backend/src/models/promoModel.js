@@ -324,7 +324,8 @@ const promoModel = {
    */
   searchProducts: async ({
     q = '', brand, subBrand, category, subCategory,
-    noSaleDays = null, inStockOnly = false, limit = 60, excludeOperationId = null,
+    noSaleDays = null, neverSold = null, groupByParent = false,
+    inStockOnly = false, limit = 60, excludeOperationId = null,
   }) => {
     const params = [];
     const where = [`p.product_type IN ('simple', 'variation', 'woosb')`, `p.post_status = 'publish'`];
@@ -357,14 +358,83 @@ const promoModel = {
 
     // Dormance : « non vendu depuis X jours » inclut les produits jamais vendus
     // (last_sold NULL). 'never' isole ceux qui n'ont jamais été vendus du tout.
-    const dormancy = [];
-    if (noSaleDays === 'never') {
-      dormancy.push('s30.last_sold IS NULL');
-    } else if (noSaleDays) {
-      const days = parseInt(noSaleDays, 10);
-      if (Number.isFinite(days) && days > 0) {
-        dormancy.push(`(s30.last_sold IS NULL OR s30.last_sold < NOW() - INTERVAL '${days} days')`);
+    // `neverSold` : 'only' = jamais vendus seulement, 'exclude' = on les masque.
+    // En mode regroupé, `col` est la dernière vente de TOUT le produit parent.
+    const dormancy = (col) => {
+      const c = [];
+      if (noSaleDays === 'never') {
+        c.push(`${col} IS NULL`);
+      } else if (noSaleDays) {
+        const days = parseInt(noSaleDays, 10);
+        if (Number.isFinite(days) && days > 0) {
+          c.push(`(${col} IS NULL OR ${col} < NOW() - INTERVAL '${days} days')`);
+        }
       }
+      if (neverSold === 'only') c.push(`${col} IS NULL`);
+      if (neverSold === 'exclude') c.push(`${col} IS NOT NULL`);
+      return c;
+    };
+
+    if (groupByParent) {
+      // Une ligne par produit parent (les produits simples restent seuls).
+      // Ventes et dernière vente comptées sur TOUTES les déclinaisons du parent,
+      // quel que soit leur stock ou leur statut : un parent n'est « non vendu
+      // depuis 90 j » que si aucune de ses déclinaisons ne l'a été.
+      // `member_ids` = déclinaisons qui passent les filtres (ajoutées à l'opé).
+      const groupDormancy = dormancy('grp.last_sold');
+      const sql = `
+        WITH ${SALES_CTE.replace('$SALES_STATUS_PARAM', statusParam)},
+        base AS (
+          SELECT p.wp_product_id, p.post_title, p.sku, ${PRODUCT_FIELDS},
+                 COALESCE(NULLIF(p.wp_parent_id, 0), p.wp_product_id) AS g
+          FROM products p
+          LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
+          WHERE ${where.join(' AND ')}
+        ),
+        grp AS (
+          SELECT COALESCE(NULLIF(v.wp_parent_id, 0), v.wp_product_id) AS g,
+                 COALESCE(SUM(s.qty), 0)::int AS sales_30d,
+                 MAX(s.last_sold) AS last_sold
+          FROM products v
+          JOIN sales s ON s.wp_id = v.wp_product_id
+          WHERE COALESCE(NULLIF(v.wp_parent_id, 0), v.wp_product_id) IN (SELECT g FROM base)
+          GROUP BY 1
+        ),
+        agg AS (
+          SELECT g,
+                 array_agg(wp_product_id ORDER BY wp_product_id) AS member_ids,
+                 COUNT(*)::int AS nb_variations,
+                 SUM(COALESCE(stock, 0))::int AS stock_total,
+                 MIN(price) AS price_min, MAX(price) AS price_max
+          FROM base GROUP BY g
+        ),
+        -- Déclinaison représentative (la plus stockée) pour prix, coût et marge.
+        rep AS (
+          SELECT DISTINCT ON (g) * FROM base
+          ORDER BY g, COALESCE(stock, 0) DESC, wp_product_id
+        )
+        SELECT rep.*, agg.member_ids, agg.nb_variations, agg.stock_total,
+               agg.price_min, agg.price_max,
+               COALESCE(grp.sales_30d, 0) AS sales_30d, grp.last_sold
+        FROM rep
+        JOIN agg ON agg.g = rep.g
+        LEFT JOIN grp ON grp.g = rep.g
+        ${groupDormancy.length ? `WHERE ${groupDormancy.join(' AND ')}` : ''}
+        ORDER BY agg.stock_total DESC, COALESCE(grp.sales_30d, 0) DESC, rep.post_title
+        LIMIT $${params.length}
+      `;
+      const { rows } = await pool.query(sql, params);
+      return rows.map((r) => {
+        const { g, stock_total, ...rest } = r;
+        const d = decorate({ ...rest, stock: stock_total });
+        return {
+          ...d,
+          // Clé de sélection = le groupe ; le nom affiché = le produit parent.
+          wp_product_id: Number(g),
+          display_name: d.group_name,
+          member_ids: (r.member_ids || []).map(Number),
+        };
+      });
     }
 
     const sql = `
@@ -375,7 +445,7 @@ const promoModel = {
       FROM products p
       LEFT JOIN products parent ON parent.wp_product_id = p.wp_parent_id
       LEFT JOIN sales s30 ON s30.wp_id = p.wp_product_id
-      WHERE ${[...where, ...dormancy].join(' AND ')}
+      WHERE ${[...where, ...dormancy('s30.last_sold')].join(' AND ')}
       -- Toujours le plus gros stock en tête : c'est lui qu'on cherche à écouler
       -- en promo. Les ventes 30 j départagent à stock égal.
       ORDER BY COALESCE(p.stock, 0) DESC, s30.qty DESC NULLS LAST, p.post_title

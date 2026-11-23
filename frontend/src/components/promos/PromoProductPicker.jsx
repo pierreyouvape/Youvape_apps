@@ -50,11 +50,18 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
   const [categories, setCategories] = useState([]);
   const [noSaleDays, setNoSaleDays] = useState('');
   const [inStockOnly, setInStockOnly] = useState(true);
+  // Une ligne par produit parent au lieu d'une par déclinaison.
+  const [groupByParent, setGroupByParent] = useState(false);
+  // '' = tous, 'only' = jamais vendus seulement, 'exclude' = jamais vendus masqués.
+  const [neverSold, setNeverSold] = useState('');
   const [rows, setRows] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
   const debounce = useRef(null);
+  // Déclinaisons de chaque ligne regroupée déjà vue (clé = parent) : la
+  // sélection survit à un changement de filtre, il faut donc s'en souvenir.
+  const members = useRef(new Map());
 
   useEffect(() => {
     axios.get(`${API_URL}/promos/products/brands`)
@@ -79,17 +86,21 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
           category: cType === 'category' ? cValue : undefined,
           subCategory: cType === 'sub_category' ? cValue : undefined,
           noSaleDays: noSaleDays || undefined,
+          neverSold: neverSold || undefined,
+          groupByParent: groupByParent ? 1 : undefined,
           inStockOnly: inStockOnly ? 1 : 0,
           excludeOperationId: operationId, limit: 150,
         },
       });
-      setRows(res.data.data || []);
+      const data = res.data.data || [];
+      data.forEach((r) => { if (r.member_ids) members.current.set(r.wp_product_id, r.member_ids); });
+      setRows(data);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [q, brandSel, catSel, noSaleDays, inStockOnly, operationId]);
+  }, [q, brandSel, catSel, noSaleDays, neverSold, groupByParent, inStockOnly, operationId]);
 
   // Recherche à la frappe, temporisée.
   useEffect(() => {
@@ -121,7 +132,11 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
   const confirm = async () => {
     setAdding(true);
     try {
-      await onAdd([...selected]);
+      // Mode regroupé : on ajoute chaque déclinaison du parent sélectionné.
+      const ids = groupByParent
+        ? [...new Set([...selected].flatMap((id) => members.current.get(id) || [id]))]
+        : [...selected];
+      await onAdd(ids);
       onClose();
     } finally {
       setAdding(false);
@@ -175,14 +190,30 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
             <option value="30">Non vendu depuis 30 j</option>
             <option value="60">Non vendu depuis 60 j</option>
             <option value="90">Non vendu depuis 90 j</option>
-            <option value="never">Jamais vendu</option>
           </select>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
             <input type="checkbox" checked={inStockOnly} onChange={(e) => setInStockOnly(e.target.checked)} />
             En stock uniquement
           </label>
+          <label title="Une ligne par produit parent : il n'apparaît que si AUCUNE de ses déclinaisons ne répond au critère de vente"
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
+            <input type="checkbox" checked={groupByParent}
+              onChange={(e) => { setGroupByParent(e.target.checked); setSelected(new Set()); }} />
+            Regrouper par produit parent
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
+            <input type="checkbox" checked={neverSold === 'only'}
+              onChange={(e) => setNeverSold(e.target.checked ? 'only' : '')} />
+            Jamais vendus uniquement
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.grisTF, cursor: 'pointer' }}>
+            <input type="checkbox" checked={neverSold === 'exclude'}
+              onChange={(e) => setNeverSold(e.target.checked ? 'exclude' : '')} />
+            Masquer les jamais vendus
+          </label>
           <button
-            onClick={() => { setQ(''); setBrandSel(''); setCatSel(''); setNoSaleDays(''); setInStockOnly(true); }}
+            onClick={() => { setQ(''); setBrandSel(''); setCatSel(''); setNoSaleDays(''); setInStockOnly(true); setNeverSold('');
+              if (groupByParent) { setGroupByParent(false); setSelected(new Set()); } }}
             style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
             Réinitialiser
           </button>
@@ -222,7 +253,14 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                           onClick={(e) => e.stopPropagation()} />
                       </td>
                       <td style={td}>
-                        <div style={{ fontWeight: 600 }}>{r.display_name}</div>
+                        <div style={{ fontWeight: 600 }}>
+                          {r.display_name}
+                          {groupByParent && r.nb_variations > 1 && (
+                            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: C.promo }}>
+                              {r.nb_variations} déclinaisons
+                            </span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 11, color: C.grisM, fontFamily: 'monospace' }}>
                           {r.sku}{effBrand(r) ? ` · ${effBrand(r)}` : ''}
                         </div>
@@ -234,7 +272,11 @@ export default function PromoProductPicker({ operationId, onClose, onAdd }) {
                       <td style={tdR}>{int(r.sales_30d)}</td>
                       <td style={{ ...tdR, color: dormantColor(r.last_sold) }}>{frDate(r.last_sold)}</td>
                       <td style={tdR}>{eur(r.cost_price)}</td>
-                      <td style={tdR}>{eur(r.price)}</td>
+                      <td style={tdR}>
+                        {groupByParent && r.price_min !== null && Number(r.price_min) !== Number(r.price_max)
+                          ? `${eur(r.price_min)} – ${eur(r.price_max)}`
+                          : eur(r.price)}
+                      </td>
                       <td style={{ ...tdR, color: r.discounted_price ? C.orange : C.grisM }}>
                         {r.discounted_price ? eur(r.discounted_price) : '—'}
                       </td>

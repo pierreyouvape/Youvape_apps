@@ -281,6 +281,8 @@ exports.searchProducts = async (req, res) => {
       category: req.query.category || null,
       subCategory: req.query.subCategory || null,
       noSaleDays: req.query.noSaleDays || null,
+      neverSold: ['only', 'exclude'].includes(req.query.neverSold) ? req.query.neverSold : null,
+      groupByParent: req.query.groupByParent === '1',
       inStockOnly: req.query.inStockOnly === '1' || req.query.inStockOnly === 'true',
       limit: req.query.limit,
       excludeOperationId: req.query.excludeOperationId || null,
