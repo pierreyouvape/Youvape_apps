@@ -659,6 +659,17 @@ const PromoDetail = () => {
             {/* Répartition par catégorie (clic = filtre) */}
             {catBreakdown.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                <button onClick={() => setCatFilter('')}
+                  style={{
+                    display: 'flex', alignItems: 'baseline', gap: 6, padding: '6px 12px', borderRadius: 999,
+                    border: `1px solid ${!catFilter ? C.promo : C.grisCL}`, background: !catFilter ? '#FDF2F8' : C.blanc,
+                    color: C.grisTF, fontSize: 12, cursor: 'pointer',
+                  }}>
+                  <span style={{ fontWeight: 600 }}>Toutes</span>
+                  <span style={{ fontWeight: 800, color: C.promo }}>
+                    {int(catBreakdown.reduce((t, c) => t + c.products, 0))}
+                  </span>
+                </button>
                 {catBreakdown.map((c) => {
                   const value = c.name === 'Sans catégorie' ? null : c.name;
                   const active = value && catFilter === value;
