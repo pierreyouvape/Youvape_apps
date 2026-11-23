@@ -32,7 +32,7 @@ const { BMS_SANS_DOUBLON } = require('../services/bmsShipmentSyncService');
 const { createTicket } = require('./pickingPackingModel');
 const {
   REASONS, LOST_REASON, ORDER_TICKET_REASONS, OUTCOMES, parseReturnCode, unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
-  lotRemaining, checkLot, suggestLot,
+  lotRemaining, checkLot, suggestLot, ORDER_ERROR_KINDS, checkOrderErrorLot, supplierItemReason,
   suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
 } = require('../services/returnRules');
 
@@ -1562,12 +1562,12 @@ const supplierSummary = async () => {
 
 const ITEMS_SQL = `
   SELECT i.id, i.supplier_id, i.product_id, i.qty, i.reason, i.problem, i.unit_cost, i.status, i.batch_id, i.created_at,
-         i.source, i.shop, i.note, i.purchase_order_id, po.order_number AS supplier_order_number,
+         i.source, i.shop, i.note, i.order_ref, i.purchase_order_id, po.order_number AS supplier_order_number,
          p.sku, COALESCE(NULLIF(p.post_title, ''), l.name) AS name, ref.supplier_sku,
          l.return_id, l.partial, l.partial_note, r.wp_order_id, r.ticket_id, uc.name AS created_by_name
     FROM supplier_return_items i
     JOIN products p ON p.id = i.product_id
-    -- Un SAV boutique n'a pas de retour client.
+    -- Un SAV boutique ou une erreur de commande n'a pas de retour client.
     LEFT JOIN customer_return_lines l ON l.id = i.return_line_id
     LEFT JOIN customer_returns r ON r.id = l.return_id
     LEFT JOIN purchase_orders po ON po.id = i.purchase_order_id
@@ -1581,8 +1581,11 @@ const ITEMS_SQL = `
 const shopName = (shop) => WAREHOUSE_BY_ID[shop]?.name || (shop ? `Boutique ${shop}` : null);
 const withShop = (i) => ({ ...i, shop_name: shopName(i.shop) });
 
-/** « #1267852 » ou « Boutique Montpellier » */
-const itemOrigin = (i) => (i.source === 'boutique' ? `Boutique ${shopName(i.shop)}` : `#${i.wp_order_id}`);
+/** « #1267852 », « Boutique Montpellier », « Site » (erreur de commande) */
+const itemOrigin = (i) => {
+  if (i.source === 'erreur') return i.shop ? `Boutique ${shopName(i.shop)}` : 'Site';
+  return i.source === 'boutique' ? `Boutique ${shopName(i.shop)}` : `#${i.wp_order_id}`;
+};
 
 const supplierItems = async (supplierId) => {
   const { rows: [supplier] } = await pool.query('SELECT id, name FROM suppliers WHERE id = $1', [supplierId]);
@@ -1597,6 +1600,7 @@ const supplierItems = async (supplierId) => {
   const { rows: batches } = await pool.query(
     `SELECT b.id, b.status, b.created_at, u.name AS created_by_name,
             COUNT(i.id)::int AS lines, COALESCE(SUM(i.qty), 0)::int AS pieces,
+            COUNT(i.id) FILTER (WHERE i.source = 'erreur')::int AS new_lines,
             COALESCE(SUM(i.qty * i.unit_cost), 0)::numeric(12,2) AS value
        FROM supplier_return_batches b
        LEFT JOIN supplier_return_items i ON i.batch_id = b.id
@@ -1712,17 +1716,28 @@ const createBatch = async (supplierId, itemIds, user) => {
   }
 };
 
-const exportBatch = async (batchId) => {
+/**
+ * Export d'un renvoi : tout, ou une seule partie (23/11/2026) — `part = 'neuf'`
+ * pour les erreurs de commande (produits neufs), `'sav'` pour le reste.
+ */
+const EXPORT_PARTS = {
+  neuf: { where: "AND i.source = 'erreur'", suffix: '_neufs', sheet: 'Produits neufs' },
+  sav: { where: "AND i.source <> 'erreur'", suffix: '_sav', sheet: 'SAV' },
+};
+
+const exportBatch = async (batchId, part) => {
+  const p = EXPORT_PARTS[part] || { where: '', suffix: '', sheet: 'Retour fournisseur' };
   const { rows: [b] } = await pool.query(
     `SELECT b.*, s.name AS supplier_name FROM supplier_return_batches b JOIN suppliers s ON s.id = b.supplier_id
       WHERE b.id = $1`,
     [batchId]
   );
   if (!b) throw httpError(404, 'Renvoi introuvable.');
-  const { rows: items } = await pool.query(`${ITEMS_SQL} WHERE i.batch_id = $1 ORDER BY name`, [batchId]);
+  const { rows: items } = await pool.query(`${ITEMS_SQL} WHERE i.batch_id = $1 ${p.where} ORDER BY name`, [batchId]);
+  if (!items.length) throw httpError(400, 'Rien à exporter dans cette partie du renvoi.');
 
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Retour fournisseur');
+  const ws = wb.addWorksheet(p.sheet);
   ws.columns = [
     { header: 'Réf. fournisseur', key: 'ref', width: 18 },
     { header: 'Commande fournisseur', key: 'po', width: 20 },
@@ -1742,11 +1757,11 @@ const exportBatch = async (batchId) => {
     const cost = i.unit_cost == null ? null : Number(i.unit_cost);
     ws.addRow({
       ref: i.supplier_sku || '',
-      po: i.supplier_order_number || '',
+      po: i.supplier_order_number || i.order_ref || '',
       sku: i.sku || '',
       name: i.name,
       qty: i.qty,
-      reason: REASONS[i.reason] || i.reason,
+      reason: supplierItemReason(i),
       problem: [i.problem, i.note].filter(Boolean).join(' — '),
       partial: i.partial ? i.partial_note || 'oui' : '',
       origin: itemOrigin(i),
@@ -1760,7 +1775,7 @@ const exportBatch = async (batchId) => {
   ws.getColumn('total').numFmt = '#,##0.00 €';
 
   const safe = b.supplier_name.replace(/[^\w-]+/g, '_');
-  return { buffer: await wb.xlsx.writeBuffer(), filename: `retour_${safe}_n${b.id}.xlsx` };
+  return { buffer: await wb.xlsx.writeBuffer(), filename: `retour_${safe}_n${b.id}${p.suffix}.xlsx` };
 };
 
 // ── SAV boutique (Pierre, 15/10/2026) ──────────────────────────────────────
@@ -1860,18 +1875,133 @@ const setItemLot = async (itemId, purchaseOrderId) => {
   return supplierItems(supplierId);
 };
 
-/** Une pièce boutique saisie par erreur (celles du site suivent leur retour). */
+/** Une pièce boutique ou une erreur de commande saisie à tort (celles du site suivent leur retour). */
 const deleteBoutiqueItem = async (itemId) => {
   const { rows: [i] } = await pool.query(
-    `DELETE FROM supplier_return_items WHERE id = $1 AND source = 'boutique' AND status = 'a_retourner'
+    `DELETE FROM supplier_return_items WHERE id = $1 AND source IN ('boutique', 'erreur') AND status = 'a_retourner'
      RETURNING supplier_id`,
     [itemId]
   );
-  if (!i) throw httpError(400, 'Seule une pièce boutique encore à retourner se supprime.');
+  if (!i) throw httpError(400, 'Seule une pièce saisie à la main (boutique, erreur de commande) encore à retourner se supprime.');
   return supplierItems(i.supplier_id);
 };
 
+
+// ── Erreurs de commande (Pierre, 23/11/2026) ───────────────────────────────
+// Produits NEUFS rendus au fournisseur : commandés par erreur, ou reçus sans
+// avoir été commandés. Du site (commande fournisseur choisie dans la liste) ou
+// d'une boutique (référence libre, facultative). Aucun stock n'est touché.
+
+/** Fournisseurs actifs, et les commandes de l'un d'eux (les plus récentes d'abord). */
+const orderErrorOptions = async (supplierId) => {
+  const { rows: suppliers } = await pool.query(
+    `SELECT s.id, s.name FROM suppliers s
+      WHERE COALESCE(s.is_active, true)
+         OR EXISTS (SELECT 1 FROM purchase_orders po WHERE po.supplier_id = s.id)
+      ORDER BY s.name`
+  );
+  let orders = [];
+  if (Number(supplierId)) {
+    ({ rows: orders } = await pool.query(
+      `SELECT po.id, po.order_number, po.status, po.order_date, po.received_date,
+              COUNT(poi.id)::int AS lines
+         FROM purchase_orders po
+         LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+        WHERE po.supplier_id = $1 AND po.status NOT IN ('draft', 'cancelled')
+        GROUP BY po.id
+        ORDER BY COALESCE(po.received_date, po.order_date, po.created_at) DESC NULLS LAST, po.id DESC
+        LIMIT 100`,
+      [Number(supplierId)]
+    ));
+  }
+  return { suppliers, orders };
+};
+
+/** Produits d'une commande fournisseur, avec ce qu'il reste à renvoyer sous son numéro. */
+const orderErrorLines = async (purchaseOrderId) => {
+  const { rows: [po] } = await pool.query(
+    'SELECT id, order_number, supplier_id FROM purchase_orders WHERE id = $1', [Number(purchaseOrderId)]
+  );
+  if (!po) throw httpError(404, 'Commande fournisseur introuvable.');
+  const { rows } = await pool.query(
+    `SELECT p.id, p.sku, p.post_title AS name, COALESCE(p.image_url, pp.image_url) AS image_url,
+            SUM(poi.qty_ordered * COALESCE(NULLIF(poi.units_per_qty, 0), 1))::int AS ordered,
+            SUM(COALESCE(poi.units_received, 0))::int AS received
+       FROM purchase_order_items poi
+       JOIN products p ON p.id = poi.product_id
+       LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
+      WHERE poi.purchase_order_id = $1
+      GROUP BY p.id, pp.image_url
+      ORDER BY p.post_title`,
+    [po.id]
+  );
+  const lots = (await purchaseLots(rows.map(r => r.id))).filter(l => l.purchase_order_id === po.id);
+  return {
+    order: po,
+    lines: rows.map(r => ({ ...r, remaining: lots.find(l => l.product_id === r.id)?.remaining ?? 0 })),
+  };
+};
+
+/**
+ * @param {{origin: 'site'|number, kind, supplierId, purchaseOrderId?, orderRef?, productId, qty, note?}} body
+ *   `origin` : 'site', ou le warehouse Nextore de la boutique.
+ */
+const createOrderErrorItem = async ({ origin, kind, supplierId, purchaseOrderId, orderRef, productId, qty, note }, user) => {
+  const site = origin === 'site';
+  if (!site && !WAREHOUSE_BY_ID[Number(origin)]) throw httpError(400, 'Choisir le site ou la boutique.');
+  if (!ORDER_ERROR_KINDS[kind]) throw httpError(400, "Choisir le type d'erreur.");
+  if (!Number(supplierId)) throw httpError(400, 'Choisir le fournisseur.');
+  const { rows: [product] } = await pool.query(
+    `SELECT id, sku, post_title FROM products WHERE id = $1 AND product_type IN ('simple', 'variation')`, [Number(productId)]
+  );
+  if (!product) throw httpError(400, 'Produit introuvable.');
+  const name = product.post_title || product.sku;
+  const n = Number(qty);
+  if (!Number.isInteger(n) || n <= 0) throw httpError(400, `« ${name} » : quantité invalide.`);
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let lot = null;
+    let poId = null;
+    if (site) {
+      poId = Number(purchaseOrderId);
+      if (!poId) throw httpError(400, 'Choisir la commande fournisseur.');
+      // Deux saisies simultanées sur la même commande passent l'une après l'autre.
+      const { rows: [po] } = await client.query(
+        'SELECT id, supplier_id, order_number FROM purchase_orders WHERE id = $1 FOR UPDATE', [poId]
+      );
+      if (!po) throw httpError(400, 'Commande fournisseur introuvable.');
+      if (po.supplier_id !== Number(supplierId)) throw httpError(400, `La commande ${po.order_number} n'est pas chez ce fournisseur.`);
+      lot = (await purchaseLots([product.id], { db: client })).find(l => l.purchase_order_id === poId) || null;
+      checkOrderErrorLot(kind, lot, n, name);
+    }
+    const { rows: [row] } = await client.query(
+      `INSERT INTO supplier_return_items
+         (supplier_id, product_id, return_line_id, qty, reason, problem, unit_cost, created_by,
+          purchase_order_id, source, shop, note, order_ref)
+       SELECT $1, $2, NULL, $3, $4, 'Produit neuf', COALESCE($5::numeric, p.computed_cost, p.wc_cog_cost), $6,
+              $7, 'erreur', $8, $9, $10
+         FROM products p WHERE p.id = $2
+       RETURNING id`,
+      [Number(supplierId), product.id, n, kind, lot?.unit_cost ?? null, user.id,
+        poId, site ? null : Number(origin), String(note || '').trim() || null,
+        site ? null : String(orderRef || '').trim() || null]
+    );
+    await client.query('COMMIT');
+    return { supplierId: Number(supplierId), itemId: row.id };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
+  orderErrorOptions,
+  orderErrorLines,
+  createOrderErrorItem,
   searchProducts,
   productLots,
   createBoutiqueItem,

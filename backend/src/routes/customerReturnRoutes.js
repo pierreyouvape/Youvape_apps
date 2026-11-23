@@ -16,6 +16,10 @@ router.post('/suppliers/:supplierId/batches', write, c.createBatch);
 router.get('/products/search', read, c.searchProducts);
 router.get('/purchase-lots', read, c.productLots);
 router.post('/supplier-items', write, c.createBoutiqueItem);
+// Erreurs de commande : produits neufs renvoyés au fournisseur (23/11/2026).
+router.get('/order-errors/options', read, c.orderErrorOptions);
+router.get('/order-errors/orders/:poId', read, c.orderErrorLines);
+router.post('/order-errors', write, c.createOrderErrorItem);
 router.put('/supplier-items/:itemId/lot', write, c.setItemLot);
 router.delete('/supplier-items/:itemId', write, c.deleteBoutiqueItem);
 router.get('/batches/:batchId/export', read, c.exportBatch);

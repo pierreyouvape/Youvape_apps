@@ -15,6 +15,7 @@ const {
   unitPaid, bundleParents, expandSelection, checkDestination, returnStatus, suggestSupplier,
   suggestPoints, replacementShipping, relayNetwork, pickRefund, pointsBreakdown, breakdownText,
   lotRemaining, checkLot, suggestLot, parseReturnCode,
+  checkOrderErrorLot, supplierItemReason,
 } = require('../src/services/returnRules');
 
 const throws = (fn, re) => assert.throws(fn, (e) => re.test(e.message) && e.statusCode === 400);
@@ -162,6 +163,20 @@ throws(() => checkLot(poLots[0], 5, 'X'), /S1 en a apporté 3, 0 déjà en SAV �
 throws(() => checkLot(poLots[1], 2, 'X'), /1 retournable/);
 throws(() => checkLot(null, 1, 'X'), /jamais été reçu/);
 throws(() => checkLot(poLots[0], 0, 'X'), /quantité invalide/);
+
+// ── Erreurs de commande (23/11/2026) ────────────────────────────────────────
+// Commandé par erreur : le produit est sur la commande, même plafond qu'un SAV.
+checkOrderErrorLot('commande_erreur', poLots[0], 3, 'X');
+throws(() => checkOrderErrorLot('commande_erreur', poLots[0], 4, 'X'), /3 retournable/);
+throws(() => checkOrderErrorLot('commande_erreur', null, 1, 'X'), /jamais été reçu/);
+// Reçu sans être commandé : ajouté à la réception (plafond) ou mis de côté (rien à compter).
+throws(() => checkOrderErrorLot('non_commande', poLots[0], 4, 'X'), /3 retournable/);
+checkOrderErrorLot('non_commande', null, 12, 'X');
+throws(() => checkOrderErrorLot('non_commande', null, 0, 'X'), /quantité invalide/);
+throws(() => checkOrderErrorLot('defaut', poLots[0], 1, 'X'), /type d'erreur/);
+assert.strictEqual(supplierItemReason({ source: 'erreur', reason: 'non_commande' }), 'Erreur de commande — Reçu sans être commandé (produit NEUF)');
+assert.strictEqual(supplierItemReason({ source: 'boutique', reason: 'defaut' }), 'SAV boutique');
+assert.strictEqual(supplierItemReason({ source: 'site', reason: 'defaut' }), 'Défaut');
 assert.strictEqual(suggestLot(poLots, 7, 1, '2026-09-20'), 2, 'dernière reçue avant le paiement');
 assert.strictEqual(suggestLot(poLots, 7, 2, '2026-09-20'), 1, 'S2 ne couvre plus 2 pièces');
 assert.strictEqual(suggestLot(poLots, 7, 4, '2026-09-20'), 3, 'aucune avant : la plus récente qui couvre');

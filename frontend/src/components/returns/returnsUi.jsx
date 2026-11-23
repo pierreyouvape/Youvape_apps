@@ -83,6 +83,12 @@ export const customerName = (r) =>
 
 export const euro = (n) => (n == null ? '—' : `${Number(n).toFixed(2).replace('.', ',')} €`);
 
+/** Erreurs de commande au SAV fournisseur (23/11/2026) : produits NEUFS. */
+export const ORDER_ERROR_KINDS = {
+  commande_erreur: 'Commandé par erreur',
+  non_commande: 'Reçu sans être commandé',
+};
+
 /** Boutiques (warehouse_id Nextore, cf. backend config/nextore.js). */
 export const SHOPS = [
   { id: 1, name: 'Montpellier' },

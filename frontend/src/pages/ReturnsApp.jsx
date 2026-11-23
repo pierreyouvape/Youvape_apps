@@ -8,10 +8,11 @@ import useTicketsAccess from '../components/tickets/useTicketsAccess';
 import ReturnLabelActions from '../components/returns/ReturnLabelActions';
 import CreateReturnModal from '../components/returns/CreateReturnModal';
 import BoutiqueSavModal from '../components/returns/BoutiqueSavModal';
+import OrderErrorModal from '../components/returns/OrderErrorModal';
 import { formatDate, formatDateUTC } from '../utils/dateUtils';
 import {
   RETURNS_API, RETURNS_COLOR, RETURNS_COLOR_L, REASONS, LOST_REASON, OUTCOMES, OUTCOME_REF_HINT, STATUS,
-  StatusChip, btn, field, errorText, customerName, euro, LotSelect,
+  StatusChip, btn, field, errorText, customerName, euro, LotSelect, ORDER_ERROR_KINDS,
 } from '../components/returns/returnsUi';
 
 /**
@@ -24,7 +25,8 @@ import {
  *
  * Chaque pièce en SAV fournisseur porte sa commande fournisseur, et on n'en
  * retourne pas plus qu'elle n'en a apporté. Les SAV de la boutique (échangés en
- * caisse) s'y ajoutent à la main (« Ajouter un SAV boutique », 15/10/2026).
+ * caisse) s'y ajoutent à la main (« Ajouter un SAV boutique », 15/10/2026), ainsi
+ * que les erreurs de commande, produits neufs (« Ajouter une erreur de commande », 23/11/2026).
  *
  * Les retours se créent depuis un ticket ou une commande (OrderReturnsBox).
  */
@@ -1060,12 +1062,22 @@ function DetailView({ id, navigate, canWrite }) {
 
 // ── Fournisseurs ────────────────────────────────────────────────────────────
 
-const downloadBatch = async (batchId, supplierName) => {
-  const res = await axios.get(`${RETURNS_API}/batches/${batchId}/export`, { responseType: 'blob' });
+/** `part` : 'neuf' (erreurs de commande), 'sav' (le reste), rien = tout le renvoi. */
+const downloadBatch = async (batchId, supplierName, part) => {
+  let res;
+  try {
+    res = await axios.get(`${RETURNS_API}/batches/${batchId}/export`, { params: part ? { part } : {}, responseType: 'blob' });
+  } catch (e) {
+    // Réponse d'erreur en Blob : on en sort le message.
+    const text = await e?.response?.data?.text?.().catch(() => null);
+    if (text) { try { e.response.data = JSON.parse(text); } catch { /* garde l'erreur brute */ } }
+    throw e;
+  }
   const url = URL.createObjectURL(res.data);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `retour_${String(supplierName).replace(/[^\w-]+/g, '_')}_n${batchId}.xlsx`;
+  const suffix = part === 'neuf' ? '_neufs' : part === 'sav' ? '_sav' : '';
+  a.download = `retour_${String(supplierName).replace(/[^\w-]+/g, '_')}_n${batchId}${suffix}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 };
@@ -1073,7 +1085,7 @@ const downloadBatch = async (batchId, supplierName) => {
 function SuppliersView({ navigate, canWrite }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(null); // 'boutique' | 'erreur'
   useEffect(() => {
     axios.get(`${RETURNS_API}/suppliers`).then(({ data }) => setRows(data.suppliers)).catch(e => setError(errorText(e)));
   }, []);
@@ -1083,13 +1095,20 @@ function SuppliersView({ navigate, canWrite }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {canWrite && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={() => setAdding(true)} style={btn('primary')}>+ Ajouter un SAV boutique</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={() => setAdding('erreur')} style={btn('primary')}>+ Ajouter une erreur de commande</button>
+          <button type="button" onClick={() => setAdding('boutique')} style={btn('primary')}>+ Ajouter un SAV boutique</button>
         </div>
       )}
-      {adding && (
+      {adding === 'boutique' && (
         <BoutiqueSavModal
-          onClose={() => setAdding(false)}
+          onClose={() => setAdding(null)}
+          onCreated={({ supplierId }) => navigate(`/retours/fournisseurs/${supplierId}`)}
+        />
+      )}
+      {adding === 'erreur' && (
+        <OrderErrorModal
+          onClose={() => setAdding(null)}
           onCreated={({ supplierId }) => navigate(`/retours/fournisseurs/${supplierId}`)}
         />
       )}
@@ -1126,7 +1145,7 @@ function SupplierView({ supplierId, navigate, canWrite }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(null); // 'boutique' | 'erreur'
 
   const load = useCallback(() => {
     axios.get(`${RETURNS_API}/suppliers/${supplierId}`)
@@ -1145,9 +1164,19 @@ function SupplierView({ supplierId, navigate, canWrite }) {
     () => (data?.items || []).filter(i => checked.has(i.id)).reduce((n, i) => n + i.qty * Number(i.unit_cost || 0), 0),
     [data, checked]
   );
+  // SAV (pièces défectueuses) et produits neufs (erreurs de commande) se renvoient ensemble ou séparément.
+  const isNew = (i) => i.source === 'erreur';
+  const newCount = (data?.items || []).filter(isNew).length;
+  const savCount = (data?.items || []).length - newCount;
+  const checkOnly = (pred) => setChecked(new Set(data.items.filter(pred).map(i => i.id)));
+  const sameSet = (pred) => {
+    const ids = data.items.filter(pred).map(i => i.id);
+    return ids.length === checked.size && ids.every(id => checked.has(id));
+  };
 
   const send = async () => {
-    const noPo = data.items.filter(i => checked.has(i.id) && !i.purchase_order_id).length;
+    // Une erreur de commande d'une boutique n'a pas de commande du site : elle a sa référence.
+    const noPo = data.items.filter(i => checked.has(i.id) && !i.purchase_order_id && !(i.source === 'erreur' && i.shop)).length;
     const warn = noPo ? `\n\n⚠️ ${noPo} ligne(s) sans commande fournisseur : l'export ne la citera pas.` : '';
     if (!window.confirm(`Créer le renvoi de ${checked.size} ligne(s) à ${data.supplier.name} ? Elles passeront en « Envoyé ».${warn}`)) return;
     setSaving(true);
@@ -1181,7 +1210,8 @@ function SupplierView({ supplierId, navigate, canWrite }) {
     }
   };
   const removeItem = async (item) => {
-    if (!window.confirm(`Supprimer « ${item.name} » (SAV boutique ${item.shop_name}) ?`)) return;
+    const what = item.source === 'erreur' ? 'erreur de commande' : `SAV boutique ${item.shop_name}`;
+    if (!window.confirm(`Supprimer « ${item.name} » (${what}) ?`)) return;
     try {
       const { data: d } = await axios.delete(`${RETURNS_API}/supplier-items/${item.id}`);
       setData(d);
@@ -1209,18 +1239,54 @@ function SupplierView({ supplierId, navigate, canWrite }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button type="button" onClick={() => navigate('/retours/fournisseurs')} style={{ ...btn('ghost'), padding: '6px 12px', fontSize: 13 }}>← Fournisseurs</button>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900, color: C.dark, flex: 1 }}>{data.supplier.name}</h2>
-        {canWrite && <button type="button" onClick={() => setAdding(true)} style={btn('primary')}>+ Ajouter un SAV boutique</button>}
+        {canWrite && <button type="button" onClick={() => setAdding('erreur')} style={btn('primary')}>+ Ajouter une erreur de commande</button>}
+        {canWrite && <button type="button" onClick={() => setAdding('boutique')} style={btn('primary')}>+ Ajouter un SAV boutique</button>}
       </div>
-      {adding && (
+      {adding === 'boutique' && (
         <BoutiqueSavModal
           supplierId={supplierId}
-          onClose={() => setAdding(false)}
-          onCreated={() => { setAdding(false); setMessage({ kind: 'ok', text: 'SAV boutique ajouté.' }); load(); }}
+          onClose={() => setAdding(null)}
+          onCreated={() => { setAdding(null); setMessage({ kind: 'ok', text: 'SAV boutique ajouté.' }); load(); }}
+        />
+      )}
+      {adding === 'erreur' && (
+        <OrderErrorModal
+          supplierId={supplierId}
+          onClose={() => setAdding(null)}
+          onCreated={({ supplierId: sid }) => {
+            setAdding(null);
+            if (sid !== supplierId) { navigate(`/retours/fournisseurs/${sid}`); return; }
+            setMessage({ kind: 'ok', text: 'Erreur de commande ajoutée.' });
+            load();
+          }}
         />
       )}
       {message && <Banner kind={message.kind} onClose={() => setMessage(null)}>{message.text}</Banner>}
 
       <div style={{ ...panel, padding: 0, overflowX: 'auto' }}>
+        {canWrite && newCount > 0 && savCount > 0 && (
+          <div style={{ padding: '12px 14px 4px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13 }}>
+            <span style={{ color: C.greyT, fontWeight: 700 }}>Cocher :</span>
+            {[
+              ['Tout', () => true, data.items.length],
+              ['SAV', i => !isNew(i), savCount],
+              ['Produits neufs', isNew, newCount],
+            ].map(([text, pred, n]) => {
+              const active = sameSet(pred);
+              return (
+                <button
+                  key={text} type="button" onClick={() => checkOnly(pred)}
+                  style={{
+                    ...btn('ghost'), padding: '4px 10px', fontSize: 12.5,
+                    borderColor: active ? RETURNS_COLOR : C.greyB, background: active ? RETURNS_COLOR_L : C.white,
+                    color: active ? RETURNS_COLOR : C.dark,
+                  }}
+                >{text} ({n})</button>
+              );
+            })}
+            <span style={{ color: C.greyT, fontSize: 12 }}>Le renvoi et son export ne prennent que les lignes cochées.</span>
+          </div>
+        )}
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
@@ -1245,7 +1311,10 @@ function SupplierView({ supplierId, navigate, canWrite }) {
                 <td style={td}>{i.name}<div style={{ fontSize: 12, color: C.greyT }}>{i.sku}</div></td>
                 <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{i.qty}</td>
                 <td style={td}>
-                  {canWrite ? (
+                  {i.source === 'erreur' ? (
+                    // Choisie à la saisie (site) ou saisie librement (boutique) : pas de changement ici.
+                    i.supplier_order_number || i.order_ref || <span style={{ color: C.greyT }}>—</span>
+                  ) : canWrite ? (
                     <LotSelect
                       lots={data.lots.filter(l => l.product_id === i.product_id)} qty={i.qty}
                       credit={i.purchase_order_id ? { [i.purchase_order_id]: i.qty } : {}}
@@ -1254,16 +1323,25 @@ function SupplierView({ supplierId, navigate, canWrite }) {
                     />
                   ) : (i.supplier_order_number || <span style={{ color: C.red }}>—</span>)}
                 </td>
-                <td style={td}>{i.source === 'boutique' ? 'SAV boutique' : REASONS[i.reason]}</td>
+                <td style={td}>
+                  {i.source === 'erreur' ? (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        Erreur de commande <Chip color={C.green} bg={C.greenL}>Neuf</Chip>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.greyT }}>{ORDER_ERROR_KINDS[i.reason] || i.reason}</div>
+                    </>
+                  ) : i.source === 'boutique' ? 'SAV boutique' : REASONS[i.reason]}
+                </td>
                 <td style={{ ...td, maxWidth: 280 }}>
                   {i.problem}
                   {i.note && <div style={{ fontSize: 12, color: C.greyT }}>{i.note}</div>}
                 </td>
                 <td style={td}>
-                  {i.source === 'boutique' ? (
+                  {i.source === 'boutique' || i.source === 'erreur' ? (
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                       <div>
-                        <strong>Boutique {i.shop_name}</strong>
+                        <strong>{i.shop ? `Boutique ${i.shop_name}` : 'Site'}</strong>
                         {i.created_by_name && <div style={{ fontSize: 12, color: C.greyT }}>{i.created_by_name}</div>}
                       </div>
                       {canWrite && (
@@ -1343,11 +1421,24 @@ function SupplierView({ supplierId, navigate, canWrite }) {
                     )}
                   </td>
                   <td style={td}>
-                    <button
-                      type="button"
-                      onClick={() => downloadBatch(b.id, data.supplier.name).catch(e => setMessage({ kind: 'error', text: errorText(e) }))}
-                      style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5 }}
-                    >Export</button>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {/* Renvoi mêlant SAV et produits neufs : chaque partie s'exporte aussi seule. */}
+                      {(b.new_lines > 0 && b.new_lines < b.lines
+                        ? [['Export tout', null], ['SAV', 'sav'], ['Neufs', 'neuf']]
+                        : [['Export', null]]
+                      ).map(([text, part]) => (
+                        <button
+                          key={text} type="button"
+                          onClick={() => downloadBatch(b.id, data.supplier.name, part).catch(e => setMessage({ kind: 'error', text: errorText(e) }))}
+                          style={{ ...btn('ghost'), padding: '5px 10px', fontSize: 12.5, whiteSpace: 'nowrap' }}
+                        >{text}</button>
+                      ))}
+                    </div>
+                    {b.new_lines > 0 && (
+                      <div style={{ fontSize: 11.5, color: C.greyT, marginTop: 3 }}>
+                        {b.new_lines === b.lines ? 'Produits neufs' : `dont ${b.new_lines} ligne(s) neuve(s)`}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

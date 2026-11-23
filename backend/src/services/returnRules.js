@@ -206,6 +206,38 @@ const checkLot = (lot, qty, name) => {
   }
 };
 
+// ── Erreurs de commande (Pierre, 23/11/2026) ───────────────────────────────
+// Produits NEUFS renvoyés au fournisseur sans être passés par un client.
+
+const ORDER_ERROR_KINDS = {
+  commande_erreur: 'Commandé par erreur',
+  non_commande: 'Reçu sans être commandé',
+};
+
+/**
+ * Plafond d'une erreur de commande du SITE, sur la commande fournisseur choisie.
+ * Commandé par erreur : le produit a forcément été reçu sur cette commande, même
+ * plafond qu'un SAV. Reçu sans être commandé : la réception a pu l'ajouter à la
+ * commande (même plafond), ou il a été mis de côté sans y entrer — alors rien à
+ * compter, la commande dit seulement d'où il vient.
+ */
+const checkOrderErrorLot = (kind, lot, qty, name) => {
+  if (!ORDER_ERROR_KINDS[kind]) throw httpError(400, "Choisir le type d'erreur.");
+  if (!lot && kind === 'non_commande') {
+    const n = Number(qty);
+    if (!Number.isInteger(n) || n <= 0) throw httpError(400, `« ${name} » : quantité invalide.`);
+    return;
+  }
+  checkLot(lot, qty, name);
+};
+
+/** Motif d'une pièce SAV fournisseur, tel que l'export le donne au fournisseur. */
+const supplierItemReason = (i) => {
+  if (i.source === 'erreur') return `Erreur de commande — ${ORDER_ERROR_KINDS[i.reason] || i.reason} (produit NEUF)`;
+  if (i.source === 'boutique') return 'SAV boutique';
+  return REASONS[i.reason] || i.reason;
+};
+
 /**
  * Commande fournisseur proposée pour `qty` pièces chez un fournisseur : la
  * dernière reçue AVANT le paiement du client qui peut encore les couvrir,
@@ -328,4 +360,7 @@ module.exports = {
   lotRemaining,
   checkLot,
   suggestLot,
+  ORDER_ERROR_KINDS,
+  checkOrderErrorLot,
+  supplierItemReason,
 };

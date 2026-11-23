@@ -53,6 +53,9 @@ module.exports = {
   }),
 
   searchProducts: handle(async (req, res) => res.json({ products: await customerReturnModel.searchProducts(req.query.q) })),
+  orderErrorOptions: handle(async (req, res) => res.json(await customerReturnModel.orderErrorOptions(Number(req.query.supplierId)))),
+  orderErrorLines: handle(async (req, res) => res.json(await customerReturnModel.orderErrorLines(Number(req.params.poId)))),
+  createOrderErrorItem: handle(async (req, res) => res.json(await customerReturnModel.createOrderErrorItem(req.body || {}, req.user))),
   productLots: handle(async (req, res) => res.json({ lots: await customerReturnModel.productLots(Number(req.query.productId)) })),
   createBoutiqueItem: handle(async (req, res) => res.json(await customerReturnModel.createBoutiqueItem(req.body || {}, req.user))),
   setItemLot: handle(async (req, res) => {
@@ -72,7 +75,7 @@ module.exports = {
     res.json(await customerReturnModel.unlinkCredit(Number(req.params.batchId), Number(req.params.documentId)));
   }),
   exportBatch: handle(async (req, res) => {
-    const { buffer, filename } = await customerReturnModel.exportBatch(Number(req.params.batchId));
+    const { buffer, filename } = await customerReturnModel.exportBatch(Number(req.params.batchId), req.query.part);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(Buffer.from(buffer));
