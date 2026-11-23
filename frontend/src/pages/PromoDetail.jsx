@@ -31,6 +31,8 @@ const int = (v) => new Intl.NumberFormat('fr-FR').format(parseInt(v, 10) || 0);
  */
 const effBrand = (it) => it?.sub_brand || it?.brand || null;
 const effCategory = (it) => it?.sub_category || it?.category || null;
+/** Clé de règle WDR : taux entier ('10', '20'…) ou 'none' sans remise en place. */
+const wdrKey = (it) => (it?.wdr_percent ? String(it.wdr_percent) : 'none');
 
 /**
  * Groupe d'appartenance d'une ligne, par ordre de priorité :
@@ -119,6 +121,7 @@ const PromoDetail = () => {
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [savedAt, setSavedAt] = useState(null);
   const [brandFilter, setBrandFilter] = useState('');   // 'brand:X' | 'sub_brand:X'
+  const [wdrFilter, setWdrFilter] = useState('');       // '' | 'none' | '10' | '20'…
   const [catFilter, setCatFilter] = useState('');       // 'category:X' | 'sub_category:X'
   const [sort, setSort] = useState({ key: null, dir: 'asc' }); // null = ordre d'ajout
   const [grouped, setGrouped] = useState(true);
@@ -260,11 +263,35 @@ const PromoDetail = () => {
       .sort((a, b) => b.products - a.products || a.name.localeCompare(b.name, 'fr'));
   }, [items, brandFilter]);
 
+  /**
+   * Répartition par règle WDR en place, puis par remise de l'opé exprimée sur
+   * le tarif remisé : une ligne = une règle à créer dans WDR. Filtres marque et
+   * catégorie appliqués, pas le filtre WDR (pour passer d'une règle à l'autre).
+   */
+  const wdrBreakdown = useMemo(() => {
+    const map = new Map();
+    for (const it of items) {
+      if (brandFilter && effBrand(it) !== brandFilter) continue;
+      if (catFilter && effCategory(it) !== catFilter) continue;
+      const k = wdrKey(it);
+      if (!map.has(k)) map.set(k, { key: k, rate: it.wdr_percent, products: 0, discounts: new Map() });
+      const w = map.get(k);
+      w.products += 1;
+      const d = it.discount_on_discounted_percent;
+      const dk = d === null || d === undefined ? '—' : `−${pct(Math.round(d * 10) / 10)}`;
+      w.discounts.set(dk, (w.discounts.get(dk) || 0) + 1);
+    }
+    return [...map.values()]
+      .map((w) => ({ ...w, discounts: [...w.discounts.entries()].sort((a, b) => b[1] - a[1]) }))
+      .sort((a, b) => b.products - a.products);
+  }, [items, brandFilter, catFilter]);
+
   /** Valeur triable d'une colonne : nombre, ou texte normalisé. */
   const sortValue = (it, key) => {
     const numeric = ['stock', 'incoming_qty', 'sales_30d', 'cost_price', 'price', 'discounted_price', 'current_price_ttc',
       'current_margin_pct', 'discount_percent', 'live_discount_percent', 'promo_price_ttc', 'total_discount_percent',
-      'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur'];
+      'promo_margin_pct', 'margin_delta_eur', 'promo_margin_eur', 'current_margin_eur',
+      'wdr_percent', 'discount_on_discounted_percent'];
     if (numeric.includes(key)) {
       const n = parseFloat(it[key]);
       return Number.isFinite(n) ? n : null;
@@ -281,7 +308,8 @@ const PromoDetail = () => {
   const visibleItems = useMemo(() => {
     let rows = items.filter((i) =>
       (!brandFilter || effBrand(i) === brandFilter) &&
-      (!catFilter || effCategory(i) === catFilter));
+      (!catFilter || effCategory(i) === catFilter) &&
+      (!wdrFilter || wdrKey(i) === wdrFilter));
 
     if (sort.key) {
       const mul = sort.dir === 'asc' ? 1 : -1;
@@ -297,7 +325,7 @@ const PromoDetail = () => {
       });
     }
     return rows;
-  }, [items, brandFilter, catFilter, sort]);
+  }, [items, brandFilter, catFilter, wdrFilter, sort]);
 
   /**
    * Regroupe les lignes visibles (voir `groupOf`). Les colonnes additives
@@ -342,6 +370,8 @@ const PromoDetail = () => {
       live_discount_percent: range(g.items, 'live_discount_percent'),
       promo_price_ttc: range(g.items, 'promo_price_ttc'),
       total_discount_percent: range(g.items, 'total_discount_percent'),
+      wdr_percent: range(g.items, 'wdr_percent'),
+      discount_on_discounted_percent: range(g.items, 'discount_on_discounted_percent'),
       promo_margin_pct: range(g.items, 'promo_margin_pct'),
       current_margin_eur: range(g.items, 'current_margin_eur'),
       promo_margin_eur: range(g.items, 'promo_margin_eur'),
@@ -430,6 +460,9 @@ const PromoDetail = () => {
                               ? eur(it.current_price_ttc)
                               : (it.discounted_price ? eur(it.discounted_price) : '—')}
                           </td>
+                          <td style={{ ...tdR, color: it.wdr_percent ? C.orange : C.grisM, fontWeight: 700 }}>
+                            {it.wdr_percent ? `−${it.wdr_percent} %` : '—'}
+                          </td>
                           <td style={{ ...tdR, color: marginColor(it.current_margin_pct) }}>
                             {eur(it.current_margin_eur)}<br />
                             <span style={{ fontSize: 11 }}>{pct(it.current_margin_pct)}</span>
@@ -481,6 +514,9 @@ const PromoDetail = () => {
                             />
                           </td>
                           </>)}
+                          <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>
+                            {it.discount_on_discounted_percent === null ? '—' : `−${pct(it.discount_on_discounted_percent)}`}
+                          </td>
                           <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}
                             title={it.undiscounted_price !== it.price
                               ? `Prix sans remise ${it.undiscounted_price} € (le prix de vente est déjà soldé)`
@@ -656,6 +692,40 @@ const PromoDetail = () => {
               </div>
             )}
 
+            {/* Répartition par règle WDR (clic = filtre) */}
+            {wdrBreakdown.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.grisM, textTransform: 'uppercase' }}>Règles WDR</span>
+                {wdrBreakdown.map((w) => {
+                  const active = wdrFilter === w.key;
+                  return (
+                    <button key={w.key} onClick={() => setWdrFilter(active ? '' : w.key)}
+                      title={`Remise de l'opé sur le tarif remisé : ${w.discounts.map(([d, n]) => `${d} × ${n}`).join(', ')}`}
+                      style={{
+                        display: 'flex', alignItems: 'baseline', gap: 6, padding: '6px 12px', borderRadius: 999,
+                        border: `1px solid ${active ? C.promo : C.grisCL}`, background: active ? '#FDF2F8' : C.blanc,
+                        color: C.grisTF, fontSize: 12, cursor: 'pointer',
+                      }}>
+                      <span style={{ fontWeight: 700, color: w.key === 'none' ? C.grisM : C.orange }}>
+                        {w.key === 'none' ? 'Sans remise WDR' : `WDR −${w.rate} %`}
+                      </span>
+                      <span style={{ fontWeight: 800, color: C.promo }}>{int(w.products)}</span>
+                      <span style={{ color: C.grisM }}>
+                        → {w.discounts.slice(0, 3).map(([d, n]) => (w.discounts.length > 1 ? `${d} (${n})` : d)).join(' · ')}
+                        {w.discounts.length > 3 ? ' …' : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+                {wdrFilter && (
+                  <button onClick={() => setWdrFilter('')}
+                    style={{ padding: '6px 10px', borderRadius: 999, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
+                    Toutes les règles
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Répartition par catégorie (clic = filtre) */}
             {catBreakdown.length > 0 && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -727,8 +797,8 @@ const PromoDetail = () => {
                   {groups.some((g) => g.count > 1 && !openGroups[g.key]) ? 'Tout déplier' : 'Tout replier'}
                 </button>
               )}
-              {(brandFilter || catFilter || sort.key) && (
-                <button onClick={() => { setBrandFilter(''); setCatFilter(''); setSort({ key: null, dir: 'asc' }); }}
+              {(brandFilter || catFilter || wdrFilter || sort.key) && (
+                <button onClick={() => { setBrandFilter(''); setCatFilter(''); setWdrFilter(''); setSort({ key: null, dir: 'asc' }); }}
                   style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${C.grisCL}`, background: C.blanc, color: C.grisM, fontSize: 12, cursor: 'pointer' }}>
                   Réinitialiser
                 </button>
@@ -776,6 +846,8 @@ const PromoDetail = () => {
                       ) : (
                         <SortTh column="discounted_price" label="Tarif remisé actuel" title="Tarif remisé actuellement actif (Woo Discount Rules)" />
                       )}
+                      <SortTh column="wdr_percent" label="Règle WDR"
+                        title="Remise WDR en place : écart entre le tarif remisé et le prix de vente (−10 % matériel, −20 % e-liquides…)" />
                       <SortTh column="current_margin_pct" label={live ? 'Marge avant opé' : 'Marge actuelle'}
                         title={live
                           ? "Marge au tarif d'avant l'opération (photo prise à l'ajout du produit), tri sur le %"
@@ -794,6 +866,8 @@ const PromoDetail = () => {
                         title={live
                           ? 'Tarif réellement en ligne depuis le début de l\'opération (remise de l\'opé incluse)'
                           : 'Prix promo simulé : base × (1 − remise %), ou prix saisi à la main'} />
+                      <SortTh column="discount_on_discounted_percent" label="Remise / tarif remisé" promo
+                        title="Remise de l'opé exprimée sur le tarif remisé actuel (sinon le prix de vente) : le pourcentage à saisir dans WDR" />
                       <SortTh column="total_discount_percent" label="Remise totale" promo
                         title="Écart total entre le prix sans remise (prix barré s'il existe, sinon prix de vente) et le prix promo TTC" />
                       <SortTh column="promo_margin_pct" label="Marge promo" promo title="Marge au tarif promo (tri sur le %)" />
@@ -845,6 +919,7 @@ const PromoDetail = () => {
                                 <td style={tdR}>{rangeText(g.cost_price, eur)}</td>
                                 <td style={tdR}>{rangeText(g.price, eur)}</td>
                                 <td style={{ ...tdR, color: C.orange }}>{rangeText(live ? g.current_price_ttc : g.discounted_price, eur)}</td>
+                                <td style={{ ...tdR, color: C.orange, fontWeight: 700 }}>{rangeText(g.wdr_percent, (v) => `−${v} %`)}</td>
                                 <td style={tdR}>
                                   {rangeText(g.current_margin_eur, eur)}<br />
                                   <span style={{ fontSize: 11 }}>{rangeText(g.current_margin_pct, (v) => pct(v))}</span>
@@ -873,6 +948,9 @@ const PromoDetail = () => {
                                 </td>
                                 )}
                                 <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>{rangeText(g.promo_price_ttc, eur)}</td>
+                                <td style={{ ...tdR, background: '#FDF2F8', fontWeight: 700 }}>
+                                  {rangeText(g.discount_on_discounted_percent, (v) => `−${pct(v)}`)}
+                                </td>
                                 <td style={{ ...tdR, background: '#FDF2F8', color: C.promoF, fontWeight: 700 }}>
                                   {rangeText(g.total_discount_percent, (v) => `−${pct(v)}`)}
                                 </td>

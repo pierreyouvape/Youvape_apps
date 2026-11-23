@@ -96,6 +96,19 @@ function computeLine(item, { vatRate, basePriceMode, live = false, startDate = n
     effective_discount_percent: round2(effectiveDiscount),
     undiscounted_price: round2(undiscounted),
     total_discount_percent: round2(totalDiscount),
+    // Règle WDR en place : remise du tarif remisé sur le prix de vente, arrondie
+    // à l'entier (−10 % matériel, −20 % e-liquides…). NULL = aucune remise.
+    wdr_percent: (() => {
+      const p = live ? refPrice : price;
+      const d = live ? (snapUsable ? num(item.snap_discounted_price) : discounted) : discounted;
+      return p && d !== null && d < p ? Math.round((1 - d / p) * 100) : null;
+    })(),
+    // Remise de l'opé exprimée sur le tarif remisé (sinon le prix de vente) :
+    // c'est le pourcentage à saisir dans une règle WDR qui part du tarif remisé.
+    discount_on_discounted_percent: (() => {
+      const ref = live ? (refDiscounted ?? refPrice) : (discounted ?? price);
+      return ref && promoTtc !== null ? round2((1 - promoTtc / ref) * 100) : null;
+    })(),
     current_price_ttc: round2(currentTtc),
     promo_live: live,
     // Remise réellement constatée en ligne par rapport à la base d'avant l'opé.
@@ -486,7 +499,7 @@ exports.exportCsv = async (req, res) => {
     const items = (await promoModel.listItems(op.id)).map((it) => computeLine(it, opts));
 
     const header = ['SKU', 'Produit', 'Stock', 'En arrivage', 'Ventes 30j', 'Prix achat HT', 'Prix sans remise TTC',
-      'Prix vente TTC', 'Tarif remisé TTC', 'Remise %', 'Prix promo TTC', 'Prix promo HT',
+      'Prix vente TTC', 'Tarif remisé TTC', 'Règle WDR %', 'Remise %', 'Remise sur tarif remisé %', 'Prix promo TTC', 'Prix promo HT',
       'Remise totale %', 'Marge actuelle €', 'Marge actuelle %', 'Marge promo €', 'Marge promo %'];
     const esc = (v) => (v === null || v === undefined ? '' : String(v).replace(/[;\r\n]/g, ' '));
     const nb = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
@@ -495,8 +508,8 @@ exports.exportCsv = async (req, res) => {
     for (const it of items) {
       lines.push([
         esc(it.sku), esc(it.display_name), it.stock, it.incoming_qty, it.sales_30d,
-        nb(it.cost_price), nb(it.undiscounted_price), nb(it.price), nb(it.discounted_price),
-        nb(it.effective_discount_percent), nb(it.promo_price_ttc), nb(it.promo_price_ht),
+        nb(it.cost_price), nb(it.undiscounted_price), nb(it.price), nb(it.discounted_price), nb(it.wdr_percent),
+        nb(it.effective_discount_percent), nb(it.discount_on_discounted_percent), nb(it.promo_price_ttc), nb(it.promo_price_ht),
         nb(it.total_discount_percent), nb(it.current_margin_eur), nb(it.current_margin_pct),
         nb(it.promo_margin_eur), nb(it.promo_margin_pct),
       ].join(';'));
