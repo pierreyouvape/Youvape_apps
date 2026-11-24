@@ -1,11 +1,12 @@
 import { useContext } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { Inventory as InventoryIcon } from '../components/AppIcons';
+import { Inventory as InventoryIcon, Reception as ReceptionIcon } from '../components/AppIcons';
 import { C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 import PdaTile from '../components/pda/PdaTile';
 import ComptageTab from '../components/boutique/ComptageTab';
+import CommandesTab from '../components/boutique/CommandesTab';
 import { SHOPS } from '../components/boutique/shops';
 
 /**
@@ -17,11 +18,13 @@ import { SHOPS } from '../components/boutique/shops';
  * Chaque écran porte le nom et la couleur de la boutique : un comptage passé
  * dans la mauvaise boutique écrirait un faux stock dans Nextore.
  *
- * Lots : 1 Comptage (ici) ; 2 Réception ; 3 Fiche produit. Pas d'« Étiquettes
- * à refaire » sur le PDA (décision Pierre).
+ * Lots : 1 Comptage (23/11) ; 2 Réception (24/11) ; 3 Fiche produit. Pas
+ * d'« Étiquettes à refaire » sur le PDA (décision Pierre).
  */
 const SHOP_APPS = [
   { key: 'comptage', label: 'Comptage', hint: 'Inventaire de la boutique (Nextore)', Icon: InventoryIcon, color: '#7C3AED' },
+  // Recevoir et valider une commande fournisseur ; créer / modifier : au PC
+  { key: 'reception', label: 'Réception', hint: 'Recevoir une commande fournisseur', Icon: ReceptionIcon, color: '#0891B2' },
 ];
 
 function ShopBand({ shop, app }) {
@@ -66,6 +69,7 @@ export default function PdaBoutique() {
       <ShopBand shop={shop} app={app} />
       <div style={{ padding: 10, background: C.grey }}>
         {app.key === 'comptage' && <ComptageTab shop={shop} token={token} pda />}
+        {app.key === 'reception' && <CommandesTab shop={shop} token={token} pda />}
       </div>
     </PdaLayout>
   );

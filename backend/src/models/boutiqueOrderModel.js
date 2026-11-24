@@ -208,7 +208,10 @@ async function getOrder(orderId, warehouseId) {
             (SELECT name FROM users u WHERE u.email = s.validated_by LIMIT 1) AS validated_by_name,
             COALESCE((SELECT json_agg(json_build_object(
                         'order_item_id', c.order_item_id, 'units_counted', c.units_counted,
-                        'units_expected', c.units_expected, 'motif', c.motif))
+                        'units_expected', c.units_expected, 'motif', c.motif,
+                        'counted_by', c.counted_by,
+                        'counted_by_name', COALESCE((SELECT name FROM users u WHERE u.email = c.counted_by LIMIT 1),
+                                                    split_part(c.counted_by, '@', 1))))
                       FROM boutique_reception_counts c WHERE c.session_id = s.id), '[]') AS counts
      FROM boutique_reception_sessions s
      WHERE s.order_id = $1 AND s.status <> 'abandoned'
@@ -566,8 +569,21 @@ async function openSession(orderId, warehouseId, userEmail) {
   return getOrder(order.id, warehouseId);
 }
 
-/** Pose le nombre de pièces comptées d'une ligne (valeur absolue, pas un delta). */
-async function setCount(sessionId, warehouseId, itemId, units) {
+const userName = async (email) => {
+  const { rows } = await pool.query('SELECT name FROM users WHERE email = $1 LIMIT 1', [email]);
+  return rows[0]?.name || String(email || '').split('@')[0] || 'quelqu\'un';
+};
+
+/**
+ * Pose le nombre de pièces comptées d'une ligne (valeur absolue, pas un delta).
+ *
+ * Verrou par personne (24/11/2026, plusieurs PDA sur une réception) : dès sa
+ * première pièce, la ligne appartient à `userEmail` ; une autre personne est
+ * refusée (409 LOCKED, « Compté par Franck »). Le contrôle est DANS l'écriture :
+ * deux appareils qui écrivent au même instant, un seul gagne. Remettre la ligne
+ * à 0 la libère.
+ */
+async function setCount(sessionId, warehouseId, itemId, units, userEmail = null) {
   const session = await getSessionForShop(sessionId, warehouseId);
   assertCounting(session);
   const n = parseInt(units, 10);
@@ -577,13 +593,43 @@ async function setCount(sessionId, warehouseId, itemId, units) {
     [parseInt(itemId, 10), session.order_id]
   );
   if (!rowCount) throw httpError(404, 'Ligne introuvable sur cette commande');
-  await pool.query(
-    `INSERT INTO boutique_reception_counts (session_id, order_item_id, units_counted)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (session_id, order_item_id) DO UPDATE SET units_counted = EXCLUDED.units_counted`,
-    [session.id, parseInt(itemId, 10), n]
+  const { rows: saved } = await pool.query(
+    `INSERT INTO boutique_reception_counts (session_id, order_item_id, units_counted, counted_by, counted_by_at)
+     VALUES ($1, $2, $3, CASE WHEN $3::int > 0 THEN $4::text END, CASE WHEN $3::int > 0 THEN NOW() END)
+     ON CONFLICT (session_id, order_item_id) DO UPDATE SET
+       units_counted = EXCLUDED.units_counted,
+       counted_by = EXCLUDED.counted_by,
+       counted_by_at = CASE WHEN EXCLUDED.counted_by IS NULL THEN NULL
+                            WHEN boutique_reception_counts.counted_by IS NOT DISTINCT FROM $4::text
+                            THEN COALESCE(boutique_reception_counts.counted_by_at, NOW()) ELSE NOW() END
+     WHERE boutique_reception_counts.counted_by IS NULL OR boutique_reception_counts.counted_by = $4::text
+     RETURNING units_counted, counted_by`,
+    [session.id, parseInt(itemId, 10), n, userEmail]
   );
-  return { order_item_id: parseInt(itemId, 10), units_counted: n };
+  if (!saved.length) {
+    const { rows: cur } = await pool.query(
+      'SELECT counted_by FROM boutique_reception_counts WHERE session_id = $1 AND order_item_id = $2',
+      [session.id, parseInt(itemId, 10)]
+    );
+    const name = await userName(cur[0]?.counted_by);
+    const e = httpError(409, `Compté par ${name}`);
+    e.code = 'LOCKED'; e.lockedByName = name;
+    throw e;
+  }
+  return { order_item_id: parseInt(itemId, 10), units_counted: n, counted_by: saved[0].counted_by };
+}
+
+/** Libère une ligne verrouillée (personne partie, erreur) : quantité gardée. */
+async function releaseCount(sessionId, warehouseId, itemId) {
+  const session = await getSessionForShop(sessionId, warehouseId);
+  assertCounting(session);
+  const { rowCount } = await pool.query(
+    `UPDATE boutique_reception_counts SET counted_by = NULL, counted_by_at = NULL
+     WHERE session_id = $1 AND order_item_id = $2 AND counted_by IS NOT NULL`,
+    [session.id, parseInt(itemId, 10)]
+  );
+  if (!rowCount) throw httpError(409, 'Cette ligne n\'est plus verrouillée');
+  return getOrder(session.order_id, warehouseId);
 }
 
 /**
@@ -871,6 +917,7 @@ module.exports = {
   updateOrder,
   openSession,
   setCount,
+  releaseCount,
   addLine,
   abandonSession,
   saveBarcode,

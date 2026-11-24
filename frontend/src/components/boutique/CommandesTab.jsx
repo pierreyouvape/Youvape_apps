@@ -1,7 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import axios from 'axios';
 import '../../pages/PurchasesApp.css'; // charte Gestion d'achat V2
 import { trierParAvancement } from '../../utils/scanOrder';
+import { AuthContext } from '../../context/AuthContext';
+import { useScanner, beep } from '../pda/pdaScan';
+
+/*
+ * Réception des commandes boutique. Même écran au PC (Boutique › Achat ›
+ * Commandes) et sur le PDA (`pda`, Boutiques › <boutique> › Réception, 24/11/2026) :
+ * - le PDA reçoit et VALIDE (motifs compris) ; créer, modifier, supprimer une
+ *   commande et abandonner une réception restent au PC ;
+ * - plusieurs personnes sur une réception : dès sa 1re pièce, une ligne
+ *   appartient à qui la compte, grisée « Compté par Franck » chez les autres
+ *   (le serveur refuse : 409 LOCKED) ; « Libérer » au PC, quantité gardée.
+ */
+const REFRESH_MS = 15000; // les lignes prises par les autres appareils apparaissent
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
 
@@ -46,7 +59,7 @@ function Modal({ title, children, footer, onClose, width = 560 }) {
 }
 
 /* ─── ÉCRAN 1 — LISTE ─────────────────────────────────────── */
-function OrdersList({ shop, auth, onOpen, onEdit, onCreate }) {
+function OrdersList({ shop, auth, onOpen, onEdit, onCreate, pda }) {
   const [orders, setOrders] = useState([]);
   const [showClosed, setShowClosed] = useState(false);
   const [error, setError] = useState('');
@@ -70,6 +83,33 @@ function OrdersList({ shop, auth, onOpen, onEdit, onCreate }) {
   };
 
   const shown = orders.filter((o) => showClosed || o.status === 'open');
+
+  // PDA : les commandes à recevoir, en cartes ; elles se créent et se modifient au PC
+  if (pda) {
+    const open = orders.filter((o) => o.status === 'open');
+    return (
+      <div>
+        {error && <div style={{ color: '#dc2626', marginBottom: 10 }}>{error}</div>}
+        {loading ? <div style={{ padding: 30, textAlign: 'center', color: '#6b7280' }}>Chargement…</div> : open.length === 0 ? (
+          <div style={{ padding: 30, textAlign: 'center', color: '#8a99a4' }}>Aucune commande à recevoir. Les commandes se créent au PC.</div>
+        ) : open.map((o) => (
+          <div key={o.id} onClick={() => onOpen(o.id)} style={{
+            background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 14, marginBottom: 10, cursor: 'pointer',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <strong style={{ fontSize: 16 }}>{o.reference}</strong>
+              {o.reception_open && <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb' }}>réception en cours</span>}
+            </div>
+            <div style={{ fontSize: 14, color: '#374151', marginTop: 2 }}>{o.supplier_name || '-'}</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+              {o.lines} ligne(s) · {fmtInt(o.pieces_remaining)} pièce(s) attendue(s){o.pieces_received > 0 ? ` · ${fmtInt(o.pieces_received)} déjà reçue(s)` : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="purchases-card">
       <div className="filters-bar" style={{ marginBottom: 12 }}>
@@ -128,7 +168,9 @@ function OrdersList({ shop, auth, onOpen, onEdit, onCreate }) {
 }
 
 /* ─── ÉCRAN 2 — COMMANDE (détail + comptage) ──────────────── */
-function OrderScreen({ shop, auth, orderId, onBack }) {
+function OrderScreen({ shop, auth, orderId, onBack, pda }) {
+  const { user } = useContext(AuthContext);
+  const me = user?.email || null;
   const [data, setData] = useState(null);
   const [counts, setCounts] = useState({});
   const [error, setError] = useState('');
@@ -157,15 +199,34 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
   const countsRef = useRef({});
   // Une file d'écriture par ligne : les valeurs absolues arrivent dans l'ordre
   const writes = useRef({});
+  // Écritures en route et numéro de la dernière : une relecture partie avant une
+  // écriture ne doit pas ramener l'écran (et le compteur) en arrière
+  const pending = useRef(0);
+  const writeSeq = useRef(0);
+  // Qui compte chaque ligne : itemId → { by, name } (verrou par personne)
+  const ownersRef = useRef({});
+  const [owners, setOwners] = useState({});
   const base = `${API_URL}/nextore/${shop.slug}/reception`;
 
   const apply = useCallback((d) => {
     setData(d);
     const c = {};
-    for (const x of d.session?.counts || []) c[x.order_item_id] = x.units_counted;
+    const o = {};
+    for (const x of d.session?.counts || []) {
+      c[x.order_item_id] = x.units_counted;
+      if (x.counted_by) o[x.order_item_id] = { by: x.counted_by, name: x.counted_by_name };
+    }
     countsRef.current = c;
     setCounts(c);
+    ownersRef.current = o;
+    setOwners(o);
   }, []);
+  // La ligne est-elle comptée par quelqu'un d'autre ? → { by, name } ou null
+  const lockedBy = (itemId, map = ownersRef.current) => {
+    const o = map[itemId];
+    return o && o.by !== me ? o : null;
+  };
+  const say = (msg, ok = true) => { setFlash({ msg, ok }); if (pda) beep(ok); };
 
   const load = useCallback(async () => {
     try { apply((await axios.get(`${base}/orders/${orderId}`, auth)).data); }
@@ -188,25 +249,48 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
 
   // Pose une valeur absolue ; l'écran suit tout de suite, la base derrière.
   // En cas d'échec, on recharge depuis la base : c'est elle que la validation lit.
+  // Ligne comptée par quelqu'un d'autre : refusée ici, et par le serveur.
   const setCount = (itemId, value) => {
+    const other = lockedBy(itemId);
+    if (other) { say(`Compté par ${other.name}`, false); return false; }
     const n = Math.max(0, parseInt(value, 10) || 0);
     countsRef.current = { ...countsRef.current, [itemId]: n };
     setCounts(countsRef.current);
+    // La 1re pièce prend la ligne, le retour à 0 la libère (comme le serveur)
+    const o = { ...ownersRef.current };
+    if (n > 0) o[itemId] = { by: me, name: user?.name || me };
+    else delete o[itemId];
+    ownersRef.current = o;
+    setOwners(o);
     const sessionId = session.id;
+    writeSeq.current += 1;
+    pending.current += 1;
     writes.current[itemId] = (writes.current[itemId] || Promise.resolve()).then(async () => {
       try {
         await axios.put(`${base}/sessions/${sessionId}/counts/${itemId}`, { units_counted: countsRef.current[itemId] || 0 }, auth);
       } catch (e) {
-        setError(`Comptage non enregistré, écran rechargé : ${e.response?.data?.error || e.message}`);
+        const d = e.response?.data || {};
+        if (d.code === 'LOCKED') say(d.error, false);
+        else setError(`Comptage non enregistré, écran rechargé : ${d.error || e.message}`);
         await load();
+      } finally {
+        pending.current -= 1;
       }
     });
+    return true;
   };
   const flushWrites = () => Promise.all(Object.values(writes.current));
   const addPieces = (item, n, msg) => {
-    setCount(item.id, (countsRef.current[item.id] || 0) + n);
+    if (!setCount(item.id, (countsRef.current[item.id] || 0) + n)) return;
     setScanned((prev) => ({ id: item.id, n: (prev?.n || 0) + 1 }));
-    setFlash(msg || `${item.name} — +${n}`);
+    say(msg || `${item.name} — +${n}`);
+  };
+
+  // PC : libère une ligne comptée par quelqu'un d'autre (quantité gardée)
+  const release = (item, other) => {
+    if (!window.confirm(`Libérer « ${item.name} » ?\n\n${other.name} ne la compte plus : la quantité déjà comptée `
+      + `(${fmtInt(countsRef.current[item.id])}) est gardée, et la prochaine personne qui la scanne reprend depuis là.`)) return;
+    run(async () => { await flushWrites(); apply((await axios.post(`${base}/sessions/${session.id}/counts/${item.id}/release`, {}, auth)).data); });
   };
 
   const saveBarcode = (barcode, productId, kind, packQty, orderItemId) =>
@@ -247,7 +331,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
     }
     // 3. Code Nextore
     const found = items.find((it) => (it.barcodes || []).includes(code));
-    if (!found) { setUnknownModal({ barcode: code }); return; }
+    if (!found) { if (pda) beep(false); setUnknownModal({ barcode: code }); return; }
     // Code jamais confirmé, sur une ligne commandée par pack ou un produit à
     // plusieurs codes : ce peut être le code du carton. On demande, une fois.
     if (found.pack_qty > 1 || (found.barcodes || []).length > 1) {
@@ -289,13 +373,33 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
       if (item && barcode) {
         await axios.put(`${base}/sessions/${fresh.session.id}/counts/${item.id}`, { units_counted: (countsRef.current[item.id] || 0) + 1 }, auth);
         apply((await axios.get(`${base}/orders/${orderId}`, auth)).data);
-        setFlash(`${item.name} ajouté — +1`);
+        say(`${item.name} ajouté — +1`);
       }
     });
     scanInput.current?.focus();
   };
 
+  // Relecture régulière : les lignes prises ou comptées sur les autres appareils
+  // apparaissent. Jamais pendant une écriture ni une fenêtre ouverte.
+  const anyModal = !!(typeModal || unknownModal || addModal || validateModal || recap);
+  useEffect(() => {
+    if (!counting || anyModal) return undefined;
+    const t = setInterval(async () => {
+      if (pending.current > 0) return;
+      const seq = writeSeq.current;
+      try {
+        const d = (await axios.get(`${base}/orders/${orderId}`, auth)).data;
+        if (pending.current === 0 && writeSeq.current === seq) apply(d);
+      } catch { /* réseau : la prochaine relecture rattrapera */ }
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, [counting, anyModal, base, orderId, apply]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PDA : la douchette est lue partout sur l'écran, même hors du champ de scan
+  useScanner((code) => handleScan(code), !!pda && !!counting && !anyModal);
+
   const lines = (data?.items || []).map((x) => ({ ...x, counted: counts[x.id] || 0 }));
+  const othersLines = lines.filter((x) => lockedBy(x.id, owners));
   const missing = lines.filter((x) => x.counted < x.remaining);
   const surplus = lines.filter((x) => x.counted > x.remaining);
   const totalCounted = lines.reduce((a, x) => a + x.counted, 0);
@@ -356,8 +460,93 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
     );
   }
 
+  // PDA : en-tête et lignes en cartes (écran étroit, gros boutons). Mêmes règles,
+  // mêmes fenêtres (unité/carton, code inconnu, article absent, validation).
+  const pdaBtn = { padding: '12px 14px', fontSize: 16, fontWeight: 700, borderRadius: 10, flex: 1 };
+  const pdaView = pda && (
+    <>
+      <div className="purchases-card" style={{ padding: 12 }}>
+        <button className="btn btn-secondary btn-sm" onClick={onBack}>‹ Commandes</button>
+        <div style={{ fontSize: 18, fontWeight: 700, marginTop: 8 }}>{order.reference}</div>
+        <div style={{ fontSize: 13, color: '#6b7280' }}>
+          {order.supplier_name} · <span style={{ color: STATUS[order.status]?.color, fontWeight: 600 }}>{STATUS[order.status]?.label}</span>
+        </div>
+        {error && <div style={{ marginTop: 10, color: '#dc2626', fontWeight: 600, whiteSpace: 'pre-line' }}>{error}</div>}
+        {order.status === 'open' && !session && (
+          <button className="btn btn-primary" style={{ ...pdaBtn, width: '100%', marginTop: 12 }} onClick={startSession} disabled={busy}>Commencer la réception</button>
+        )}
+        {session && session.status === 'sending' && (
+          <button className="btn btn-primary" style={{ ...pdaBtn, width: '100%', marginTop: 12 }} onClick={startSession} disabled={busy}>Envoi interrompu : vérifier avec Nextore</button>
+        )}
+        {counting && (
+          <>
+            <form onSubmit={(e) => { e.preventDefault(); handleScan(scan); setScan(''); }} style={{ marginTop: 12 }}>
+              <input ref={scanInput} value={scan} onChange={(e) => setScan(e.target.value)} inputMode="none"
+                placeholder="Scanner ou saisir un code-barres"
+                style={{ width: '100%', boxSizing: 'border-box', padding: '12px', border: '2px solid #2563eb', borderRadius: 10, fontSize: 16 }} />
+            </form>
+            {flash && <div style={{ marginTop: 8, color: flash.ok ? '#16a34a' : '#dc2626', fontWeight: 700, fontSize: 15 }}>{flash.msg}</div>}
+            <div style={{ marginTop: 6, fontSize: 13, color: '#555' }}>{fmtInt(totalCounted)} pièce(s) comptée(s)</div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button className="btn btn-secondary" style={pdaBtn} onClick={() => setAddModal({})} disabled={busy}>+ Article absent</button>
+              <button className="btn btn-primary" style={pdaBtn} onClick={() => setValidateModal(true)} disabled={busy}>Valider</button>
+            </div>
+          </>
+        )}
+      </div>
+      {shown.map((x, i) => {
+        const gap = x.counted - x.remaining;
+        const other = counting ? lockedBy(x.id, owners) : null;
+        return (
+          <div key={x.id} id={`rx-${x.id}`} style={{
+            background: rowBackground(x, i), border: '1px solid #E5E7EB', borderRadius: 10, padding: 10, marginBottom: 8,
+            boxShadow: scanned?.id === x.id ? 'inset 0 0 0 4px #2563eb' : 'none', transition: 'box-shadow 0.3s ease',
+          }}>
+            <div style={{ display: 'flex', gap: 10, opacity: other ? 0.6 : 1 }}>
+              <Thumb src={x.image_url} alt={x.name} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.3, overflowWrap: 'anywhere' }}>{x.name}</div>
+                <small style={{ color: '#555' }}>
+                  {x.supplier_sku || x.code || ''}{x.pack_qty > 1 ? ` · pack de ${x.pack_qty}` : ''}{x.added_at_reception ? ' · ajouté à la réception' : ''}
+                  {siteCartons(x)}
+                  {x.closed_reason ? ` · soldé (${MOTIF_LABEL[x.closed_reason]})` : ''}
+                </small>
+              </div>
+            </div>
+            {other && <div style={{ color: '#c2410c', fontWeight: 700, fontSize: 14, marginTop: 6 }}>Compté par {other.name}</div>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              <span style={{ fontSize: 14, color: '#374151' }}>
+                Attendu <strong>{fmtInt(x.remaining)}</strong>
+                {x.qty_received > 0 && <span style={{ color: '#6b7280' }}> (déjà reçu {fmtInt(x.qty_received)})</span>}
+              </span>
+              <span style={{ flex: 1 }} />
+              {counting && (other ? (
+                <strong style={{ fontSize: 18 }}>{fmtInt(x.counted)}</strong>
+              ) : (
+                <>
+                  <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 18 }} onClick={() => setCount(x.id, x.counted - 1)} disabled={x.counted <= 0}>−</button>
+                  <input type="number" min="0" inputMode="numeric" value={x.counted} onChange={(e) => setCount(x.id, e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    style={{ width: 60, padding: 8, fontSize: 17, textAlign: 'center', border: '1px solid #d1d5db', borderRadius: 8 }} />
+                  <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 18 }} onClick={() => addPieces(x, 1)}>+</button>
+                </>
+              ))}
+              {counting && x.counted > 0 && (
+                <span style={{ minWidth: 34, textAlign: 'right', color: gap < 0 ? '#b45309' : gap > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>
+                  {gap === 0 ? '✓' : gap > 0 ? `+${fmtInt(gap)}` : `−${fmtInt(-gap)}`}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+
   return (
     <>
+      {pdaView || (
+      <>
       <div className="purchases-card">
         <div className="filters-bar" style={{ alignItems: 'center' }}>
           <button className="btn btn-secondary btn-sm" onClick={onBack}>‹ Commandes</button>
@@ -390,7 +579,7 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
               <input ref={scanInput} value={scan} onChange={(e) => setScan(e.target.value)} placeholder="Scanner ou saisir un code-barres puis Entrée"
                 style={{ padding: '10px 12px', border: '2px solid #2563eb', borderRadius: 8, fontSize: 15, width: 360 }} />
             </form>
-            {flash && <span style={{ color: '#16a34a', fontWeight: 600 }}>{flash}</span>}
+            {flash && <span style={{ color: flash.ok ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{flash.msg}</span>}
             <span style={{ marginLeft: 'auto', fontSize: 13, color: '#555' }}>{fmtInt(totalCounted)} pièce(s) comptée(s)</span>
           </div>
         )}
@@ -426,10 +615,20 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
                   {counting && (
                     <>
                       <td className="text-right" style={{ whiteSpace: 'nowrap' }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setCount(x.id, x.counted - 1)} disabled={x.counted <= 0}>−</button>
-                        <input type="number" min="0" className="qty-input" style={{ margin: '0 4px' }} value={x.counted}
-                          onChange={(e) => setCount(x.id, e.target.value)} />
-                        <button className="btn btn-secondary btn-sm" onClick={() => addPieces(x, 1)}>+</button>
+                        {lockedBy(x.id, owners) ? (
+                          <>
+                            <strong style={{ marginRight: 8 }}>{fmtInt(x.counted)}</strong>
+                            <small style={{ color: '#c2410c', fontWeight: 600, marginRight: 8 }}>Compté par {lockedBy(x.id, owners).name}</small>
+                            <button className="btn btn-secondary btn-sm" onClick={() => release(x, lockedBy(x.id, owners))} disabled={busy}>Libérer</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setCount(x.id, x.counted - 1)} disabled={x.counted <= 0}>−</button>
+                            <input type="number" min="0" className="qty-input" style={{ margin: '0 4px' }} value={x.counted}
+                              onChange={(e) => setCount(x.id, e.target.value)} />
+                            <button className="btn btn-secondary btn-sm" onClick={() => addPieces(x, 1)}>+</button>
+                          </>
+                        )}
                       </td>
                       <td className="text-right" style={{ color: gap < 0 ? '#b45309' : gap > 0 ? '#b91c1c' : '#15803d', fontWeight: 600 }}>
                         {gap === 0 ? '✓' : gap > 0 ? `+${fmtInt(gap)}` : `−${fmtInt(-gap)}`}
@@ -442,6 +641,9 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
           </tbody>
         </table>
       </div>
+
+      </>
+      )}
 
       {data.history.length > 0 && (
         <div className="purchases-card">
@@ -515,6 +717,12 @@ function OrderScreen({ shop, auth, orderId, onBack }) {
                 </div>
               ))}
             </>
+          )}
+          {othersLines.length > 0 && (
+            <div style={{ background: '#ffedd5', padding: '8px 12px', borderRadius: 6, marginTop: 12, fontSize: 13 }}>
+              <strong>{othersLines.length} ligne(s) en cours de comptage par {[...new Set(othersLines.map((x) => lockedBy(x.id, owners).name))].join(', ')}</strong> :
+              elles sont validées avec la quantité comptée jusqu'ici.
+            </div>
           )}
           {surplus.length > 0 && (
             <div style={{ background: '#fef3c7', padding: '8px 12px', borderRadius: 6, marginTop: 12, fontSize: 13 }}>
@@ -817,13 +1025,13 @@ function AddArticleModal({ shop, auth, onClose, onPick }) {
 }
 
 /* ─── COMPOSANT ─────────────────────────────────────────── */
-export default function CommandesTab({ shop, token }) {
+export default function CommandesTab({ shop, token, pda = false }) {
   const auth = { headers: { Authorization: `Bearer ${token}` } };
   const [view, setView] = useState({ mode: 'list' }); // list | order | edit | create
   const back = () => setView({ mode: 'list' });
-  if (view.mode === 'order') return <OrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
+  if (view.mode === 'order') return <OrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} pda={pda} />;
   if (view.mode === 'edit') return <EditOrderScreen key={view.id} shop={shop} auth={auth} orderId={view.id} onBack={back} />;
   if (view.mode === 'create') return <CreateOrderScreen shop={shop} auth={auth} onBack={back} />;
-  return <OrdersList shop={shop} auth={auth} onOpen={(id) => setView({ mode: 'order', id })} onEdit={(id) => setView({ mode: 'edit', id })}
+  return <OrdersList shop={shop} auth={auth} pda={pda} onOpen={(id) => setView({ mode: 'order', id })} onEdit={(id) => setView({ mode: 'edit', id })}
     onCreate={() => setView({ mode: 'create' })} />;
 }

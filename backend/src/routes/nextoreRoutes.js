@@ -62,6 +62,7 @@ router.put('/:shop/reception/orders/:id', boutiquePerm('write'), nextoreControll
 router.delete('/:shop/reception/orders/:id', boutiquePerm('write'), nextoreController.deleteReceptionOrder);
 router.post('/:shop/reception/orders/:id/session', boutiquePerm('write'), nextoreController.postReceptionSession);
 router.put('/:shop/reception/sessions/:sessionId/counts/:itemId', boutiquePerm('write'), nextoreController.putReceptionCount);
+router.post('/:shop/reception/sessions/:sessionId/counts/:itemId/release', boutiquePerm('write'), nextoreController.postReceptionRelease);
 router.post('/:shop/reception/sessions/:sessionId/lines', boutiquePerm('write'), nextoreController.postReceptionLine);
 router.post('/:shop/reception/sessions/:sessionId/abandon', boutiquePerm('write'), nextoreController.postReceptionAbandon);
 router.post('/:shop/reception/sessions/:sessionId/validate', boutiquePerm('write'), nextoreController.postReceptionValidate);

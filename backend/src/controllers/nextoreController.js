@@ -190,7 +190,12 @@ const receptionHandler = (label, fn) => async (req, res) => {
     res.json(await fn(wh, req));
   } catch (err) {
     if (!err.status || err.status >= 500) console.error(`Boutique réception ${label}:`, err);
-    res.status(err.status || 500).json({ error: err.message || 'Erreur réception' });
+    // `code` (ex. LOCKED : ligne comptée par quelqu'un d'autre) : refus que l'écran sait lire
+    res.status(err.status || 500).json({
+      error: err.message || 'Erreur réception',
+      ...(err.status && err.code ? { code: err.code } : {}), // pas les codes Postgres
+      ...(err.lockedByName ? { locked_by_name: err.lockedByName } : {}),
+    });
   }
 };
 
@@ -219,7 +224,10 @@ const putReceptionOrder = receptionHandler('update', (wh, req) =>
 const postReceptionSession = receptionHandler('session', (wh, req) =>
   boutiqueOrderModel.openSession(req.params.id, wh.id, req.user?.email));
 const putReceptionCount = receptionHandler('count', (wh, req) =>
-  boutiqueOrderModel.setCount(req.params.sessionId, wh.id, req.params.itemId, req.body?.units_counted));
+  boutiqueOrderModel.setCount(req.params.sessionId, wh.id, req.params.itemId, req.body?.units_counted, req.user?.email || null));
+// Libère une ligne verrouillée par la personne qui la comptait (quantité gardée)
+const postReceptionRelease = receptionHandler('release', (wh, req) =>
+  boutiqueOrderModel.releaseCount(req.params.sessionId, wh.id, req.params.itemId));
 const postReceptionLine = receptionHandler('line', (wh, req) =>
   boutiqueOrderModel.addLine(req.params.sessionId, wh.id, req.body?.product_id));
 const postReceptionAbandon = receptionHandler('abandon', async (wh, req) => {
@@ -524,6 +532,7 @@ module.exports = {
   getReceptionCosts,
   postReceptionSession,
   putReceptionCount,
+  postReceptionRelease,
   postReceptionLine,
   postReceptionAbandon,
   postReceptionBarcode,

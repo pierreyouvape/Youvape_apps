@@ -692,6 +692,18 @@ Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fic
 - Le PC prévient avant d'envoyer des produits encore en cours chez quelqu'un d'autre.
 - Migration `add_nextore_comptage_lock.sql` AVANT le code.
 
+**Lot 2 = Réception** (24/11/2026, `CommandesTab` en mode `pda`, vue en cartes) : le PDA reçoit **et valide**
+(motifs compris, choix Pierre). Créer, modifier, supprimer une commande et abandonner une réception : PC.
+- Le comptage d'une ligne s'envoie en **valeur absolue** : deux appareils sur la même ligne s'écrasaient.
+  D'où le même verrou par personne (`boutique_reception_counts.counted_by`, contrôlé dans l'upsert de
+  `boutiqueOrderModel.setCount`, 409 `LOCKED`). **Remettre la ligne à 0 la libère** ; « Libérer » au PC
+  (`POST …/reception/sessions/:id/counts/:itemId/release`) garde la quantité.
+- La validation porte sur toute la réception (un seul achat Nextore) : la fenêtre signale les lignes encore
+  en cours chez quelqu'un d'autre, validées avec leur quantité du moment.
+- Relecture toutes les 15 s, **jamais pendant une écriture** (`pending`, `writeSeq`) : une relecture partie
+  avant une écriture remettrait le compteur en arrière, et l'écriture suivante enverrait ce total faux.
+- Migration `add_boutique_reception_count_lock.sql` AVANT le code.
+
 ### Catalogue caisse : produits du site → Nextore (10/11/2026)
 
 `nextoreCatalogSyncService`, cron `20 8-20 * * *`, **éteint tant que `app_config.nextore_autocreate_since`
