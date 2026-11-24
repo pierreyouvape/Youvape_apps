@@ -563,6 +563,25 @@ qui l'a validé et quand. Code : `inventorySpotModel.js`, `services/inventorySpo
   et ceux **trouvés alors qu'ils étaient à 0** (`inventoryRules.zeroChange`). Rien d'autre, aucun mail
   s'il n'y en a pas. 5 essais max (`mail_attempts`).
 
+### Commandes « à expédier » : notre règle en simulation à côté de BMS (24/11/2026)
+
+Prépare la sortie de BMS : le Picking reste sur la photo BMS, **notre règle ne pilote rien** et n'écrit
+rien (ni site, ni BMS). But : prouver qu'elle enverrait **les mêmes commandes** que BMS.
+
+- Règle (pure, `services/toShipRules.js`, `tests/toShip.test.js`) : statut dans `wc_to_ship_statuses`
+  (vide → `wc-processing`), aucune étiquette active, aucun remboursement non lu (`lines_synced_at` NULL),
+  au moins un article, payée depuis `app_config.picking_shadow_since`. Articles = `line_item` sans la ligne
+  du pack woosb (pack remboursé = composants retirés, `withPackRefunds`), commandé − remboursé, SKU cumulé.
+- `toShipShadowService.compareWithPhoto` après chaque photo (`pickingSyncService`) contre la photo **telle que
+  le Picking l'affiche** (BMS `processing` seul, plafonnée par les remboursements WC). Écarts
+  `picking_shadow_diffs` : `bms_only` = commande **oubliée**, `ours_only` = **en trop**, `lines`. Ne compte
+  que s'il dure : **2 photos ET 30 min** (BMS prend une commande ~10 min après le paiement).
+- Mails à contact@ **en SMTP seul** (`sendMail({ smtpOnly: true })`), 8h lun-sam, seulement s'il y a quelque
+  chose : écarts (une fois chacun) et « à vérifier » = encore à expédier **3 jours** après paiement (une fois
+  par commande, `picking_shadow_checks`). Les commandes payées avant la date de début : jamais.
+- Pas d'historique des statuts en base : le moment où une commande entre dans une liste ne se prouve que par
+  cette marche en parallèle. Lot 2 (à la bascule) : le Picking lit notre liste, onglet « À vérifier ».
+
 ### Bloquer une commande (Picking, fiche commande — 30/10/2026)
 
 - Une commande en vague n'est plus dans les listes du Picking : on la bloque depuis
