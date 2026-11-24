@@ -139,6 +139,10 @@ const doRefresh = async () => {
   const snapshots = orders.map(o => toSnapshot(o, bmsWaves)).filter(Boolean);
   await writeSnapshot(snapshots);
 
+  // Sortie de BMS, lot 1 : notre règle « à expédier » comparée à cette photo.
+  // Sans attendre, et jamais d'échec qui remonte (toShipShadowService).
+  require('./toShipShadowService').compareWithPhoto();
+
   // Une commande que BMS donne à expédier mais que yousync a perdue resterait
   // « Pas encore synchronisée » pour toujours : on la relit dans WooCommerce.
   const recovered = await importMissingBmsOrders().catch(err => {

@@ -49,10 +49,13 @@ const buildTransporter = async () => {
  * transporteur est indisponible. Les pièces jointes passent aussi par SMTP —
  * l'API Mailgun attend un autre format, et les rapports en envoient.
  *
+ * `smtpOnly` saute Mailgun : pour les mails internes qu'on veut garder hors
+ * de son quota (100 requêtes/jour), à la demande de Pierre (toShipShadowService).
+ *
  * @returns {Promise<{success:boolean, via?:string, id?:string, error?:string}>}
  *          `via` dit par où c'est parti : c'est cette information qui manquait.
  */
-const sendMail = async ({ to, subject, text, html, attachments }) => {
+const sendMail = async ({ to, subject, text, html, attachments, smtpOnly = false }) => {
   const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean);
   if (recipients.length === 0) return { success: false, error: 'Aucun destinataire' };
 
@@ -61,7 +64,7 @@ const sendMail = async ({ to, subject, text, html, attachments }) => {
   const echecs = [];
 
   // 1. Mailgun — sauf pièces jointes, que seul le chemin SMTP sait porter.
-  if (!avecPJ) {
+  if (!avecPJ && !smtpOnly) {
     try {
       const mg = await mailgunService.sendInternal({ to: recipients, subject: fullSubject, text, html });
       if (mg.success) {

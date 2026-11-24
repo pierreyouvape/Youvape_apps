@@ -1295,6 +1295,26 @@ const setupChronopostClaimsCron = () => {
   console.log('Cron réclamations Chronopost configure: 16h lun-sam');
 };
 
+// ==================== À EXPÉDIER : SIMULATION À CÔTÉ DE BMS ====================
+
+let toShipShadowMailJob = null;
+
+const setupToShipShadowCron = () => {
+  if (toShipShadowMailJob) {
+    toShipShadowMailJob.stop();
+    toShipShadowMailJob = null;
+  }
+  // Mails écarts / à vérifier : premier passage à 8h, lun-sam. Un passage
+  // réussi par jour ; les heures suivantes ne servent qu'à réessayer un échec.
+  toShipShadowMailJob = cron.schedule('0 8-20 * * 1-6', async () => {
+    try {
+      await require('./toShipShadowService').runMails();
+    } catch (error) {
+      console.error('Erreur cron mails à expédier (simulation):', error.message);
+    }
+  }, { timezone: 'Europe/Paris' });
+  console.log('Cron mails à expédier (simulation) configure: 8h lun-sam, reprise horaire jusqu a 20h');
+};
 
 module.exports = {
   setupCron,
@@ -1330,6 +1350,7 @@ module.exports = {
   setupTableauRemindersCron,
   setupShipmentTrackingCron,
   setupChronopostClaimsCron,
+  setupToShipShadowCron,
   runProductDbSyncJob,
   runProductSuppliersLink,
   runBrandMapJob,
