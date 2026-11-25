@@ -40,7 +40,7 @@ const create = async ({ slug, title, description, format, createdBy }) => {
   const { rows } = await pool.query(
     // Nouvelle vidéo en tête de liste, comme avant le classement manuel.
     `INSERT INTO stories (slug, title, description, format, created_by, sort_order)
-     VALUES ($1, $2, $3, $4, $5, COALESCE((SELECT MIN(sort_order) FROM stories), 1) - 1)
+     VALUES ($1, $2, $3, $4, $5, (SELECT MIN(sort_order) - 1 FROM stories))
      RETURNING *`,
     [slug, title, description || null, format, createdBy || null],
   );
