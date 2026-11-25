@@ -1,0 +1,127 @@
+EMC (YOUVAPE), YOUVAPE SITE
+580 AVENUE DE L'AUBE ROUGE
+34170 CASTELNAU LE LEZ
+France
+SIRET : 78950843900013
+TVA: FR87789508439 	Facture INV/2026/02834
+Date de	Date de
+facturatio	facturatio
+nn
+25/11/202
+6
+Date	Date
+d'échéanc	d'échéanc
+ee
+10/12/202
+6
+Date de	Date de
+livraison	livraison
+25/11/202
+6
+Source	Source
+S08936
+Numéro	Numéro
+de client	de client
+78950843
+900013
+Référence	Référence
+pay_2czEI
+4rTn7UkS
+PkwmaBB
+p9
+Adresse du client :	Adresse du client :
+8 BOULEVARD VICTOR HUGO
+34000 MONTPELLIER
+France
+Type d'opération :	Type d'opération :
+Livraison de biens
+DESCRIPTION 	QUANTITÉ PRIX UNITAIRE REM.% 	TAXES MONTANT
+[BLUE VELVET-10ML-03MG] BLUE VELVET-10ML (03MG) 	500,00
+Unité(s)
+1,50 	0,00 TVA 20% 	750,00 €
+[BLUE VELVET-10ML-12MG] BLUE VELVET-10ML (12MG) 	100,00
+Unité(s)
+1,50 	0,00 TVA 20% 	150,00 €
+[BLUE VELVET-10ML-06MG] BLUE VELVET-10ML (06MG) 	250,00
+Unité(s)
+1,50 	0,00 TVA 20% 	375,00 €
+[BLUE VELVET-10ML-18MG] BLUE VELVET-10ML (18MG) 	50,00
+Unité(s)
+1,50 	0,00 TVA 20% 	75,00 €
+[BLUE VELVET-50ML-00MG] BLUE VELVET-50ML 	36,00 Unité(s) 	4,90 	0,00 TVA 20% 	176,40 €
+[Remise] Remise
+Remise progressive (-10%)
+1,00 Unité(s) 	-152,64 	0,00 TVA 20% 	-152,64 €
+[Remise] Remise
+Escompte paiement CB (-1%)
+1,00 Unité(s) 	-12,39 	0,00 TVA 20% 	-12,39 €
+[Remise] Remise
+Remise — Offre MOIS SANS TABAC -10% sur les 10ml des
+gammes BASIK et VINTAGE
+1,00 Unité(s) 	-135,00 	0,00 TVA 20% 	-135,00 €
+Fabricant Nantais d'e-liquides pour cigarettes électroniques	Fabricant Nantais d'e-liquides pour cigarettes électroniques
+CLOUD VAPOR
+1 Chemin de la Chatterie, Greenpark
+44800 Saint-Herblain
+France
+CLOUD VAPOR – SAS au capital de 14 928 € – 1 Chemin de la Chatterie, 44800 Saint-Herblain, France - +33 9 80 80 86 84 –
+commercial@cloudvapor.com – www.b2b.cloudvapor.com - RCS Nantes 797956166 – SIRET 79795616600053 – TVA
+FR78797956166
+
+-- 1 of 2 --
+
+Montant hors taxes 	1 226,37 €
+TVA 20% 	245,27 €
+Total	Total 	1 471,64	1 471,64 €€
+[BLUE VELVET-10ML-03MG] BLUE VELVET-10ML (03MG)
+ 	BLUE VELVET-10ML-03MG (offert –
+Black Friday — 1 acheté = 1 offert) (offert)
+500,00
+Unité(s)
+1,50 100,00 TVA 20% 	0,00 €
+[BLUE VELVET-10ML-12MG] BLUE VELVET-10ML (12MG)
+ 	BLUE VELVET-10ML-12MG (offert –
+Black Friday — 1 acheté = 1 offert) (offert)
+100,00
+Unité(s)
+1,50 100,00 TVA 20% 	0,00 €
+[BLUE VELVET-10ML-06MG] BLUE VELVET-10ML (06MG)
+ 	BLUE VELVET-10ML-06MG (offert –
+Black Friday — 1 acheté = 1 offert) (offert)
+158,00
+Unité(s)
+1,50 100,00 TVA 20% 	0,00 €
+[BLUE VELVET-10ML-18MG] BLUE VELVET-10ML (18MG)
+ 	BLUE VELVET-10ML-18MG (offert –
+Black Friday — 1 acheté = 1 offert) (offert)
+50,00
+Unité(s)
+1,50 100,00 TVA 20% 	0,00 €
+[BLUE VELVET-50ML-00MG] BLUE VELVET-50ML
+ 	BLUE VELVET-50ML-00MG (offert –
+Black Friday — 1 acheté = 1 offert) (offert)
+36,00 Unité(s) 	4,90 100,00 TVA 20% 	0,00 €
+[Frais de port] Livraison standard
+Chronopost
+1,00 Unité(s) 	0,00 	0,00 TVA 20% 	0,00 €
+DESCRIPTION 	QUANTITÉ PRIX UNITAIRE REM.% 	TAXES MONTANT
+Conditions de paiement : 15 jours
+Communication de paiement : INV/2026/02834	INV/2026/02834
+sur ce compte : FR76 3004 7141 2100 0203 5550 281 - CIC NANTES	FR76 3004 7141 2100 0203 5550 281 - CIC NANTES
+LOIRE ENTREPRISES	LOIRE ENTREPRISES
+Option pour le paiement de la taxe d'après les débits
+Scanner le code QR avec
+votre application bancaire
+https://b2b.cloudvapor.com/cgv
+Fabricant Nantais d'e-liquides pour cigarettes électroniques	Fabricant Nantais d'e-liquides pour cigarettes électroniques
+CLOUD VAPOR
+1 Chemin de la Chatterie, Greenpark
+44800 Saint-Herblain
+France
+CLOUD VAPOR – SAS au capital de 14 928 € – 1 Chemin de la Chatterie, 44800 Saint-Herblain, France - +33 9 80 80 86 84 –
+commercial@cloudvapor.com – www.b2b.cloudvapor.com - RCS Nantes 797956166 – SIRET 79795616600053 – TVA
+FR78797956166
+
+-- 2 of 2 --
+
+

@@ -352,6 +352,39 @@ console.log('Cloud Vapor — INV/2026/02555 (remise progressive + escompte CB)')
   });
 }
 
+// ── Cloud Vapor : colonne REM.% + unités offertes + remise sur les 10 ml ─────
+// INV/2026/02834 : nouvelle colonne « REM.% » (aucune ligne lue), « 1 acheté =
+// 1 offert » en lignes à 0 €, et « Mois sans tabac -10 % sur les 10ml » calculée
+// sur les seuls 10 ml, avant l'escompte CB pourtant imprimé avant elle.
+console.log('Cloud Vapor — INV/2026/02834 (REM.%, offerts, remise ciblée)');
+{
+  const cv = require('../src/parsers/cloudvaporParser').parse(fixture('cloudvapor-INV-2026-02834.txt'));
+
+  test('Cloud Vapor INV/2026/02834 : 5 articles, offerts fusionnés dans la ligne payée', () => {
+    assert.strictEqual(cv.orderNumber, 'S08936');
+    assert.strictEqual(cv.orderDate, '2026-11-25');
+    assert.deepStrictEqual(cv.items.map((i) => [i.supplier_sku, i.qty_ordered, i.free_qty]), [
+      ['BLUE VELVET-10ML-03MG', 1000, 500],
+      ['BLUE VELVET-10ML-12MG', 200, 100],
+      ['BLUE VELVET-10ML-06MG', 408, 158],
+      ['BLUE VELVET-10ML-18MG', 100, 50],
+      ['BLUE VELVET-50ML-00MG', 72, 36],
+    ]);
+    assert.strictEqual(sumLines(cv.items), 1526.40);
+  });
+
+  test('Cloud Vapor INV/2026/02834 : les 3 remises reportées, net = 1 226,37 €', () => {
+    assert.strictEqual(cv.discountItems.length, 0);
+    assert.strictEqual(cv.foldedDiscounts.length, 3);
+    assert.ok(cv.items.every((i) => i.document_discount));
+    const net = cv.items.reduce((s, i) => s + Math.round(i.qty_ordered * i.unit_price_net * (1 - i.discount_percent / 100) * 100) / 100, 0);
+    assert.strictEqual(Math.round(net * 100) / 100, 1226.37);
+    // 10 ml : (1 − 10 % − 10 %) × 0,99, puis moitié offerte → 0,594 € le flacon
+    const bv03 = cv.items.find((i) => i.supplier_sku === 'BLUE VELVET-10ML-03MG');
+    assert.strictEqual(bv03.discount_percent, 60.4);
+  });
+}
+
 // ── Contrôle croisé import ↔ parseur de facture ──────────────────────────────
 // Le garde-fou qui couvre les gabarits sans « € ». Sur chaque vraie facture :
 // aucune alerte quand l'import est complet, et toute ligne retirée est signalée.
@@ -364,6 +397,7 @@ console.log('Contrôle croisé import ↔ facture');
     ['cigaccess-FA129523.txt', 'cigaccessParser', 'prestashopInvoice'],
     ['cloudvapor-INV-2025-04126.txt', 'cloudvaporParser', 'odooInvoice'],
     ['cloudvapor-INV-2026-02555.txt', 'cloudvaporParser', 'odooInvoice'],
+    ['cloudvapor-INV-2026-02834.txt', 'cloudvaporParser', 'odooInvoice'],
     ['curieux-FA063171.txt', 'curieuxParser', 'prestashopInvoice'],
     ['curieux-FA072952.txt', 'curieuxParser', 'prestashopInvoice'],
     ['etasty-FA060440.txt', 'etastyParser', 'prestashopInvoice'],

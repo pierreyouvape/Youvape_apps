@@ -105,7 +105,7 @@ function findLinesMissedByImport(invoiceLines, parsedItems) {
     const qty = Number(i.qty_ordered);
     const price = Number(i.unit_price_net != null ? i.unit_price_net : i.unit_price);
     const total = Number.isFinite(Number(i.total_ht)) && i.total_ht != null ? Number(i.total_ht) : qty * price;
-    return { ref: norm(i.supplier_sku), total, used: false };
+    return { ref: norm(i.supplier_sku), total, freeQty: Number(i.free_qty) || 0, used: false };
   });
 
   const missed = [];
@@ -119,6 +119,10 @@ function findLinesMissedByImport(invoiceLines, parsedItems) {
       (ref.length >= 4 && free.find((p) => p.ref.length >= 4 && (p.ref.startsWith(ref) || ref.startsWith(p.ref)))) ||
       (Number.isFinite(total) && free.find((p) => Math.abs(p.total - total) <= 0.05));
     if (hit) { hit.used = true; continue; }
+    // Unités offertes (ligne à 0 € d'une réf. déjà importée) : le parseur
+    // d'import les fusionne dans la ligne payée (Cloud Vapor INV/2026/02834,
+    // « 1 acheté = 1 offert »), en le déclarant dans free_qty.
+    if (total === 0 && ref && pool.some((p) => p.ref === ref && p.freeQty >= (Number(line.qty) || 0))) continue;
 
     const qty = Number(line.qty) || 1;
     missed.push({
