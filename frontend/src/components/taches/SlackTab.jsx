@@ -61,7 +61,7 @@ export default function SlackTab({ members }) {
         Sans identifiant, le nom est écrit en gras mais la personne n'est pas notifiée.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {members.map((m) => (
+        {members.filter((m) => m.has_app !== false).map((m) => (
           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Avatar id={m.id} name={m.name} size={28} />
             <span style={{ width: 120, fontWeight: 700, color: '#374151' }}>{m.name}</span>

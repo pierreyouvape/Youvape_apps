@@ -64,7 +64,7 @@ async function withTx(fn) {
 
 /* ─── Membres ───────────────────────────────────────────── */
 
-/** Comptes actifs qui ont l'app (droit coché, ou super admin). */
+/** Comptes actifs, avec `has_app` = droit coché ou super admin. */
 async function getMembers() {
   const { rows } = await pool.query(
     `SELECT u.id, u.email, ${USER_NAME('u')} AS name,
@@ -74,14 +74,16 @@ async function getMembers() {
       WHERE u.disabled_at IS NULL
       ORDER BY 3`,
   );
-  return rows
-    .filter((r) => r.has_app || userPermissionsModel.isSuperAdmin(r.email))
-    .map(({ id, name }) => ({ id, name }));
+  // Tous les comptes actifs : un ancien responsable doit garder son nom à l'écran,
+  // même si on lui retire l'app. On ne peut CHOISIR que ceux qui ont l'app (has_app).
+  return rows.map(({ id, name, email, has_app: hasApp }) => ({
+    id, name, has_app: hasApp || userPermissionsModel.isSuperAdmin(email),
+  }));
 }
 
 async function checkMembers(ids) {
   if (!ids.length) return;
-  const members = new Set((await getMembers()).map((m) => m.id));
+  const members = new Set((await getMembers()).filter((m) => m.has_app).map((m) => m.id));
   if (ids.some((id) => !members.has(id))) throw httpError(400, "Une des personnes choisies n'a pas accès à l'app Tâches");
 }
 

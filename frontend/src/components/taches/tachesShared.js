@@ -93,6 +93,8 @@ export function ago(ts) {
 }
 
 export const formatDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
+/** « 25 nov. 2026 » à partir d'un horodatage. */
+export const formatDay = (ts) => (ts ? new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 export const formatDateTime = (ts) => (ts ? new Date(ts).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 /** Ajoute n jours à une date YYYY-MM-DD (calcul en UTC : pas de décalage d'heure d'été). */
 export const addDays = (d, n) => {
@@ -149,7 +151,7 @@ export const M = {
 };
 export const mTable = { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 14, color: M.text, fontFamily: M.font };
 export const mTh = {
-  height: 36, padding: '0 8px', fontSize: 14, fontWeight: 400, color: M.sub, textAlign: 'center',
+  position: 'relative', height: 36, padding: '0 8px', fontSize: 14, fontWeight: 400, color: M.sub, textAlign: 'center',
   borderBottom: `1px solid ${M.grid}`, borderRight: `1px solid ${M.grid}`, background: '#fff',
   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 };

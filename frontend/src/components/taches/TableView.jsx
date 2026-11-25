@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useState } from 'react';
 import {
-  tachesApi, apiError, ago, todayStr, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
+  tachesApi, apiError, ago, todayStr, formatDay, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
 } from './tachesShared';
 import {
-  ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText,
-} from './tachesUi';
+  ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText, ColGroup, ColResizer } from './tachesUi';
+import { useColumnWidths } from './tachesColumns';
 import StepsTable from './StepsTable';
 
 const th = mTh;
@@ -25,6 +25,7 @@ export default function TableView({
   tasks, loading, board, boards, members, canWrite, focusUserId,
   onOpen, onTaskChange, onError, onReload, onBoardsChange,
 }) {
+  const cols = useColumnWidths('table', [34, 26, 380, 90, 170, 130, 160, 150, 120, 130, 120, 120, 36]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [selected, setSelected] = useState(() => new Set());
@@ -152,21 +153,8 @@ export default function TableView({
 
             {!shut && (
               <div style={{ background: '#fff', borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', overflowX: 'auto', fontFamily: M.font }}>
-                <table style={{ ...mTable, minWidth: 1560 }}>
-                  <colgroup>
-                    <col style={{ width: 34 }} />
-                    <col style={{ width: 26 }} />
-                    <col style={{ width: 380 }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 170 }} />
-                    <col style={{ width: 130 }} />
-                    <col style={{ width: 160 }} />
-                    <col style={{ width: 150 }} />
-                    <col style={{ width: 130 }} />
-                    <col style={{ width: 120 }} />
-                    <col style={{ width: 120 }} />
-                    <col style={{ width: 36 }} />
-                  </colgroup>
+                <table style={{ ...mTable, width: cols.total }}>
+                  <ColGroup widths={cols.widths} />
                   <thead>
                     <tr>
                       <th style={th}>
@@ -176,18 +164,19 @@ export default function TableView({
                             ids.forEach((i) => (allChecked ? n.delete(i) : n.add(i)));
                             return n;
                           })} />
-                      </th>
-                      <th style={th} />
-                      <th style={{ ...th, textAlign: 'left' }}>Tâche</th>
-                      <th style={th}>Personne</th>
-                      <th style={th}>Lien produit</th>
-                      <th style={th}>Sous-éléments</th>
-                      <th style={th}>Étiquettes</th>
-                      <th style={th}>Échéances</th>
-                      <th style={th}>Mise à jour</th>
-                      <th style={th}>Priorité</th>
-                      <th style={th}>Statut</th>
-                      <th style={{ ...th, borderRight: 'none' }} />
+                      <ColResizer index={0} cols={cols} /></th>
+                      <th style={th}><ColResizer index={1} cols={cols} /></th>
+                      <th style={{ ...th, textAlign: 'left' }}>Tâche<ColResizer index={2} cols={cols} /></th>
+                      <th style={th}>Personne<ColResizer index={3} cols={cols} /></th>
+                      <th style={th}>Lien produit<ColResizer index={4} cols={cols} /></th>
+                      <th style={th}>Sous-éléments<ColResizer index={5} cols={cols} /></th>
+                      <th style={th}>Étiquettes<ColResizer index={6} cols={cols} /></th>
+                      <th style={th}>Échéances<ColResizer index={7} cols={cols} /></th>
+                      <th style={th}>Créée le<ColResizer index={8} cols={cols} /></th>
+                      <th style={th}>Mise à jour<ColResizer index={9} cols={cols} /></th>
+                      <th style={th}>Priorité<ColResizer index={10} cols={cols} /></th>
+                      <th style={th}>Statut<ColResizer index={11} cols={cols} /></th>
+                      <th style={{ ...th, borderRight: 'none' }}><ColResizer index={12} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -231,6 +220,7 @@ export default function TableView({
                               </span>
                             </td>
                             <td style={td}><DateRange start={t.start_date} end={t.due_date} late={late} onChange={(b) => save(t, b)} /></td>
+                            <td style={{ ...td, fontSize: 13, color: M.sub }} title={t.created_at}>{formatDay(t.created_at)}</td>
                             <td style={{ ...td, fontSize: 13, color: M.sub }}>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 {t.updated_by && <Avatar id={t.updated_by} name={t.updated_by_name} size={22} />}
@@ -253,7 +243,7 @@ export default function TableView({
                           {open && (
                             <tr>
                               <td colSpan={2} style={{ borderBottom: `1px solid ${M.grid}`, background: M.hover }} />
-                              <td colSpan={10} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
+                              <td colSpan={11} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
                                 <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} color={g.color} />
                               </td>
                             </tr>
@@ -265,7 +255,7 @@ export default function TableView({
                       <tr>
                         <td style={td} />
                         <td style={td} />
-                        <td colSpan={10} style={{ ...td, textAlign: 'left' }}>
+                        <td colSpan={11} style={{ ...td, textAlign: 'left' }}>
                           <input value={quick[g.id] || ''} onChange={(e) => setQuick((s) => ({ ...s, [g.id]: e.target.value }))}
                             onKeyDown={(e) => { if (e.key === 'Enter') quickAdd(g); }}
                             placeholder="+ Ajouter tâche"

@@ -317,7 +317,7 @@ export function PeoplePicker({ value = [], members, onChange, title }) {
       {anchor && (
         <Popover anchor={anchor} onClose={() => setAnchor(null)} width={210}>
           {title && <div style={{ fontSize: 11, fontWeight: 800, color: '#9CA3AF', padding: '4px 8px', textTransform: 'uppercase' }}>{title}</div>}
-          {members.map((m) => (
+          {members.filter((m) => m.has_app !== false || value.includes(m.id)).map((m) => (
             <label key={m.id} style={{ ...menuItem, cursor: 'pointer' }}>
               <input type="checkbox" checked={value.includes(m.id)} onChange={() => toggle(m.id)} />
               <Avatar id={m.id} name={m.name} size={22} />
@@ -375,5 +375,44 @@ export function InlineText({ value, onSave, placeholder, style, multiline = fals
         width: '100%', font: 'inherit', ...style, border: '1px solid #93C5FD', borderRadius: 6,
         padding: '4px 6px', outline: 'none', resize: multiline ? 'vertical' : undefined,
       }} />
+  );
+}
+
+/** Largeurs des colonnes d'un tableau (voir tachesColumns.useColumnWidths). */
+export function ColGroup({ widths }) {
+  return <colgroup>{widths.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>;
+}
+
+/**
+ * Poignée au bord droit d'un en-tête : tirer élargit ou rétrécit la colonne,
+ * double-clic = largeur par défaut. L'en-tête doit être en position relative.
+ */
+export function ColResizer({ index, cols }) {
+  const [active, setActive] = useState(false);
+  const start = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    const w0 = cols.widths[index];
+    setActive(true);
+    const move = (ev) => cols.setWidth(index, w0 + ev.clientX - x0);
+    const up = () => {
+      setActive(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <span onPointerDown={start} onDoubleClick={() => cols.resetWidth(index)} title="Tirer pour redimensionner (double-clic : largeur par défaut)"
+      style={{
+        position: 'absolute', top: 0, right: -3, width: 7, height: '100%', cursor: 'col-resize', zIndex: 2,
+        background: active ? '#0073EA' : 'transparent', touchAction: 'none',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#0073EA'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }} />
   );
 }

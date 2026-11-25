@@ -55,7 +55,7 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
       case 'person': {
         // Ce qui reste à faire, par responsable : étapes non faites + tâches sans étape non terminées.
         const open = (s) => s.status !== 'fait';
-        const cols = members.map((m) => ({
+        const cols = members.filter((m) => m.has_app !== false).map((m) => ({
           key: String(m.id), label: m.name, color: '#2563EB',
           cards: [
             ...stepCards((s) => open(s) && s.owners.includes(m.id)),

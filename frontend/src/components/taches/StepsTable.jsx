@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { tachesApi, apiError, formatDateTime, todayStr, M, mTable, mTh, mTd, mCell, ellipsis } from './tachesShared';
-import { StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange } from './tachesUi';
+import { StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange, ColGroup, ColResizer } from './tachesUi';
+import { useColumnWidths } from './tachesColumns';
 
 const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: '#C3C6D4', fontSize: 9, padding: 0, lineHeight: 1 };
 
@@ -13,6 +14,7 @@ const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: '#
  * l'étape suivante débloquée par un « Fait ».
  */
 export default function StepsTable({ task, members, onChange, onError, focusUserId = null, color = '#579BFC' }) {
+  const cols = useColumnWidths('steps', [26, 360, 96, 150, 96, 150, 120, 180, 40]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const steps = task.steps || [];
@@ -45,29 +47,19 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
 
   return (
     <div style={{ overflowX: 'auto', opacity: busy ? 0.7 : 1, transition: 'opacity .15s', borderLeft: `4px solid ${color}`, background: '#fff' }}>
-      <table style={{ ...mTable, minWidth: 1050 }}>
-        <colgroup>
-          <col style={{ width: 26 }} />
-          <col />
-          <col style={{ width: 96 }} />
-          <col style={{ width: 150 }} />
-          <col style={{ width: 96 }} />
-          <col style={{ width: 150 }} />
-          <col style={{ width: 120 }} />
-          <col style={{ width: 180 }} />
-          <col style={{ width: 40 }} />
-        </colgroup>
+      <table style={{ ...mTable, width: cols.total }}>
+        <ColGroup widths={cols.widths} />
         <thead>
           <tr>
-            <th style={mTh} />
-            <th style={{ ...mTh, textAlign: 'left' }}>Sous-élément</th>
-            <th style={mTh} title="Qui fait le travail">Owner</th>
-            <th style={mTh}>Statut</th>
-            <th style={mTh} title="Prévenu sur Slack quand l'étape est faite">Personnes</th>
-            <th style={mTh}>Échéances</th>
-            <th style={mTh}>Priorité</th>
-            <th style={mTh}>Texte</th>
-            <th style={{ ...mTh, borderRight: 'none' }} />
+            <th style={mTh}><ColResizer index={0} cols={cols} /></th>
+            <th style={{ ...mTh, textAlign: 'left' }}>Sous-élément<ColResizer index={1} cols={cols} /></th>
+            <th style={mTh} title="Qui fait le travail">Owner<ColResizer index={2} cols={cols} /></th>
+            <th style={mTh}>Statut<ColResizer index={3} cols={cols} /></th>
+            <th style={mTh} title="Prévenu sur Slack quand l'étape est faite">Personnes<ColResizer index={4} cols={cols} /></th>
+            <th style={mTh}>Échéances<ColResizer index={5} cols={cols} /></th>
+            <th style={mTh}>Priorité<ColResizer index={6} cols={cols} /></th>
+            <th style={mTh}>Texte<ColResizer index={7} cols={cols} /></th>
+            <th style={{ ...mTh, borderRight: 'none' }}><ColResizer index={8} cols={cols} /></th>
           </tr>
         </thead>
         <tbody>

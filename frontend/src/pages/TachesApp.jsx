@@ -282,7 +282,7 @@ function FilterBar({
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" style={chip(!person)} onClick={() => setPerson(null)}>Tout le monde</button>
-        {members.map((m) => (
+        {members.filter((m) => m.has_app !== false).map((m) => (
           <button key={m.id} type="button" style={chip(person === m.id)} onClick={() => setPerson(m.id)}>{m.name}</button>
         ))}
         {person && (

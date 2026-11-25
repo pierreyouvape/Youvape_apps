@@ -1,9 +1,10 @@
 import { Fragment, useCallback, useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import {
-  tachesApi, apiError, ago, priorityRank, todayStr, STEP_STATUS, M, mTable, mTh, mTd, mCell, ellipsis,
+  tachesApi, apiError, priorityRank, todayStr, formatDay, M, mTable, mTh, mTd, mCell, ellipsis,
 } from './tachesShared';
-import { PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange } from './tachesUi';
+import { PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer } from './tachesUi';
+import { useColumnWidths } from './tachesColumns';
 import StepsTable from './StepsTable';
 
 const GROUPS = [
@@ -15,10 +16,11 @@ const GROUPS = [
 /**
  * Mes tâches, façon « Mon travail » de Monday : une ligne par chose à faire
  * (mon étape, ou une tâche sans étape dont je suis la personne), tous tableaux
- * confondus. La colonne « Étape d'avant » dit d'où vient le travail ; ▶ déplie
+ * confondus. ▶ déplie
  * toute la chaîne, les étapes passées en grisé.
  */
 export default function MineTab({ members, reloadKey, onOpen, onError }) {
+  const cols = useColumnWidths('mine', [32, 420, 300, 120, 90, 150, 150, 120]);
   const { user } = useContext(AuthContext);
   const me = user?.id;
   const [tasks, setTasks] = useState(null);
@@ -70,7 +72,6 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
     long: rows.filter((r) => stateOf(r) === 'longue').sort(cmp),
     later: rows.filter((r) => stateOf(r) === 'bloque').sort(cmp),
   };
-  const name = (id) => members.find((m) => m.id === id)?.name || '?';
 
   return (
     <div style={{ fontFamily: M.font, color: M.text }}>
@@ -88,34 +89,23 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
             </div>
             {!shut && (
               <div style={{ borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', background: '#fff', overflowX: 'auto' }}>
-                <table style={{ ...mTable, minWidth: 1180 }}>
-                  <colgroup>
-                    <col style={{ width: 32 }} />
-                    <col style={{ width: '24%' }} />
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '18%' }} />
-                    <col style={{ width: 90 }} />
-                    <col style={{ width: 150 }} />
-                    <col style={{ width: 150 }} />
-                    <col style={{ width: 120 }} />
-                  </colgroup>
+                <table style={{ ...mTable, width: cols.total }}>
+                  <ColGroup widths={cols.widths} />
                   <thead>
                     <tr>
-                      <th style={mTh} />
-                      <th style={{ ...mTh, textAlign: 'left' }}>Mon élément</th>
-                      <th style={{ ...mTh, textAlign: 'left' }}>Tâche</th>
-                      <th style={{ ...mTh, textAlign: 'left' }}>Étape d'avant</th>
-                      <th style={mTh}>Owner</th>
-                      <th style={mTh}>Statut</th>
-                      <th style={mTh}>Échéances</th>
-                      <th style={{ ...mTh, borderRight: 'none' }}>Priorité</th>
+                      <th style={mTh}><ColResizer index={0} cols={cols} /></th>
+                      <th style={{ ...mTh, textAlign: 'left' }}>Tâche<ColResizer index={1} cols={cols} /></th>
+                      <th style={{ ...mTh, textAlign: 'left' }}>Mon étape<ColResizer index={2} cols={cols} /></th>
+                      <th style={mTh}>Créée le<ColResizer index={3} cols={cols} /></th>
+                      <th style={mTh}>Owner<ColResizer index={4} cols={cols} /></th>
+                      <th style={mTh}>Statut<ColResizer index={5} cols={cols} /></th>
+                      <th style={mTh}>Échéances<ColResizer index={6} cols={cols} /></th>
+                      <th style={{ ...mTh, borderRight: 'none' }}>Priorité<ColResizer index={7} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
                     {list.map(({ task, step }) => {
                       const key = step ? `s${step.id}` : `t${task.id}`;
-                      const idx = step ? task.steps.findIndex((s) => s.id === step.id) : -1;
-                      const prev = idx > 0 ? task.steps[idx - 1] : null;
                       const open = expanded.has(key);
                       const late = due({ task, step }) && due({ task, step }) < today;
                       return (
@@ -131,42 +121,34 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                                 </button>
                               )}
                             </td>
-                            <td style={{ ...mTd, textAlign: 'left' }} title={step ? step.name : task.title}>
-                              <button type="button" onClick={() => onOpen(task.id)} style={{
-                                ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
-                                fontSize: 14, color: M.text, textAlign: 'left', width: '100%',
-                              }}>
-                                {step ? step.name : task.title}
-                              </button>
+                            <td style={{ ...mTd, textAlign: 'left' }} title={task.title}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button type="button" onClick={() => onOpen(task.id)} style={{
+                                  ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
+                                  fontSize: 14, color: M.text, textAlign: 'left', flex: 1, minWidth: 0,
+                                }}>
+                                  {task.title}
+                                </button>
+                                {task.comment_count > 0 && <span style={{ fontSize: 12, color: '#0073EA', flexShrink: 0 }}>💬 {task.comment_count}</span>}
+                                {task.link_url && (
+                                  <a href={task.link_url} target="_blank" rel="noreferrer" title={task.link_url}
+                                    style={{ flexShrink: 0, color: '#0073EA', textDecoration: 'none' }}>↗</a>
+                                )}
+                              </span>
                             </td>
-                            <td style={{ ...mTd, textAlign: 'left', color: M.sub }} title={task.title}>
+                            <td style={{ ...mTd, textAlign: 'left' }} title={step ? step.name : ''}>
                               {step ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ ...ellipsis, flex: 1 }}>{task.title}</span>
-                                  {task.comment_count > 0 && <span style={{ fontSize: 12, color: '#0073EA', flexShrink: 0 }}>💬 {task.comment_count}</span>}
-                                  {task.link_url && (
-                                    <a href={task.link_url} target="_blank" rel="noreferrer" title={task.link_url}
-                                      style={{ flexShrink: 0, color: '#0073EA', textDecoration: 'none' }}>↗</a>
-                                  )}
-                                </span>
+                                <button type="button" onClick={() => onOpen(task.id)} style={{
+                                  ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
+                                  fontSize: 14, color: M.text, textAlign: 'left', width: '100%',
+                                }}>
+                                  {step.name}
+                                </button>
                               ) : (
-                                <span style={{ fontStyle: 'italic' }}>Tâche sans étape</span>
+                                <span style={{ fontStyle: 'italic', color: M.sub }}>Tâche sans étape</span>
                               )}
                             </td>
-                            <td style={{ ...mTd, textAlign: 'left', color: M.sub, fontSize: 13 }}
-                              title={prev ? `${prev.name} — ${STEP_STATUS[prev.status].label}${prev.done_by_name ? ` par ${prev.done_by_name} ${ago(prev.done_at)}` : ''}` : ''}>
-                              {prev ? (
-                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STEP_STATUS[prev.status].bg, flexShrink: 0 }} />
-                                  <span style={{ ...ellipsis, flex: 1 }}>
-                                    {prev.name}
-                                    {prev.status === 'fait'
-                                      ? (prev.done_by_name ? ` · ${prev.done_by_name}, ${ago(prev.done_at)}` : '')
-                                      : ` · ${prev.owners.map(name).join(', ') || 'personne'}`}
-                                  </span>
-                                </span>
-                              ) : (step ? <span style={{ color: '#C3C6D4' }}>Première étape</span> : '')}
-                            </td>
+                            <td style={{ ...mTd, color: M.sub, fontSize: 13 }} title={task.created_at}>{formatDay(task.created_at)}</td>
                             <td style={mTd}><AvatarStack ids={step ? step.owners : task.people} members={members} size={26} /></td>
                             <td style={mCell}>
                               {step ? (
