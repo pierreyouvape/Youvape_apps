@@ -7,23 +7,28 @@ export const TACHES_COLOR = '#2563EB';
 
 /** Statuts d'étape (clés identiques à services/tachesRules.STEP_STATUSES), couleurs Monday. */
 export const STEP_STATUS = {
-  a_faire:  { label: 'À faire',  bg: '#C4C4C4', ink: '#fff' },
-  en_cours: { label: 'En cours', bg: '#FDAB3D', ink: '#fff' },
-  bloque:   { label: 'Bloqué',   bg: '#DF2F4A', ink: '#fff' },
-  fait:     { label: 'Fait',     bg: '#00C875', ink: '#fff' },
+  a_faire:            { label: 'À faire',            bg: '#C4C4C4', ink: '#fff' },
+  en_cours:           { label: 'En cours',           bg: '#FDAB3D', ink: '#fff' },
+  attente_correction: { label: 'Attente correction', bg: '#A25DDC', ink: '#fff' },
+  suivi_google:       { label: 'Suivi Google',       bg: '#579BFC', ink: '#fff' },
+  bloque:             { label: 'Bloqué',             bg: '#DF2F4A', ink: '#fff' },
+  fait:               { label: 'Fait',               bg: '#00C875', ink: '#fff' },
 };
-export const STEP_STATUS_ORDER = ['a_faire', 'en_cours', 'bloque', 'fait'];
+export const STEP_STATUS_ORDER = ['a_faire', 'en_cours', 'attente_correction', 'suivi_google', 'bloque', 'fait'];
 
-/** Statut d'une tâche (calculé côté serveur). */
+/** Statut d'une tâche : calculé si elle a des étapes, sinon choisi à la main. */
 export const TASK_STATUS = {
   a_faire:  { label: 'À faire',  bg: '#C4C4C4' },
   en_cours: { label: 'En cours', bg: '#FDAB3D' },
+  bloque:   { label: 'Bloqué',   bg: '#DF2F4A' },
+  longue:   { label: 'Longue',   bg: '#784BD1' },
   fait:     { label: 'Terminée', bg: '#00C875' },
 };
+export const TASK_STATUS_ORDER = ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'];
 
 export const PRIORITY = {
   critique: { label: 'Critique', bg: '#333333' },
-  haute:    { label: 'Haute',    bg: '#E2445C' },
+  haute:    { label: 'Principale', bg: '#E2445C' },
   moyenne:  { label: 'Moyenne',  bg: '#FDAB3D' },
   basse:    { label: 'Basse',    bg: '#579BFC' },
 };
@@ -41,6 +46,15 @@ const data = (p) => p.then((r) => r.data);
 
 export const tachesApi = {
   members: () => data(axios.get(`${base}/members`)),
+  boards: () => data(axios.get(`${base}/boards`)),
+  createBoard: (body) => data(axios.post(`${base}/boards`, body)),
+  updateBoard: (id, body) => data(axios.put(`${base}/boards/${id}`, body)),
+  deleteBoard: (id) => data(axios.delete(`${base}/boards/${id}`)),
+  createGroup: (boardId, body) => data(axios.post(`${base}/boards/${boardId}/groups`, body)),
+  updateGroup: (id, body) => data(axios.put(`${base}/groups/${id}`, body)),
+  deleteGroup: (id) => data(axios.delete(`${base}/groups/${id}`)),
+  search: (q) => data(axios.get(`${base}/search`, { params: { q } })),
+  bulk: (body) => data(axios.post(`${base}/tasks/bulk`, body)),
   labels: () => data(axios.get(`${base}/labels`)),
   board: (params = {}) => data(axios.get(`${base}/board`, { params })),
   mine: () => data(axios.get(`${base}/mine`)),
@@ -79,6 +93,30 @@ export function ago(ts) {
 
 export const formatDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
 export const formatDateTime = (ts) => (ts ? new Date(ts).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+/** Ajoute n jours à une date YYYY-MM-DD (calcul en UTC : pas de décalage d'heure d'été). */
+export const addDays = (d, n) => {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+};
+export const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00:00Z`) - new Date(`${a}T00:00:00Z`)) / 86400000);
+
+/** Dates d'une tâche pour le Gantt / calendrier : les siennes, sinon l'enveloppe de ses étapes. */
+export function taskSpan(t) {
+  let start = t.start_date;
+  let end = t.due_date;
+  if (!start && !end) {
+    const s = t.steps.map((x) => x.start_date || x.due_date).filter(Boolean).sort();
+    const e = t.steps.map((x) => x.due_date || x.start_date).filter(Boolean).sort();
+    start = s[0] || null;
+    end = e[e.length - 1] || null;
+  }
+  if (!start && !end) return null;
+  return { start: start || end, end: end || start, own: Boolean(t.start_date || t.due_date) };
+}
+
+export const isOpenStep = (s) => s.status !== 'fait' && s.status !== 'bloque';
+
 export const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -94,4 +132,8 @@ export const btn = (primary = false) => ({
 export const inputStyle = {
   width: '100%', padding: '8px 10px', border: '1px solid #D1D5DB', borderRadius: 8,
   fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
+};
+
+export const labelChip = {
+  background: '#E0EAFF', color: '#1E40AF', borderRadius: 4, padding: '2px 7px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
 };

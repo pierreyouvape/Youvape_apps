@@ -87,6 +87,26 @@ function buildDoneMessage({ task, doneStep, nextStep, unblocked, finished, doneB
   };
 }
 
+/**
+ * Tâche SANS étape passée « fait » (suivi quotidien) — comme le scénario Make :
+ * « une tâche de Anthony est terminée ». Les personnes sont nommées, pas
+ * mentionnées : c'est une information pour l'équipe, pas un travail à prendre.
+ */
+function buildTaskDoneMessage({ task, doneBy, names }) {
+  const people = (task.people || []).map((id) => esc(names.get(Number(id)) || '?')).join(', ');
+  const lines = [`✅ ${doneBy ? `*${esc(doneBy)}* a terminé une tâche` : 'Tâche terminée'}${people && people !== esc(doneBy) ? ` (de ${people})` : ''}.`,
+    `*Tâche :* ${esc(task.title)}`];
+  if (task.board_name) lines.push(`*Tableau :* ${esc(task.board_name)}`);
+  const url = `${APP_URL}/taches/tache/${task.id}`;
+  return {
+    text: `Tâche « ${task.title} » terminée`,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } },
+      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Ouvrir la tâche' }, url }] },
+    ],
+  };
+}
+
 async function post(webhookUrl, payload) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10000);
@@ -114,10 +134,18 @@ async function sendDoneNotice(args) {
   return post(url, buildDoneMessage({ ...args, members }));
 }
 
+async function sendTaskDoneNotice(args) {
+  const { webhook_url: url } = await readConfig();
+  if (!url) return { ok: false, error: 'Slack non configuré' };
+  return post(url, buildTaskDoneMessage(args));
+}
+
 async function sendTest(userName) {
   const { webhook_url: url } = await readConfig();
   if (!url) return { ok: false, error: 'Slack non configuré' };
   return post(url, { text: `✅ Test de l'app Tâches envoyé par ${userName || 'un administrateur'} : les notifications arriveront ici.` });
 }
 
-module.exports = { getPublicConfig, saveConfig, sendDoneNotice, sendTest, buildDoneMessage };
+module.exports = {
+  getPublicConfig, saveConfig, sendDoneNotice, sendTaskDoneNotice, sendTest, buildDoneMessage, buildTaskDoneMessage,
+};

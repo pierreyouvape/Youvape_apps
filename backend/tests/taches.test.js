@@ -7,7 +7,7 @@
 
 const assert = require('assert');
 const { nextStepPlan, taskStatus } = require('../src/services/tachesRules');
-const { buildDoneMessage } = require('../src/services/tachesSlack');
+const { buildDoneMessage, buildTaskDoneMessage } = require('../src/services/tachesSlack');
 
 const MAXIME = 2;
 const GAIA = 4;
@@ -91,5 +91,14 @@ const last = buildDoneMessage({
   unblocked: false, finished: true, doneBy: null, recipients: [MAXIME], members: {}, names,
 });
 assert.ok(last.blocks[0].text.text.includes('Toutes les étapes sont faites'));
+
+// Tâche sans étape terminée (suivi quotidien) : noms en gras, pas de mention.
+const td = buildTaskDoneMessage({ task: { id: 7, title: 'MEP tickets GitLab', board_name: 'Suivi', people: [MAXIME] }, doneBy: 'Pierre', names });
+assert.ok(td.blocks[0].text.text.includes('*Pierre* a terminé une tâche (de Maxime)'), td.blocks[0].text.text);
+assert.ok(!td.blocks[0].text.text.includes('<@'));
+assert.ok(td.blocks[1].elements[0].url.endsWith('/taches/tache/7'));
+
+// Statuts Monday en plus : « Attente correction » compte comme en cours.
+assert.strictEqual(taskStatus([{ status: 'attente_correction' }, { status: 'bloque' }]), 'en_cours');
 
 console.log('✓ taches.test.js');

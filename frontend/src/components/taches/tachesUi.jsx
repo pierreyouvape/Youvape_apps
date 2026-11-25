@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  STEP_STATUS, STEP_STATUS_ORDER, PRIORITY, PRIORITY_ORDER, TASK_STATUS, avatarColor, initials,
+  STEP_STATUS, STEP_STATUS_ORDER, PRIORITY, PRIORITY_ORDER, TASK_STATUS, TASK_STATUS_ORDER, avatarColor, initials, labelChip,
 } from './tachesShared';
 
 /* Petites briques d'écran de l'app Tâches (pastilles, avatars, menus). */
@@ -71,7 +71,7 @@ export function StepStatusPill({ status, onChange, disabled }) {
         {s.label}
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={160}>
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={190}>
           {STEP_STATUS_ORDER.map((k) => (
             <button key={k} type="button" style={{ ...menuItem, padding: 3 }}
               onClick={() => { setAnchor(null); if (k !== status) onChange(k); }}>
@@ -86,9 +86,106 @@ export function StepStatusPill({ status, onChange, disabled }) {
   );
 }
 
-export function TaskStatusPill({ status }) {
+/**
+ * Statut d'une tâche. Avec `onChange` (tâche sans étape) : cliquable.
+ * Sans : calculé depuis les étapes, en lecture seule.
+ */
+export function TaskStatusPill({ status, onChange }) {
+  const [anchor, setAnchor] = useState(null);
   const s = TASK_STATUS[status] || TASK_STATUS.a_faire;
-  return <span style={{ ...pillStyle(s.bg), display: 'inline-block' }}>{s.label}</span>;
+  return (
+    <>
+      <button type="button" disabled={!onChange}
+        title={onChange ? 'Changer le statut' : 'Calculé à partir des étapes'}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        style={{ ...pillStyle(s.bg), cursor: onChange ? 'pointer' : 'default' }}>
+        {s.label}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={160}>
+          {TASK_STATUS_ORDER.map((k) => (
+            <button key={k} type="button" style={{ ...menuItem, padding: 3 }}
+              onClick={() => { setAnchor(null); if (k !== status) onChange(k); }}>
+              <span style={{ ...pillStyle(TASK_STATUS[k].bg), width: '100%', opacity: k === status ? 0.55 : 1 }}>
+                {TASK_STATUS[k].label}
+              </span>
+            </button>
+          ))}
+        </Popover>
+      )}
+    </>
+  );
+}
+
+/** Menu « ⋯ » : [{ label, onClick, danger, hidden }]. */
+export function DotsMenu({ items, title = 'Actions', size = 16 }) {
+  const [anchor, setAnchor] = useState(null);
+  return (
+    <>
+      <button type="button" title={title} onClick={(e) => { e.stopPropagation(); setAnchor(anchor ? null : e.currentTarget); }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: size, padding: '2px 6px', borderRadius: 6, lineHeight: 1 }}>
+        ⋯
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={210}>
+          {items.filter((i) => !i.hidden).map((i) => (
+            <button key={i.label} type="button" style={{ ...menuItem, color: i.danger ? '#B91C1C' : '#374151', fontWeight: 600 }}
+              onClick={() => { setAnchor(null); i.onClick(); }}>
+              {i.label}
+            </button>
+          ))}
+        </Popover>
+      )}
+    </>
+  );
+}
+
+/** Étiquettes multiples : pastilles retirables + champ (Entrée pour ajouter). */
+export function LabelsInput({ value = [], suggestions = [], onChange, compact = false }) {
+  const [draft, setDraft] = useState('');
+  const add = (v) => {
+    const l = v.trim();
+    if (l && !value.includes(l)) onChange([...value, l]);
+    setDraft('');
+  };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', border: compact ? 'none' : '1px solid #E5E7EB', borderRadius: 6, padding: compact ? 0 : '4px 6px' }}>
+      {value.map((l) => (
+        <span key={l} style={{ ...labelChip, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {l}
+          <button type="button" onClick={() => onChange(value.filter((x) => x !== l))} title="Retirer"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E40AF', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+        </span>
+      ))}
+      <input list="taches-labels-all" value={draft} placeholder={value.length ? '' : 'Ajouter une étiquette…'}
+        onChange={(e) => {
+          // Choisir une suggestion de la liste l'ajoute directement.
+          if (suggestions.includes(e.target.value) && e.nativeEvent?.inputType !== 'insertText') add(e.target.value);
+          else setDraft(e.target.value);
+        }}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(draft); } }}
+        onBlur={() => { if (draft.trim()) add(draft); }}
+        style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 13, minWidth: 110, flex: 1, padding: '3px 0' }} />
+      <datalist id="taches-labels-all">{suggestions.filter((l) => !value.includes(l)).map((l) => <option key={l} value={l} />)}</datalist>
+    </div>
+  );
+}
+
+/** Deux dates (début → fin), vides possibles. */
+export function DateRange({ start, end, onChange, late = false }) {
+  const st = {
+    border: '1px solid transparent', borderRadius: 6, padding: '2px 3px', fontFamily: 'inherit', fontSize: 12,
+    background: 'transparent', color: '#374151', width: 118,
+  };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: late ? '#FEE2E2' : '#F3F4F6', borderRadius: 8, padding: '1px 4px' }}>
+      <input type="date" value={start || ''} title="Début" style={st}
+        onChange={(e) => onChange({ start_date: e.target.value || null })} />
+      <span style={{ color: '#9CA3AF', fontSize: 11 }}>→</span>
+      <input type="date" value={end || ''} title="Fin" style={{ ...st, color: late ? '#B91C1C' : '#374151' }}
+        onChange={(e) => onChange({ due_date: e.target.value || null })} />
+    </span>
+  );
 }
 
 /** Priorité : pastille cliquable (ou lecture seule sans onChange). */
@@ -186,7 +283,7 @@ export function ProgressBar({ counts, width = 130 }) {
   const done = counts.fait || 0;
   return (
     <span title={`${done} / ${total} étapes faites`} style={{ display: 'inline-flex', width, height: 22, borderRadius: 3, overflow: 'hidden' }}>
-      {['fait', 'en_cours', 'a_faire', 'bloque'].map((k) => (counts[k] ? (
+      {['fait', 'en_cours', 'attente_correction', 'suivi_google', 'a_faire', 'bloque'].map((k) => (counts[k] ? (
         <span key={k} style={{ flex: counts[k], background: STEP_STATUS[k].bg }} />
       ) : null))}
     </span>

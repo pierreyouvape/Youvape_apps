@@ -1,11 +1,12 @@
 import { useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { tachesApi, apiError } from './tachesShared';
-import { btn, inputStyle } from './tachesShared';
+import { btn, inputStyle, labelChip } from './tachesShared';
+import { LabelsInput } from './tachesUi';
 import StepsEditor from './StepsEditor';
 
 /** Modèles d'enchaînement (Fiche Produit…), recopiés à la création d'une tâche. */
-export default function TemplatesTab({ members, templates, onChange }) {
+export default function TemplatesTab({ members, labels, templates, onChange }) {
   const { permissions, isSuperAdmin } = useContext(AuthContext);
   const canEdit = isSuperAdmin || permissions?.taches?.write === true;
   const [editing, setEditing] = useState(null); // null | { id?, name, label, steps }
@@ -45,8 +46,8 @@ export default function TemplatesTab({ members, templates, onChange }) {
               <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} style={inputStyle} />
             </div>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', marginBottom: 4 }}>Étiquette posée sur la tâche</div>
-              <input value={editing.label || ''} onChange={(e) => setEditing({ ...editing, label: e.target.value })} style={inputStyle} />
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', marginBottom: 4 }}>Étiquettes posées sur la tâche</div>
+              <LabelsInput value={editing.labels || []} suggestions={labels} onChange={(l) => setEditing({ ...editing, labels: l })} />
             </div>
           </div>
           <StepsEditor steps={editing.steps} members={members} onChange={(steps) => setEditing({ ...editing, steps })} />
@@ -59,7 +60,7 @@ export default function TemplatesTab({ members, templates, onChange }) {
         <>
           {canEdit && (
             <button type="button" style={{ ...btn(true), marginBottom: 14 }}
-              onClick={() => setEditing({ name: '', label: '', steps: [{ name: '', owners: [], notify: [] }] })}>
+              onClick={() => setEditing({ name: '', labels: [], steps: [{ name: '', owners: [], notify: [] }] })}>
               + Nouveau modèle
             </button>
           )}
@@ -68,7 +69,7 @@ export default function TemplatesTab({ members, templates, onChange }) {
               <div key={t.id} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                   <strong style={{ fontSize: 16, color: '#1F2937' }}>{t.name}</strong>
-                  {t.label && <span style={{ background: '#E0EAFF', color: '#1E40AF', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>{t.label}</span>}
+                  {(t.labels || []).map((l) => <span key={l} style={labelChip}>{l}</span>)}
                   <span style={{ flex: 1 }} />
                   {canEdit && <button type="button" style={btn()} onClick={() => setEditing({ ...t, steps: t.steps.map((s) => ({ ...s })) })}>Modifier</button>}
                   {canEdit && <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => remove(t)}>Supprimer</button>}

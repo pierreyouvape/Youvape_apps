@@ -1,16 +1,14 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
-import { tachesApi, apiError, formatDateTime, STEP_STATUS, TACHES_COLOR } from './tachesShared';
-import { InlineText, PriorityPill, TaskStatusPill, Avatar } from './tachesUi';
-import { btn } from './tachesShared';
+import { tachesApi, apiError, formatDateTime, STEP_STATUS, TASK_STATUS, TACHES_COLOR, btn, inputStyle } from './tachesShared';
+import { InlineText, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, LabelsInput, DateRange } from './tachesUi';
 import StepsTable from './StepsTable';
 
 const label = { fontSize: 12, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6 };
 
 /** Fenêtre large d'une tâche : champs, étapes, commentaires, journal. */
-export default function TaskModal({ taskId, members, labels, onClose, onChanged, focusUserId }) {
-  const { user, permissions, isSuperAdmin } = useContext(AuthContext);
-  const canDelete = isSuperAdmin || permissions?.taches?.write === true;
+export default function TaskModal({ taskId, members, labels, boards, canWrite, onClose, onChanged, focusUserId }) {
+  const { user } = useContext(AuthContext);
   const [task, setTask] = useState(null);
   const [error, setError] = useState(null);
   const [comment, setComment] = useState('');
@@ -54,35 +52,31 @@ export default function TaskModal({ taskId, members, labels, onClose, onChanged,
     } catch (e) { setError(apiError(e)); }
   };
 
+  const board = task && boards.find((b) => b.id === task.board_id);
+
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
       position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,0.45)',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto',
     }}>
-      <div style={{
-        background: '#fff', borderRadius: 14, width: 1100, maxWidth: '100%',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif",
-      }}>
+      <div style={{ background: '#fff', borderRadius: 14, width: 1180, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
         {!task ? (
           <div style={{ padding: 40, color: error ? '#B91C1C' : '#6B7280' }}>{error || 'Chargement…'}</div>
         ) : (
           <>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid #E5E7EB' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <InlineText value={task.title} onSave={(title) => save({ title })}
-                  style={{ fontSize: 22, fontWeight: 800, color: '#1F2937', width: '100%' }} />
+                <InlineText value={task.title} onSave={(title) => save({ title })} style={{ fontSize: 22, fontWeight: 800, color: '#1F2937', width: '100%' }} />
                 <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>
                   {task.updated_by_name ? `Modifiée par ${task.updated_by_name} · ` : ''}{formatDateTime(task.updated_at)}
-                  {task.archived_at && <strong style={{ color: '#B45309' }}> · Archivée</strong>}
+                  {task.archived_at && <strong style={{ color: '#B45309' }}> · Archivée le {formatDateTime(task.archived_at)}</strong>}
                 </div>
               </div>
-              <TaskStatusPill status={task.status} />
-              <button type="button" onClick={onClose} title="Fermer" style={{
-                background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: '#9CA3AF', cursor: 'pointer',
-              }}>×</button>
+              <TaskStatusPill status={task.status} onChange={task.steps.length ? undefined : (manual_status) => save({ manual_status })} />
+              <button type="button" onClick={onClose} title="Fermer" style={{ background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: '#9CA3AF', cursor: 'pointer' }}>×</button>
             </div>
 
-            <div style={{ padding: '16px 22px', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16 }}>
+            <div style={{ padding: '16px 22px', display: 'grid', gridTemplateColumns: '2fr 1.4fr 1fr 1fr', gap: 16 }}>
               <div>
                 <div style={label}>Lien</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -92,18 +86,38 @@ export default function TaskModal({ taskId, members, labels, onClose, onChanged,
                 </div>
               </div>
               <div>
-                <div style={label}>Étiquette</div>
-                <input list="taches-labels" defaultValue={task.label || ''} key={task.label}
-                  onBlur={(e) => { if ((e.target.value || '') !== (task.label || '')) save({ label: e.target.value }); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                  placeholder="Fiche Produit…"
-                  style={{ border: '1px solid #E5E7EB', borderRadius: 6, padding: '6px 8px', fontFamily: 'inherit', fontSize: 14, width: '100%', boxSizing: 'border-box' }} />
-                <datalist id="taches-labels">{labels.map((l) => <option key={l} value={l} />)}</datalist>
+                <div style={label}>Étiquettes</div>
+                <LabelsInput value={task.labels} suggestions={labels} onChange={(l) => save({ labels: l })} />
+              </div>
+              <div>
+                <div style={label}>Personne(s)</div>
+                <PeoplePicker title="Personne(s) de la tâche" value={task.people} members={members} onChange={(people) => save({ people })} />
               </div>
               <div>
                 <div style={label}>Priorité</div>
                 <PriorityPill priority={task.priority} onChange={(priority) => save({ priority })} />
               </div>
+              <div>
+                <div style={label}>Dates</div>
+                <DateRange start={task.start_date} end={task.due_date} onChange={save} />
+              </div>
+              <div>
+                <div style={label}>Tableau</div>
+                <select value={task.board_id} onChange={(e) => save({ board_id: Number(e.target.value) })} style={{ ...inputStyle, padding: '6px 8px' }}>
+                  {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={label}>Groupe</div>
+                <select value={task.group_id || ''} onChange={(e) => save({ group_id: Number(e.target.value) })} style={{ ...inputStyle, padding: '6px 8px' }}>
+                  {(board?.groups || []).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              {!task.steps.length && (
+                <div style={{ fontSize: 12, color: '#6B7280', alignSelf: 'end' }}>
+                  Sans étape : statut choisi à la main ({TASK_STATUS[task.manual_status]?.label}).
+                </div>
+              )}
             </div>
 
             {error && <div style={{ margin: '0 22px 10px', padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13 }}>{error}</div>}
@@ -115,14 +129,13 @@ export default function TaskModal({ taskId, members, labels, onClose, onChanged,
               </div>
               <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>
                 Passer une étape à « Fait » débloque la suivante et prévient sur Slack les personnes « À prévenir »
-                (à défaut, le responsable de l'étape suivante).
+                (à défaut, le responsable de l'étape suivante). 🗑 supprime une étape.
               </p>
             </div>
 
             <div style={{ padding: '0 22px 18px' }}>
               <div style={label}>Description</div>
-              <InlineText multiline value={task.description} placeholder="Ajouter une description…"
-                onSave={(description) => save({ description })}
+              <InlineText multiline value={task.description} placeholder="Ajouter une description…" onSave={(description) => save({ description })}
                 style={{ fontSize: 14, color: '#374151', whiteSpace: 'pre-wrap', width: '100%' }} />
             </div>
 
@@ -163,10 +176,12 @@ export default function TaskModal({ taskId, members, labels, onClose, onChanged,
               </button>
               <span style={{ flex: 1 }} />
               <button type="button" style={btn()} onClick={() => save({ archived: !task.archived_at })}>
-                {task.archived_at ? 'Désarchiver' : 'Archiver'}
+                {task.archived_at ? '↩ Désarchiver' : '🗄 Archiver'}
               </button>
-              {canDelete && (
-                <button type="button" style={{ ...btn(), color: '#B91C1C', borderColor: '#FCA5A5' }} onClick={remove}>Supprimer</button>
+              {canWrite ? (
+                <button type="button" style={{ ...btn(), color: '#B91C1C', borderColor: '#FCA5A5' }} onClick={remove}>🗑 Supprimer la tâche</button>
+              ) : (
+                <span style={{ fontSize: 12, color: '#9CA3AF' }}>Supprimer : droit d'écriture requis</span>
               )}
             </div>
             {showLog && (
@@ -174,8 +189,7 @@ export default function TaskModal({ taskId, members, labels, onClose, onChanged,
                 {task.events.length === 0 && <div style={{ color: '#9CA3AF' }}>Rien pour l'instant.</div>}
                 {task.events.map((e) => (
                   <div key={e.id} style={{ padding: '4px 0', borderBottom: '1px dashed #EEF0F3' }}>
-                    <span style={{ color: '#9CA3AF' }}>{formatDateTime(e.created_at)}</span>{' · '}
-                    {eventText(e, members)}
+                    <span style={{ color: '#9CA3AF' }}>{formatDateTime(e.created_at)}</span>{' · '}{eventText(e, members)}
                   </div>
                 ))}
               </div>
@@ -196,7 +210,9 @@ function eventText(e, members) {
       return d.auto
         ? `« ${d.name} » débloquée automatiquement (${STEP_STATUS[d.to]?.label})`
         : `${e.user_name || '?'} : « ${d.name} » ${STEP_STATUS[d.from]?.label} → ${STEP_STATUS[d.to]?.label}`;
-    case 'slack': return `Slack envoyé (${names(d.to)})`;
+    case 'task_status': return `${e.user_name || '?'} : statut ${TASK_STATUS[d.from]?.label} → ${TASK_STATUS[d.to]?.label}`;
+    case 'step_deleted': return `${e.user_name || '?'} a supprimé l'étape « ${d.name} »`;
+    case 'slack': return `Slack envoyé${d.to?.length ? ` (${names(d.to)})` : ''}`;
     case 'slack_error': return <span style={{ color: '#B91C1C' }}>Slack non envoyé : {d.error}</span>;
     default: return e.kind;
   }

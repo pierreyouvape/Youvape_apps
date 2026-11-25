@@ -2,7 +2,12 @@
  * App Tâches — règles pures (sans base), testées dans tests/taches.test.js.
  */
 
-const STEP_STATUSES = ['a_faire', 'en_cours', 'bloque', 'fait'];
+/** Statuts d'étape (Monday : + « Attente correction », « Suivi Google »). */
+const STEP_STATUSES = ['a_faire', 'en_cours', 'attente_correction', 'suivi_google', 'bloque', 'fait'];
+/** Statuts saisis à la main d'une tâche SANS étape (Monday : En cours / Fait / Bloqué ; suivi : Longue). */
+const TASK_STATUSES = ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'];
+/** Une étape « en mouvement » : ni à faire, ni bloquée, ni faite. */
+const ACTIVE = (status) => !['a_faire', 'bloque', 'fait'].includes(status);
 
 /**
  * Ce qu'entraîne le passage à « fait » de l'étape `doneId`.
@@ -38,14 +43,15 @@ function nextStepPlan(steps, doneId) {
 
 /**
  * Statut d'une tâche, calculé depuis ses étapes :
- * toutes faites → fait ; au moins une faite ou en cours → en_cours ; sinon à faire.
+ * toutes faites → fait ; au moins une faite ou en mouvement (en cours,
+ * attente correction, suivi Google) → en_cours ; sinon à faire.
  * Sans étape : le statut saisi à la main.
  */
 function taskStatus(steps, manualStatus = 'a_faire') {
   if (!steps.length) return manualStatus;
   if (steps.every((s) => s.status === 'fait')) return 'fait';
-  if (steps.some((s) => s.status === 'fait' || s.status === 'en_cours')) return 'en_cours';
+  if (steps.some((s) => s.status === 'fait' || ACTIVE(s.status))) return 'en_cours';
   return 'a_faire';
 }
 
-module.exports = { STEP_STATUSES, nextStepPlan, taskStatus };
+module.exports = { STEP_STATUSES, TASK_STATUSES, nextStepPlan, taskStatus };

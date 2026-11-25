@@ -1,5 +1,6 @@
 const tachesModel = require('../models/tachesModel');
 const tachesSlack = require('../services/tachesSlack');
+const userPermissionsModel = require('../models/userPermissionsModel');
 
 /** Enveloppe commune : erreurs métier (statusCode) renvoyées telles quelles. */
 const handle = (fn) => async (req, res) => {
@@ -18,15 +19,29 @@ const body = (req) => req.body || {};
 
 exports.getMembers = handle(() => tachesModel.getMembers());
 exports.getLabels = handle(() => tachesModel.getLabels());
+exports.getBoards = handle(() => tachesModel.getBoards());
+exports.createBoard = handle((req) => tachesModel.createBoard(body(req)));
+exports.updateBoard = handle((req) => tachesModel.updateBoard(id(req), body(req)));
+exports.deleteBoard = handle((req) => tachesModel.deleteBoard(id(req)));
+exports.createGroup = handle((req) => tachesModel.createGroup(id(req), body(req)));
+exports.updateGroup = handle((req) => tachesModel.updateGroup(id(req), body(req)));
+exports.deleteGroup = handle((req) => tachesModel.deleteGroup(id(req)));
+
 exports.getBoard = handle((req) => tachesModel.getBoard({
-  done: req.query.done === '1',
+  boardId: Number(req.query.board) || null,
   archived: req.query.archived === '1',
 }));
+exports.search = handle((req) => tachesModel.search(req.query.q));
 exports.getMine = handle((req) => tachesModel.getMine(uid(req)));
 exports.getTask = handle((req) => tachesModel.getTask(id(req)));
 exports.createTask = handle((req) => tachesModel.createTask(uid(req), body(req)));
 exports.updateTask = handle((req) => tachesModel.updateTask(uid(req), id(req), body(req)));
 exports.deleteTask = handle((req) => tachesModel.deleteTask(id(req)));
+// Supprimer en masse demande l'écriture ; archiver / déplacer, non.
+exports.bulk = handle(async (req) => tachesModel.bulk(uid(req), body(req), {
+  canDelete: userPermissionsModel.isSuperAdmin(req.user.email)
+    || await userPermissionsModel.hasPermission(uid(req), 'taches', 'write'),
+}));
 
 exports.addStep = handle((req) => tachesModel.addStep(uid(req), id(req), body(req)));
 exports.updateStep = handle((req) => tachesModel.updateStep(uid(req), id(req), body(req)));
