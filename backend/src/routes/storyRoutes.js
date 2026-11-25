@@ -33,7 +33,8 @@ router.get('/products/search', read, widgetController.searchProducts);
 router.get('/categories/search', read, widgetController.searchCategories);
 router.post('/publish', write, widgetController.publish);
 
-// Stories (vidéos)
+// Stories (vidéos) — /order avant /:id
+router.put('/order', write, storyController.reorder);
 router.get('/', read, storyController.list);
 router.post('/', write, storyController.create);
 router.get('/:id', read, storyController.get);

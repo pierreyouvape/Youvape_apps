@@ -14,7 +14,7 @@ const list = async ({ includeArchived = false } = {}) => {
        -- Nom du produit lié au bouton d'action, affiché à côté de son numéro.
        LEFT JOIN products pr ON pr.wp_product_id = s.wp_product_id
       WHERE $1 OR s.status <> 'archived'
-      ORDER BY s.created_at DESC`,
+      ORDER BY s.sort_order NULLS FIRST, s.created_at DESC`,
     [includeArchived],
   );
   return rows;
@@ -38,12 +38,44 @@ const slugExists = async (slug) => {
 
 const create = async ({ slug, title, description, format, createdBy }) => {
   const { rows } = await pool.query(
-    `INSERT INTO stories (slug, title, description, format, created_by)
-     VALUES ($1, $2, $3, $4, $5)
+    // Nouvelle vidéo en tête de liste, comme avant le classement manuel.
+    `INSERT INTO stories (slug, title, description, format, created_by, sort_order)
+     VALUES ($1, $2, $3, $4, $5, COALESCE((SELECT MIN(sort_order) FROM stories), 1) - 1)
      RETURNING *`,
     [slug, title, description || null, format, createdBy || null],
   );
   return rows[0];
+};
+
+/**
+ * Nouvel ordre des vidéos : `ids` = les vidéos affichées, de la première à la
+ * dernière. Elles prennent les positions 1, 2, 3… ; les autres (archivées non
+ * affichées) passent après, dans leur ordre actuel, pour que rien ne se mélange.
+ */
+const reorder = async (ids) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE stories s SET sort_order = o.pos
+         FROM unnest($1::int[]) WITH ORDINALITY AS o(id, pos)
+        WHERE s.id = o.id`,
+      [ids],
+    );
+    await client.query(
+      `UPDATE stories s SET sort_order = o.pos
+         FROM (SELECT id, cardinality($1::int[]) + ROW_NUMBER() OVER (ORDER BY sort_order NULLS FIRST, created_at DESC) AS pos
+                 FROM stories WHERE NOT (id = ANY($1::int[]))) o
+        WHERE s.id = o.id`,
+      [ids],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 /** Mise à jour des seuls champs éditables (titre, description, bouton d'action). */
@@ -233,6 +265,7 @@ const statsForStory = async (slug, { days = 30, includeTests = false } = {}) => 
 };
 
 module.exports = {
+  reorder,
   placementsByStory,
   statsByStory,
   statsForStory,

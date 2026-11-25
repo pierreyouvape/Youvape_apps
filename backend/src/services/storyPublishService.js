@@ -60,7 +60,8 @@ const publish = async ({ userId } = {}) => {
   const data = await widgetModel.dataForPublish();
   const generatedAt = new Date().toISOString();
 
-  const stories = Object.fromEntries(data.stories.map((s) => [s.slug, storyJson(s)]));
+  // Ordre réglé dans l'app : clés dans cet ordre + `position` (1 = en tête), ajout du 25/11/2026.
+  const stories = Object.fromEntries(data.stories.map((s, i) => [s.slug, { ...storyJson(s), position: i + 1 }]));
 
   const widgets = {};
   for (const w of data.widgets) {

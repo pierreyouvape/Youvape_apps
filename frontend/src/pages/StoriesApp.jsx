@@ -88,6 +88,35 @@ const StoriesApp = () => {
   const [playerTime, setPlayerTime] = useState(0);
   const [coverState, setCoverState] = useState(null); // saving | saved | error
   const replaceTarget = useRef(null);
+  // Ordre manuel des vidéos : glisser-déposer par la poignée, ou flèches ↑ ↓.
+  const [dragId, setDragId] = useState(null);
+  const [dropId, setDropId] = useState(null);
+  const [orderState, setOrderState] = useState(null); // saving | saved | error
+  const orderSeq = useRef(0);
+
+  /** Déplace la vidéo `id` à la place de `targetId` (ou d'un cran avec delta) et enregistre l'ordre. */
+  const moveStory = async (id, { targetId, delta }) => {
+    const from = stories.findIndex((s) => s.id === id);
+    if (from < 0) return;
+    const to = targetId !== undefined ? stories.findIndex((s) => s.id === targetId) : from + delta;
+    if (to < 0 || to >= stories.length || to === from) return;
+    const next = [...stories];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setStories(next);
+    const seq = ++orderSeq.current;
+    setOrderState('saving');
+    try {
+      await axios.put(`${API_URL}/stories/order`, { ids: next.map((s) => s.id) });
+      if (seq === orderSeq.current) setOrderState('saved');
+    } catch (err) {
+      if (seq === orderSeq.current) {
+        setOrderState('error');
+        setError(err.response?.data?.error || err.message || 'Ordre non enregistré');
+        fetchData({ quiet: true });
+      }
+    }
+  };
 
   const fetchData = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -361,11 +390,22 @@ const StoriesApp = () => {
                 <input type="checkbox" checked={includeTests} onChange={(e) => setIncludeTests(e.target.checked)} />
                 Inclure les tests (page d’aperçu)
               </label>
+              <span style={{ marginLeft: 'auto' }}>
+                {orderState === 'saving' && 'Enregistrement de l’ordre…'}
+                {orderState === 'saved' && (
+                  <span style={{ color: C.vert, fontWeight: 700 }}>
+                    Ordre enregistré — visible sur le site après « Publier sur le site »
+                  </span>
+                )}
+                {orderState === 'error' && <span style={{ color: C.rouge, fontWeight: 700 }}>Ordre non enregistré</span>}
+                {!orderState && 'Glissez ⋮⋮ ou utilisez ↑ ↓ pour changer l’ordre des vidéos'}
+              </span>
             </div>
             <div style={{ background: C.blanc, borderRadius: 14, border: `1px solid ${C.grisCL}`, overflow: 'hidden' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
+                    <th style={{ ...th, width: 52 }} title="Ordre d’affichage sur le site">Ordre</th>
                     <th style={{ ...th, width: 64 }} />
                     <th style={th}>Vidéo</th>
                     <th style={th}>Statut</th>
@@ -379,12 +419,32 @@ const StoriesApp = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {stories.map((s) => {
+                  {stories.map((s, idx) => {
                     const st = STATUSES[s.status] || STATUSES.awaiting_upload;
                     const sending = uploads[s.id];
                     const g = gain(s.source_size, s.video_size);
                     return (
-                      <tr key={s.id}>
+                      <tr key={s.id}
+                        onDragOver={dragId !== null ? (e) => { e.preventDefault(); if (dropId !== s.id) setDropId(s.id); } : undefined}
+                        onDrop={dragId !== null ? (e) => { e.preventDefault(); moveStory(dragId, { targetId: s.id }); setDragId(null); setDropId(null); } : undefined}
+                        style={{
+                          opacity: dragId === s.id ? 0.4 : 1,
+                          boxShadow: dropId === s.id && dragId !== s.id ? `inset 0 3px 0 ${C.story}` : 'none',
+                        }}>
+                        <td style={{ ...td, whiteSpace: 'nowrap', padding: '10px 6px 10px 12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span draggable title="Glisser pour déplacer"
+                              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(s.id)); setDragId(s.id); }}
+                              onDragEnd={() => { setDragId(null); setDropId(null); }}
+                              style={{ cursor: 'grab', color: C.grisM, fontSize: 16, userSelect: 'none', padding: '0 2px' }}>⋮⋮</span>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <button type="button" disabled={idx === 0} onClick={() => moveStory(s.id, { delta: -1 })} title="Monter"
+                                style={{ border: 'none', background: 'none', padding: 0, lineHeight: 1, fontSize: 12, cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? C.grisCL : C.grisTF }}>▲</button>
+                              <button type="button" disabled={idx === stories.length - 1} onClick={() => moveStory(s.id, { delta: 1 })} title="Descendre"
+                                style={{ border: 'none', background: 'none', padding: 0, lineHeight: 1, fontSize: 12, cursor: idx === stories.length - 1 ? 'default' : 'pointer', color: idx === stories.length - 1 ? C.grisCL : C.grisTF }}>▼</button>
+                            </div>
+                          </div>
+                        </td>
                         <td style={td}>
                           {s.thumb_url ? (
                             <img src={s.thumb_url} alt="" width={48} height={48}

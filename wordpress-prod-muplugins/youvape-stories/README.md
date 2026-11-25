@@ -23,7 +23,7 @@ sitemap vidéo, attribution des commandes.
 « Publier sur le site » dans /stories écrit sur `https://videos.youvape.fr` :
 
 - `stories/index.json` — tout en un fichier, cache 60 s :
-  - `stories` : slug → `{ title, description, format, duration, video, poster, thumb, gif, cta, updated_at, created_at }`
+  - `stories` : slug → `{ title, description, format, duration, video, poster, thumb, gif, cta, updated_at, created_at, position }`
     - `updated_at` : date de la dernière compression de la vidéo — **change** à chaque
       nouvelle version (`version`).
     - `created_at` (ajouté le 22/10/2026) : date de création de la story, c'est-à-dire
@@ -33,6 +33,11 @@ sitemap vidéo, attribution des commandes.
       ou produit. À utiliser pour `uploadDate` des données structurées `VideoObject`.
       Lu depuis `stories.created_at` (posé à la création de la ligne, jamais mis à jour).
       Un site qui lit un index antérieur à ce champ doit prévoir un repli.
+  - `position` (ajouté le 25/11/2026) : rang de la vidéo (1 = première) dans l'ordre
+    choisi à la main dans l'app /stories (glisser-déposer). Les clés de `stories` sont
+    aussi écrites dans cet ordre. La médiathèque `/videos` doit trier par `position`
+    croissante, avec repli sur `updated_at` décroissant pour un index antérieur à ce champ.
+    Une nouvelle vidéo arrive en tête (position 1).
   - `widgets` : slug → `{ title, layout: "bubbles" | "cards", stories: [slugs dans l'ordre] }`
   - `products` : `wp_product_id` (parent ou simple) → `[slugs de widgets]`
   - `pages` : chemin (`/youvape-awards`) → `[slugs de widgets]`

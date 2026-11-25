@@ -166,7 +166,8 @@ const dataForPublish = async () => {
         ORDER BY p.target_type, p.target_ref, p.widget_id`,
     ),
     // Toutes les vidéos prêtes, même hors widget : la future médiathèque /videos les liste toutes.
-    pool.query(`SELECT * FROM stories WHERE status = 'ready' ORDER BY created_at DESC`),
+    // Dans l'ordre réglé dans l'app (classement manuel), publié tel quel (`position`).
+    pool.query(`SELECT * FROM stories WHERE status = 'ready' ORDER BY sort_order NULLS FIRST, created_at DESC`),
     // Nom, photo et prix des fiches produit visées : pour la page d'aperçu (le
     // site, lui, a déjà ces informations sur la fiche).
     pool.query(

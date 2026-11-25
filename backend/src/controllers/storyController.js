@@ -231,6 +231,20 @@ const cover = async (req, res) => {
   }
 };
 
+/** PUT /stories/order { ids: [...] } : ordre des vidéos, de la première à la dernière. */
+const reorder = async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.map((x) => parseInt(x, 10)) : null;
+    if (!ids || !ids.length || ids.some((n) => !Number.isFinite(n)) || new Set(ids).size !== ids.length) {
+      return res.status(400).json({ error: 'Liste de vidéos invalide' });
+    }
+    await storyModel.reorder(ids);
+    res.json({ ok: true });
+  } catch (err) {
+    fail(res, err);
+  }
+};
+
 const archive = async (req, res) => {
   try {
     const story = await storyModel.setArchived(req.params.id, req.body.archived !== false);
@@ -242,4 +256,4 @@ const archive = async (req, res) => {
   }
 };
 
-module.exports = { list, get, stats, create, replaceSource, uploaded, update, reprocess, cover, archive };
+module.exports = { list, get, stats, create, replaceSource, uploaded, update, reprocess, cover, reorder, archive };
