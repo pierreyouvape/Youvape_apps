@@ -484,7 +484,7 @@ const ECART_KINDS = {
   },
   volumetrique: {
     label: 'Poids volumétrique', color: C.orange, bg: C.orangeL,
-    help: "Facturé au poids volumétrique (L × l × H ÷ 5 000), prévu par les CGV 2026 (art. 4.2) : non réclamable. L'écart affiché est le surcoût dû à la taille du carton, qu'un carton plus petit aurait évité.",
+    help: "Facturé au poids volumétrique (L × l × H ÷ 5 000), prévu par les CGV 2026 et 2027 (art. 4.2) : non réclamable. L'écart affiché est le surcoût dû à la taille du carton, qu'un carton plus petit aurait évité.",
   },
   pesee: {
     label: 'Pesée plus lourde', color: C.greyT, bg: C.grey,
@@ -670,7 +670,7 @@ function EcartsTab({ result }) {
   return (
     <div style={{ padding: 18 }}>
       <div style={{ fontSize: 12.5, color: C.greyT, marginBottom: 12 }}>
-        Contrôlé selon les CGV Mondial Relay {csv.cgv === '2025' ? 'annexées au contrat n° 31257 (2025)' : 'du 01/10/2025, en vigueur depuis le 1er janvier 2026'}.
+        Contrôlé selon les CGV Mondial Relay {csv.cgv === '2025' ? 'annexées au contrat n° 31257 (2025)' : csv.cgv === '2027' ? 'du 01/11/2026, en vigueur depuis le 1er janvier 2027 (grille 2027)' : 'du 01/10/2025, en vigueur depuis le 1er janvier 2026'}.
       </div>
       {gap != null && gap > 50 && (
         <div style={{ background: C.blueL, border: `1px solid ${C.blue}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.dark, marginBottom: 16 }}>
@@ -1154,12 +1154,12 @@ export default function MondialRelayApp() {
               </div>
               {stats.pu_checked > 0 && (
                 <div style={{ background: stats.pu_grid_ok ? C.greenL : C.orangeL, color: stats.pu_grid_ok ? C.green : C.orange, border: `1px solid ${stats.pu_grid_ok ? C.green : C.orange}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700 }}>
-                  {stats.pu_grid_ok ? '✓' : '⚠'} Grille 2026 : {stats.pu_conform}/{stats.pu_checked} tarifs conformes
+                  {stats.pu_grid_ok ? '✓' : '⚠'} Grille {stats.grid_year || 2026} : {stats.pu_conform}/{stats.pu_checked} tarifs conformes
                 </div>
               )}
               {deliveries.some(d => d.pu_ok === false) && (
                 <div style={{ flexBasis: '100%', background: C.orangeL, border: `1px solid ${C.orange}`, borderRadius: 8, padding: '10px 14px', fontSize: 12.5, color: C.dark }}>
-                  <div style={{ fontWeight: 700, color: C.orange, marginBottom: 6 }}>Tarifs hors grille 2026 ({result.pays})</div>
+                  <div style={{ fontWeight: 700, color: C.orange, marginBottom: 6 }}>Tarifs hors grille {stats.grid_year || 2026} ({result.pays})</div>
                   {deliveries.filter(d => d.pu_ok === false).map((d, i) => {
                     const ecart = (d.pu - d.grid_pu) * d.qty;
                     return (
@@ -1232,7 +1232,7 @@ export default function MondialRelayApp() {
                         <Th label="Quantité" align="right" sortKey="qty" sort={delivSort.sort} onSort={delivSort.toggle} />
                         <Th label="PU" align="right" sortKey="pu" sort={delivSort.sort} onSort={delivSort.toggle} />
                         <Th label="Montant HT" align="right" sortKey="montant" sort={delivSort.sort} onSort={delivSort.toggle} />
-                        <Th label="Grille 2026" align="right" />
+                        <Th label={`Grille ${stats.grid_year || 2026}`} align="right" />
                       </tr></thead>
                       <tbody>
                         {delivSort.sorted.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: C.greyT }}>Aucune ligne</td></tr>}

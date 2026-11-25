@@ -49,6 +49,29 @@ const GRID_2026_HD = {
   Autriche:  [7.59,7.59,9.89,10.79,14.49,14.49,19.60,19.60,19.60,30.14,30.14,null,null],
 };
 
+/* ─── Grille tarifaire 2027 — Hors Domicile, € HT avant remise ────────────
+ * « Offre Evolution 11/2026 », notifiée le 25/11/2026, en vigueur pour les
+ * colis pris en charge à partir du 01/01/2027. Mêmes index que 2026.
+ * L'Autriche n'y figure plus : ses lignes ne sont pas contrôlées.            */
+const GRID_2027_HD = {
+  France:    [3.33,3.33,3.70,5.23,5.62,5.62,11.45,11.45,11.45,17.34,17.34,17.34,19.86],
+  Belgique:  [3.66,3.66,4.78,6.62,7.13,7.13,13.06,13.06,13.06,20.03,20.03,20.03,21.29],
+  Luxembourg:[3.66,3.66,4.78,6.62,7.13,7.13,13.06,13.06,13.06,20.03,20.03,20.03,21.29],
+  'Pays-Bas':[3.66,3.66,4.78,6.62,7.13,7.13,13.06,13.06,13.06,20.03,20.03,20.03,21.29],
+  Allemagne: [5.80,5.80,7.53,8.66,11.92,11.92,17.04,17.04,17.04,26.15,26.15,null,null],
+  Espagne:   [5.29,5.29,6.92,8.45,9.98,9.98,14.49,14.49,14.49,22.17,22.17,22.17,25.36],
+  Portugal:  [5.29,5.29,6.92,8.45,9.98,9.98,14.49,14.49,14.49,22.17,22.17,22.17,25.36],
+  Pologne:   [5.80,5.80,7.53,8.66,10.19,10.19,14.79,14.79,14.79,22.68,22.68,22.68,null],
+  Italie:    [5.29,5.29,6.92,8.45,9.98,9.98,14.49,14.49,14.49,22.17,22.17,22.17,null],
+};
+
+// Grille d'une année de prise en charge ; null avant 2026 (contrats 2024-2025,
+// grilles non saisies). Au-delà de 2027 : la dernière connue, à mettre à jour.
+function gridHDForYear(year) {
+  if (!year || year < 2026) return null;
+  return year === 2026 ? GRID_2026_HD : GRID_2027_HD;
+}
+
 // Borne supérieure de la tranche (en grammes) → index grille
 function bracketToGridIndex(label) {
   const m = label.match(/à\s*([\d.]+)\s*(kg|g)/i);
@@ -238,33 +261,38 @@ function parseMondialRelayPdf(text) {
   return applyGridCheck(parsed);
 }
 
-/* ─── Contrôle tarifaire vs grille 2026 (Hors Domicile) ─────────
+/* ─── Contrôle tarifaire vs grille de l'année (Hors Domicile) ───
  * Appliqué à l'analyse ET à la réouverture d'une facture enregistrée : le JSON
  * en base garde le résultat du jour de l'import, on le recalcule à la lecture.
  *
- *   - Seulement les factures 2026 : la grille 2026 n'a pas cours avant
+ *   - L'année est celle du DÉBUT de la période facturée : la facture de
+ *     décembre 2026 reste à la grille 2026 même émise en janvier 2027 ; la
+ *     grille 2027 ne vaut qu'à partir de la période commençant le 01/01/2027.
+ *   - Rien avant 2026 : aucune grille saisie pour les contrats 2024-2025
  *     (les 47 factures 2024-2025 affichaient « 0 tarif conforme »).
  *   - « Retour identifié <Pays>/ collecte Point Relais® » = retour déposé dans
  *     ce pays : tarif du pays d'origine, pas du pays de la facture (un retour
  *     belge sur la facture France est à 3,59 €, pas 3,29 €).
  *   - « Pays Bas » s'écrit avec ou sans trait d'union selon les factures.     */
-function gridForDelivery(type, pays) {
+function gridForDelivery(type, pays, grids) {
+  if (!grids) return null;
   const ret = String(type || '').match(/Retour identifi[ée]e?\s+([^/]+?)\s*\//i);
   const label = ret ? ret[1].trim() : pays;
-  return GRID_2026_HD[label] || GRID_2026_HD[String(label || '').replace(/^Pays Bas$/i, 'Pays-Bas')] || null;
+  return grids[label] || grids[String(label || '').replace(/^Pays Bas$/i, 'Pays-Bas')] || null;
 }
 
 function invoiceYear(parsed) {
-  const m = String(parsed.invoiceDate || parsed.periodEnd || '').match(/(\d{4})$/);
+  const m = String(parsed.periodStart || parsed.invoiceDate || parsed.periodEnd || '').match(/(\d{4})$/);
   return m ? parseInt(m[1], 10) : null;
 }
 
 function applyGridCheck(parsed) {
   if (!parsed || !Array.isArray(parsed.deliveries)) return parsed;
-  const in2026 = invoiceYear(parsed) === 2026;
+  const year = invoiceYear(parsed);
+  const grids = gridHDForYear(year);
   let puChecked = 0, puConform = 0;
   for (const d of parsed.deliveries) {
-    const grid = in2026 ? gridForDelivery(d.type, parsed.pays) : null;
+    const grid = gridForDelivery(d.type, parsed.pays, grids);
     d.grid_pu = (grid && d.gridIndex >= 0) ? grid[d.gridIndex] : null;
     if (d.grid_pu != null && d.pu != null) {
       puChecked++;
@@ -279,6 +307,7 @@ function applyGridCheck(parsed) {
     pu_checked: puChecked,
     pu_conform: puConform,
     pu_grid_ok: puChecked > 0 && puConform === puChecked,
+    grid_year: grids ? (year === 2026 ? 2026 : 2027) : null,
   };
   return parsed;
 }
@@ -323,6 +352,6 @@ function computeAutresFrais(parsed) {
 }
 
 module.exports = {
-  parseMondialRelayPdf, applyGridCheck, parseFrNum, bracketToGridIndex, GRID_2026_HD,
+  parseMondialRelayPdf, applyGridCheck, parseFrNum, bracketToGridIndex, GRID_2026_HD, GRID_2027_HD, gridHDForYear,
   computeAutresFrais, isExcludedParticipation, normLabel,
 };

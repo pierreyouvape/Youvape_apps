@@ -27,7 +27,7 @@
  * facturés sur la facture d'avant. Ignorées, sinon leur coût serait écrasé.
  */
 
-const { GRID_2026_HD } = require('./mondialRelayParser');
+const { gridHDForYear } = require('./mondialRelayParser');
 
 const PAYS_LABELS = {
   FR: 'France', BE: 'Belgique', LU: 'Luxembourg', ES: 'Espagne', NL: 'Pays-Bas',
@@ -138,9 +138,9 @@ function parseMondialRelayCsv(input) {
 /**
  * Tarif de transport par (pays, famille de mode, tranche), relevé sur la facture
  * elle-même : le tarif le plus fréquent de chaque tranche. Repli sur la grille
- * 2026 hors domicile quand la tranche n'apparaît pas sur la facture.
+ * de l'année des CGV (2026 ou 2027) quand la tranche n'apparaît pas sur la facture.
  */
-function buildPriceTable(rows) {
+function buildPriceTable(rows, cgv = '2026') {
   const counts = {};
   for (const r of rows) {
     if (r.is_return || !(r.transport > 0) || !(r.billed_g > 0)) continue;
@@ -156,7 +156,8 @@ function buildPriceTable(rows) {
     const idx = bracketIndex(grams);
     const hit = table[`${pays}|${modeGroup(mode)}|${idx}`];
     if (hit != null) return hit;
-    const grid = modeGroup(mode) === 'HD' ? GRID_2026_HD[PAYS_LABELS[pays]] : null;
+    const grids = gridHDForYear(parseInt(cgv, 10));
+    const grid = modeGroup(mode) === 'HD' && grids ? grids[PAYS_LABELS[pays]] : null;
     return grid && grid[idx] != null ? grid[idx] : null;
   };
 }
@@ -263,15 +264,18 @@ function analyzeMondialRelayCsv(csv, ctx = {}) {
 }
 
 /**
- * Quelles CGV s'appliquent à une facture : celles du 01/10/2025, notifiées le
- * 27/11/2025 « au 1er janvier 2026 », ou celles annexées au contrat n° 31257.
- * On lit le début de la période facturée (la facture du 31/12/2025 couvre
- * décembre 2025 : anciennes CGV). Faute de date, les CGV en vigueur.
+ * Quelles CGV s'appliquent à une facture : celles du 01/11/2026, notifiées le
+ * 25/11/2026 « au 1er janvier 2027 » (avec la grille 2027), celles du
+ * 01/10/2025 (2026), ou celles annexées au contrat n° 31257 (2025).
+ * On lit le DÉBUT de la période facturée : la facture de décembre 2026 reste en
+ * 2026 même émise en janvier 2027. Faute de date, les CGV 2026.
  */
 function cgvForInvoice({ periodStart, invoiceDate } = {}) {
   const m = String(periodStart || invoiceDate || '').match(/(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!m) return '2026';
-  return parseInt(m[3], 10) >= 2026 ? '2026' : '2025';
+  const year = parseInt(m[3], 10);
+  if (year >= 2027) return '2027';
+  return year >= 2026 ? '2026' : '2025';
 }
 
 /**
@@ -279,7 +283,7 @@ function cgvForInvoice({ periodStart, invoiceDate } = {}) {
  * Ne lit que des champs enregistrés : rejouable sur une analyse déjà en base.
  *
  * Poids facturable (art. 4.2) :
- *   - CGV 2026 : le plus élevé du volumétrique, du déclaré et du mesuré. Le
+ *   - CGV 2026 et 2027 : le plus élevé du volumétrique, du déclaré et du mesuré. Le
  *     volumétrique est contractuel ; il entre donc dans le tarif dû (la 1231593,
  *     536 g volumétriques, est due à 4,69 € et non 3,59 €).
  *   - CGV 2025 : le déclaré, sauf pesée plus lourde ; le volumétrique seulement
@@ -292,7 +296,7 @@ function cgvForInvoice({ periodStart, invoiceDate } = {}) {
  * pesee (pesée plus lourde, presque toujours l'emballage, info).
  */
 function classifyParcels(parcels, { remiseRate = 0, cgv = '2026' } = {}) {
-  const priceFor = buildPriceTable(parcels);
+  const priceFor = buildPriceTable(parcels, cgv);
   for (const p of parcels) {
     p.due = null; p.ecart = null; p.kind = null;
     if (p.is_return || !(p.transport > 0)) continue;
@@ -304,7 +308,7 @@ function classifyParcels(parcels, { remiseRate = 0, cgv = '2026' } = {}) {
     // Sinon : au tarif du poids que le contrat autorise sans contestation possible.
     const floorG = volBilled
       ? Math.max(ourG, p.measured_g || 0)
-      : Math.max(ourG, cgv === '2026' ? (p.volumetric_g || 0) : 0);
+      : Math.max(ourG, cgv !== '2025' ? (p.volumetric_g || 0) : 0);
     const due = priceFor(p.pays, p.mode, floorG);
     if (due == null || p.transport - due < 0.005) continue;
 

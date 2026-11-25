@@ -13,6 +13,7 @@
 
 const assert = require('assert');
 const { parseMondialRelayCsv, analyzeMondialRelayCsv, classifyParcels, cgvForInvoice, bracketIndex } = require('../src/parsers/mondialRelayCsvParser');
+const { applyGridCheck } = require('../src/parsers/mondialRelayParser');
 
 let failed = 0;
 function test(name, fn) {
@@ -168,6 +169,47 @@ test('CGV applicables selon la période facturée', () => {
   assert.strictEqual(cgvForInvoice({ periodStart: '01/12/2025', invoiceDate: '31/12/2025' }), '2025');
   assert.strictEqual(cgvForInvoice({ periodStart: '01/01/2026' }), '2026');
   assert.strictEqual(cgvForInvoice({}), '2026');
+  // Décembre 2026 émise en janvier : encore le contrat et la grille 2026.
+  assert.strictEqual(cgvForInvoice({ periodStart: '01/12/2026', invoiceDate: '05/01/2027' }), '2026');
+  assert.strictEqual(cgvForInvoice({ periodStart: '01/01/2027', invoiceDate: '31/01/2027' }), '2027');
+});
+
+test('grille PDF selon le début de la période : 2026 jusqu\'en décembre 2026, 2027 ensuite', () => {
+  const inv = (periodStart, invoiceDate, pu) => ({
+    pays: 'France', periodStart, invoiceDate,
+    deliveries: [{ type: 'Livraison Locker FR', gridIndex: 0, pu }],
+  });
+  // Décembre 2026 facturé début janvier : grille 2026, 3,29 € conforme.
+  let r = applyGridCheck(inv('01/12/2026', '05/01/2027', 3.29));
+  assert.strictEqual(r.deliveries[0].grid_pu, 3.29);
+  assert.strictEqual(r.stats.pu_grid_ok, true);
+  assert.strictEqual(r.stats.grid_year, 2026);
+  // Janvier 2027 : grille 2027, l'ancien 3,29 € est signalé.
+  r = applyGridCheck(inv('01/01/2027', '31/01/2027', 3.29));
+  assert.strictEqual(r.deliveries[0].grid_pu, 3.33);
+  assert.strictEqual(r.deliveries[0].pu_ok, false);
+  assert.strictEqual(r.stats.grid_year, 2027);
+  r = applyGridCheck(inv('01/01/2027', '31/01/2027', 3.33));
+  assert.strictEqual(r.stats.pu_grid_ok, true);
+  // Contrats 2024-2025 : aucune grille, rien n'est contrôlé.
+  r = applyGridCheck(inv('01/12/2025', '31/12/2025', 3.29));
+  assert.strictEqual(r.deliveries[0].grid_pu, null);
+  assert.strictEqual(r.stats.pu_checked, 0);
+  // Retour identifié Belgique sur la facture France 2027 : colonne Belgique.
+  r = applyGridCheck({ pays: 'France', periodStart: '01/02/2027',
+    deliveries: [{ type: 'Livraison Retour identifié Belgique/ collecte Point Relais®', gridIndex: 1, pu: 3.66 }] });
+  assert.strictEqual(r.deliveries[0].pu_ok, true);
+});
+
+test('CSV 2027 : tranche absente de la facture, repli sur la grille 2027', () => {
+  const parcels = [
+    // Colis 2-3 kg facturé 4-5 kg ; aucune ligne 2-3 kg sur la facture → grille.
+    { pays: 'FR', mode: '24R', transport: 11.45, billed_g: 4400, declared_g: 2500, bdd_g: 2500, measured_g: 4400, volumetric_g: 0 },
+  ];
+  classifyParcels(parcels, { remiseRate: 14, cgv: '2027' });
+  assert.strictEqual(parcels[0].due, 5.62);
+  classifyParcels(parcels, { remiseRate: 14, cgv: '2026' });
+  assert.strictEqual(parcels[0].due, 5.46);
 });
 
 test('sans dimensions (annexes 2025), aucune pesée n\'est déclarée aberrante', () => {
