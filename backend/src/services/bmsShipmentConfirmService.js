@@ -30,6 +30,7 @@
 
 const bmsApiModel = require('../models/bmsApiModel');
 const shipmentLabelModel = require('../models/shipmentLabelModel');
+const appConfigModel = require('../models/appConfigModel');
 const { sendAlert } = require('./alertService');
 
 /**
@@ -44,6 +45,26 @@ const { sendAlert } = require('./alertService');
 const PAUSE_ENTRE_REPRISES_MS = 300;
 
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Commandes à ne PAS confirmer dans BMS : `app_config.bms_ship_skip_orders`,
+ * tableau JSON de numéros de commande. Sert aux essais de sortie de BMS (la
+ * confirmation part au site par youvape-logistique, et on observe ce que BMS
+ * fait seul). L'étiquette passe en 'skipped' : ni reprise, ni synthèse du soir.
+ * Clé absente, illisible ou base injoignable : on confirme comme d'habitude.
+ */
+const SKIP_KEY = 'bms_ship_skip_orders';
+
+const isExcludedFromBms = async (orderNumber) => {
+  try {
+    const row = await appConfigModel.get(SKIP_KEY);
+    if (!row) return false;
+    const list = JSON.parse(row.config_value);
+    return Array.isArray(list) && list.map(String).includes(String(orderNumber));
+  } catch {
+    return false;
+  }
+};
 
 /** Au-delà, la reprise s'arrête : l'état de la commande dans BMS a trop bougé. */
 const MAX_RETRY_AGE_DAYS = 7;
@@ -89,6 +110,15 @@ const postShip = (orderNumber, trackingNumber, title) =>
  * @returns {Promise<boolean>} true si BMS a confirmé
  */
 const confirmNow = async ({ labelId, orderNumber, trackingNumber, title }) => {
+  if (await isExcludedFromBms(orderNumber)) {
+    console.warn('[BMS] Commande', orderNumber, 'exclue de la confirmation BMS (', SKIP_KEY, ') : rien envoyé.');
+    try {
+      if (labelId) await shipmentLabelModel.markBmsSkipped(labelId);
+    } catch (interne) {
+      console.error('[BMS] Impossible de marquer l\'étiquette', labelId, 'hors BMS :', interne.message);
+    }
+    return false;
+  }
   try {
     await postShip(orderNumber, trackingNumber, title);
     console.log('[BMS] Expédition confirmée pour commande', orderNumber,

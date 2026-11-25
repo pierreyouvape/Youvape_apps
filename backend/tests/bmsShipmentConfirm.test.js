@@ -24,6 +24,7 @@ const assert = require('assert');
 
 const bmsApiModel = require('../src/models/bmsApiModel');
 const shipmentLabelModel = require('../src/models/shipmentLabelModel');
+const appConfigModel = require('../src/models/appConfigModel');
 const service = require('../src/services/bmsShipmentConfirmService');
 
 let failures = 0;
@@ -69,9 +70,12 @@ const commande = ({ status = 'processing', shipments = [], toShip = [] }) => ({
 let appels;   // tout ce qui est parti vers BMS
 let ecrits;   // tout ce qui a été écrit sur l'étiquette
 
-const monter = ({ lecture, envoi, etiquette = ETIQUETTE }) => {
+const monter = ({ lecture, envoi, etiquette = ETIQUETTE, exclues = null }) => {
   appels = [];
   ecrits = [];
+
+  appConfigModel.get = async (key) =>
+    (key === 'bms_ship_skip_orders' && exclues ? { config_key: key, config_value: JSON.stringify(exclues) } : undefined);
 
   bmsApiModel.apiCall = async (endpoint, method = 'GET', body = null) => {
     appels.push({ endpoint, method, body });
@@ -89,6 +93,8 @@ const monter = ({ lecture, envoi, etiquette = ETIQUETTE }) => {
     ecrits.push({ quoi: 'confirme', id, status: opts.status || 'confirmed' });
   shipmentLabelModel.recordBmsFailure = async (id, message) =>
     ecrits.push({ quoi: 'echec', id, message });
+  shipmentLabelModel.markBmsSkipped = async (id) =>
+    ecrits.push({ quoi: 'hors_bms', id });
 };
 
 /** Les POST /ship réellement partis. */
@@ -220,6 +226,36 @@ test('une étiquette qui n\'attend aucune confirmation est refusée', async () =
 
   await assert.rejects(() => service.confirmLabelById(42), /aucune confirmation/);
   assert.strictEqual(appels.length, 0);
+});
+
+// ── Commandes exclues de BMS (essais de sortie de BMS) ─────────────────────
+
+test('commande exclue : aucun POST /ship, étiquette marquée hors BMS', async () => {
+  monter({ envoi: { success: true }, exclues: ['1279632'] });
+
+  const ok = await service.confirmNow({ labelId: 42, orderNumber: 1279632, trackingNumber: '6A123', title: 'Colissimo' });
+
+  assert.strictEqual(ok, false);
+  assert.strictEqual(appels.length, 0, 'BMS a été appelé');
+  assert.deepStrictEqual(ecrits, [{ quoi: 'hors_bms', id: 42 }]);
+});
+
+test('commande non exclue : la confirmation part comme d\'habitude', async () => {
+  monter({ envoi: { success: true }, exclues: ['1279632'] });
+
+  const ok = await service.confirmNow({ labelId: 43, orderNumber: '1279633', trackingNumber: '6A124', title: 'Colissimo' });
+
+  assert.strictEqual(ok, true);
+  assert.strictEqual(expeditionsEnvoyees().length, 1);
+  assert.deepStrictEqual(ecrits, [{ quoi: 'confirme', id: 43, status: 'confirmed' }]);
+});
+
+test('liste absente ou illisible : la confirmation part', async () => {
+  monter({ envoi: { success: true } });
+  appConfigModel.get = async () => ({ config_value: 'pas du json' });
+
+  assert.strictEqual(await service.confirmNow({ labelId: 44, orderNumber: '1279632', trackingNumber: null, title: 'X' }), true);
+  assert.strictEqual(expeditionsEnvoyees().length, 1);
 });
 
 serie.then(() => {

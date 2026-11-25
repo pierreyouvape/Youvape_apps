@@ -277,6 +277,20 @@ const markBmsConfirmed = async (id, { status = 'confirmed' } = {}) => {
 };
 
 /**
+ * Étiquette volontairement non confirmée dans BMS (commande exclue, cf.
+ * bmsShipmentConfirmService) : plus rien à reprendre ni à signaler.
+ *
+ * @param {number|string} id
+ */
+const markBmsSkipped = async (id) => {
+  if (!(await hasBmsColumns())) return;
+  await pool.query(
+    `UPDATE shipment_labels SET bms_ship_status = 'skipped' WHERE id = $1`,
+    [id]
+  );
+};
+
+/**
  * Enregistre une tentative ratée. L'étiquette reste en 'pending' : c'est
  * précisément ce qui la fera reprendre au prochain passage du cron.
  *
@@ -378,6 +392,7 @@ module.exports = {
   markCancelled,
   hasBmsColumns,
   markBmsConfirmed,
+  markBmsSkipped,
   recordBmsFailure,
   listPendingBmsConfirmations,
   listStuckBmsConfirmations,
