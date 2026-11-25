@@ -3,8 +3,8 @@ import {
   tachesApi, apiError, ago, todayStr, formatDay, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
 } from './tachesShared';
 import {
-  ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText, ColGroup, ColResizer } from './tachesUi';
-import { useColumnWidths } from './tachesColumns';
+  ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText, ColGroup, ColResizer, SortMark } from './tachesUi';
+import { useColumnWidths, useSort, sortRows } from './tachesColumns';
 import StepsTable from './StepsTable';
 
 const th = mTh;
@@ -34,15 +34,32 @@ export default function TableView({
   const today = todayStr();
 
   // Sections : les groupes du tableau (ou de tous les tableaux), puis « Sans groupe ».
+  const { sort, toggle } = useSort('table');
+
+  // Sections : les groupes du tableau (ou de tous les tableaux), puis « Sans groupe ».
+  // Le tri (clic sur un en-tête) s'applique dans chaque groupe, comme sur Monday.
   const sections = useMemo(() => {
+    const name = (id) => members.find((m) => m.id === id)?.name || '';
+    const accessors = {
+      title: (t) => t.title,
+      people: (t) => t.people.map(name).join(', '),
+      link: (t) => t.link_url || '',
+      progress: (t) => (t.steps.length ? t.counts.fait / t.steps.length : ''),
+      labels: (t) => t.labels.join(', '),
+      due: (t) => t.due_date || t.start_date || '',
+      created: (t) => t.created_at,
+      updated: (t) => t.updated_at,
+      priority: (t) => (t.priority ? ['critique', 'haute', 'moyenne', 'basse'].indexOf(t.priority) : ''),
+      status: (t) => ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'].indexOf(t.status),
+    };
     const list = board ? [board] : boards;
     const out = list.flatMap((b) => b.groups.map((g) => ({
-      ...g, boardName: board ? null : b.name, tasks: tasks.filter((t) => t.group_id === g.id),
+      ...g, boardName: board ? null : b.name, tasks: sortRows(tasks.filter((t) => t.group_id === g.id), sort, accessors),
     })));
     const orphans = tasks.filter((t) => !out.some((g) => g.id === t.group_id));
-    if (orphans.length) out.push({ id: 'none', name: 'Sans groupe', color: '#C4C4C4', tasks: orphans });
+    if (orphans.length) out.push({ id: 'none', name: 'Sans groupe', color: '#C4C4C4', tasks: sortRows(orphans, sort, accessors) });
     return out;
-  }, [tasks, board, boards]);
+  }, [tasks, board, boards, sort, members]);
 
   const allGroups = boards.flatMap((b) => b.groups.map((g) => ({ ...g, label: boards.length > 1 ? `${b.name} › ${g.name}` : g.name })));
   const toggleSet = (setter, key) => setter((s) => {
@@ -166,16 +183,16 @@ export default function TableView({
                           })} />
                       <ColResizer index={0} cols={cols} /></th>
                       <th style={th}><ColResizer index={1} cols={cols} /></th>
-                      <th style={{ ...th, textAlign: 'left' }}>Tâche<ColResizer index={2} cols={cols} /></th>
-                      <th style={th}>Personne<ColResizer index={3} cols={cols} /></th>
-                      <th style={th}>Lien produit<ColResizer index={4} cols={cols} /></th>
-                      <th style={th}>Sous-éléments<ColResizer index={5} cols={cols} /></th>
-                      <th style={th}>Étiquettes<ColResizer index={6} cols={cols} /></th>
-                      <th style={th}>Échéances<ColResizer index={7} cols={cols} /></th>
-                      <th style={th}>Créée le<ColResizer index={8} cols={cols} /></th>
-                      <th style={th}>Mise à jour<ColResizer index={9} cols={cols} /></th>
-                      <th style={th}>Priorité<ColResizer index={10} cols={cols} /></th>
-                      <th style={th}>Statut<ColResizer index={11} cols={cols} /></th>
+                      <th style={{ ...th, textAlign: 'left', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('title')} title="Trier">Tâche<SortMark sort={sort} col="title" /><ColResizer index={2} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('people')} title="Trier">Personne<SortMark sort={sort} col="people" /><ColResizer index={3} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('link')} title="Trier">Lien produit<SortMark sort={sort} col="link" /><ColResizer index={4} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('progress')} title="Trier">Sous-éléments<SortMark sort={sort} col="progress" /><ColResizer index={5} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('labels')} title="Trier">Étiquettes<SortMark sort={sort} col="labels" /><ColResizer index={6} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={7} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={8} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('updated')} title="Trier">Mise à jour<SortMark sort={sort} col="updated" /><ColResizer index={9} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={10} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={11} cols={cols} /></th>
                       <th style={{ ...th, borderRight: 'none' }}><ColResizer index={12} cols={cols} /></th>
                     </tr>
                   </thead>

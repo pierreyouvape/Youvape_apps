@@ -2,7 +2,9 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
-import { tachesApi, apiError, TACHES_COLOR, inputStyle, M } from '../components/taches/tachesShared';
+import {
+  tachesApi, apiError, TACHES_COLOR, inputStyle, M, PRIORITY, PRIORITY_ORDER, TASK_STATUS, TASK_STATUS_ORDER,
+} from '../components/taches/tachesShared';
 import MineTab from '../components/taches/MineTab';
 import TableView from '../components/taches/TableView';
 import KanbanView from '../components/taches/KanbanView';
@@ -60,6 +62,8 @@ export default function TachesApp() {
   const [person, setPerson] = useState(null);
   const [openOnly, setOpenOnly] = useState(false);
   const [label, setLabel] = useState('');
+  const [priority, setPriority] = useState('');
+  const [status, setStatus] = useState('');
   const [hideDone, setHideDone] = useState(false);
   const [archived, setArchived] = useState(false);
 
@@ -122,6 +126,8 @@ export default function TachesApp() {
     return tasks.filter((t) => {
       if (ids && !ids.has(t.id)) return false;
       if (label && !t.labels.includes(label)) return false;
+      if (priority && (t.priority || 'none') !== priority) return false;
+      if (status && t.status !== status) return false;
       if (hideDone && t.status === 'fait') return false;
       if (person) {
         const steps = t.steps.filter((s) => s.owners.includes(person));
@@ -135,7 +141,7 @@ export default function TachesApp() {
       }
       return true;
     });
-  }, [tasks, hits, label, hideDone, person, openOnly]);
+  }, [tasks, hits, label, priority, status, hideDone, person, openOnly]);
 
   if (permissions && !canRead) {
     return (
@@ -218,6 +224,7 @@ export default function TachesApp() {
           {isView && (
             <FilterBar {...{
               q, setQ, members, person, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
+              priority, setPriority, status, setStatus,
               hideDone, setHideDone, archived, setArchived,
               count: filtered ? `${filtered.length} / ${tasks.length}` : '',
             }} />
@@ -259,7 +266,7 @@ const check = { fontSize: 13, color: '#4B5563', display: 'flex', gap: 6, alignIt
 /** Filtres communs : recherche, personne (remplace les onglets par personne de Monday), étiquette… */
 function FilterBar({
   q, setQ, members, person, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
-  hideDone, setHideDone, archived, setArchived, count,
+  priority, setPriority, status, setStatus, hideDone, setHideDone, archived, setArchived, count,
 }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -275,6 +282,15 @@ function FilterBar({
         <select value={label} onChange={(e) => setLabel(e.target.value)} style={{ ...inputStyle, width: 190 }}>
           <option value="">Toutes les étiquettes</option>
           {labels.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ ...inputStyle, width: 170 }}>
+          <option value="">Toutes les priorités</option>
+          {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}
+          <option value="none">Sans priorité</option>
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+          <option value="">Tous les statuts</option>
+          {TASK_STATUS_ORDER.map((k) => <option key={k} value={k}>{TASK_STATUS[k].label}</option>)}
         </select>
         <label style={check}><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Masquer les terminées</label>
         <label style={check}><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Voir les archives</label>

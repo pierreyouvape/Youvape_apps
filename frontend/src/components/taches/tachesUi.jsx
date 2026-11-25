@@ -407,7 +407,8 @@ export function ColResizer({ index, cols }) {
     window.addEventListener('pointerup', up);
   };
   return (
-    <span onPointerDown={start} onDoubleClick={() => cols.resetWidth(index)} title="Tirer pour redimensionner (double-clic : largeur par défaut)"
+    <span onPointerDown={start} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); cols.resetWidth(index); }}
+      title="Tirer pour redimensionner (double-clic : largeur par défaut)"
       style={{
         position: 'absolute', top: 0, right: -3, width: 7, height: '100%', cursor: 'col-resize', zIndex: 2,
         background: active ? '#0073EA' : 'transparent', touchAction: 'none',
@@ -415,4 +416,10 @@ export function ColResizer({ index, cols }) {
       onMouseEnter={(e) => { e.currentTarget.style.background = '#0073EA'; }}
       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }} />
   );
+}
+
+/** Flèche de tri à côté d'un en-tête (▲ croissant, ▼ décroissant). */
+export function SortMark({ sort, col }) {
+  if (!sort || sort.col !== col) return null;
+  return <span style={{ color: '#0073EA', fontSize: 10, marginLeft: 4 }}>{sort.dir === 1 ? '▲' : '▼'}</span>;
 }

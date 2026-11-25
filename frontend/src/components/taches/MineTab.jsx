@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import {
-  tachesApi, apiError, priorityRank, todayStr, formatDay, M, mTable, mTh, mTd, mCell, ellipsis,
+  tachesApi, apiError, priorityRank, todayStr, formatDay, M, mTable, mTh, mTd, mCell, ellipsis, inputStyle,
+  PRIORITY, PRIORITY_ORDER, STEP_STATUS, STEP_STATUS_ORDER, TASK_STATUS,
 } from './tachesShared';
-import { PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer } from './tachesUi';
-import { useColumnWidths } from './tachesColumns';
+import { PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer, SortMark } from './tachesUi';
+import { useColumnWidths, useSort, sortRows } from './tachesColumns';
 import StepsTable from './StepsTable';
 
 const GROUPS = [
@@ -26,6 +27,11 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
   const [tasks, setTasks] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
   const [closed, setClosed] = useState(() => new Set());
+  const { sort, toggle } = useSort('mine');
+  const [q, setQ] = useState('');
+  const [fLabel, setFLabel] = useState('');
+  const [fPriority, setFPriority] = useState('');
+  const [fStatus, setFStatus] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -65,16 +71,64 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
     .filter((r) => r.step || (!r.task.steps.length && r.task.people.includes(me) && r.task.status !== 'fait'));
   const stateOf = (r) => (r.step ? r.step.status : r.task.status);
   const due = (r) => (r.step ? r.step.due_date : r.task.due_date);
+  const allLabels = [...new Set(rows.flatMap((r) => r.task.labels))].sort((a, b) => a.localeCompare(b, 'fr'));
+  const fold = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const filtered = rows.filter((r) => {
+    if (fLabel && !r.task.labels.includes(fLabel)) return false;
+    if (fPriority && (r.task.priority || 'none') !== fPriority) return false;
+    if (fStatus && stateOf(r) !== fStatus) return false;
+    if (q.trim() && !fold(`${r.task.title} ${r.step?.name || ''} ${r.task.labels.join(' ')}`).includes(fold(q.trim()))) return false;
+    return true;
+  });
+  // Ordre par défaut : priorité, échéance, dernière mise à jour ; un clic sur un en-tête le remplace.
   const cmp = (a, b) => priorityRank(a.task.priority) - priorityRank(b.task.priority)
     || (due(a) || '9999').localeCompare(due(b) || '9999') || b.task.updated_at.localeCompare(a.task.updated_at);
-  const bucket = {
-    now: rows.filter((r) => !['bloque', 'longue'].includes(stateOf(r))).sort(cmp),
-    long: rows.filter((r) => stateOf(r) === 'longue').sort(cmp),
-    later: rows.filter((r) => stateOf(r) === 'bloque').sort(cmp),
+  const statusRank = (r) => (r.step ? STEP_STATUS_ORDER.indexOf(r.step.status) : ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'].indexOf(r.task.status));
+  const accessors = {
+    task: (r) => r.task.title,
+    step: (r) => r.step?.name || '',
+    created: (r) => r.task.created_at,
+    owner: (r) => (r.step ? r.step.owners : r.task.people).map((id) => members.find((m) => m.id === id)?.name || '').join(', '),
+    status: statusRank,
+    due: (r) => due(r) || '',
+    priority: (r) => (r.task.priority ? priorityRank(r.task.priority) : ''),
   };
+  const order = (list) => sortRows([...list].sort(cmp), sort, accessors);
+  const bucket = {
+    now: order(filtered.filter((r) => !['bloque', 'longue'].includes(stateOf(r)))),
+    long: order(filtered.filter((r) => stateOf(r) === 'longue')),
+    later: order(filtered.filter((r) => stateOf(r) === 'bloque')),
+  };
+  const filtering = Boolean(q || fLabel || fPriority || fStatus);
+  const sel = { ...inputStyle, width: 180, padding: '6px 8px', fontSize: 13 };
+  const sortTh = (base) => ({ ...base, cursor: 'pointer', userSelect: 'none' });
 
   return (
     <div style={{ fontFamily: M.font, color: M.text }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Filtrer (tâche, étape, étiquette)" style={{ ...sel, width: 260 }} />
+        <select value={fLabel} onChange={(e) => setFLabel(e.target.value)} style={sel}>
+          <option value="">Toutes les étiquettes</option>
+          {allLabels.map((l) => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <select value={fPriority} onChange={(e) => setFPriority(e.target.value)} style={sel}>
+          <option value="">Toutes les priorités</option>
+          {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}
+          <option value="none">Sans priorité</option>
+        </select>
+        <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={sel}>
+          <option value="">Tous les statuts</option>
+          {STEP_STATUS_ORDER.filter((k) => k !== 'fait').map((k) => <option key={k} value={k}>{STEP_STATUS[k].label}</option>)}
+          <option value="longue">{TASK_STATUS.longue.label}</option>
+        </select>
+        {filtering && (
+          <button type="button" onClick={() => { setQ(''); setFLabel(''); setFPriority(''); setFStatus(''); }}
+            style={{ background: 'none', border: 'none', color: '#0073EA', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Effacer les filtres</button>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 13, color: M.sub }}>
+          {filtered.length} / {rows.length} élément{rows.length > 1 ? 's' : ''}{sort ? ' · clic sur l\'en-tête trié pour changer l\'ordre' : ' · cliquez un en-tête pour trier'}
+        </span>
+      </div>
       {GROUPS.map((g) => {
         const list = bucket[g.key];
         if (!list.length && g.key !== 'now') return null;
@@ -94,13 +148,13 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                   <thead>
                     <tr>
                       <th style={mTh}><ColResizer index={0} cols={cols} /></th>
-                      <th style={{ ...mTh, textAlign: 'left' }}>Tâche<ColResizer index={1} cols={cols} /></th>
-                      <th style={{ ...mTh, textAlign: 'left' }}>Mon étape<ColResizer index={2} cols={cols} /></th>
-                      <th style={mTh}>Créée le<ColResizer index={3} cols={cols} /></th>
-                      <th style={mTh}>Owner<ColResizer index={4} cols={cols} /></th>
-                      <th style={mTh}>Statut<ColResizer index={5} cols={cols} /></th>
-                      <th style={mTh}>Échéances<ColResizer index={6} cols={cols} /></th>
-                      <th style={{ ...mTh, borderRight: 'none' }}>Priorité<ColResizer index={7} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('task')} title="Trier">Tâche<SortMark sort={sort} col="task" /><ColResizer index={1} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('step')} title="Trier">Mon étape<SortMark sort={sort} col="step" /><ColResizer index={2} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={3} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('owner')} title="Trier">Owner<SortMark sort={sort} col="owner" /><ColResizer index={4} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={5} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={6} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, borderRight: 'none' })} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={7} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -178,7 +232,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                       );
                     })}
                     {!list.length && (
-                      <tr><td colSpan={8} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>Rien à faire pour l'instant 🎉</td></tr>
+                      <tr><td colSpan={8} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>{filtering ? 'Aucun élément ne correspond aux filtres.' : 'Rien à faire pour l\'instant 🎉'}</td></tr>
                     )}
                   </tbody>
                 </table>
