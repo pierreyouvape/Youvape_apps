@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
-import { tachesApi, apiError, TACHES_COLOR, inputStyle } from '../components/taches/tachesShared';
+import { tachesApi, apiError, TACHES_COLOR, inputStyle, M } from '../components/taches/tachesShared';
 import MineTab from '../components/taches/MineTab';
 import TableView from '../components/taches/TableView';
 import KanbanView from '../components/taches/KanbanView';
@@ -169,16 +169,14 @@ export default function TachesApp() {
 
   return (
     <AppShell currentPath={`/taches/${currentTab}`}>
-      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: '#F2F6F8' }}>
-        <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: isView ? 'none' : 1200 }}>
+      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: '#fff', fontFamily: M.font, color: M.text }}>
+        <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: currentTab === 'modeles' || currentTab === 'slack' ? 1200 : 'none' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
-            <span style={{ width: 10, height: 34, borderRadius: 5, background: TACHES_COLOR, flexShrink: 0 }} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: TACHES_COLOR, margin: 0 }}>
-                Tâches{isView && board ? <span style={{ color: '#1F2937' }}> · {board.name}</span> : ''}
-                {isView && boardId === 'all' ? <span style={{ color: '#1F2937' }}> · Tous les tableaux</span> : ''}
+              <h1 style={{ fontSize: 28, fontWeight: 600, color: M.text, margin: 0 }}>
+                {isView ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : tabDef.key === 'moi' ? 'Mes tâches' : 'Tâches'}
               </h1>
-              <p style={{ fontSize: 13, color: '#8A99A4', fontWeight: 500, margin: '2px 0 0' }}>{tabDef.subtitle}</p>
+              <p style={{ fontSize: 14, color: M.sub, margin: '2px 0 0' }}>{tabDef.subtitle}</p>
             </div>
             {isView && (
               <select value={boardId} onChange={(e) => setBoardId(e.target.value)} style={{ ...inputStyle, width: 240, fontWeight: 700 }}>
@@ -188,21 +186,21 @@ export default function TachesApp() {
             )}
             {currentTab !== 'slack' && currentTab !== 'modeles' && (
               <button type="button" onClick={() => setCreating({})} style={{
-                background: TACHES_COLOR, color: '#fff', border: 'none', borderRadius: 8, padding: '9px 16px',
-                fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                background: TACHES_COLOR, color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px',
+                fontSize: 14, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit',
               }}>+ Nouvelle tâche</button>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #E5E7EB', marginBottom: 14, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${M.border}`, marginBottom: 16, flexWrap: 'wrap' }}>
             {visibleTabs.map((t) => {
               const active = t.key === currentTab;
               return (
                 <button key={t.key} type="button" onClick={() => navigate(`/taches/${t.key}`)} style={{
                   background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                   padding: '9px 13px', marginBottom: -1, fontSize: 14,
-                  fontWeight: active ? 800 : 600, color: active ? TACHES_COLOR : '#6B7280',
-                  borderBottom: `3px solid ${active ? TACHES_COLOR : 'transparent'}`,
+                  fontWeight: 400, color: active ? M.text : M.sub,
+                  borderBottom: `2px solid ${active ? TACHES_COLOR : 'transparent'}`,
                 }}>
                   {t.label}
                 </button>

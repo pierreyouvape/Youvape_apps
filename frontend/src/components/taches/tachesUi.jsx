@@ -46,6 +46,16 @@ export function Popover({ anchor, onClose, children, width = 200 }) {
   );
 }
 
+/**
+ * Cellule de couleur pleine, façon Monday (statut, priorité) : occupe toute la
+ * case du tableau, sans arrondi. La pastille arrondie reste pour les menus.
+ */
+const cellStyle = (bg, ink = '#fff') => ({
+  background: bg, color: ink, border: 'none', borderRadius: 0, width: '100%', height: 36, padding: '0 6px',
+  fontSize: 13, fontWeight: 400, fontFamily: 'inherit', textAlign: 'center', whiteSpace: 'nowrap',
+  overflow: 'hidden', textOverflow: 'ellipsis', display: 'block',
+});
+
 const pillStyle = (bg, ink = '#fff') => ({
   background: bg, color: ink, border: 'none', borderRadius: 4, padding: '6px 10px', minWidth: 96,
   fontSize: 13, fontWeight: 700, fontFamily: 'inherit', textAlign: 'center', whiteSpace: 'nowrap',
@@ -57,7 +67,7 @@ const menuItem = {
 };
 
 /** Pastille de statut d'étape, cliquable pour changer. */
-export function StepStatusPill({ status, onChange, disabled }) {
+export function StepStatusPill({ status, onChange, disabled, cell = false }) {
   const [anchor, setAnchor] = useState(null);
   const s = STEP_STATUS[status] || STEP_STATUS.a_faire;
   return (
@@ -66,7 +76,7 @@ export function StepStatusPill({ status, onChange, disabled }) {
         type="button"
         disabled={disabled}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        style={{ ...pillStyle(s.bg, s.ink), cursor: disabled ? 'default' : 'pointer', width: '100%' }}
+        style={{ ...(cell ? cellStyle(s.bg, s.ink) : pillStyle(s.bg, s.ink)), cursor: disabled ? 'default' : 'pointer', width: '100%' }}
       >
         {s.label}
       </button>
@@ -90,7 +100,7 @@ export function StepStatusPill({ status, onChange, disabled }) {
  * Statut d'une tâche. Avec `onChange` (tâche sans étape) : cliquable.
  * Sans : calculé depuis les étapes, en lecture seule.
  */
-export function TaskStatusPill({ status, onChange }) {
+export function TaskStatusPill({ status, onChange, cell = false }) {
   const [anchor, setAnchor] = useState(null);
   const s = TASK_STATUS[status] || TASK_STATUS.a_faire;
   return (
@@ -98,7 +108,7 @@ export function TaskStatusPill({ status, onChange }) {
       <button type="button" disabled={!onChange}
         title={onChange ? 'Changer le statut' : 'Calculé à partir des étapes'}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        style={{ ...pillStyle(s.bg), cursor: onChange ? 'pointer' : 'default' }}>
+        style={{ ...(cell ? cellStyle(s.bg) : pillStyle(s.bg)), cursor: onChange ? 'pointer' : 'default' }}>
         {s.label}
       </button>
       {anchor && (
@@ -171,34 +181,78 @@ export function LabelsInput({ value = [], suggestions = [], onChange, compact = 
   );
 }
 
-/** Deux dates (début → fin), vides possibles. */
+const MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const dm = (d) => ({ d: Number(d.slice(8)), m: MONTHS_SHORT[Number(d.slice(5, 7)) - 1], y: d.slice(0, 4) });
+/** « 12 - 15 nov. », « 28 oct. - 3 nov. », « 15 nov. » */
+function rangeLabel(start, end) {
+  const s = start || end;
+  const e = end || start;
+  if (!s) return '';
+  const a = dm(s);
+  const b = dm(e);
+  const year = a.y !== String(new Date().getFullYear()) || b.y !== a.y ? ` ${b.y}` : '';
+  if (s === e) return `${a.d} ${a.m}${year}`;
+  return a.m === b.m && a.y === b.y ? `${a.d} - ${b.d} ${b.m}${year}` : `${a.d} ${a.m} - ${b.d} ${b.m}${year}`;
+}
+
+/**
+ * Période façon colonne « Timeline » de Monday : pastille sombre avec la part
+ * déjà écoulée en bleu, rouge si l'échéance est passée. Clic = début / fin.
+ */
 export function DateRange({ start, end, onChange, late = false }) {
-  const st = {
-    border: '1px solid transparent', borderRadius: 6, padding: '2px 3px', fontFamily: 'inherit', fontSize: 12,
-    background: 'transparent', color: '#374151', width: 118,
-  };
+  const [anchor, setAnchor] = useState(null);
+  const s = start || end;
+  const e = end || start;
+  let pct = 0;
+  if (s) {
+    const t0 = new Date(`${s}T00:00:00`).getTime();
+    const t1 = new Date(`${e}T23:59:59`).getTime();
+    pct = Math.max(0, Math.min(100, ((Date.now() - t0) / Math.max(1, t1 - t0)) * 100));
+  }
+  const bg = !s ? '#E6E9EF' : late ? '#DF2F4A' : `linear-gradient(90deg, #579BFC ${pct}%, #333333 ${pct}%)`;
+  const input = { border: '1px solid #D0D4E4', borderRadius: 6, padding: '5px 6px', fontFamily: 'inherit', fontSize: 13, width: '100%' };
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: late ? '#FEE2E2' : '#F3F4F6', borderRadius: 8, padding: '1px 4px' }}>
-      <input type="date" value={start || ''} title="Début" style={st}
-        onChange={(e) => onChange({ start_date: e.target.value || null })} />
-      <span style={{ color: '#9CA3AF', fontSize: 11 }}>→</span>
-      <input type="date" value={end || ''} title="Fin" style={{ ...st, color: late ? '#B91C1C' : '#374151' }}
-        onChange={(e) => onChange({ due_date: e.target.value || null })} />
-    </span>
+    <>
+      <button type="button" onClick={(ev) => setAnchor(anchor ? null : ev.currentTarget)} title={s ? `${s} → ${e}` : 'Choisir des dates'}
+        style={{
+          background: bg, color: s ? '#fff' : '#9699A6', border: 'none', borderRadius: 12, height: 24, minWidth: 110, maxWidth: '100%',
+          padding: '0 10px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+        {s ? rangeLabel(start, end) : '—'}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={230}>
+          <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 12, color: '#676879' }}>Début
+              <input type="date" value={start || ''} style={input} onChange={(ev) => onChange({ start_date: ev.target.value || null })} />
+            </label>
+            <label style={{ fontSize: 12, color: '#676879' }}>Fin
+              <input type="date" value={end || ''} style={input} onChange={(ev) => onChange({ due_date: ev.target.value || null })} />
+            </label>
+            {s && (
+              <button type="button" onClick={() => { setAnchor(null); onChange({ start_date: null, due_date: null }); }}
+                style={{ background: 'none', border: 'none', color: '#DF2F4A', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, textAlign: 'left', padding: '2px 0' }}>
+                Effacer les dates
+              </button>
+            )}
+          </div>
+        </Popover>
+      )}
+    </>
   );
 }
 
-/** Priorité : pastille cliquable (ou lecture seule sans onChange). */
-export function PriorityPill({ priority, onChange }) {
+export function PriorityPill({ priority, onChange, cell = false }) {
   const [anchor, setAnchor] = useState(null);
   const p = PRIORITY[priority];
-  const style = p ? pillStyle(p.bg) : { ...pillStyle('#F3F4F6', '#9CA3AF'), fontWeight: 600 };
+  let style = p ? pillStyle(p.bg) : { ...pillStyle('#F3F4F6', '#9CA3AF'), fontWeight: 600 };
+  if (cell) style = p ? cellStyle(p.bg) : cellStyle('#C4C4C4');
   return (
     <>
       <button type="button" disabled={!onChange}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         style={{ ...style, cursor: onChange ? 'pointer' : 'default' }}>
-        {p ? p.label : '—'}
+        {p ? p.label : (cell ? '' : '—')}
       </button>
       {anchor && (
         <Popover anchor={anchor} onClose={() => setAnchor(null)} width={150}>

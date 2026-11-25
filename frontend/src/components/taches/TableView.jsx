@@ -1,15 +1,14 @@
 import { Fragment, useMemo, useState } from 'react';
-import { tachesApi, apiError, ago, todayStr, labelChip, inputStyle, btn } from './tachesShared';
+import {
+  tachesApi, apiError, ago, todayStr, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
+} from './tachesShared';
 import {
   ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText,
 } from './tachesUi';
 import StepsTable from './StepsTable';
 
-const th = {
-  fontSize: 12, fontWeight: 700, color: '#6B7280', padding: '8px 6px', textAlign: 'center',
-  borderBottom: '1px solid #E5E7EB', background: '#fff', whiteSpace: 'nowrap',
-};
-const td = { padding: '5px 6px', borderBottom: '1px solid #EEF0F3', textAlign: 'center', verticalAlign: 'middle', fontSize: 14 };
+const th = mTh;
+const td = mTd;
 const COLLAPSE_KEY = 'yv.taches.collapsed';
 const PALETTE = ['#579BFC', '#00C875', '#FDAB3D', '#A25DDC', '#E2445C', '#037F4C', '#784BD1', '#FF158A', '#C4C4C4'];
 const shortUrl = (u) => (u || '').replace(/^https?:\/\/(www\.)?/, '');
@@ -132,11 +131,11 @@ export default function TableView({
               {g.boardName && <span style={{ fontSize: 13, color: '#9CA3AF', fontWeight: 700 }}>{g.boardName} ›</span>}
               {canWrite && g.id !== 'none' ? (
                 <InlineText value={g.name} onSave={(name) => groupAction(() => tachesApi.updateGroup(g.id, { name }))}
-                  style={{ fontSize: 17, fontWeight: 800, color: g.color }} />
+                  style={{ fontSize: 18, fontWeight: 500, color: g.color }} />
               ) : (
-                <span style={{ fontSize: 17, fontWeight: 800, color: g.color }}>{g.name}</span>
+                <span style={{ fontSize: 18, fontWeight: 500, color: g.color }}>{g.name}</span>
               )}
-              <span style={{ fontSize: 13, color: '#9CA3AF' }}>{g.tasks.length} tâche{g.tasks.length > 1 ? 's' : ''}{done ? ` · ${done} terminée${done > 1 ? 's' : ''}` : ''}</span>
+              <span style={{ fontSize: 14, color: M.sub }}>{g.tasks.length} tâche{g.tasks.length > 1 ? 's' : ''}{done ? ` · ${done} terminée${done > 1 ? 's' : ''}` : ''}</span>
               {canWrite && g.id !== 'none' && (
                 <DotsMenu items={[
                   { label: '↑ Monter le groupe', onClick: () => groupAction(() => tachesApi.updateGroup(g.id, { direction: 'up' })) },
@@ -152,11 +151,25 @@ export default function TableView({
             </div>
 
             {!shut && (
-              <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderLeft: `5px solid ${g.color}`, borderRadius: 10, overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1320 }}>
+              <div style={{ background: '#fff', borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', overflowX: 'auto', fontFamily: M.font }}>
+                <table style={{ ...mTable, minWidth: 1560 }}>
+                  <colgroup>
+                    <col style={{ width: 34 }} />
+                    <col style={{ width: 26 }} />
+                    <col style={{ width: 380 }} />
+                    <col style={{ width: 90 }} />
+                    <col style={{ width: 170 }} />
+                    <col style={{ width: 130 }} />
+                    <col style={{ width: 160 }} />
+                    <col style={{ width: 150 }} />
+                    <col style={{ width: 130 }} />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 36 }} />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th style={{ ...th, width: 30 }}>
+                      <th style={th}>
                         <input type="checkbox" checked={allChecked} title="Tout sélectionner"
                           onChange={() => setSelected((s) => {
                             const n = new Set(s);
@@ -164,17 +177,17 @@ export default function TableView({
                             return n;
                           })} />
                       </th>
-                      <th style={{ ...th, width: 24 }} />
+                      <th style={th} />
                       <th style={{ ...th, textAlign: 'left' }}>Tâche</th>
-                      <th style={{ ...th, width: 80 }}>Personne</th>
-                      <th style={{ ...th, width: 200 }}>Lien</th>
-                      <th style={{ ...th, width: 130 }}>Étapes</th>
-                      <th style={{ ...th, width: 170 }}>Étiquettes</th>
-                      <th style={{ ...th, width: 270 }}>Dates</th>
-                      <th style={{ ...th, width: 130 }}>Mise à jour</th>
-                      <th style={{ ...th, width: 110 }}>Priorité</th>
-                      <th style={{ ...th, width: 110 }}>Statut</th>
-                      <th style={{ ...th, width: 34 }} />
+                      <th style={th}>Personne</th>
+                      <th style={th}>Lien produit</th>
+                      <th style={th}>Sous-éléments</th>
+                      <th style={th}>Étiquettes</th>
+                      <th style={th}>Échéances</th>
+                      <th style={th}>Mise à jour</th>
+                      <th style={th}>Priorité</th>
+                      <th style={th}>Statut</th>
+                      <th style={{ ...th, borderRight: 'none' }} />
                     </tr>
                   </thead>
                   <tbody>
@@ -183,47 +196,52 @@ export default function TableView({
                       const late = t.due_date && t.status !== 'fait' && t.due_date < today;
                       return (
                         <Fragment key={t.id}>
-                          <tr style={{ background: selected.has(t.id) ? '#EFF6FF' : open ? '#F8FAFF' : '#fff', opacity: t.archived_at ? 0.6 : 1 }}>
-                            <td style={td}><input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSet(setSelected, t.id)} /></td>
-                            <td style={td}>
+                          <tr style={{ background: selected.has(t.id) ? '#CCE5FF' : open ? M.hover : '#fff', opacity: t.archived_at ? 0.6 : 1 }}>
+                            <td style={{ ...td, padding: 0 }}><input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSet(setSelected, t.id)} /></td>
+                            <td style={{ ...td, padding: 0 }}>
                               {t.steps.length > 0 && (
                                 <button type="button" onClick={() => toggleSet(setExpanded, t.id)} title={open ? 'Replier' : 'Voir les étapes'}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 12 }}>{open ? '▼' : '▶'}</button>
+                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 11, width: '100%', height: 36 }}>{open ? '▼' : '▶'}</button>
                               )}
                             </td>
-                            <td style={{ ...td, textAlign: 'left' }}>
-                              <button type="button" onClick={() => onOpen(t.id)} style={{
-                                background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
-                                fontSize: 14, fontWeight: 700, color: '#1F2937', textAlign: 'left',
-                              }}>{t.title}</button>
-                              {t.steps.length > 0 && (
-                                <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#6B7280', background: '#F3F4F6', borderRadius: 4, padding: '1px 5px' }}>{t.steps.length}</span>
-                              )}
-                              {t.comment_count > 0 && <span title="Commentaires" style={{ marginLeft: 6, fontSize: 12, color: '#2563EB' }}>💬 {t.comment_count}</span>}
-                              {t.archived_at && <span style={{ marginLeft: 6, fontSize: 11, color: '#B45309', fontWeight: 700 }}>ARCHIVÉE</span>}
+                            <td style={{ ...td, textAlign: 'left' }} title={t.title}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button type="button" onClick={() => onOpen(t.id)} style={{
+                                  ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
+                                  fontSize: 14, color: M.text, textAlign: 'left', flex: '0 1 auto', minWidth: 0,
+                                }}>{t.title}</button>
+                                {t.steps.length > 0 && (
+                                  <span style={{ fontSize: 12, color: M.sub, background: '#E6E9EF', borderRadius: 4, padding: '0 5px', flexShrink: 0 }}>{t.steps.length}</span>
+                                )}
+                                {t.archived_at && <span style={{ fontSize: 11, color: '#B45309', fontWeight: 700, flexShrink: 0 }}>ARCHIVÉE</span>}
+                                <span style={{ flex: 1 }} />
+                                <span title="Commentaires" style={{ fontSize: 13, color: t.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>
+                                  💬{t.comment_count ? ` ${t.comment_count}` : ''}
+                                </span>
+                              </span>
                             </td>
                             <td style={td}><PeoplePicker title="Personne(s) de la tâche" value={t.people} members={members} onChange={(people) => save(t, { people })} /></td>
-                            <td style={{ ...td, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {t.link_url && <a href={t.link_url} target="_blank" rel="noreferrer" style={{ fontSize: 13 }} title={t.link_url}>{shortUrl(t.link_url)}</a>}
+                            <td style={{ ...td, textAlign: 'left' }}>
+                              {t.link_url && <a href={t.link_url} target="_blank" rel="noreferrer" style={{ ...ellipsis, fontSize: 13, color: '#0073EA' }} title={t.link_url}>{shortUrl(t.link_url)}</a>}
                             </td>
-                            <td style={td}>{t.steps.length > 0 ? <ProgressBar counts={t.counts} width={120} /> : <span style={{ color: '#D1D5DB' }}>—</span>}</td>
+                            <td style={td}>{t.steps.length > 0 ? <ProgressBar counts={t.counts} width={110} /> : ''}</td>
                             <td style={td}>
-                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center' }}>
-                                {t.labels.map((l) => <span key={l} style={labelChip}>{l}</span>)}
+                              <span style={{ display: 'flex', gap: 3, justifyContent: 'center', overflow: 'hidden' }} title={t.labels.join(', ')}>
+                                {t.labels.map((l) => <span key={l} style={{ ...labelChip, background: '#E6E9EF', color: M.text, fontWeight: 400, borderRadius: 3 }}>{l}</span>)}
                               </span>
                             </td>
                             <td style={td}><DateRange start={t.start_date} end={t.due_date} late={late} onChange={(b) => save(t, b)} /></td>
-                            <td style={{ ...td, fontSize: 12, color: '#4B5563' }}>
+                            <td style={{ ...td, fontSize: 13, color: M.sub }}>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                 {t.updated_by && <Avatar id={t.updated_by} name={t.updated_by_name} size={22} />}
                                 {ago(t.updated_at)}
                               </span>
                             </td>
-                            <td style={td}><PriorityPill priority={t.priority} onChange={(priority) => save(t, { priority })} /></td>
-                            <td style={td}>
-                              <TaskStatusPill status={t.status} onChange={t.steps.length ? undefined : (manual_status) => save(t, { manual_status })} />
+                            <td style={mCell}><PriorityPill cell priority={t.priority} onChange={(priority) => save(t, { priority })} /></td>
+                            <td style={mCell}>
+                              <TaskStatusPill cell status={t.status} onChange={t.steps.length ? undefined : (manual_status) => save(t, { manual_status })} />
                             </td>
-                            <td style={td}>
+                            <td style={{ ...td, padding: 0, borderRight: 'none' }}>
                               <DotsMenu items={[
                                 { label: 'Ouvrir', onClick: () => onOpen(t.id) },
                                 { label: t.archived_at ? 'Désarchiver' : 'Archiver', onClick: () => one(t, t.archived_at ? 'unarchive' : 'archive') },
@@ -234,11 +252,9 @@ export default function TableView({
                           </tr>
                           {open && (
                             <tr>
-                              <td colSpan={2} style={{ borderBottom: '1px solid #E5E7EB' }} />
-                              <td colSpan={10} style={{ padding: '6px 12px 14px 0', borderBottom: '1px solid #E5E7EB', background: '#F8FAFF' }}>
-                                <div style={{ border: '1px solid #DBEAFE', borderRadius: 8, background: '#fff' }}>
-                                  <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} />
-                                </div>
+                              <td colSpan={2} style={{ borderBottom: `1px solid ${M.grid}`, background: M.hover }} />
+                              <td colSpan={10} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
+                                <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} color={g.color} />
                               </td>
                             </tr>
                           )}
@@ -252,8 +268,8 @@ export default function TableView({
                         <td colSpan={10} style={{ ...td, textAlign: 'left' }}>
                           <input value={quick[g.id] || ''} onChange={(e) => setQuick((s) => ({ ...s, [g.id]: e.target.value }))}
                             onKeyDown={(e) => { if (e.key === 'Enter') quickAdd(g); }}
-                            placeholder="+ Ajouter une tâche (Entrée)"
-                            style={{ border: 'none', outline: 'none', width: '100%', fontSize: 14, fontFamily: 'inherit', padding: '5px 0' }} />
+                            placeholder="+ Ajouter tâche"
+                            style={{ border: 'none', outline: 'none', width: '100%', fontSize: 14, fontFamily: 'inherit', color: M.text }} />
                         </td>
                       </tr>
                     )}

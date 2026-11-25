@@ -14,6 +14,8 @@ const GROUP_BY = [
   { key: 'label', label: 'Étiquette' },
 ];
 const PAGE = 40;
+// Deux lignes au plus, puis « … » (une étape peut être une longue adresse).
+const clamp = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' };
 
 /**
  * Vue Kanban. Une carte = une tâche, ou une étape quand on regroupe par statut
@@ -143,8 +145,8 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
                         background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'grab', boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
                         borderLeft: `4px solid ${c.step ? STEP_STATUS[c.step.status].bg : TASK_STATUS[c.task.status]?.bg || '#C4C4C4'}`,
                       }}>
-                      {c.step && <div style={{ fontSize: 14, fontWeight: 800, color: '#1F2937' }}>{c.step.name}</div>}
-                      <div style={{ fontSize: c.step ? 12 : 14, fontWeight: c.step ? 600 : 800, color: c.step ? '#6B7280' : '#1F2937' }}>{c.task.title}</div>
+                      {c.step && <div style={{ ...clamp, fontSize: 14, fontWeight: 600, color: '#323338' }} title={c.step.name}>{c.step.name}</div>}
+                      <div style={{ ...clamp, fontSize: c.step ? 12 : 14, fontWeight: c.step ? 400 : 600, color: c.step ? '#676879' : '#323338' }} title={c.task.title}>{c.task.title}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                         <AvatarStack ids={c.step ? c.step.owners : c.task.people} members={members} size={22} />
                         {pr && <span style={{ width: 9, height: 9, borderRadius: '50%', background: PRIORITY[pr].bg }} title={`Priorité ${PRIORITY[pr].label}`} />}

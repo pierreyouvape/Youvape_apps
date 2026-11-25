@@ -235,7 +235,7 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {undated.slice(0, 120).map((t) => (
               <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #E5E7EB', borderRadius: 8, padding: '3px 4px 3px 10px', fontSize: 13 }}>
-                <button type="button" onClick={() => onOpen(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, color: '#374151', padding: 0 }}>{t.title}</button>
+                <button type="button" onClick={() => onOpen(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#323338', padding: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.title}>{t.title}</button>
                 <button type="button" title="Placer cette semaine" onClick={async () => {
                   try { onTaskChange(await tachesApi.updateTask(t.id, { start_date: today, due_date: addDays(today, 6) })); } catch (e) { onError(apiError(e)); }
                 }} style={{ background: '#EFF6FF', border: 'none', borderRadius: 6, color: '#2563EB', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '2px 8px' }}>Planifier</button>

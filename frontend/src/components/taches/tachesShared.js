@@ -3,7 +3,7 @@ import axios from 'axios';
 /* App Tâches : constantes, appels API et libellés partagés. */
 
 export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');
-export const TACHES_COLOR = '#2563EB';
+export const TACHES_COLOR = '#0073EA';
 
 /** Statuts d'étape (clés identiques à services/tachesRules.STEP_STATUSES), couleurs Monday. */
 export const STEP_STATUS = {
@@ -35,8 +35,9 @@ export const PRIORITY = {
 export const PRIORITY_ORDER = ['critique', 'haute', 'moyenne', 'basse'];
 export const priorityRank = (p) => (p ? PRIORITY_ORDER.indexOf(p) : PRIORITY_ORDER.length);
 
-const AVATAR_COLORS = ['#7C3AED', '#0891B2', '#16A34A', '#DB2777', '#EA580C', '#2563EB', '#CA8A04', '#4F46E5'];
-export const avatarColor = (id) => AVATAR_COLORS[Number(id) % AVATAR_COLORS.length];
+// 11 couleurs et un pas de 7 : les comptes de l'équipe (1, 2, 3, 4, 10) ont chacun la leur.
+const AVATAR_COLORS = ['#0073EA', '#00C875', '#E2445C', '#FDAB3D', '#A25DDC', '#037F4C', '#FF158A', '#579BFC', '#784BD1', '#BB3354', '#00A9FF'];
+export const avatarColor = (id) => AVATAR_COLORS[(Number(id) * 7) % AVATAR_COLORS.length];
 export const initials = (name) => String(name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
 export const apiError = (e) => e?.response?.data?.error || e?.message || 'Erreur';
@@ -137,3 +138,26 @@ export const inputStyle = {
 export const labelChip = {
   background: '#E0EAFF', color: '#1E40AF', borderRadius: 4, padding: '2px 7px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
 };
+
+/* ─── Tableaux façon Monday ─────────────────────────────────
+ * Lignes de 36 px, grille fine grise, en-têtes gris centrés, texte sur une
+ * seule ligne (coupé avec « … », complet au survol), cellules de statut pleines.
+ */
+export const M = {
+  text: '#323338', sub: '#676879', border: '#D0D4E4', grid: '#E6E9EF', hover: '#F5F6F8', rowH: 36,
+  font: "'Figtree', 'Roboto', 'Lato', -apple-system, sans-serif",
+};
+export const mTable = { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 14, color: M.text, fontFamily: M.font };
+export const mTh = {
+  height: 36, padding: '0 8px', fontSize: 14, fontWeight: 400, color: M.sub, textAlign: 'center',
+  borderBottom: `1px solid ${M.grid}`, borderRight: `1px solid ${M.grid}`, background: '#fff',
+  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+};
+export const mTd = {
+  height: 36, padding: '0 8px', borderBottom: `1px solid ${M.grid}`, borderRight: `1px solid ${M.grid}`,
+  textAlign: 'center', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+};
+/** Case occupée entièrement par une cellule de couleur (statut, priorité). */
+export const mCell = { ...mTd, padding: 0 };
+/** Texte coupé sur une ligne. */
+export const ellipsis = { display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };

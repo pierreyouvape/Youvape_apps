@@ -76,7 +76,7 @@ export default function CalendarView({ tasks, loading, onOpen, onTaskChange, onE
         <button type="button" style={{ ...btn(), padding: '6px 12px' }} onClick={() => shift(1)}>→</button>
         <button type="button" style={{ ...btn(), padding: '6px 12px' }} onClick={() => setMonth(today.slice(0, 7))}>Aujourd'hui</button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#E5E7EB', gap: 1, border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', background: '#E5E7EB', gap: 1, border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
         {DAYS.map((d) => <div key={d} style={{ background: '#F9FAFB', padding: '6px 8px', fontSize: 12, fontWeight: 800, color: '#6B7280' }}>{d}</div>)}
         {cells.map((d) => {
           const items = byDay.get(d) || [];
