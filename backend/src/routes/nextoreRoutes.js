@@ -66,6 +66,7 @@ router.post('/:shop/reception/sessions/:sessionId/counts/:itemId/release', bouti
 router.post('/:shop/reception/sessions/:sessionId/lines', boutiquePerm('write'), nextoreController.postReceptionLine);
 router.post('/:shop/reception/sessions/:sessionId/abandon', boutiquePerm('write'), nextoreController.postReceptionAbandon);
 router.post('/:shop/reception/sessions/:sessionId/validate', boutiquePerm('write'), nextoreController.postReceptionValidate);
+router.post('/:shop/reception/sessions/:sessionId/send-mine', boutiquePerm('write'), nextoreController.postReceptionSendMine);
 router.post('/:shop/reception/barcodes', boutiquePerm('write'), nextoreController.postReceptionBarcode);
 
 // Historique (évolution) du stock d'un produit dans une boutique

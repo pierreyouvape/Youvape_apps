@@ -238,6 +238,13 @@ const postReceptionBarcode = receptionHandler('barcode', (wh, req) => boutiqueOr
   barcode: req.body?.barcode, productId: req.body?.product_id, kind: req.body?.kind,
   packQty: req.body?.pack_qty, orderItemId: req.body?.order_item_id, userEmail: req.user?.email, userId: req.user?.id,
 }));
+// « Envoyer mes lignes » : achat reçu Nextore des seules lignes comptées par la personne
+const postReceptionSendMine = receptionHandler('send-mine', async (wh, req) => {
+  const result = await boutiqueOrderModel.sendMine(req.params.sessionId, wh, req.user?.email || null);
+  console.log(`Boutique réception ${wh.code} session ${req.params.sessionId} : lignes de ${req.user?.email} envoyées, `
+    + `${result.pieces} pièces, achat Nextore ${result.nextore_purchase_id} ${result.nextore_reference}`);
+  return result;
+});
 const postReceptionValidate = receptionHandler('validate', async (wh, req) => {
   const result = await boutiqueOrderModel.validateSession(req.params.sessionId, wh, req.body?.motifs, req.user?.email);
   console.log(`Boutique réception ${wh.code} session ${req.params.sessionId} validée par ${req.user?.email} : `
@@ -537,6 +544,7 @@ module.exports = {
   postReceptionAbandon,
   postReceptionBarcode,
   postReceptionValidate,
+  postReceptionSendMine,
   getSuppliers,
   getStockHistory,
   getProduct,

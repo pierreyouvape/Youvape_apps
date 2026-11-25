@@ -12,7 +12,11 @@ import { useScanner, beep } from '../pda/pdaScan';
  *   commande et abandonner une réception restent au PC ;
  * - plusieurs personnes sur une réception : dès sa 1re pièce, une ligne
  *   appartient à qui la compte, grisée « Compté par Franck » chez les autres
- *   (le serveur refuse : 409 LOCKED) ; « Libérer » au PC, quantité gardée.
+ *   (le serveur refuse : 409 LOCKED) ; « Libérer » au PC, quantité gardée ;
+ * - « Envoyer mes lignes » (25/11/2026) : chacun envoie SES lignes dans Nextore
+ *   (un achat reçu à part, sans motif), la réception reste ouverte ; une ligne
+ *   envoyée ne se recompte plus (409 ALREADY_SENT). « Valider la réception »
+ *   reste le geste de fin : motifs des manquants, clôture.
  */
 const REFRESH_MS = 15000; // les lignes prises par les autres appareils apparaissent
 
@@ -206,20 +210,27 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
   // Qui compte chaque ligne : itemId → { by, name } (verrou par personne)
   const ownersRef = useRef({});
   const [owners, setOwners] = useState({});
+  // Lignes déjà envoyées par « Envoyer mes lignes » : itemId → { name }
+  const sentRef = useRef({});
+  const [sent, setSent] = useState({});
   const base = `${API_URL}/nextore/${shop.slug}/reception`;
 
   const apply = useCallback((d) => {
     setData(d);
     const c = {};
     const o = {};
+    const sn = {};
     for (const x of d.session?.counts || []) {
       c[x.order_item_id] = x.units_counted;
-      if (x.counted_by) o[x.order_item_id] = { by: x.counted_by, name: x.counted_by_name };
+      if (x.sent) sn[x.order_item_id] = { name: x.counted_by_name };
+      else if (x.counted_by) o[x.order_item_id] = { by: x.counted_by, name: x.counted_by_name };
     }
     countsRef.current = c;
     setCounts(c);
     ownersRef.current = o;
     setOwners(o);
+    sentRef.current = sn;
+    setSent(sn);
   }, []);
   // La ligne est-elle comptée par quelqu'un d'autre ? → { by, name } ou null
   const lockedBy = (itemId, map = ownersRef.current) => {
@@ -251,6 +262,9 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
   // En cas d'échec, on recharge depuis la base : c'est elle que la validation lit.
   // Ligne comptée par quelqu'un d'autre : refusée ici, et par le serveur.
   const setCount = (itemId, value) => {
+    // Déjà envoyée : ses pièces sont en stock, la recompter les doublerait
+    const done = sentRef.current[itemId];
+    if (done) { say(`Déjà envoyé dans Nextore par ${done.name} : cette ligne ne se recompte plus`, false); return false; }
     const other = lockedBy(itemId);
     if (other) { say(`Compté par ${other.name}`, false); return false; }
     const n = Math.max(0, parseInt(value, 10) || 0);
@@ -270,7 +284,7 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
         await axios.put(`${base}/sessions/${sessionId}/counts/${itemId}`, { units_counted: countsRef.current[itemId] || 0 }, auth);
       } catch (e) {
         const d = e.response?.data || {};
-        if (d.code === 'LOCKED') say(d.error, false);
+        if (['LOCKED', 'ALREADY_SENT', 'SENDING'].includes(d.code)) say(d.error, false);
         else setError(`Comptage non enregistré, écran rechargé : ${d.error || e.message}`);
         await load();
       } finally {
@@ -284,6 +298,22 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
     if (!setCount(item.id, (countsRef.current[item.id] || 0) + n)) return;
     setScanned((prev) => ({ id: item.id, n: (prev?.n || 0) + 1 }));
     say(msg || `${item.name} — +${n}`);
+  };
+
+  // « Envoyer mes lignes » : un achat reçu Nextore de mes seules lignes, sans motif ;
+  // la réception reste ouverte pour les autres
+  const sendMine = (mine) => {
+    const pieces = mine.reduce((a, x) => a + x.counted, 0);
+    if (!window.confirm(`Envoyer vos ${mine.length} ligne(s) (${fmtInt(pieces)} pièce(s)) dans Nextore ?\n\n`
+      + 'Un achat reçu est créé tout de suite, le stock monte. Ces lignes ne pourront plus être recomptées dans cette réception ; '
+      + 'les autres continuent les leurs.')) return;
+    run(async () => {
+      await flushWrites();
+      const res = await axios.post(`${base}/sessions/${session.id}/send-mine`, {}, auth);
+      apply(res.data);
+      say(`${fmtInt(res.data.pieces)} pièce(s) mises en stock : achat « ${res.data.nextore_reference} »`
+        + (res.data.order.status !== 'open' ? ' — commande entièrement reçue' : ''));
+    });
   };
 
   // PC : libère une ligne comptée par quelqu'un d'autre (quantité gardée)
@@ -400,13 +430,17 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
 
   const lines = (data?.items || []).map((x) => ({ ...x, counted: counts[x.id] || 0 }));
   const othersLines = lines.filter((x) => lockedBy(x.id, owners));
+  // Mes lignes comptées, pas encore envoyées
+  const myLines = lines.filter((x) => !sent[x.id] && owners[x.id]?.by === me && x.counted > 0);
+  const anySent = lines.some((x) => sent[x.id]);
   const missing = lines.filter((x) => x.counted < x.remaining);
   const surplus = lines.filter((x) => x.counted > x.remaining);
   const totalCounted = lines.reduce((a, x) => a + x.counted, 0);
 
   // Pendant le comptage, comme au site : ce qui reste à compter en haut, le surplus
   // juste après (anomalie à corriger, pas à cacher), le compte juste en bas.
-  const rang = (x) => (x.counted < x.remaining ? 0 : x.counted > x.remaining ? 1 : 2);
+  // Ligne déjà envoyée : en bas avec le compte juste (plus rien à y faire)
+  const rang = (x) => (sent[x.id] ? 2 : x.counted < x.remaining ? 0 : x.counted > x.remaining ? 1 : 2);
   const shown = counting ? trierParAvancement(lines, rang) : lines;
   // Le fond porte l'état du comptage ; le zébrage ne reste qu'aux lignes vierges
   const rowBackground = (x, i) => {
@@ -487,9 +521,16 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
             </form>
             {flash && <div style={{ marginTop: 8, color: flash.ok ? '#16a34a' : '#dc2626', fontWeight: 700, fontSize: 15 }}>{flash.msg}</div>}
             <div style={{ marginTop: 6, fontSize: 13, color: '#555' }}>{fmtInt(totalCounted)} pièce(s) comptée(s)</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button className="btn btn-primary" style={{ ...pdaBtn, width: '100%', marginTop: 10, background: '#16a34a', borderColor: '#16a34a' }}
+              onClick={() => sendMine(myLines)} disabled={busy || myLines.length === 0}>
+              {busy ? 'Envoi…' : `Envoyer mes lignes dans Nextore (${myLines.length})`}
+            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button className="btn btn-secondary" style={pdaBtn} onClick={() => setAddModal({})} disabled={busy}>+ Article absent</button>
-              <button className="btn btn-primary" style={pdaBtn} onClick={() => setValidateModal(true)} disabled={busy}>Valider</button>
+              <button className="btn btn-primary" style={pdaBtn} onClick={() => setValidateModal(true)} disabled={busy}>Valider la réception</button>
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+              « Valider la réception » clôt tout, motifs des manquants compris : quand tout le monde a fini.
             </div>
           </>
         )}
@@ -497,6 +538,7 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
       {shown.map((x, i) => {
         const gap = x.counted - x.remaining;
         const other = counting ? lockedBy(x.id, owners) : null;
+        const done = counting ? sent[x.id] : null;
         return (
           <div key={x.id} id={`rx-${x.id}`} style={{
             background: rowBackground(x, i), border: '1px solid #E5E7EB', borderRadius: 10, padding: 10, marginBottom: 8,
@@ -514,13 +556,14 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
               </div>
             </div>
             {other && <div style={{ color: '#c2410c', fontWeight: 700, fontSize: 14, marginTop: 6 }}>Compté par {other.name}</div>}
+            {done && <div style={{ color: '#15803d', fontWeight: 700, fontSize: 14, marginTop: 6 }}>Envoyé dans Nextore par {done.name}</div>}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
               <span style={{ fontSize: 14, color: '#374151' }}>
                 Attendu <strong>{fmtInt(x.remaining)}</strong>
                 {x.qty_received > 0 && <span style={{ color: '#6b7280' }}> (déjà reçu {fmtInt(x.qty_received)})</span>}
               </span>
               <span style={{ flex: 1 }} />
-              {counting && (other ? (
+              {counting && !done && (other ? (
                 <strong style={{ fontSize: 18 }}>{fmtInt(x.counted)}</strong>
               ) : (
                 <>
@@ -531,7 +574,7 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
                   <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 18 }} onClick={() => addPieces(x, 1)}>+</button>
                 </>
               ))}
-              {counting && x.counted > 0 && (
+              {counting && !done && x.counted > 0 && (
                 <span style={{ minWidth: 34, textAlign: 'right', color: gap < 0 ? '#b45309' : gap > 0 ? '#b91c1c' : '#15803d', fontWeight: 700 }}>
                   {gap === 0 ? '✓' : gap > 0 ? `+${fmtInt(gap)}` : `−${fmtInt(-gap)}`}
                 </span>
@@ -564,6 +607,8 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
               <>
                 <button className="btn btn-secondary" onClick={() => setAddModal({})} disabled={busy}>+ Article absent du bon</button>
                 <button className="btn btn-secondary" onClick={abandon} disabled={busy}>Abandonner</button>
+                <button className="btn btn-secondary" onClick={() => sendMine(myLines)} disabled={busy || myLines.length === 0}
+                  title="Met en stock dans Nextore vos seules lignes ; la réception reste ouverte pour les autres">Envoyer mes lignes ({myLines.length})</button>
                 <button className="btn btn-primary" onClick={() => setValidateModal(true)} disabled={busy}>Valider la réception</button>
               </>
             )}
@@ -615,7 +660,9 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
                   {counting && (
                     <>
                       <td className="text-right" style={{ whiteSpace: 'nowrap' }}>
-                        {lockedBy(x.id, owners) ? (
+                        {sent[x.id] ? (
+                          <small style={{ color: '#15803d', fontWeight: 600 }}>Envoyé dans Nextore par {sent[x.id].name}</small>
+                        ) : lockedBy(x.id, owners) ? (
                           <>
                             <strong style={{ marginRight: 8 }}>{fmtInt(x.counted)}</strong>
                             <small style={{ color: '#c2410c', fontWeight: 600, marginRight: 8 }}>Compté par {lockedBy(x.id, owners).name}</small>
@@ -695,13 +742,15 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
           footer={<>
             <button className="btn btn-secondary" onClick={() => setValidateModal(false)} disabled={busy}>Reprendre le comptage</button>
             <button className="btn btn-primary" onClick={validate} disabled={busy || missing.some((x) => !motifs[x.id])}>
-              {busy ? 'Envoi…' : totalCounted > 0 ? `Mettre ${fmtInt(totalCounted)} pièce(s) en stock` : 'Solder sans réception'}
+              {busy ? 'Envoi…' : totalCounted > 0 ? `Mettre ${fmtInt(totalCounted)} pièce(s) en stock` : anySent ? 'Clôturer la réception' : 'Solder sans réception'}
             </button>
           </>}>
           <p style={{ marginTop: 0 }}>
             {totalCounted > 0
               ? <>Un achat <strong>reçu</strong> de {fmtInt(totalCounted)} pièce(s) sera créé dans Nextore : le stock monte aussitôt. <strong>Il ne pourra pas être supprimé.</strong></>
-              : 'Aucune pièce comptée : rien ne part dans Nextore, les lignes sont soldées selon leur motif.'}
+              : anySent
+                ? 'Les lignes déjà envoyées sont en stock. Il reste à clore la réception : rien de plus ne part dans Nextore, les lignes restantes sont soldées selon leur motif.'
+                : 'Aucune pièce comptée : rien ne part dans Nextore, les lignes sont soldées selon leur motif.'}
           </p>
           {missing.length > 0 && (
             <>

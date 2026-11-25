@@ -722,6 +722,14 @@ Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fic
 - Relecture toutes les 15 s, **jamais pendant une écriture** (`pending`, `writeSeq`) : une relecture partie
   avant une écriture remettrait le compteur en arrière, et l'écriture suivante enverrait ce total faux.
 - Migration `add_boutique_reception_count_lock.sql` AVANT le code.
+- **« Envoyer mes lignes »** (25/11/2026, `boutiqueOrderModel.sendMine`) : achat reçu Nextore des **seules lignes
+  de la personne**, sans motif (référence `-R2`, `-R3`…). Ces lignes deviennent une réception validée à part
+  (historique) et restent marquées `sent` dans la réception en cours : **elles ne se recomptent plus** (409
+  `ALREADY_SENT`), sinon les pièces déjà en stock entreraient deux fois. Avant, « Valider » envoyait la réception
+  entière, lignes des autres comprises, et faisait choisir leurs motifs. « Valider la réception » reste le geste de fin.
+- Pendant un envoi partiel, la réception est en `sending` (comptages refusés quelques secondes, 409 `SENDING`)
+  et `sending_only_by` dit à qui sont les lignes : un envoi interrompu ne se reprend que pour elles.
+  Migration `add_boutique_reception_send_mine.sql` AVANT le code.
 
 ### Catalogue caisse : produits du site → Nextore (10/11/2026)
 

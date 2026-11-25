@@ -209,7 +209,7 @@ async function getOrder(orderId, warehouseId) {
             COALESCE((SELECT json_agg(json_build_object(
                         'order_item_id', c.order_item_id, 'units_counted', c.units_counted,
                         'units_expected', c.units_expected, 'motif', c.motif,
-                        'counted_by', c.counted_by,
+                        'counted_by', c.counted_by, 'sent', c.sent,
                         'counted_by_name', COALESCE((SELECT name FROM users u WHERE u.email = c.counted_by LIMIT 1),
                                                     split_part(c.counted_by, '@', 1))))
                       FROM boutique_reception_counts c WHERE c.session_id = s.id), '[]') AS counts
@@ -532,7 +532,10 @@ async function getSessionForShop(sessionId, warehouseId, db = pool) {
 }
 
 const assertCounting = (session) => {
-  if (session.status === 'sending') throw httpError(409, 'Cette réception est en cours d\'envoi à Nextore');
+  // `SENDING` : un collègue envoie ses lignes, l'écran demande de rescanner dans un instant
+  if (session.status === 'sending') {
+    throw Object.assign(httpError(409, 'Envoi à Nextore en cours (un collègue envoie ses lignes) : rescannez dans un instant'), { code: 'SENDING' });
+  }
   if (session.status !== 'counting') throw httpError(400, 'Cette réception est close');
 };
 
@@ -602,16 +605,23 @@ async function setCount(sessionId, warehouseId, itemId, units, userEmail = null)
        counted_by_at = CASE WHEN EXCLUDED.counted_by IS NULL THEN NULL
                             WHEN boutique_reception_counts.counted_by IS NOT DISTINCT FROM $4::text
                             THEN COALESCE(boutique_reception_counts.counted_by_at, NOW()) ELSE NOW() END
-     WHERE boutique_reception_counts.counted_by IS NULL OR boutique_reception_counts.counted_by = $4::text
+     WHERE NOT boutique_reception_counts.sent
+       AND (boutique_reception_counts.counted_by IS NULL OR boutique_reception_counts.counted_by = $4::text)
      RETURNING units_counted, counted_by`,
     [session.id, parseInt(itemId, 10), n, userEmail]
   );
   if (!saved.length) {
     const { rows: cur } = await pool.query(
-      'SELECT counted_by FROM boutique_reception_counts WHERE session_id = $1 AND order_item_id = $2',
+      'SELECT counted_by, sent FROM boutique_reception_counts WHERE session_id = $1 AND order_item_id = $2',
       [session.id, parseInt(itemId, 10)]
     );
     const name = await userName(cur[0]?.counted_by);
+    // Déjà envoyée par « Envoyer mes lignes » : ses pièces sont en stock, la recompter les doublerait
+    if (cur[0]?.sent) {
+      const e = httpError(409, `Déjà envoyé dans Nextore par ${name} : cette ligne ne se recompte plus dans cette réception`);
+      e.code = 'ALREADY_SENT';
+      throw e;
+    }
     const e = httpError(409, `Compté par ${name}`);
     e.code = 'LOCKED'; e.lockedByName = name;
     throw e;
@@ -625,10 +635,10 @@ async function releaseCount(sessionId, warehouseId, itemId) {
   assertCounting(session);
   const { rowCount } = await pool.query(
     `UPDATE boutique_reception_counts SET counted_by = NULL, counted_by_at = NULL
-     WHERE session_id = $1 AND order_item_id = $2 AND counted_by IS NOT NULL`,
+     WHERE session_id = $1 AND order_item_id = $2 AND counted_by IS NOT NULL AND NOT sent`,
     [session.id, parseInt(itemId, 10)]
   );
-  if (!rowCount) throw httpError(409, 'Cette ligne n\'est plus verrouillée');
+  if (!rowCount) throw httpError(409, 'Cette ligne n\'est plus verrouillée (libérée ou déjà envoyée)');
   return getOrder(session.order_id, warehouseId);
 }
 
@@ -702,7 +712,7 @@ async function sessionLines(sessionId, orderId, db) {
   const { rows } = await db.query(
     `SELECT i.id, i.product_id, i.supplier_sku, i.unit_cost::float AS unit_cost,
             ${REMAINING_SQL}::int AS remaining, p.name,
-            COALESCE(c.units_counted, 0) AS units_counted
+            COALESCE(c.units_counted, 0) AS units_counted, c.counted_by, COALESCE(c.sent, FALSE) AS sent
      FROM boutique_order_items i
      JOIN nextore_products p ON p.product_id = i.product_id
      LEFT JOIN boutique_reception_counts c ON c.order_item_id = i.id AND c.session_id = $1
@@ -782,11 +792,192 @@ async function finalizeSession(session, purchaseId, userEmail) {
 async function reconcileSending(session, warehouseId) {
   const purchaseId = session.nextore_reference ? await findNextorePurchase(session.nextore_reference) : null;
   if (purchaseId) {
-    await finalizeSession({ ...session, warehouse_id: warehouseId }, purchaseId, session.validated_by);
+    // Envoi partiel interrompu : on ne range que les lignes de cette personne
+    if (session.sending_only_by) await finalizePartial(session, purchaseId, session.sending_only_by);
+    else await finalizeSession({ ...session, warehouse_id: warehouseId }, purchaseId, session.validated_by);
     return true;
   }
-  await pool.query("UPDATE boutique_reception_sessions SET status = 'counting' WHERE id = $1", [session.id]);
+  await pool.query(
+    "UPDATE boutique_reception_sessions SET status = 'counting', sending_only_by = NULL WHERE id = $1",
+    [session.id]
+  );
   return false;
+}
+
+/**
+ * « Envoyer mes lignes » (25/11/2026, réception à plusieurs) : crée dans Nextore un
+ * achat REÇU avec les seules lignes comptées par `userEmail`, sans motif. La
+ * réception reste ouverte pour les autres ; « Valider la réception » reste le
+ * geste de fin (motifs des manquants, clôture).
+ *
+ * Mêmes précautions que validateSession : `sending` posé AVANT l'appel (les
+ * comptages sont refusés le temps de l'envoi), réponse douteuse = on demande à
+ * Nextore. `sending_only_by` dit qu'il s'agit d'un envoi partiel : une reprise
+ * (reconcileSending) ne range que ces lignes-là.
+ */
+async function sendMine(sessionId, warehouse, userEmail) {
+  if (!userEmail) throw httpError(400, 'Utilisateur inconnu');
+  const client = await pool.connect();
+  let session;
+  let toSend;
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT s.*, o.supplier_id, o.reference
+       FROM boutique_reception_sessions s
+       JOIN boutique_orders o ON o.id = s.order_id
+       WHERE s.id = $1 AND o.warehouse_id = $2
+       FOR UPDATE OF s`,
+      [parseInt(sessionId, 10), warehouse.id]
+    );
+    session = rows[0];
+    if (!session) throw httpError(404, 'Réception introuvable dans cette boutique');
+    assertCounting(session);
+    const lines = await sessionLines(session.id, session.order_id, client);
+    toSend = lines.filter((l) => l.counted_by === userEmail && !l.sent && l.units_counted > 0);
+    if (!toSend.length) throw httpError(400, 'Vous n\'avez aucune ligne comptée à envoyer');
+    const { rows: done } = await client.query(
+      "SELECT COUNT(*)::int AS n FROM boutique_reception_sessions WHERE order_id = $1 AND status = 'validated' AND nextore_reference IS NOT NULL",
+      [session.order_id]
+    );
+    session.nextore_reference = done[0].n > 0 ? `${session.reference}-R${done[0].n + 1}` : session.reference;
+    session.sending_only_by = userEmail;
+    await client.query(
+      `UPDATE boutique_reception_sessions SET status = 'sending', nextore_reference = $2, validated_by = $3, sending_only_by = $3
+       WHERE id = $1`,
+      [session.id, session.nextore_reference, userEmail]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  let purchaseId;
+  try {
+    purchaseId = await api.createPurchase({
+      referenceNo: session.nextore_reference,
+      status: 'received',
+      supplierId: session.supplier_id,
+      warehouseId: warehouse.id,
+      items: toSend.map((l) => ({
+        product_id: l.product_id,
+        net_unit_cost: Number(l.unit_cost).toFixed(4),
+        quantity: String(l.units_counted),
+      })),
+    });
+  } catch (err) {
+    const found = await findNextorePurchase(session.nextore_reference).catch(() => null);
+    if (!found) {
+      await pool.query(
+        `UPDATE boutique_reception_sessions
+         SET status = 'counting', last_error = $2, nextore_reference = NULL, validated_by = NULL, sending_only_by = NULL
+         WHERE id = $1`,
+        [session.id, err.message]
+      );
+      throw httpError(502, `Nextore a refusé l'envoi, rien n'a été mis en stock : ${err.message}`);
+    }
+    purchaseId = found;
+  }
+
+  await finalizePartial(session, String(purchaseId), userEmail);
+  const detail = await getOrder(session.order_id, warehouse.id);
+  return {
+    nextore_reference: session.nextore_reference,
+    nextore_purchase_id: String(purchaseId),
+    pieces: toSend.reduce((a, l) => a + l.units_counted, 0),
+    lines_sent: toSend.length,
+    ...detail,
+  };
+}
+
+/**
+ * Range un envoi partiel : ses lignes deviennent une réception VALIDÉE à part
+ * (historique, référence et n° d'achat Nextore), leurs pièces passent en reçu ;
+ * dans la réception en cours, elles restent marquées `sent` (0 pièce, plus
+ * comptables). Puis la réception en cours repart en comptage — ou s'efface si
+ * plus rien n'est attendu ni compté.
+ */
+async function finalizePartial(session, purchaseId, userEmail) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: counts } = await client.query(
+      `SELECT c.order_item_id, c.units_counted, ${REMAINING_SQL}::int AS remaining
+       FROM boutique_reception_counts c JOIN boutique_order_items i ON i.id = c.order_item_id
+       WHERE c.session_id = $1 AND c.counted_by = $2 AND NOT c.sent AND c.units_counted > 0`,
+      [session.id, userEmail]
+    );
+    // Déjà rangé (une reprise et l'envoi d'origine se sont croisés) : rien à refaire
+    if (!counts.length) {
+      await client.query(
+        `UPDATE boutique_reception_sessions
+         SET status = 'counting', nextore_reference = NULL, validated_by = NULL, sending_only_by = NULL
+         WHERE id = $1 AND status = 'sending'`,
+        [session.id]
+      );
+      await client.query('COMMIT');
+      return;
+    }
+    const { rows: [part] } = await client.query(
+      `INSERT INTO boutique_reception_sessions
+         (order_id, status, started_by, validated_by, validated_at, nextore_reference, nextore_purchase_id)
+       VALUES ($1, 'validated', $2, $2, NOW(), $3, $4) RETURNING id`,
+      [session.order_id, userEmail, session.nextore_reference, purchaseId]
+    );
+    for (const c of counts) {
+      await client.query(
+        `INSERT INTO boutique_reception_counts (session_id, order_item_id, units_counted, units_expected, counted_by, counted_by_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [part.id, c.order_item_id, c.units_counted, c.remaining, userEmail]
+      );
+      await client.query(
+        'UPDATE boutique_order_items SET qty_received = qty_received + $2 WHERE id = $1',
+        [c.order_item_id, c.units_counted]
+      );
+      await client.query(
+        'UPDATE boutique_reception_counts SET units_counted = 0, sent = TRUE WHERE session_id = $1 AND order_item_id = $2',
+        [session.id, c.order_item_id]
+      );
+    }
+    // Un produit désactivé (onglet Produits) qu'on reçoit redevient actif dans cette boutique
+    await client.query(
+      `UPDATE nextore_stock SET disabled_at = NULL, disabled_by = NULL
+       WHERE disabled_at IS NOT NULL
+         AND warehouse_id = (SELECT warehouse_id FROM boutique_orders WHERE id = $2)
+         AND product_id IN (
+         SELECT i.product_id FROM boutique_reception_counts c
+         JOIN boutique_order_items i ON i.id = c.order_item_id
+         WHERE c.session_id = $1 AND c.units_counted > 0)`,
+      [part.id, session.order_id]
+    );
+    // Plus rien d'attendu ni de compté chez personne : la commande est reçue,
+    // la réception en cours (qui ne porte plus que des lignes envoyées) s'efface
+    const { rows: [left] } = await client.query(
+      `SELECT (SELECT COALESCE(SUM(${REMAINING_SQL}), 0)::int FROM boutique_order_items i WHERE i.order_id = $1) AS remaining,
+              (SELECT COUNT(*)::int FROM boutique_reception_counts
+               WHERE session_id = $2 AND NOT sent AND units_counted > 0) AS counted`,
+      [session.order_id, session.id]
+    );
+    const done = left.remaining === 0 && left.counted === 0;
+    await client.query(
+      `UPDATE boutique_reception_sessions
+       SET status = $2, nextore_reference = NULL, validated_by = NULL, sending_only_by = NULL, last_error = NULL
+       WHERE id = $1`,
+      [session.id, done ? 'abandoned' : 'counting']
+    );
+    if (done) {
+      await client.query("UPDATE boutique_orders SET status = 'received', closed_at = NOW() WHERE id = $1", [session.order_id]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -829,7 +1020,9 @@ async function validateSession(sessionId, warehouse, motifs, userEmail) {
     toSend = lines.filter((l) => l.units_counted > 0);
     // Sans pièce comptée, seule une clôture (soldé, manquant, erreur) a un sens :
     // une réception vide « reliquat » ne changerait rien
-    if (!toSend.length && !missing.some((l) => CLOSING_MOTIFS.includes(motifById.get(l.id)))) {
+    // … sauf si des lignes sont déjà parties par « Envoyer mes lignes » : il reste à clore
+    if (!toSend.length && !lines.some((l) => l.sent)
+        && !missing.some((l) => CLOSING_MOTIFS.includes(motifById.get(l.id)))) {
       throw httpError(400, 'Aucune pièce comptée : il n\'y a rien à réceptionner');
     }
 
@@ -918,6 +1111,7 @@ module.exports = {
   openSession,
   setCount,
   releaseCount,
+  sendMine,
   addLine,
   abandonSession,
   saveBarcode,
