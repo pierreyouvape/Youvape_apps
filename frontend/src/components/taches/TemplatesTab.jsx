@@ -1,0 +1,92 @@
+import { useContext, useEffect, useState } from 'react';
+import { AuthContext } from '../../context/AuthContext';
+import { tachesApi, apiError } from './tachesShared';
+import { btn, inputStyle } from './tachesShared';
+import StepsEditor from './StepsEditor';
+
+/** Modèles d'enchaînement (Fiche Produit…), recopiés à la création d'une tâche. */
+export default function TemplatesTab({ members, templates, onChange }) {
+  const { permissions, isSuperAdmin } = useContext(AuthContext);
+  const canEdit = isSuperAdmin || permissions?.taches?.write === true;
+  const [editing, setEditing] = useState(null); // null | { id?, name, label, steps }
+  const [error, setError] = useState(null);
+
+  useEffect(() => { setError(null); }, [editing]);
+
+  const save = async () => {
+    try {
+      const list = editing.id
+        ? await tachesApi.updateTemplate(editing.id, editing)
+        : await tachesApi.createTemplate(editing);
+      onChange(list);
+      setEditing(null);
+    } catch (e) {
+      setError(apiError(e));
+    }
+  };
+
+  const remove = async (t) => {
+    if (!window.confirm(`Supprimer le modèle « ${t.name} » ? Les tâches déjà créées ne changent pas.`)) return;
+    try { onChange(await tachesApi.deleteTemplate(t.id)); } catch (e) { setError(apiError(e)); }
+  };
+
+  const names = (ids) => ids.map((id) => members.find((m) => m.id === id)?.name).filter(Boolean).join(', ') || '—';
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+      {!canEdit && <p style={{ fontSize: 13, color: '#6B7280' }}>Lecture seule : modifier les modèles demande le droit d'écriture sur l'app Tâches.</p>}
+      {error && <div style={{ padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13, marginBottom: 10 }}>{error}</div>}
+
+      {editing ? (
+        <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', marginBottom: 4 }}>Nom du modèle</div>
+              <input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} style={inputStyle} />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#6B7280', marginBottom: 4 }}>Étiquette posée sur la tâche</div>
+              <input value={editing.label || ''} onChange={(e) => setEditing({ ...editing, label: e.target.value })} style={inputStyle} />
+            </div>
+          </div>
+          <StepsEditor steps={editing.steps} members={members} onChange={(steps) => setEditing({ ...editing, steps })} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+            <button type="button" style={btn()} onClick={() => setEditing(null)}>Annuler</button>
+            <button type="button" style={btn(true)} onClick={save} disabled={!editing.name.trim()}>Enregistrer</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {canEdit && (
+            <button type="button" style={{ ...btn(true), marginBottom: 14 }}
+              onClick={() => setEditing({ name: '', label: '', steps: [{ name: '', owners: [], notify: [] }] })}>
+              + Nouveau modèle
+            </button>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {templates.map((t) => (
+              <div key={t.id} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 16, color: '#1F2937' }}>{t.name}</strong>
+                  {t.label && <span style={{ background: '#E0EAFF', color: '#1E40AF', borderRadius: 4, padding: '2px 8px', fontSize: 12, fontWeight: 600 }}>{t.label}</span>}
+                  <span style={{ flex: 1 }} />
+                  {canEdit && <button type="button" style={btn()} onClick={() => setEditing({ ...t, steps: t.steps.map((s) => ({ ...s })) })}>Modifier</button>}
+                  {canEdit && <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => remove(t)}>Supprimer</button>}
+                </div>
+                <ol style={{ margin: 0, paddingLeft: 22, fontSize: 14, color: '#374151' }}>
+                  {t.steps.map((s, i) => (
+                    <li key={i} style={{ padding: '2px 0' }}>
+                      <strong>{s.name}</strong>
+                      <span style={{ color: '#6B7280' }}> — fait par {names(s.owners)} · prévient {names(s.notify)}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
+            {!templates.length && <div style={{ color: '#9CA3AF' }}>Aucun modèle.</div>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

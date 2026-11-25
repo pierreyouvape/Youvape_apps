@@ -44,6 +44,7 @@ const APP_KEYS = [
   'employes',
   'stories',
   'tableau',
+  'taches',
 ];
 
 /** Permissions complètes (lecture + écriture) sur toutes les apps. */

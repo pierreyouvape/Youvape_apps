@@ -56,6 +56,7 @@ const nextoreRoutes = require('./routes/nextoreRoutes');
 const processRoutes = require('./routes/processRoutes');
 const atbRoutes = require('./routes/atbRoutes');
 const tableauRoutes = require('./routes/tableauRoutes');
+const tachesRoutes = require('./routes/tachesRoutes');
 const employeesRoutes = require('./routes/employeesRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const storyCollectRoutes = require('./routes/storyCollectRoutes');
@@ -144,6 +145,7 @@ app.get('/api/tableau/stream', tableauController.streamAuth, tableauController.s
 // Images : lien signé, une balise <img> ne pose pas d'en-tête Authorization
 app.get('/api/tableau/media/:filename', tableauController.getMedia);
 app.use('/api/tableau', authMiddleware, tableauRoutes); // Tableau — post-its et tâches récurrentes personnels (droit `tableau` dans le routeur)
+app.use('/api/taches', authMiddleware, tachesRoutes); // Tâches — tâches d'équipe en étapes, remplace Monday + Make (droit `taches` dans le routeur)
 app.use('/api/employees', authMiddleware, employeesRoutes); // Gestion employé (droit `employes` vérifié dans le routeur)
 // Statistiques des stories envoyées par le lecteur du site : PUBLIC (sendBeacon,
 // sans session), écriture seule, contrôles dans le routeur.

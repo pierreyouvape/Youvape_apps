@@ -314,6 +314,16 @@ export const Board = (props) => (
   </Base>
 );
 
+export const TeamTasks = (props) => (
+  <Base {...props}>
+    <rect x={3.5} y={4} width={17} height={16} rx={1.5} />
+    <path d="M7 9 L8.3 10.3 L10.5 8" />
+    <path d="M13 9.2 H17" />
+    <path d="M7 14.5 H10.5" />
+    <path d="M13 14.5 H17" />
+  </Base>
+);
+
 export const Process = (props) => (
   <Base {...props}>
     <path d="M5 3.5 H15.5 L19 7 V20.5 H5 Z" />
@@ -540,6 +550,8 @@ export const APPS = [
   // Post-its et tâches récurrentes PERSONNELS (chacun ne voit que les siens).
   // Pastille de notification : context/TableauInboxContext.jsx.
   { key: 'tableau', path: '/tableau', label: 'Tableau', Icon: Board, color: '#CA8A04' },
+  // Tâches d'équipe en étapes enchaînées, notifications Slack (remplace Monday + Make).
+  { key: 'taches', path: '/taches', label: 'Tâches', Icon: TeamTasks, color: '#2563EB' },
   // S'ouvre avec le droit `purchases`, comme le routeur backend l'exige :
   // contrôler une facture, c'est du travail d'achat, et les personnes
   // concernées ont déjà ce droit. Pas de clé propre, donc rien à ajouter dans

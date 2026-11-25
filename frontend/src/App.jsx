@@ -78,6 +78,7 @@ const ProcessApp = page('process', () => import('./pages/ProcessApp'));
 const ProcessDetail = page('process', () => import('./pages/ProcessDetail'));
 const ATBApp = page('atb', () => import('./pages/ATBApp'));
 const TableauApp = page('tableau', () => import('./pages/TableauApp'));
+const TachesApp = page('taches', () => import('./pages/TachesApp'));
 const EmployeesApp = page('employes', () => import('./pages/EmployeesApp'));
 
 const PAGE_TITLES = {
@@ -128,6 +129,7 @@ const PAGE_TITLES = {
   '/boutique': 'Boutique',
   '/atb': 'ATB',
   '/tableau': 'Tableau',
+  '/taches': 'Tâches',
   '/employes': 'Gestion employé',
   '/brands': 'Marque',
   '/sub-brands': 'Sous-marque',
@@ -756,6 +758,10 @@ function App() {
               </PrivateRoute>
             }
           />
+          <Route path="/taches" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
+          <Route path="/taches/:tab" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
+          {/* Lien des messages Slack : ouvre la tâche */}
+          <Route path="/taches/tache/:id" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
         </Routes>
         </Suspense>
         </EcranIndisponible>
