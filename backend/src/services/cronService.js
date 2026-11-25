@@ -530,6 +530,7 @@ const setupBmsTagRetryCron = () => {
 // ==================== SUIVI DES COLIS → SITE (plugin youvape-logistique) ====================
 
 const logistiqueShipService = require('./logistiqueShipService');
+const logistiqueDeliveredService = require('./logistiqueDeliveredService');
 
 let logistiqueShipCronJob = null;
 
@@ -538,6 +539,13 @@ const runLogistiqueShip = async () => {
     await logistiqueShipService.runDue();
   } catch (error) {
     console.error('Erreur cron envoi du suivi au site :', error.message);
+  }
+  // Passage en Livrée des commandes de la liste d'essai (`logistique_delivered_push_orders`),
+  // APRÈS l'envoi du suivi : l'interrupteur des statuts n'est jamais allumé pendant un autre envoi.
+  try {
+    await logistiqueDeliveredService.runDue();
+  } catch (error) {
+    console.error('Erreur cron passage en Livrée :', error.message);
   }
 };
 
