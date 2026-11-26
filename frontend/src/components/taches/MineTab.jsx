@@ -1,10 +1,10 @@
 import { Fragment, useCallback, useContext, useEffect, useState } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import {
-  tachesApi, apiError, priorityRank, todayStr, formatDay, M, mTable, mTh, mTd, mCell, ellipsis, inputStyle,
+  tachesApi, apiError, priorityRank, todayStr, formatDay, formatDateTime, ago, M, mTable, mTh, mTd, mCell, ellipsis, inputStyle,
   PRIORITY, PRIORITY_ORDER, STEP_STATUS, STEP_STATUS_ORDER, TASK_STATUS,
 } from './tachesShared';
-import { PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer, SortMark } from './tachesUi';
+import { Avatar, PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer, SortMark } from './tachesUi';
 import { useColumnWidths, useSort, sortRows } from './tachesColumns';
 import StepsTable from './StepsTable';
 
@@ -21,7 +21,7 @@ const GROUPS = [
  * toute la chaîne, les étapes passées en grisé.
  */
 export default function MineTab({ members, reloadKey, onOpen, onError }) {
-  const cols = useColumnWidths('mine', [32, 420, 70, 300, 120, 90, 150, 150, 120]);
+  const cols = useColumnWidths('mine', [32, 420, 70, 300, 120, 190, 90, 150, 150, 120]);
   const { user } = useContext(AuthContext);
   const me = user?.id;
   const [tasks, setTasks] = useState(null);
@@ -89,11 +89,27 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
     id: (r) => r.task.id,
     step: (r) => r.step?.name || '',
     created: (r) => r.task.created_at,
+    handed: (r) => handOver(r).at || '',
     owner: (r) => (r.step ? r.step.owners : r.task.people).map((id) => members.find((m) => m.id === id)?.name || '').join(', '),
     status: statusRank,
     due: (r) => due(r) || '',
     priority: (r) => (r.task.priority ? priorityRank(r.task.priority) : ''),
   };
+  /**
+   * Dernière mise à jour = quand le travail m'a été passé : l'étape d'avant
+   * terminée (date et auteur). Première étape, ou tâche sans étape : dernière
+   * modification de la tâche.
+   */
+  function handOver({ task, step }) {
+    if (step) {
+      const i = task.steps.findIndex((x) => x.id === step.id);
+      const prev = i > 0 ? task.steps[i - 1] : null;
+      if (prev?.status === 'fait' && prev.done_at) {
+        return { at: prev.done_at, by: prev.done_by, name: prev.done_by_name, what: `« ${prev.name} » fait` };
+      }
+    }
+    return { at: task.updated_at, by: task.updated_by, name: task.updated_by_name, what: 'Tâche modifiée' };
+  }
   const order = (list) => sortRows([...list].sort(cmp), sort, accessors);
   const bucket = {
     now: order(filtered.filter((r) => !['bloque', 'longue'].includes(stateOf(r)))),
@@ -153,10 +169,11 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                       <th style={sortTh(mTh)} onClick={() => toggle('id')} title="Trier">ID<SortMark sort={sort} col="id" /><ColResizer index={2} cols={cols} /></th>
                       <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('step')} title="Trier">Mon étape<SortMark sort={sort} col="step" /><ColResizer index={3} cols={cols} /></th>
                       <th style={sortTh(mTh)} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={4} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('owner')} title="Trier">Owner<SortMark sort={sort} col="owner" /><ColResizer index={5} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={6} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={7} cols={cols} /></th>
-                      <th style={sortTh({ ...mTh, borderRight: 'none' })} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={8} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('handed')} title="Trier">Dernière mise à jour<SortMark sort={sort} col="handed" /><ColResizer index={5} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('owner')} title="Trier">Owner<SortMark sort={sort} col="owner" /><ColResizer index={6} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={7} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={8} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, borderRight: 'none' })} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={9} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -206,6 +223,18 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                               )}
                             </td>
                             <td style={{ ...mTd, color: M.sub, fontSize: 13 }} title={task.created_at}>{formatDay(task.created_at)}</td>
+                            {(() => {
+                              const h = handOver({ task, step });
+                              return (
+                                <td style={{ ...mTd, color: M.sub, fontSize: 13, textAlign: 'left' }}
+                                  title={`${h.what}${h.name ? ` par ${h.name}` : ''} — ${formatDateTime(h.at)}`}>
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    {h.by ? <Avatar id={h.by} name={h.name} size={22} /> : null}
+                                    <span style={ellipsis}>{ago(h.at)}</span>
+                                  </span>
+                                </td>
+                              );
+                            })()}
                             <td style={mTd}><AvatarStack ids={step ? step.owners : task.people} members={members} size={26} /></td>
                             <td style={mCell}>
                               {step ? (
@@ -225,7 +254,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                           {open && (
                             <tr>
                               <td style={{ ...mTd, background: '#F5F6F8' }} />
-                              <td colSpan={8} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: '#F5F6F8' }}>
+                              <td colSpan={9} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: '#F5F6F8' }}>
                                 <StepsTable task={task} members={members} focusUserId={me} color={g.color}
                                   onChange={(t) => { replace(t); load(); }} onError={onError} />
                               </td>
@@ -235,7 +264,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                       );
                     })}
                     {!list.length && (
-                      <tr><td colSpan={9} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>{filtering ? 'Aucun élément ne correspond aux filtres.' : 'Rien à faire pour l\'instant 🎉'}</td></tr>
+                      <tr><td colSpan={10} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>{filtering ? 'Aucun élément ne correspond aux filtres.' : 'Rien à faire pour l\'instant 🎉'}</td></tr>
                     )}
                   </tbody>
                 </table>

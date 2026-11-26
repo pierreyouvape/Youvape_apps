@@ -137,6 +137,9 @@ async function main() {
         name: s.name.trim(),
         position: pos,
         status: STEP_STATUS[st] || 'a_faire',
+        // Monday garde la date du dernier changement de statut (« changed_at ») :
+        // pour une étape faite, c'est la date où elle a été faite.
+        done_at: STEP_STATUS[st] === 'fait' ? parse(col(s, 'Statut', 'Status')?.value)?.changed_at || null : null,
         priority: priorityOf(col(s, 'Priority', 'Priorité')?.text),
         start_date: range?.from || null,
         due_date: range?.to || date,
@@ -245,13 +248,14 @@ async function main() {
         }
         for (const s of t.steps) {
           const { rows: [step] } = await client.query(
-            `INSERT INTO taches_steps (monday_id, task_id, position, name, status, priority, start_date, due_date, note)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `INSERT INTO taches_steps (monday_id, task_id, position, name, status, priority, start_date, due_date, note, done_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ($10::timestamptz AT TIME ZONE 'Europe/Paris'))
              ON CONFLICT (monday_id) DO UPDATE SET task_id = EXCLUDED.task_id, position = EXCLUDED.position,
                name = EXCLUDED.name, status = EXCLUDED.status, priority = EXCLUDED.priority,
-               start_date = EXCLUDED.start_date, due_date = EXCLUDED.due_date, note = EXCLUDED.note
+               start_date = EXCLUDED.start_date, due_date = EXCLUDED.due_date, note = EXCLUDED.note,
+               done_at = EXCLUDED.done_at
              RETURNING id`,
-            [s.monday_id, row.id, s.position, s.name, s.status, s.priority, s.start_date, s.due_date, s.note],
+            [s.monday_id, row.id, s.position, s.name, s.status, s.priority, s.start_date, s.due_date, s.note, s.done_at],
           );
           stats.steps += 1;
           await client.query('DELETE FROM taches_step_people WHERE step_id = $1', [step.id]);

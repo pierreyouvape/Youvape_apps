@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { tachesApi, apiError, formatDateTime, todayStr, M, mTable, mTh, mTd, mCell, ellipsis } from './tachesShared';
-import { StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange, ColGroup, ColResizer } from './tachesUi';
+import { tachesApi, apiError, formatDateTime, formatDay, todayStr, M, mTable, mTh, mTd, mCell, ellipsis } from './tachesShared';
+import { Avatar, StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange, ColGroup, ColResizer } from './tachesUi';
 import { useColumnWidths } from './tachesColumns';
 
 const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: '#C3C6D4', fontSize: 9, padding: 0, lineHeight: 1 };
@@ -14,7 +14,7 @@ const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: '#
  * l'étape suivante débloquée par un « Fait ».
  */
 export default function StepsTable({ task, members, onChange, onError, focusUserId = null, color = '#579BFC' }) {
-  const cols = useColumnWidths('steps', [26, 360, 96, 150, 96, 150, 120, 180, 40]);
+  const cols = useColumnWidths('steps', [26, 360, 96, 150, 96, 150, 150, 120, 180, 40]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const steps = task.steps || [];
@@ -72,9 +72,10 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
             <th style={mTh}>Statut<ColResizer index={3} cols={cols} /></th>
             <th style={mTh} title="Prévenu sur Slack quand l'étape est faite">Personnes<ColResizer index={4} cols={cols} /></th>
             <th style={mTh}>Échéances<ColResizer index={5} cols={cols} /></th>
-            <th style={mTh}>Priorité<ColResizer index={6} cols={cols} /></th>
-            <th style={mTh}>Texte<ColResizer index={7} cols={cols} /></th>
-            <th style={{ ...mTh, borderRight: 'none' }}><ColResizer index={8} cols={cols} /></th>
+            <th style={mTh} title="Date à laquelle le sous-élément est passé à « Fait »">Fait le<ColResizer index={6} cols={cols} /></th>
+            <th style={mTh}>Priorité<ColResizer index={7} cols={cols} /></th>
+            <th style={mTh}>Texte<ColResizer index={8} cols={cols} /></th>
+            <th style={{ ...mTh, borderRight: 'none' }}><ColResizer index={9} cols={cols} /></th>
           </tr>
         </thead>
         <tbody>
@@ -109,6 +110,15 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
                 <td style={mCell}><StepStatusPill cell status={s.status} onChange={(status) => update(s, { status })} /></td>
                 <td style={mTd}><PeoplePicker title="Personnes prévenues quand c'est fait" value={s.notify} members={members} onChange={(notify) => update(s, { notify })} /></td>
                 <td style={mTd}><DateRange start={s.start_date} end={s.due_date} late={late} onChange={(b) => update(s, b)} /></td>
+                <td style={{ ...mTd, color: M.sub, fontSize: 13 }}
+                  title={s.status === 'fait' && s.done_at ? `Fait${s.done_by_name ? ` par ${s.done_by_name}` : ''} le ${formatDateTime(s.done_at)}` : ''}>
+                  {s.status === 'fait' && s.done_at && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {s.done_by && <Avatar id={s.done_by} name={s.done_by_name} size={20} />}
+                      {formatDay(s.done_at)}
+                    </span>
+                  )}
+                </td>
                 <td style={mCell}><PriorityPill cell priority={s.priority} onChange={(priority) => update(s, { priority })} /></td>
                 <td style={{ ...mTd, textAlign: 'left', color: M.sub }} title={s.note}>
                   <InlineText value={s.note} placeholder="" onSave={(note) => update(s, { note })} style={{ ...ellipsis, width: '100%', minHeight: 20 }} />
@@ -126,7 +136,7 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
           })}
           <tr>
             <td style={mTd} />
-            <td colSpan={8} style={{ ...mTd, textAlign: 'left', borderRight: 'none' }}>
+            <td colSpan={9} style={{ ...mTd, textAlign: 'left', borderRight: 'none' }}>
               <form onSubmit={add}>
                 <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="+ Ajouter sous-élément"
                   style={{ border: 'none', outline: 'none', width: '100%', fontSize: 14, fontFamily: 'inherit', background: 'transparent', color: M.text }} />
