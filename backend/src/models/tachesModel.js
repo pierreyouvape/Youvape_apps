@@ -1136,7 +1136,11 @@ async function deleteTemplate(id) {
 function cleanFilters(f = {}) {
   const out = {};
   if (Number.isInteger(Number(f.board_id)) && Number(f.board_id) > 0) out.board_id = Number(f.board_id);
-  if (f.label) out.label = cleanText(f.label, 60);
+  // Étiquettes : au moins une de `labels`, aucune de `notLabels` (« label » seul : ancien format).
+  const labels = toLabels([...(Array.isArray(f.labels) ? f.labels : []), ...(f.label ? [f.label] : [])]);
+  const notLabels = toLabels(Array.isArray(f.notLabels) ? f.notLabels : []);
+  if (labels.length) out.labels = labels;
+  if (notLabels.length) out.notLabels = notLabels;
   if (PRIORITIES.includes(f.priority) || f.priority === 'none') out.priority = f.priority;
   if (TASK_STATUSES.includes(f.status)) out.status = f.status;
   if (Number.isInteger(Number(f.person)) && Number(f.person) > 0) out.person = Number(f.person);

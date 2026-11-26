@@ -16,6 +16,7 @@ import TaskModal from '../components/taches/TaskModal';
 import NewTaskModal from '../components/taches/NewTaskModal';
 import SearchResults from '../components/taches/SearchResults';
 import NotificationsPanel from '../components/taches/NotificationsPanel';
+import { Popover } from '../components/taches/tachesUi';
 
 /** Clé de permission de l'app (miroir de `APPS` et de backend/src/config/apps.js). */
 const PERM_KEY = 'taches';
@@ -33,7 +34,7 @@ const PAGES = {
   slack: { title: 'Slack', subtitle: 'Notifications dans #notifications-taches.', admin: true },
 };
 const BOARD_KEY = 'yv.taches.board';
-const EMPTY_FILTERS = { q: '', label: '', priority: '', status: '', person: null, openOnly: false, hideDone: false };
+const EMPTY_FILTERS = { q: '', labels: [], notLabels: [], priority: '', status: '', person: null, openOnly: false, hideDone: false };
 
 /**
  * App Tâches — remplace Monday + Make.
@@ -126,7 +127,7 @@ export default function TachesApp() {
   useEffect(() => {
     if (!view) return;
     const vf = view.filters || {};
-    setF({ ...EMPTY_FILTERS, ...vf, person: vf.person || null });
+    setF({ ...EMPTY_FILTERS, ...vf, labels: vf.labels || (vf.label ? [vf.label] : []), notLabels: vf.notLabels || [], person: vf.person || null });
     setBoardId(vf.board_id ? String(vf.board_id) : 'all');
   }, [view]);
 
@@ -170,7 +171,8 @@ export default function TachesApp() {
     const ids = hits ? new Set(hits.map((h) => h.task_id)) : null;
     return tasks.filter((t) => {
       if (ids && !ids.has(t.id)) return false;
-      if (f.label && !t.labels.includes(f.label)) return false;
+      if (f.labels.length && !f.labels.some((l) => t.labels.includes(l))) return false;
+      if (f.notLabels.some((l) => t.labels.includes(l))) return false;
       if (f.priority && (t.priority || 'none') !== f.priority) return false;
       if (f.status && t.status !== f.status) return false;
       if (f.hideDone && t.status === 'fait') return false;
@@ -360,7 +362,10 @@ export default function TachesApp() {
 /** Pour comparer une vue enregistrée aux filtres en cours (clés vides retirées). */
 function cleanForCompare(fl = {}, board) {
   const out = {};
-  ['label', 'priority', 'status', 'q'].forEach((k) => { if (fl[k]) out[k] = fl[k]; });
+  ['priority', 'status', 'q'].forEach((k) => { if (fl[k]) out[k] = fl[k]; });
+  const labels = fl.labels || (fl.label ? [fl.label] : []);
+  if (labels.length) out.labels = [...labels].sort();
+  if (fl.notLabels?.length) out.notLabels = [...fl.notLabels].sort();
   if (fl.person) out.person = Number(fl.person);
   if (fl.openOnly) out.openOnly = true;
   if (fl.hideDone) out.hideDone = true;
@@ -447,6 +452,55 @@ const chip = (active) => ({
 });
 const check = { fontSize: 13, color: '#4B5563', display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' };
 
+/**
+ * Filtre d'étiquettes, comme les filtres avancés de Monday : pour chaque
+ * étiquette, « inclure » (la tâche en a au moins une) ou « exclure » (elle
+ * n'en a aucune). Ex. SEO (Jib) : inclure SEO, exclure Blog.
+ */
+function LabelFilter({ labels, include, exclude, onChange }) {
+  const [anchor, setAnchor] = useState(null);
+  const n = include.length + exclude.length;
+  const summary = !n ? 'Toutes les étiquettes'
+    : [...include, ...exclude.map((l) => `sauf ${l}`)].join(', ');
+  const toggle = (l, mode) => {
+    const inc = include.filter((x) => x !== l);
+    const exc = exclude.filter((x) => x !== l);
+    if (mode === 'in' && !include.includes(l)) inc.push(l);
+    if (mode === 'out' && !exclude.includes(l)) exc.push(l);
+    onChange(inc, exc);
+  };
+  const pill = (on, color) => ({
+    border: `1px solid ${on ? color : '#D0D4E4'}`, background: on ? color : '#fff', color: on ? '#fff' : M.sub,
+    borderRadius: 4, padding: '2px 7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+  });
+  return (
+    <>
+      <button type="button" onClick={(e) => setAnchor(e.currentTarget)} title={summary} style={{
+        ...inputStyle, width: 180, height: 34, padding: '0 8px', fontSize: 13, lineHeight: '32px', textAlign: 'left', cursor: 'pointer',
+        background: '#fff', color: M.text, display: 'block',
+        fontWeight: n ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>
+        {summary} ▾
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} width={300}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '4px 6px 6px', borderBottom: `1px solid ${M.grid}`, marginBottom: 4 }}>
+            <span style={{ flex: 1, fontSize: 12, color: M.sub }}>Inclure = au moins une · Exclure = aucune</span>
+            {n > 0 && <button type="button" onClick={() => onChange([], [])} style={{ background: 'none', border: 'none', color: '#0073EA', cursor: 'pointer', fontSize: 12 }}>Effacer</button>}
+          </div>
+          {labels.map((l) => (
+            <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px' }}>
+              <span style={{ flex: 1, fontSize: 13, color: M.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
+              <button type="button" style={pill(include.includes(l), '#00C875')} onClick={() => toggle(l, include.includes(l) ? null : 'in')}>Inclure</button>
+              <button type="button" style={pill(exclude.includes(l), '#E2445C')} onClick={() => toggle(l, exclude.includes(l) ? null : 'out')}>Exclure</button>
+            </div>
+          ))}
+        </Popover>
+      )}
+    </>
+  );
+}
+
 /** Filtres communs : recherche, étiquette, priorité, statut, personne… */
 function FilterBar({ f, setFilter, members, labels, who, lockedPerson, archived, setArchived, count }) {
   const sel = { ...inputStyle, padding: '7px 8px', fontSize: 13 };
@@ -461,10 +515,8 @@ function FilterBar({ f, setFilter, members, labels, who, lockedPerson, archived,
               style={{ position: 'absolute', right: 6, top: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 16 }}>×</button>
           )}
         </div>
-        <select value={f.label} onChange={(e) => setFilter('label')(e.target.value)} style={{ ...sel, width: 160, fontWeight: f.label ? 700 : 400 }}>
-          <option value="">Toutes les étiquettes</option>
-          {labels.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
+        <LabelFilter labels={labels} include={f.labels} exclude={f.notLabels}
+          onChange={(inc, exc) => { setFilter('labels')(inc); setFilter('notLabels')(exc); }} />
         <select value={f.priority} onChange={(e) => setFilter('priority')(e.target.value)} style={{ ...sel, width: 140, fontWeight: f.priority ? 700 : 400 }}>
           <option value="">Toutes les priorités</option>
           {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}
