@@ -257,25 +257,25 @@ export default function TableView({
               ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
               fontSize: 14, color: M.text, textAlign: 'left', flex: '0 1 auto', minWidth: 0,
             }}>{t.title}</button>
-            {t.steps.length > 0 && <span style={{ fontSize: 12, color: M.sub, background: '#E6E9EF', borderRadius: 4, padding: '0 5px', flexShrink: 0 }}>{t.steps.length}</span>}
-            {t.archived_at && <span style={{ fontSize: 11, color: '#B45309', fontWeight: 700, flexShrink: 0 }}>ARCHIVÉE</span>}
+            {t.steps.length > 0 && <span style={{ fontSize: 12, color: M.sub, background: 'var(--tk-grid)', borderRadius: 4, padding: '0 5px', flexShrink: 0 }}>{t.steps.length}</span>}
+            {t.archived_at && <span style={{ fontSize: 11, color: 'var(--tk-warn)', fontWeight: 700, flexShrink: 0 }}>ARCHIVÉE</span>}
             <span style={{ flex: 1 }} />
             <button type="button" title="Voir les commentaires" onClick={(e) => { e.stopPropagation(); setCommentsId(t.id); }}
-              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: t.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>💬{t.comment_count ? ` ${t.comment_count}` : ''}</button>
+              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: t.comment_count ? 'var(--tk-link)' : 'var(--tk-faint)', flexShrink: 0 }}>💬{t.comment_count ? ` ${t.comment_count}` : ''}</button>
           </span>
         </td>
       );
       case 'people': return <td key="people" style={td}><PeoplePicker title="Personne(s) de la tâche" value={t.people} members={members} onChange={(people) => save(t, { people })} /></td>;
       case 'link': return (
         <td key="link" style={{ ...td, textAlign: 'left' }}>
-          {t.link_url && <a href={t.link_url} target="_blank" rel="noreferrer" style={{ ...ellipsis, fontSize: 13, color: '#0073EA' }} title={t.link_url}>{shortUrl(t.link_url)}</a>}
+          {t.link_url && <a href={t.link_url} target="_blank" rel="noreferrer" style={{ ...ellipsis, fontSize: 13, color: 'var(--tk-link)' }} title={t.link_url}>{shortUrl(t.link_url)}</a>}
         </td>
       );
       case 'progress': return <td key="progress" style={td}>{t.steps.length > 0 ? <ProgressBar counts={t.counts} width={Math.min(110, width(d) - 16)} /> : ''}</td>;
       case 'labels': return (
         <td key="labels" style={td}>
           <span style={{ display: 'flex', gap: 3, justifyContent: 'center', overflow: 'hidden' }} title={t.labels.join(', ')}>
-            {t.labels.map((l) => <span key={l} style={{ ...labelChip, background: '#E6E9EF', color: M.text, fontWeight: 400, borderRadius: 3 }}>{l}</span>)}
+            {t.labels.map((l) => <span key={l} style={{ ...labelChip, background: 'var(--tk-grid)', color: M.text, fontWeight: 400, borderRadius: 3 }}>{l}</span>)}
           </span>
         </td>
       );
@@ -330,7 +330,7 @@ export default function TableView({
       }}>
       {d.label}<SortMark sort={sort} col={d.key} />
       {editable && hoverCol === d.key && (
-        <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 6, top: 6, background: '#fff' }}>
+        <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', right: 6, top: 6, background: 'var(--tk-surface)' }}>
           <DotsMenu title="Colonne" size={14} items={colMenu(d)} />
         </span>
       )}
@@ -338,7 +338,7 @@ export default function TableView({
     </th>
   );
 
-  if (loading) return <div style={{ color: '#9CA3AF', padding: 20 }}>Chargement…</div>;
+  if (loading) return <div style={{ color: 'var(--tk-muted)', padding: 20 }}>Chargement…</div>;
 
   const titleIdx = columns.findIndex((d) => d.key === 'title');
 
@@ -348,7 +348,7 @@ export default function TableView({
       {selected.size > 0 && (
         <div style={{
           position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-          background: '#1E3A8A', color: '#fff', borderRadius: 10, padding: '8px 12px', marginBottom: 10,
+          background: 'var(--tk-chipInk)', color: '#fff', borderRadius: 10, padding: '8px 12px', marginBottom: 10,
         }}>
           <strong>{selected.size} sélectionnée{selected.size > 1 ? 's' : ''}</strong>
           <button type="button" style={btn()} onClick={() => bulk('archive')}>Archiver</button>
@@ -358,9 +358,9 @@ export default function TableView({
             {allGroups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
           </select>
           <button type="button" style={btn()} disabled={!moveTo} onClick={() => { bulk('move', { group_id: Number(moveTo) }); setMoveTo(''); }}>Déplacer</button>
-          {canWrite && <button type="button" style={{ ...btn(), color: '#B91C1C' }} onClick={() => bulk('delete')}>Supprimer</button>}
+          {canWrite && <button type="button" style={{ ...btn(), color: 'var(--tk-danger)' }} onClick={() => bulk('delete')}>Supprimer</button>}
           <span style={{ flex: 1 }} />
-          <button type="button" style={{ ...btn(), background: 'transparent', color: '#fff', borderColor: '#93C5FD' }} onClick={() => setSelected(new Set())}>Annuler</button>
+          <button type="button" style={{ ...btn(), background: 'transparent', color: '#fff', borderColor: 'var(--tk-focus)' }} onClick={() => setSelected(new Set())}>Annuler</button>
         </div>
       )}
 
@@ -388,7 +388,7 @@ export default function TableView({
               <button type="button" onClick={() => flip(g)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: g.color, fontSize: 14 }}>
                 {shut ? '▶' : '▼'}
               </button>
-              {g.boardName && <span style={{ fontSize: 13, color: '#9CA3AF', fontWeight: 700 }}>{g.boardName} ›</span>}
+              {g.boardName && <span style={{ fontSize: 13, color: 'var(--tk-muted)', fontWeight: 700 }}>{g.boardName} ›</span>}
               {canWrite && g.id !== 'none' ? (
                 <InlineText value={g.name} onSave={(nm) => groupAction(() => tachesApi.updateGroup(g.id, { name: nm }))}
                   style={{ fontSize: 18, fontWeight: 500, color: g.color }} />
@@ -411,7 +411,7 @@ export default function TableView({
             </div>
 
             {!shut && (
-              <div style={{ background: '#fff', borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', overflowX: 'auto', fontFamily: M.font }}>
+              <div style={{ background: 'var(--tk-surface)', borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', overflowX: 'auto', fontFamily: M.font }}>
                 <table style={{ ...mTable, width: totalWidth }}>
                   <colgroup>
                     {columns.map((d, i) => (
@@ -451,7 +451,7 @@ export default function TableView({
                               onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(t.id)); setDrag({ id: t.id, group: g.id }); }}
                               onDragEnd={() => { setDrag(null); setOver(null); }}
                               title={canDrag ? 'Glisser pour déplacer (aussi vers un autre groupe)' : 'Retirez le tri (clic sur l\'en-tête trié) pour réordonner'}
-                              style={{ cursor: canDrag ? 'grab' : 'not-allowed', color: '#C3C6D4', fontSize: 13, padding: '0 2px', userSelect: 'none' }}>⠿</span>
+                              style={{ cursor: canDrag ? 'grab' : 'not-allowed', color: 'var(--tk-faint)', fontSize: 13, padding: '0 2px', userSelect: 'none' }}>⠿</span>
                             {t.steps.length > 0 && (
                               <button type="button" onClick={() => toggleSet(setExpanded, t.id)} title={open ? 'Replier' : 'Voir les étapes'}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 10, padding: 0, height: 36, flex: 1 }}>{open ? '▼' : '▶'}</button>
@@ -470,7 +470,7 @@ export default function TableView({
                             }}
                             onDrop={(e) => { if (!drag) return; e.preventDefault(); dropOn(g, t.id, over?.before !== false); }}
                             style={{
-                              background: selected.has(t.id) ? '#CCE5FF' : open ? M.hover : '#fff',
+                              background: selected.has(t.id) ? 'var(--tk-sel2)' : open ? M.hover : 'var(--tk-surface)',
                               opacity: t.archived_at || drag?.id === t.id ? 0.5 : 1,
                               boxShadow: over?.id === t.id ? `inset 0 ${over.before ? 2 : -2}px 0 #0073EA` : 'none',
                             }}>
@@ -516,7 +516,7 @@ export default function TableView({
           if (nm) groupAction(() => tachesApi.createGroup(board.id, { name: nm }));
         }}>+ Ajouter un groupe</button>
       )}
-      {!tasks.length && <div style={{ color: '#9CA3AF', padding: 10 }}>Aucune tâche ne correspond.</div>}
+      {!tasks.length && <div style={{ color: 'var(--tk-muted)', padding: 10 }}>Aucune tâche ne correspond.</div>}
     </div>
   );
 }

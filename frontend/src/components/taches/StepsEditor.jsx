@@ -12,11 +12,11 @@ export default function StepsEditor({ steps, members, onChange }) {
     [next[i], next[i + d]] = [next[i + d], next[i]];
     onChange(next);
   };
-  const small = { background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 12, padding: '0 3px' };
+  const small = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-muted)', fontSize: 12, padding: '0 3px' };
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px 90px 24px', gap: 8, fontSize: 11, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', padding: '0 0 4px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 90px 90px 24px', gap: 8, fontSize: 11, fontWeight: 800, color: 'var(--tk-muted)', textTransform: 'uppercase', padding: '0 0 4px' }}>
         <span />
         <span>Étape</span>
         <span style={{ textAlign: 'center' }}>Responsable</span>
@@ -33,7 +33,7 @@ export default function StepsEditor({ steps, members, onChange }) {
             <input value={s.name} onChange={(e) => set(i, { name: e.target.value })} placeholder={`Étape ${i + 1}`}
               style={{ ...inputStyle, padding: '6px 8px' }} />
             <label title="Demander le lien de la fiche produit au passage à « Fait »"
-              style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: '#676879', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: 'var(--tk-sub)', whiteSpace: 'nowrap', cursor: 'pointer' }}>
               <input type="checkbox" checked={s.ask_link === true} onChange={(e) => set(i, { ask_link: e.target.checked })} />🔗 lien
             </label>
           </span>
@@ -44,11 +44,11 @@ export default function StepsEditor({ steps, members, onChange }) {
             <PeoplePicker title="À prévenir quand c'est fait" value={s.notify || []} members={members} onChange={(notify) => set(i, { notify })} />
           </span>
           <button type="button" onClick={() => onChange(steps.filter((_, j) => j !== i))} title="Retirer"
-            style={{ background: 'none', border: 'none', color: '#CBD5E1', cursor: 'pointer', fontSize: 18 }}>×</button>
+            style={{ background: 'none', border: 'none', color: 'var(--tk-faint)', cursor: 'pointer', fontSize: 18 }}>×</button>
         </div>
       ))}
       <button type="button" onClick={() => onChange([...steps, { name: '', owners: [], notify: [] }])}
-        style={{ background: 'none', border: 'none', color: '#2563EB', fontWeight: 700, cursor: 'pointer', padding: '6px 0', fontFamily: 'inherit', fontSize: 13 }}>
+        style={{ background: 'none', border: 'none', color: 'var(--tk-link)', fontWeight: 700, cursor: 'pointer', padding: '6px 0', fontFamily: 'inherit', fontSize: 13 }}>
         + Ajouter une étape
       </button>
     </div>

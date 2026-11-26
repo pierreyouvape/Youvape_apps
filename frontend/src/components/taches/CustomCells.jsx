@@ -27,7 +27,7 @@ export function DateCell({ value, onChange, late = false }) {
   const close = () => setAnchor(null);
   return (
     <>
-      <button type="button" style={{ ...cellBtn, color: value ? (late ? '#DF2F4A' : M.text) : '#C3C6D4', fontWeight: late ? 600 : 400 }}
+      <button type="button" style={{ ...cellBtn, color: value ? (late ? '#DF2F4A' : M.text) : 'var(--tk-faint)', fontWeight: late ? 600 : 400 }}
         onClick={(e) => setAnchor(e.currentTarget)}>
         {value ? formatDay(`${value}T12:00:00`) : '—'}
       </button>
@@ -75,7 +75,7 @@ export function CustomCell({ column, value, onChange, members }) {
     case 'date':
       return (
         <>
-          <button type="button" style={{ ...cellBtn, color: value ? M.text : '#C3C6D4' }} onClick={(e) => setAnchor(e.currentTarget)}>
+          <button type="button" style={{ ...cellBtn, color: value ? M.text : 'var(--tk-faint)' }} onClick={(e) => setAnchor(e.currentTarget)}>
             {value ? formatDay(`${value}T12:00:00`) : '—'}
           </button>
           {anchor && (
@@ -94,12 +94,12 @@ export function CustomCell({ column, value, onChange, members }) {
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, width: '100%' }}>
           {value?.url ? (
             <a href={value.url} target="_blank" rel="noreferrer" title={value.url}
-              style={{ flex: 1, minWidth: 0, color: '#0073EA', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
+              style={{ flex: 1, minWidth: 0, color: 'var(--tk-link)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>
               {value.text || shortUrl(value.url)}
             </a>
           ) : <span style={{ flex: 1 }} />}
           <button type="button" title="Modifier le lien" onClick={(e) => { setDraft({ url: value?.url || '', text: value?.text || '' }); setAnchor(e.currentTarget); }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C3C6D4', fontSize: 13, flexShrink: 0 }}>✎</button>
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-faint)', fontSize: 13, flexShrink: 0 }}>✎</button>
           {anchor && (
             <Popover anchor={anchor} onClose={close} width={280}>
               <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -121,7 +121,7 @@ export function CustomCell({ column, value, onChange, members }) {
         <>
           <button type="button" onClick={(e) => setAnchor(e.currentTarget)} style={{
             border: 'none', width: '100%', height: 36, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-            background: opt ? opt.color : '#C4C4C4', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            background: opt ? opt.color : 'var(--tk-todo)', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{opt ? opt.label : ''}</button>
           {anchor && (
             <Popover anchor={anchor} onClose={close} width={190}>
@@ -132,7 +132,7 @@ export function CustomCell({ column, value, onChange, members }) {
                 }}>{o.label}</button>
               ))}
               <button type="button" onClick={() => { onChange(null); close(); }}
-                style={{ display: 'block', width: '100%', margin: '3px 0', border: '1px dashed #C4C4C4', background: '#fff', color: M.sub, padding: '5px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+                style={{ display: 'block', width: '100%', margin: '3px 0', border: '1px dashed #C4C4C4', background: 'var(--tk-surface)', color: M.sub, padding: '5px 8px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
                 Vide
               </button>
               {!options.length && <div style={{ fontSize: 12, color: M.sub, padding: 6 }}>Aucun choix : menu ⋯ de la colonne → « Modifier les choix ».</div>}

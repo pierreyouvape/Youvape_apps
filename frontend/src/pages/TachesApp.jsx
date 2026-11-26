@@ -18,6 +18,7 @@ import NewTaskModal from '../components/taches/NewTaskModal';
 import SearchResults from '../components/taches/SearchResults';
 import NotificationsPanel from '../components/taches/NotificationsPanel';
 import { Popover } from '../components/taches/tachesUi';
+import { THEME_CSS, useTachesTheme } from '../components/taches/tachesTheme';
 
 /** Clé de permission de l'app (miroir de `APPS` et de backend/src/config/apps.js). */
 const PERM_KEY = 'taches';
@@ -69,6 +70,7 @@ export default function TachesApp() {
   const [creating, setCreating] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
+  const [theme, toggleTheme] = useTachesTheme();
   const [unread, setUnread] = useState(0);
 
   // Filtres communs aux vues
@@ -194,16 +196,16 @@ export default function TachesApp() {
 
   if (permissions && !canRead) {
     return (
-      <AppShell currentPath="/taches">
-        <div style={{ flex: 1, minWidth: 0, padding: '40px 32px', color: '#6B7280' }}>
+      <AppShell currentPath="/taches"><Themed theme={theme}>
+        <div style={{ flex: 1, minWidth: 0, padding: '40px 32px', color: 'var(--tk-sub)' }}>
           Vous n'avez pas accès aux Tâches. Contactez un administrateur.
         </div>
-      </AppShell>
+      </Themed></AppShell>
     );
   }
   // Onglet d'une personne ou vue : attendre les listes avant de juger l'adresse.
   if ((/^p-\d+$/.test(currentTab || '') && !members.length) || (vid && !views.length && !error)) {
-    return <AppShell currentPath="/taches"><div style={{ padding: 40, color: M.sub }}>Chargement…</div></AppShell>;
+    return <AppShell currentPath="/taches"><Themed theme={theme}><div style={{ flex: 1, padding: 40, color: M.sub, background: 'var(--tk-surface)', minHeight: '100vh' }}>Chargement…</div></Themed></AppShell>;
   }
   const known = boardTab || (page && (!page.admin || admin)) || (currentTab === 'vue' && view);
   if (!known) return <Navigate to="/taches/moi" replace />;
@@ -253,8 +255,8 @@ export default function TachesApp() {
   const viewChanged = currentTab === 'vue' && JSON.stringify(cleanForCompare(view.filters, board)) !== JSON.stringify(cleanForCompare(currentFilters(), board));
 
   return (
-    <AppShell currentPath="/taches/moi">
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', height: '100vh', background: '#fff', fontFamily: M.font, color: M.text }}>
+    <AppShell currentPath="/taches/moi"><Themed theme={theme}>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', height: '100vh', background: 'var(--tk-surface)', fontFamily: M.font, color: M.text }}>
         <Sidebar {...{
           currentTab, boards, board, boardId, views, vid, admin, canWrite, user,
           onMine: () => navigate('/taches/moi'),
@@ -286,8 +288,12 @@ export default function TachesApp() {
                   Enregistrer la vue
                 </button>
               )}
+              <button type="button" onClick={toggleTheme} title={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+                style={{ background: 'none', border: `1px solid ${M.border}`, borderRadius: 6, cursor: 'pointer', fontSize: 13, padding: '6px 10px', color: M.text, fontFamily: 'inherit' }}>
+                {theme === 'dark' ? '☀️ Mode clair' : '🌙 Mode sombre'}
+              </button>
               <button type="button" onClick={() => setBellOpen(true)} title="Notifications"
-                style={{ position: 'relative', background: bellOpen ? '#E5F4FF' : 'none', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 22, padding: '4px 8px', lineHeight: 1 }}>
+                style={{ position: 'relative', background: bellOpen ? 'var(--tk-sel)' : 'none', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 22, padding: '4px 8px', lineHeight: 1 }}>
                 🔔
                 {unread > 0 && (
                   <span style={{
@@ -321,9 +327,9 @@ export default function TachesApp() {
             )}
 
             {error && (
-              <div style={{ padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13, marginBottom: 10, display: 'flex' }}>
+              <div style={{ padding: '8px 12px', background: 'var(--tk-dangerBg)', color: 'var(--tk-danger)', borderRadius: 8, fontSize: 13, marginBottom: 10, display: 'flex' }}>
                 <span style={{ flex: 1 }}>{error}</span>
-                <button type="button" onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#B91C1C', cursor: 'pointer' }}>×</button>
+                <button type="button" onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'var(--tk-danger)', cursor: 'pointer' }}>×</button>
               </div>
             )}
 
@@ -360,7 +366,7 @@ export default function TachesApp() {
           onClose={() => setCreating(null)}
           onCreated={(t) => { setCreating(null); changed(); setOpenId(t.id); }} />
       )}
-    </AppShell>
+    </Themed></AppShell>
   );
 }
 
@@ -390,7 +396,7 @@ function Fragmentish({ sep, children }) {
 
 const sideItem = (active) => ({
   display: 'flex', alignItems: 'center', gap: 8, width: '100%', border: 'none', borderRadius: 6, cursor: 'pointer',
-  background: active ? '#CCE5FF' : 'transparent', color: M.text, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit',
+  background: active ? 'var(--tk-sel2)' : 'transparent', color: M.text, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit',
   textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 });
 const sideTitle = { fontSize: 12, fontWeight: 700, color: M.sub, padding: '14px 10px 4px', display: 'flex', alignItems: 'center' };
@@ -402,7 +408,7 @@ function Sidebar({
 }) {
   const onBoardPage = ['tableau', 'kanban', 'gantt', 'calendrier'].includes(currentTab) || /^p-\d+$/.test(currentTab || '');
   return (
-    <nav style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${M.border}`, padding: '18px 10px', overflowY: 'auto', background: '#FAFBFC' }}>
+    <nav style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${M.border}`, padding: '18px 10px', overflowY: 'auto', background: 'var(--tk-bg2)' }}>
       <button type="button" style={{ ...sideItem(currentTab === 'moi'), fontWeight: 600 }} onClick={onMine}>✓ Mes tâches</button>
       <button type="button" style={{ ...sideItem(currentTab === 'bord'), fontWeight: 600 }} onClick={() => onPage('bord')}>📊 Tableau de bord</button>
 
@@ -418,7 +424,7 @@ function Sidebar({
         <span style={{ flex: 1 }}>Vues</span>
         {canSaveView && (
           <button type="button" onClick={onSaveView} title="Enregistrer les filtres actuels comme une vue"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0073EA', fontSize: 18, lineHeight: 1, padding: 0 }}>+</button>
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-link)', fontSize: 18, lineHeight: 1, padding: 0 }}>+</button>
         )}
       </div>
       {views.map((v) => {
@@ -453,10 +459,10 @@ function Sidebar({
 }
 
 const chip = (active) => ({
-  border: `1px solid ${active ? TACHES_COLOR : '#D1D5DB'}`, background: active ? TACHES_COLOR : '#fff', color: active ? '#fff' : '#374151',
+  border: `1px solid ${active ? TACHES_COLOR : 'var(--tk-border)'}`, background: active ? TACHES_COLOR : 'var(--tk-surface)', color: active ? '#fff' : 'var(--tk-text2)',
   borderRadius: 999, padding: '4px 11px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
 });
-const check = { fontSize: 13, color: '#4B5563', display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' };
+const check = { fontSize: 13, color: 'var(--tk-text2)', display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' };
 
 /**
  * Filtre d'étiquettes, comme les filtres avancés de Monday : pour chaque
@@ -476,14 +482,14 @@ function LabelFilter({ labels, include, exclude, onChange }) {
     onChange(inc, exc);
   };
   const pill = (on, color) => ({
-    border: `1px solid ${on ? color : '#D0D4E4'}`, background: on ? color : '#fff', color: on ? '#fff' : M.sub,
+    border: `1px solid ${on ? color : 'var(--tk-border)'}`, background: on ? color : 'var(--tk-surface)', color: on ? '#fff' : M.sub,
     borderRadius: 4, padding: '2px 7px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
   });
   return (
     <>
       <button type="button" onClick={(e) => setAnchor(e.currentTarget)} title={summary} style={{
         ...inputStyle, width: 180, height: 34, padding: '0 8px', fontSize: 13, lineHeight: '32px', textAlign: 'left', cursor: 'pointer',
-        background: '#fff', color: M.text, display: 'block',
+        background: 'var(--tk-surface)', color: M.text, display: 'block',
         fontWeight: n ? 700 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
         {summary} ▾
@@ -492,7 +498,7 @@ function LabelFilter({ labels, include, exclude, onChange }) {
         <Popover anchor={anchor} onClose={() => setAnchor(null)} width={300}>
           <div style={{ display: 'flex', alignItems: 'center', padding: '4px 6px 6px', borderBottom: `1px solid ${M.grid}`, marginBottom: 4 }}>
             <span style={{ flex: 1, fontSize: 12, color: M.sub }}>Inclure = au moins une · Exclure = aucune</span>
-            {n > 0 && <button type="button" onClick={() => onChange([], [])} style={{ background: 'none', border: 'none', color: '#0073EA', cursor: 'pointer', fontSize: 12 }}>Effacer</button>}
+            {n > 0 && <button type="button" onClick={() => onChange([], [])} style={{ background: 'none', border: 'none', color: 'var(--tk-link)', cursor: 'pointer', fontSize: 12 }}>Effacer</button>}
           </div>
           {labels.map((l) => (
             <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px' }}>
@@ -518,7 +524,7 @@ function FilterBar({ f, setFilter, members, labels, who, lockedPerson, archived,
             style={{ ...sel, width: 270, paddingRight: 26 }} />
           {f.q && (
             <button type="button" onClick={() => setFilter('q')('')} title="Effacer"
-              style={{ position: 'absolute', right: 6, top: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 16 }}>×</button>
+              style={{ position: 'absolute', right: 6, top: 5, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-muted)', fontSize: 16 }}>×</button>
           )}
         </div>
         <LabelFilter labels={labels} include={f.labels} exclude={f.notLabels}
@@ -548,6 +554,16 @@ function FilterBar({ f, setFilter, members, labels, who, lockedPerson, archived,
           </label>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Tout l'écran (fenêtres comprises) lit les couleurs du thème choisi. */
+function Themed({ theme, children }) {
+  return (
+    <div className="tk-root" data-theme={theme} style={{ display: 'contents' }}>
+      <style>{THEME_CSS}</style>
+      {children}
     </div>
   );
 }

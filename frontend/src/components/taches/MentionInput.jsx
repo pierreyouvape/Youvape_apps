@@ -65,7 +65,7 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
           style={{ width: '100%', boxSizing: 'border-box', border: `1px solid ${M.border}`, borderRadius: 8, padding: 8, fontFamily: 'inherit', fontSize: 14, resize: 'vertical' }} />
         {options.length > 0 && (
           <div data-taches-popover style={{
-            position: 'absolute', left: 8, bottom: '100%', marginBottom: 4, width: 240, background: '#fff', zIndex: 10,
+            position: 'absolute', left: 8, bottom: '100%', marginBottom: 4, width: 240, background: 'var(--tk-surface)', zIndex: 10,
             border: `1px solid ${M.border}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,0.15)', padding: 4,
           }}>
             {options.map((m, i) => (
@@ -73,7 +73,7 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
                 onMouseEnter={() => setActive(i)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, width: '100%', border: 'none', borderRadius: 6, cursor: 'pointer',
-                  background: i === active ? '#E5F4FF' : 'transparent', padding: '6px 8px', fontFamily: 'inherit', fontSize: 14, color: M.text, textAlign: 'left',
+                  background: i === active ? 'var(--tk-sel)' : 'transparent', padding: '6px 8px', fontFamily: 'inherit', fontSize: 14, color: M.text, textAlign: 'left',
                 }}>
                 <Avatar id={m.id} name={m.name} size={22} />{m.name}
               </button>
@@ -97,6 +97,6 @@ export function CommentBody({ body, mentions = [], members }) {
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const parts = String(body).split(new RegExp(`(@(?:${names.map(esc).join('|')}))`, 'g'));
   return parts.map((p, i) => (p.startsWith('@') && names.includes(p.slice(1))
-    ? <span key={i} style={{ color: '#0073EA', background: '#E5F4FF', borderRadius: 4, padding: '0 3px' }}>{p}</span>
+    ? <span key={i} style={{ color: 'var(--tk-link)', background: 'var(--tk-sel)', borderRadius: 4, padding: '0 3px' }}>{p}</span>
     : p));
 }

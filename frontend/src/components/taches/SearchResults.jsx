@@ -8,7 +8,7 @@ function Highlight({ text, q }) {
   const i = fold(t).indexOf(fold(q.trim()));
   if (i < 0 || !q.trim()) return t;
   const n = q.trim().length;
-  return <>{t.slice(0, i)}<mark style={{ background: '#FEF08A', padding: 0 }}>{t.slice(i, i + n)}</mark>{t.slice(i + n)}</>;
+  return <>{t.slice(0, i)}<mark style={{ background: 'var(--tk-mark)', padding: 0 }}>{t.slice(i, i + n)}</mark>{t.slice(i + n)}</>;
 }
 
 /**
@@ -27,29 +27,29 @@ export default function SearchResults({ hits, q, boardId, onOpen }) {
   const elsewhere = list.filter((t) => t.archived || (boardId !== 'all' && String(t.board_id) !== String(boardId))).length;
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, marginBottom: 12 }}>
+    <div style={{ background: 'var(--tk-surface)', border: '1px solid var(--tk-line)', borderRadius: 10, marginBottom: 12 }}>
       <button type="button" onClick={() => setOpen((v) => !v)} style={{
         width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-        padding: '10px 14px', fontSize: 14, fontWeight: 700, color: '#1F2937',
+        padding: '10px 14px', fontSize: 14, fontWeight: 700, color: 'var(--tk-text)',
       }}>
         {open ? '▾' : '▸'} « {q.trim()} » trouvé dans {list.length} tâche{list.length > 1 ? 's' : ''}
-        {elsewhere > 0 && <span style={{ fontWeight: 500, color: '#6B7280' }}> (dont {elsewhere} dans un autre tableau ou archivée{elsewhere > 1 ? 's' : ''})</span>}
-        {hits.length >= 300 && <span style={{ fontWeight: 500, color: '#B45309' }}> — 300 premiers résultats, précisez la recherche</span>}
+        {elsewhere > 0 && <span style={{ fontWeight: 500, color: 'var(--tk-sub)' }}> (dont {elsewhere} dans un autre tableau ou archivée{elsewhere > 1 ? 's' : ''})</span>}
+        {hits.length >= 300 && <span style={{ fontWeight: 500, color: 'var(--tk-warn)' }}> — 300 premiers résultats, précisez la recherche</span>}
       </button>
       {open && list.length > 0 && (
-        <div style={{ maxHeight: 280, overflowY: 'auto', borderTop: '1px solid #EEF0F3' }}>
+        <div style={{ maxHeight: 280, overflowY: 'auto', borderTop: '1px solid var(--tk-line2)' }}>
           {list.map((t) => (
             <button key={t.task_id} type="button" onClick={() => onOpen(t.task_id)} style={{
-              display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid #F3F4F6',
+              display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid var(--tk-hover)',
               cursor: 'pointer', fontFamily: 'inherit', padding: '8px 14px',
             }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#1F2937' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tk-text)' }}>
                 <Highlight text={t.title} q={q} />
-                <span style={{ fontSize: 12, fontWeight: 500, color: '#9CA3AF' }}> · {t.board_name}{t.archived ? ' · archivée' : ''}</span>
+                <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--tk-muted)' }}> · {t.board_name}{t.archived ? ' · archivée' : ''}</span>
               </div>
               {t.places.filter((p) => p.field !== 'titre').slice(0, 3).map((p, i) => (
-                <div key={i} style={{ fontSize: 13, color: '#4B5563', marginTop: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', marginRight: 6 }}>
+                <div key={i} style={{ fontSize: 13, color: 'var(--tk-text2)', marginTop: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--tk-sub)', textTransform: 'uppercase', marginRight: 6 }}>
                     {p.field}{p.by ? ` de ${p.by}` : ''}{p.at ? ` · ${formatDateTime(p.at)}` : ''}
                   </span>
                   <Highlight text={p.snippet} q={q} />

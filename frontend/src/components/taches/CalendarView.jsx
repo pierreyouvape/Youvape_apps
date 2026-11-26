@@ -63,7 +63,7 @@ export default function CalendarView({ tasks, loading, onOpen, onTaskChange, onE
     } catch (e) { onError(apiError(e)); }
   };
 
-  if (loading) return <div style={{ color: '#9CA3AF', padding: 20 }}>Chargement…</div>;
+  if (loading) return <div style={{ color: 'var(--tk-muted)', padding: 20 }}>Chargement…</div>;
 
   const shift = (n) => setMonth(addDays(`${month}-15`, n * 30).slice(0, 7));
   const [y, m] = month.split('-').map(Number);
@@ -72,12 +72,12 @@ export default function CalendarView({ tasks, loading, onOpen, onTaskChange, onE
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
         <button type="button" style={{ ...btn(), padding: '6px 12px' }} onClick={() => shift(-1)}>←</button>
-        <strong style={{ fontSize: 18, color: '#1F2937', minWidth: 170, textAlign: 'center' }}>{MONTHS[m - 1]} {y}</strong>
+        <strong style={{ fontSize: 18, color: 'var(--tk-text)', minWidth: 170, textAlign: 'center' }}>{MONTHS[m - 1]} {y}</strong>
         <button type="button" style={{ ...btn(), padding: '6px 12px' }} onClick={() => shift(1)}>→</button>
         <button type="button" style={{ ...btn(), padding: '6px 12px' }} onClick={() => setMonth(today.slice(0, 7))}>Aujourd'hui</button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', background: '#E5E7EB', gap: 1, border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'hidden' }}>
-        {DAYS.map((d) => <div key={d} style={{ background: '#F9FAFB', padding: '6px 8px', fontSize: 12, fontWeight: 800, color: '#6B7280' }}>{d}</div>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', background: 'var(--tk-line)', gap: 1, border: '1px solid var(--tk-line)', borderRadius: 10, overflow: 'hidden' }}>
+        {DAYS.map((d) => <div key={d} style={{ background: 'var(--tk-bg2)', padding: '6px 8px', fontSize: 12, fontWeight: 800, color: 'var(--tk-sub)' }}>{d}</div>)}
         {cells.map((d) => {
           const items = byDay.get(d) || [];
           const inMonth = d.slice(0, 7) === first.slice(0, 7);
@@ -88,15 +88,15 @@ export default function CalendarView({ tasks, loading, onOpen, onTaskChange, onE
               onDragOver={(e) => { e.preventDefault(); setOver(d); }}
               onDragLeave={() => setOver((o) => (o === d ? null : o))}
               onDrop={(e) => { e.preventDefault(); setOver(null); if (dragged.current) moveTo(dragged.current.item, dragged.current.day, d); dragged.current = null; }}
-              style={{ background: over === d ? '#E0EAFF' : inMonth ? '#fff' : '#FAFAFA', minHeight: 118, padding: 4, position: 'relative' }}>
+              style={{ background: over === d ? 'var(--tk-chip)' : inMonth ? 'var(--tk-surface)' : 'var(--tk-bg2)', minHeight: 118, padding: 4, position: 'relative' }}>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: 3 }}>
                 <span style={{
-                  fontSize: 12, fontWeight: 800, color: d === today ? '#fff' : inMonth ? '#374151' : '#C4C4C4',
+                  fontSize: 12, fontWeight: 800, color: d === today ? '#fff' : inMonth ? 'var(--tk-text2)' : 'var(--tk-faint)',
                   background: d === today ? '#E2445C' : 'transparent', borderRadius: 10, padding: '1px 6px',
                 }}>{Number(d.slice(8))}</span>
                 <span style={{ flex: 1 }} />
                 <button type="button" title="Nouvelle tâche ce jour-là" onClick={() => onNew({ start_date: d, due_date: d })}
-                  style={{ background: 'none', border: 'none', color: '#CBD5E1', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>+</button>
+                  style={{ background: 'none', border: 'none', color: 'var(--tk-faint)', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}>+</button>
               </div>
               {shown.map((it) => (
                 <div key={it.key} draggable
@@ -113,7 +113,7 @@ export default function CalendarView({ tasks, loading, onOpen, onTaskChange, onE
               ))}
               {items.length > MAX_PER_DAY && (
                 <button type="button" onClick={() => setExpandedDay(showAll ? null : d)}
-                  style={{ background: 'none', border: 'none', color: '#2563EB', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
+                  style={{ background: 'none', border: 'none', color: 'var(--tk-link)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
                   {showAll ? 'Réduire' : `+ ${items.length - MAX_PER_DAY} autres`}
                 </button>
               )}

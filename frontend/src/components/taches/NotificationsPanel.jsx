@@ -77,10 +77,10 @@ export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
     <div key={n.id} role="button" tabIndex={0} onClick={() => open(n)} onKeyDown={(e) => { if (e.key === 'Enter') open(n); }}
       style={{
         display: 'flex', gap: 12, padding: '14px 12px', borderRadius: 8, cursor: 'pointer', position: 'relative',
-        background: n.read ? 'transparent' : '#F0F7FF', marginBottom: 4,
+        background: n.read ? 'transparent' : 'var(--tk-sel)', marginBottom: 4,
       }}
       onMouseEnter={(e) => { e.currentTarget.style.background = M.hover; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = n.read ? 'transparent' : '#F0F7FF'; }}>
+      onMouseLeave={(e) => { e.currentTarget.style.background = n.read ? 'transparent' : 'var(--tk-sel)'; }}>
       <Avatar id={n.actor_id || 0} name={n.actor_name || '?'} size={36} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
@@ -99,7 +99,7 @@ export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
         {(n.kind === 'assigned' || n.kind === 'unblocked') && n.step_name && (
           <div style={{ fontSize: 14, color: M.text, marginTop: 6 }}>Étape « {n.step_name} »</div>
         )}
-        <div style={{ fontSize: 13, color: '#0073EA', marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 13, color: 'var(--tk-link)', marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           ▦ {n.task_title || 'Tâche supprimée'}{n.task_id ? <span style={{ color: M.sub }}> · #{n.task_id}</span> : ''}
         </div>
         <button type="button" onClick={(e) => toggleRead(n, e)}
@@ -114,12 +114,12 @@ export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 2900, background: 'rgba(15,23,42,0.25)' }}>
       <div style={{
-        position: 'absolute', top: 0, right: 0, bottom: 0, width: 560, maxWidth: '100%', background: '#fff',
+        position: 'absolute', top: 0, right: 0, bottom: 0, width: 560, maxWidth: '100%', background: 'var(--tk-surface)',
         boxShadow: '-10px 0 30px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', fontFamily: M.font,
       }}>
         <div style={{ padding: '22px 24px 0', display: 'flex', alignItems: 'center' }}>
           <h2 style={{ margin: 0, fontSize: 28, fontWeight: 500, color: M.text, flex: 1 }}>Notifications</h2>
-          <button type="button" onClick={readAll} style={{ background: 'none', border: 'none', color: '#0073EA', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, marginRight: 12 }}>
+          <button type="button" onClick={readAll} style={{ background: 'none', border: 'none', color: 'var(--tk-link)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, marginRight: 12 }}>
             Tout marquer comme lu
           </button>
           <button type="button" onClick={onClose} title="Fermer" style={{ background: 'none', border: 'none', fontSize: 26, color: M.sub, cursor: 'pointer', lineHeight: 1 }}>×</button>
@@ -140,7 +140,7 @@ export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
           </label>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 24px' }}>
-          {error && <div style={{ margin: 12, color: '#B91C1C', fontSize: 13 }}>{error}</div>}
+          {error && <div style={{ margin: 12, color: 'var(--tk-danger)', fontSize: 13 }}>{error}</div>}
           {!data && !error && <div style={{ padding: 12, color: M.sub }}>Chargement…</div>}
           {data && !data.items.length && <div style={{ padding: 24, color: M.sub, textAlign: 'center' }}>Aucune notification.</div>}
           {recent.length > 0 && <h3 style={{ fontSize: 16, fontWeight: 600, margin: '8px 12px' }}>7 derniers jours</h3>}

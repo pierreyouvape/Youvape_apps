@@ -4,7 +4,7 @@ import { InlineText, PriorityPill, TaskStatusPill, PeoplePicker, LabelsInput, Da
 import StepsTable from './StepsTable';
 import { CommentsThread } from './CommentsThread';
 
-const label = { fontSize: 12, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6 };
+const label = { fontSize: 12, fontWeight: 800, color: 'var(--tk-muted)', textTransform: 'uppercase', marginBottom: 6 };
 
 /** Fenêtre large d'une tâche : champs, étapes, commentaires, journal. */
 export default function TaskModal({ taskId, members, labels, boards, canWrite, onClose, onChanged, focusUserId }) {
@@ -48,22 +48,22 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
       position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,0.45)',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto',
     }}>
-      <div style={{ background: '#fff', borderRadius: 14, width: 1180, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
+      <div style={{ background: 'var(--tk-surface)', borderRadius: 14, width: 1180, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
         {!task ? (
-          <div style={{ padding: 40, color: error ? '#B91C1C' : '#6B7280' }}>{error || 'Chargement…'}</div>
+          <div style={{ padding: 40, color: error ? 'var(--tk-danger)' : 'var(--tk-sub)' }}>{error || 'Chargement…'}</div>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid #E5E7EB' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '18px 22px', borderBottom: '1px solid var(--tk-line)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <InlineText value={task.title} onSave={(title) => save({ title })} style={{ fontSize: 22, fontWeight: 800, color: '#1F2937', width: '100%' }} />
-                <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>
-                  <span title="Numéro de la tâche (cherchable : #123)" style={{ color: '#676879', fontWeight: 700 }}>#{task.id}</span>{' · '}
+                <InlineText value={task.title} onSave={(title) => save({ title })} style={{ fontSize: 22, fontWeight: 800, color: 'var(--tk-text)', width: '100%' }} />
+                <div style={{ fontSize: 12, color: 'var(--tk-muted)', marginTop: 4 }}>
+                  <span title="Numéro de la tâche (cherchable : #123)" style={{ color: 'var(--tk-sub)', fontWeight: 700 }}>#{task.id}</span>{' · '}
                   {task.updated_by_name ? `Modifiée par ${task.updated_by_name} · ` : ''}{formatDateTime(task.updated_at)}
-                  {task.archived_at && <strong style={{ color: '#B45309' }}> · Archivée le {formatDateTime(task.archived_at)}</strong>}
+                  {task.archived_at && <strong style={{ color: 'var(--tk-warn)' }}> · Archivée le {formatDateTime(task.archived_at)}</strong>}
                 </div>
               </div>
               <TaskStatusPill status={task.status} onChange={task.steps.length ? undefined : (manual_status) => save({ manual_status })} />
-              <button type="button" onClick={onClose} title="Fermer" style={{ background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: '#9CA3AF', cursor: 'pointer' }}>×</button>
+              <button type="button" onClick={onClose} title="Fermer" style={{ background: 'none', border: 'none', fontSize: 26, lineHeight: 1, color: 'var(--tk-muted)', cursor: 'pointer' }}>×</button>
             </div>
 
             <div style={{ padding: '16px 22px', display: 'grid', gridTemplateColumns: '2fr 1.4fr 1fr 1fr', gap: 16 }}>
@@ -71,7 +71,7 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                 <div style={label}>Lien</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <InlineText value={task.link_url} placeholder="Ajouter un lien" onSave={(link_url) => save({ link_url })}
-                    style={{ fontSize: 14, color: '#2563EB', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
+                    style={{ fontSize: 14, color: 'var(--tk-link)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} />
                   {task.link_url && <a href={task.link_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700 }}>Ouvrir ↗</a>}
                 </div>
               </div>
@@ -104,38 +104,38 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                 </select>
               </div>
               {!task.steps.length && (
-                <div style={{ fontSize: 12, color: '#6B7280', alignSelf: 'end' }}>
+                <div style={{ fontSize: 12, color: 'var(--tk-sub)', alignSelf: 'end' }}>
                   Sans étape : statut choisi à la main ({TASK_STATUS[task.manual_status]?.label}).
                 </div>
               )}
             </div>
 
-            {error && <div style={{ margin: '0 22px 10px', padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13 }}>{error}</div>}
+            {error && <div style={{ margin: '0 22px 10px', padding: '8px 12px', background: 'var(--tk-dangerBg)', color: 'var(--tk-danger)', borderRadius: 8, fontSize: 13 }}>{error}</div>}
 
             <div style={{ padding: '0 22px 18px' }}>
               <div style={label}>Description</div>
               <InlineText multiline value={task.description} placeholder="Ajouter une description…" onSave={(description) => save({ description })}
-                style={{ fontSize: 14, color: '#374151', whiteSpace: 'pre-wrap', width: '100%' }} />
+                style={{ fontSize: 14, color: 'var(--tk-text2)', whiteSpace: 'pre-wrap', width: '100%' }} />
             </div>
 
-            <div style={{ padding: '16px 22px', borderTop: '1px solid #E5E7EB', borderBottom: '1px solid #E5E7EB', background: '#FAFBFC', marginBottom: 16 }}>
+            <div style={{ padding: '16px 22px', borderTop: '1px solid var(--tk-line)', borderBottom: '1px solid var(--tk-line)', background: 'var(--tk-bg2)', marginBottom: 16 }}>
               <div style={label}>Commentaires ({task.comments.length})</div>
               <CommentsThread task={task} members={members} onTask={apply} onError={setError} />
             </div>
 
             <div style={{ padding: '0 22px 18px' }}>
               <div style={label}>Étapes</div>
-              <div style={{ border: '1px solid #E5E7EB', borderLeft: `4px solid ${TACHES_COLOR}`, borderRadius: 8 }}>
+              <div style={{ border: '1px solid var(--tk-line)', borderLeft: `4px solid ${TACHES_COLOR}`, borderRadius: 8 }}>
                 <StepsTable task={task} members={members} onChange={apply} onError={setError} focusUserId={focusUserId} />
               </div>
-              <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>
+              <p style={{ fontSize: 12, color: 'var(--tk-muted)', margin: '6px 0 0' }}>
                 Passer une étape à « Fait » débloque la suivante et prévient sur Slack les personnes « À prévenir »
                 (à défaut, le responsable de l'étape suivante). 🗑 supprime une étape.
               </p>
             </div>
 
-            <div style={{ padding: '12px 22px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" style={{ ...btn(), border: 'none', color: '#6B7280' }} onClick={() => setShowLog((v) => !v)}>
+            <div style={{ padding: '12px 22px', borderTop: '1px solid var(--tk-line)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" style={{ ...btn(), border: 'none', color: 'var(--tk-sub)' }} onClick={() => setShowLog((v) => !v)}>
                 {showLog ? '▾' : '▸'} Journal ({task.events.length})
               </button>
               <span style={{ flex: 1 }} />
@@ -143,17 +143,17 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                 {task.archived_at ? '↩ Désarchiver' : '🗄 Archiver'}
               </button>
               {canWrite ? (
-                <button type="button" style={{ ...btn(), color: '#B91C1C', borderColor: '#FCA5A5' }} onClick={remove}>🗑 Supprimer la tâche</button>
+                <button type="button" style={{ ...btn(), color: 'var(--tk-danger)', borderColor: 'var(--tk-dangerLine)' }} onClick={remove}>🗑 Supprimer la tâche</button>
               ) : (
-                <span style={{ fontSize: 12, color: '#9CA3AF' }}>Supprimer : droit d'écriture requis</span>
+                <span style={{ fontSize: 12, color: 'var(--tk-muted)' }}>Supprimer : droit d'écriture requis</span>
               )}
             </div>
             {showLog && (
-              <div style={{ padding: '0 22px 18px', fontSize: 13, color: '#4B5563' }}>
-                {task.events.length === 0 && <div style={{ color: '#9CA3AF' }}>Rien pour l'instant.</div>}
+              <div style={{ padding: '0 22px 18px', fontSize: 13, color: 'var(--tk-text2)' }}>
+                {task.events.length === 0 && <div style={{ color: 'var(--tk-muted)' }}>Rien pour l'instant.</div>}
                 {task.events.map((e) => (
-                  <div key={e.id} style={{ padding: '4px 0', borderBottom: '1px dashed #EEF0F3' }}>
-                    <span style={{ color: '#9CA3AF' }}>{formatDateTime(e.created_at)}</span>{' · '}{eventText(e, members)}
+                  <div key={e.id} style={{ padding: '4px 0', borderBottom: '1px dashed var(--tk-line2)' }}>
+                    <span style={{ color: 'var(--tk-muted)' }}>{formatDateTime(e.created_at)}</span>{' · '}{eventText(e, members)}
                   </div>
                 ))}
               </div>
@@ -177,7 +177,7 @@ function eventText(e, members) {
     case 'task_status': return `${e.user_name || '?'} : statut ${TASK_STATUS[d.from]?.label} → ${TASK_STATUS[d.to]?.label}`;
     case 'step_deleted': return `${e.user_name || '?'} a supprimé l'étape « ${d.name} »`;
     case 'slack': return `Slack envoyé${d.to?.length ? ` (${names(d.to)})` : ''}`;
-    case 'slack_error': return <span style={{ color: '#B91C1C' }}>Slack non envoyé : {d.error}</span>;
+    case 'slack_error': return <span style={{ color: 'var(--tk-danger)' }}>Slack non envoyé : {d.error}</span>;
     default: return e.kind;
   }
 }

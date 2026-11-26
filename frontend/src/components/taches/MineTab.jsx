@@ -143,7 +143,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
         </select>
         {filtering && (
           <button type="button" onClick={() => { setQ(''); setFLabel(''); setFPriority(''); setFStatus(''); }}
-            style={{ background: 'none', border: 'none', color: '#0073EA', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Effacer les filtres</button>
+            style={{ background: 'none', border: 'none', color: 'var(--tk-link)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Effacer les filtres</button>
         )}
         <span style={{ marginLeft: 'auto', fontSize: 13, color: M.sub }}>
           {filtered.length} / {rows.length} élément{rows.length > 1 ? 's' : ''}{sort ? ' · clic sur l\'en-tête trié pour changer l\'ordre' : ' · cliquez un en-tête pour trier'}
@@ -162,7 +162,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
               <span style={{ fontSize: 14, color: M.sub }}>{list.length} élément{list.length > 1 ? 's' : ''}</span>
             </div>
             {!shut && (
-              <div style={{ borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', background: '#fff', overflowX: 'auto' }}>
+              <div style={{ borderLeft: `6px solid ${g.color}`, borderRadius: '6px 0 0 6px', background: 'var(--tk-surface)', overflowX: 'auto' }}>
                 <table style={{ ...mTable, width: cols.total }}>
                   <ColGroup widths={cols.widths} />
                   <thead>
@@ -186,9 +186,9 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                       const late = due({ task, step }) && due({ task, step }) < today;
                       return (
                         <Fragment key={key}>
-                          <tr style={{ background: open ? '#F5F6F8' : '#fff' }}
+                          <tr style={{ background: open ? 'var(--tk-hover)' : 'var(--tk-surface)' }}
                             onMouseEnter={(e) => { if (!open) e.currentTarget.style.background = M.hover; }}
-                            onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = '#fff'; }}>
+                            onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = 'var(--tk-surface)'; }}>
                             <td style={{ ...mTd, padding: 0 }}>
                               {task.steps.length > 0 && (
                                 <button type="button" onClick={() => flip(setExpanded, key)} title={open ? 'Replier' : 'Voir toutes les étapes'}
@@ -206,10 +206,10 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                                   {task.title}
                                 </button>
                                 <button type="button" title="Voir les commentaires" onClick={(e) => { e.stopPropagation(); setCommentsId(task.id); }}
-              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: task.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>💬{task.comment_count ? ` ${task.comment_count}` : ''}</button>
+              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: task.comment_count ? 'var(--tk-link)' : 'var(--tk-faint)', flexShrink: 0 }}>💬{task.comment_count ? ` ${task.comment_count}` : ''}</button>
                                 {task.link_url && (
                                   <a href={task.link_url} target="_blank" rel="noreferrer" title={task.link_url} onClick={(e) => e.stopPropagation()}
-                                    style={{ flexShrink: 0, color: '#0073EA', textDecoration: 'none' }}>↗</a>
+                                    style={{ flexShrink: 0, color: 'var(--tk-link)', textDecoration: 'none' }}>↗</a>
                                 )}
                               </span>
                             </td>
@@ -257,8 +257,8 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                           </tr>
                           {open && (
                             <tr>
-                              <td style={{ ...mTd, background: '#F5F6F8' }} />
-                              <td colSpan={9} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: '#F5F6F8' }}>
+                              <td style={{ ...mTd, background: 'var(--tk-hover)' }} />
+                              <td colSpan={9} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: 'var(--tk-hover)' }}>
                                 <StepsTable task={task} members={members} focusUserId={me} color={g.color}
                                   onChange={(t) => { replace(t); load(); }} onError={onError} />
                               </td>

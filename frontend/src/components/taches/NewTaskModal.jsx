@@ -4,7 +4,7 @@ import { tachesApi, apiError, PRIORITY, PRIORITY_ORDER, btn, inputStyle } from '
 import { LabelsInput, PeoplePicker } from './tachesUi';
 import StepsEditor from './StepsEditor';
 
-const lbl = { display: 'block', fontSize: 12, fontWeight: 800, color: '#6B7280', margin: '12px 0 4px' };
+const lbl = { display: 'block', fontSize: 12, fontWeight: 800, color: 'var(--tk-sub)', margin: '12px 0 4px' };
 
 /**
  * Nouvelle tâche. Choisir un modèle recopie ses étapes et leurs personnes,
@@ -111,14 +111,14 @@ export default function NewTaskModal({ templates, members, labels, boards, prese
         </select>
 
         <label style={lbl}>Étapes</label>
-        <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, padding: 10 }}>
+        <div style={{ border: '1px solid var(--tk-line)', borderRadius: 8, padding: 10 }}>
           <StepsEditor steps={steps} members={members} onChange={setSteps} />
         </div>
-        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>
+        <p style={{ fontSize: 12, color: 'var(--tk-muted)', margin: '6px 0 0' }}>
           La première étape démarre « À faire », les suivantes « Bloqué » jusqu'à ce que la précédente soit faite.
         </p>
 
-        {error && <div style={{ marginTop: 12, padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13 }}>{error}</div>}
+        {error && <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--tk-dangerBg)', color: 'var(--tk-danger)', borderRadius: 8, fontSize: 13 }}>{error}</div>}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button type="button" style={btn()} onClick={onClose}>Annuler</button>

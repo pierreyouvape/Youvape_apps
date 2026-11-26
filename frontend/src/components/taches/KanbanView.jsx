@@ -40,7 +40,7 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
         return TASK_STATUS_ORDER.map((k) => ({ key: k, label: TASK_STATUS[k].label, color: TASK_STATUS[k].bg, cards: tasks.filter((t) => t.status === k).map(taskCard) }));
       case 'priority':
         return [...PRIORITY_ORDER, null].map((k) => ({
-          key: k || 'none', label: k ? PRIORITY[k].label : 'Sans priorité', color: k ? PRIORITY[k].bg : '#C4C4C4',
+          key: k || 'none', label: k ? PRIORITY[k].label : 'Sans priorité', color: k ? PRIORITY[k].bg : 'var(--tk-todo)',
           cards: tasks.filter((t) => (t.priority || null) === k).map(taskCard),
         }));
       case 'group': {
@@ -50,20 +50,20 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
       case 'label': {
         const used = [...new Set(tasks.flatMap((t) => t.labels))].sort();
         return [...used.map((l) => ({ key: l, label: l, color: '#579BFC', cards: tasks.filter((t) => t.labels.includes(l)).map((t) => ({ ...taskCard(t), key: `t${t.id}-${l}`, from: l })) })),
-          { key: '', label: 'Sans étiquette', color: '#C4C4C4', cards: tasks.filter((t) => !t.labels.length).map(taskCard) }];
+          { key: '', label: 'Sans étiquette', color: 'var(--tk-todo)', cards: tasks.filter((t) => !t.labels.length).map(taskCard) }];
       }
       case 'person': {
         // Ce qui reste à faire, par responsable : étapes non faites + tâches sans étape non terminées.
         const open = (s) => s.status !== 'fait';
         const cols = members.filter((m) => m.has_app !== false).map((m) => ({
-          key: String(m.id), label: m.name, color: '#2563EB',
+          key: String(m.id), label: m.name, color: 'var(--tk-link)',
           cards: [
             ...stepCards((s) => open(s) && s.owners.includes(m.id)),
             ...tasks.filter((t) => !t.steps.length && t.status !== 'fait' && t.people.includes(m.id)).map(taskCard),
           ],
         }));
         cols.push({
-          key: 'none', label: 'Sans responsable', color: '#C4C4C4',
+          key: 'none', label: 'Sans responsable', color: 'var(--tk-todo)',
           cards: [...stepCards((s) => open(s) && !s.owners.length), ...tasks.filter((t) => !t.steps.length && t.status !== 'fait' && !t.people.length).map(taskCard)],
         });
         return cols;
@@ -100,12 +100,12 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
     }
   };
 
-  if (loading) return <div style={{ color: '#9CA3AF', padding: 20 }}>Chargement…</div>;
+  if (loading) return <div style={{ color: 'var(--tk-muted)', padding: 20 }}>Chargement…</div>;
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, color: '#4B5563', fontWeight: 700 }}>Regrouper par</span>
+        <span style={{ fontSize: 13, color: 'var(--tk-text2)', fontWeight: 700 }}>Regrouper par</span>
         <select value={by} onChange={(e) => { setBy(e.target.value); localStorage.setItem('yv.taches.kanban', e.target.value); }}
           style={{ ...inputStyle, width: 240 }}>
           {GROUP_BY.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
@@ -126,7 +126,7 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
                 if (card && !col.cards.some((c) => c.key === key)) drop(card, col);
               }}
               style={{
-                width: 280, flexShrink: 0, background: over === col.key ? '#E0EAFF' : '#EEF1F5', borderRadius: 10,
+                width: 280, flexShrink: 0, background: over === col.key ? 'var(--tk-chip)' : 'var(--tk-line2)', borderRadius: 10,
                 maxHeight: 'calc(100vh - 300px)', display: 'flex', flexDirection: 'column',
               }}>
               <div style={{ background: col.color, color: '#fff', borderRadius: '10px 10px 0 0', padding: '8px 12px', fontWeight: 800, fontSize: 14, display: 'flex' }}>
@@ -142,17 +142,17 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
                       onDragStart={(e) => { dragged.current = c; e.dataTransfer.setData('text/plain', c.key); }}
                       onClick={() => onOpen(c.task.id)}
                       style={{
-                        background: '#fff', borderRadius: 8, padding: '8px 10px', cursor: 'grab', boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                        borderLeft: `4px solid ${c.step ? STEP_STATUS[c.step.status].bg : TASK_STATUS[c.task.status]?.bg || '#C4C4C4'}`,
+                        background: 'var(--tk-surface)', borderRadius: 8, padding: '8px 10px', cursor: 'grab', boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                        borderLeft: `4px solid ${c.step ? STEP_STATUS[c.step.status].bg : TASK_STATUS[c.task.status]?.bg || 'var(--tk-todo)'}`,
                       }}>
-                      {c.step && <div style={{ ...clamp, fontSize: 14, fontWeight: 600, color: '#323338' }} title={c.step.name}>{c.step.name}</div>}
-                      <div style={{ ...clamp, fontSize: c.step ? 12 : 14, fontWeight: c.step ? 400 : 600, color: c.step ? '#676879' : '#323338' }} title={c.task.title}>{c.task.title}</div>
+                      {c.step && <div style={{ ...clamp, fontSize: 14, fontWeight: 600, color: 'var(--tk-text)' }} title={c.step.name}>{c.step.name}</div>}
+                      <div style={{ ...clamp, fontSize: c.step ? 12 : 14, fontWeight: c.step ? 400 : 600, color: c.step ? 'var(--tk-sub)' : 'var(--tk-text)' }} title={c.task.title}>{c.task.title}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                         <AvatarStack ids={c.step ? c.step.owners : c.task.people} members={members} size={22} />
                         {pr && <span style={{ width: 9, height: 9, borderRadius: '50%', background: PRIORITY[pr].bg }} title={`Priorité ${PRIORITY[pr].label}`} />}
-                        {due && <span style={{ fontSize: 11, fontWeight: 700, color: late ? '#B91C1C' : '#6B7280' }}>{formatDate(due)}</span>}
-                        {!c.step && c.task.steps.length > 0 && <span style={{ fontSize: 11, color: '#6B7280' }}>{c.task.counts.fait}/{c.task.steps.length} étapes</span>}
-                        {c.task.comment_count > 0 && <span style={{ fontSize: 11, color: '#2563EB' }}>💬 {c.task.comment_count}</span>}
+                        {due && <span style={{ fontSize: 11, fontWeight: 700, color: late ? 'var(--tk-danger)' : 'var(--tk-sub)' }}>{formatDate(due)}</span>}
+                        {!c.step && c.task.steps.length > 0 && <span style={{ fontSize: 11, color: 'var(--tk-sub)' }}>{c.task.counts.fait}/{c.task.steps.length} étapes</span>}
+                        {c.task.comment_count > 0 && <span style={{ fontSize: 11, color: 'var(--tk-link)' }}>💬 {c.task.comment_count}</span>}
                       </div>
                       {by !== 'label' && c.task.labels.length > 0 && (
                         <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 5 }}>
@@ -164,11 +164,11 @@ export default function KanbanView({ tasks, loading, board, boards, members, foc
                 })}
                 {col.cards.length > shown.length && (
                   <button type="button" onClick={() => setMore((m) => ({ ...m, [col.key]: true }))}
-                    style={{ background: 'none', border: 'none', color: '#2563EB', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ background: 'none', border: 'none', color: 'var(--tk-link)', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                     Voir les {col.cards.length - shown.length} autres
                   </button>
                 )}
-                {!col.cards.length && <div style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: 10 }}>Déposer ici</div>}
+                {!col.cards.length && <div style={{ fontSize: 12, color: 'var(--tk-muted)', textAlign: 'center', padding: 10 }}>Déposer ici</div>}
               </div>
             </div>
           );

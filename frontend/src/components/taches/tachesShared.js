@@ -7,7 +7,7 @@ export const TACHES_COLOR = '#0073EA';
 
 /** Statuts d'étape (clés identiques à services/tachesRules.STEP_STATUSES), couleurs Monday. */
 export const STEP_STATUS = {
-  a_faire:            { label: 'À faire',            bg: '#C4C4C4', ink: '#fff' },
+  a_faire:            { label: 'À faire',            bg: 'var(--tk-todo)', ink: '#fff' },
   en_cours:           { label: 'En cours',           bg: '#FDAB3D', ink: '#fff' },
   attente_correction: { label: 'Attente correction', bg: '#A25DDC', ink: '#fff' },
   suivi_google:       { label: 'Suivi Google',       bg: '#579BFC', ink: '#fff' },
@@ -18,7 +18,7 @@ export const STEP_STATUS_ORDER = ['a_faire', 'en_cours', 'attente_correction', '
 
 /** Statut d'une tâche : calculé si elle a des étapes, sinon choisi à la main. */
 export const TASK_STATUS = {
-  a_faire:  { label: 'À faire',  bg: '#C4C4C4' },
+  a_faire:  { label: 'À faire',  bg: 'var(--tk-todo)' },
   en_cours: { label: 'En cours', bg: '#FDAB3D' },
   bloque:   { label: 'Bloqué',   bg: '#DF2F4A' },
   longue:   { label: 'Longue',   bg: '#4EB3E8' },
@@ -166,18 +166,18 @@ export const todayStr = () => {
 
 /* Styles partagés (ici et pas dans tachesUi.jsx : un fichier de composants n'exporte que des composants). */
 export const btn = (primary = false) => ({
-  background: primary ? '#2563EB' : '#fff', color: primary ? '#fff' : '#374151',
-  border: primary ? 'none' : '1px solid #D1D5DB', borderRadius: 8, padding: '8px 14px',
+  background: primary ? '#2563EB' : 'var(--tk-surface)', color: primary ? '#fff' : 'var(--tk-text2)',
+  border: primary ? 'none' : '1px solid var(--tk-border)', borderRadius: 8, padding: '8px 14px',
   fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
 });
 
 export const inputStyle = {
-  width: '100%', padding: '8px 10px', border: '1px solid #D1D5DB', borderRadius: 8,
+  width: '100%', padding: '8px 10px', border: '1px solid var(--tk-border)', borderRadius: 8,
   fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
 };
 
 export const labelChip = {
-  background: '#E0EAFF', color: '#1E40AF', borderRadius: 4, padding: '2px 7px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
+  background: 'var(--tk-chip)', color: 'var(--tk-chipInk)', borderRadius: 4, padding: '2px 7px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
 };
 
 /* ─── Tableaux façon Monday ─────────────────────────────────
@@ -185,13 +185,13 @@ export const labelChip = {
  * seule ligne (coupé avec « … », complet au survol), cellules de statut pleines.
  */
 export const M = {
-  text: '#323338', sub: '#676879', border: '#D0D4E4', grid: '#E6E9EF', hover: '#F5F6F8', rowH: 36,
+  text: 'var(--tk-text)', sub: 'var(--tk-sub)', border: 'var(--tk-border)', grid: 'var(--tk-grid)', hover: 'var(--tk-hover)', rowH: 36,
   font: "'Figtree', 'Roboto', 'Lato', -apple-system, sans-serif",
 };
 export const mTable = { width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 14, color: M.text, fontFamily: M.font };
 export const mTh = {
   position: 'relative', height: 36, padding: '0 8px', fontSize: 14, fontWeight: 400, color: M.sub, textAlign: 'center',
-  borderBottom: `1px solid ${M.grid}`, borderRight: `1px solid ${M.grid}`, background: '#fff',
+  borderBottom: `1px solid ${M.grid}`, borderRight: `1px solid ${M.grid}`, background: 'var(--tk-surface)',
   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 };
 export const mTd = {

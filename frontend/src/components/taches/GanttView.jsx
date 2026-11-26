@@ -79,7 +79,7 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   }, [drag, px, onTaskChange, onError]);
 
-  if (loading) return <div style={{ color: '#9CA3AF', padding: 20 }}>Chargement…</div>;
+  if (loading) return <div style={{ color: 'var(--tk-muted)', padding: 20 }}>Chargement…</div>;
 
   const x = (d) => daysBetween(from, d) * px;
   const width = days * px;
@@ -115,9 +115,9 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
         onPointerDown={grab('move')}
         style={{
           position: 'absolute', left, width: w, top: 6, height: ROW - 12, borderRadius: 6,
-          background: dashed ? `repeating-linear-gradient(45deg, ${color}55, ${color}55 6px, ${color}33 6px, ${color}33 12px)` : color,
+          background: dashed ? `repeating-linear-gradient(45deg, color-mix(in srgb, ${color} 33%, transparent) 0 6px, color-mix(in srgb, ${color} 20%, transparent) 6px 12px)` : color,
           border: dashed ? `1px dashed ${color}` : 'none', cursor: editable ? 'grab' : 'default',
-          color: dashed ? '#1F2937' : '#fff', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden',
+          color: dashed ? 'var(--tk-text)' : '#fff', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden',
           textOverflow: 'ellipsis', padding: '0 8px', lineHeight: `${ROW - 12}px`, boxShadow: live ? '0 4px 12px rgba(0,0,0,.25)' : 'none',
           userSelect: 'none', touchAction: 'none',
         }}>
@@ -131,7 +131,7 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
   const grid = (
     <>
       {zoom !== 'mois' && dayList.map((d, i) => (weekday(d) === 0 || weekday(d) === 6) && (
-        <div key={d} style={{ position: 'absolute', left: i * px, width: px, top: 0, bottom: 0, background: '#F8FAFC' }} />
+        <div key={d} style={{ position: 'absolute', left: i * px, width: px, top: 0, bottom: 0, background: 'var(--tk-bg2)' }} />
       ))}
       <div style={{ position: 'absolute', left: x(today) + px / 2, top: 0, bottom: 0, width: 2, background: '#E2445C', zIndex: 1 }} />
     </>
@@ -147,24 +147,24 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
         ))}
         <button type="button" style={{ ...btn(), padding: '6px 12px' }}
           onClick={() => { if (scroller.current) scroller.current.scrollLeft = Math.max(0, x(today) - 200); }}>Aujourd'hui</button>
-        <span style={{ fontSize: 12, color: '#9CA3AF' }}>Barre hachurée = dates calculées depuis les étapes (dépliez pour les déplacer).</span>
+        <span style={{ fontSize: 12, color: 'var(--tk-muted)' }}>Barre hachurée = dates calculées depuis les étapes (dépliez pour les déplacer).</span>
       </div>
 
-      <div ref={scroller} style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, overflow: 'auto', maxHeight: 'calc(100vh - 330px)', position: 'relative' }}>
+      <div ref={scroller} style={{ background: 'var(--tk-surface)', border: '1px solid var(--tk-line)', borderRadius: 10, overflow: 'auto', maxHeight: 'calc(100vh - 330px)', position: 'relative' }}>
         <div style={{ width: LEFT + width, position: 'relative' }}>
           {/* En-tête */}
-          <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 4, background: '#fff', borderBottom: '1px solid #E5E7EB' }}>
-            <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: '#fff', zIndex: 5, padding: '8px 12px', fontSize: 12, fontWeight: 800, color: '#6B7280', borderRight: '1px solid #E5E7EB' }}>
+          <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 4, background: 'var(--tk-surface)', borderBottom: '1px solid var(--tk-line)' }}>
+            <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--tk-surface)', zIndex: 5, padding: '8px 12px', fontSize: 12, fontWeight: 800, color: 'var(--tk-sub)', borderRight: '1px solid var(--tk-line)' }}>
               Tâche ({rows.length})
             </div>
             <div style={{ width, position: 'relative', height: 44 }}>
               {monthsHdr.map((m) => (
-                <div key={m.key} style={{ position: 'absolute', left: m.i * px, width: m.n * px, top: 0, height: 22, borderLeft: '1px solid #E5E7EB', fontSize: 12, fontWeight: 800, color: '#374151', padding: '3px 6px', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.label}</div>
+                <div key={m.key} style={{ position: 'absolute', left: m.i * px, width: m.n * px, top: 0, height: 22, borderLeft: '1px solid var(--tk-line)', fontSize: 12, fontWeight: 800, color: 'var(--tk-text2)', padding: '3px 6px', overflow: 'hidden', whiteSpace: 'nowrap' }}>{m.label}</div>
               ))}
               {dayList.map((d, i) => {
                 const show = zoom === 'jour' || (zoom === 'semaine' && weekday(d) === 1) || (zoom === 'mois' && d.endsWith('-01'));
                 return show ? (
-                  <div key={d} style={{ position: 'absolute', left: i * px, top: 22, height: 22, fontSize: 11, color: d === today ? '#E2445C' : '#9CA3AF', fontWeight: d === today ? 800 : 500, paddingLeft: 3, borderLeft: '1px solid #F3F4F6', whiteSpace: 'nowrap' }}>
+                  <div key={d} style={{ position: 'absolute', left: i * px, top: 22, height: 22, fontSize: 11, color: d === today ? '#E2445C' : 'var(--tk-muted)', fontWeight: d === today ? 800 : 500, paddingLeft: 3, borderLeft: '1px solid var(--tk-hover)', whiteSpace: 'nowrap' }}>
                     {Number(d.slice(8))}
                   </div>
                 ) : null;
@@ -180,17 +180,17 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
             return (
               <Fragment key={t.id}>
                 {header && (
-                  <div style={{ display: 'flex', background: '#F9FAFB', borderBottom: '1px solid #EEF0F3' }}>
-                    <div style={{ width: LEFT, position: 'sticky', left: 0, background: '#F9FAFB', zIndex: 3, padding: '6px 12px', fontSize: 13, fontWeight: 800, color: header.color }}>{header.name}</div>
+                  <div style={{ display: 'flex', background: 'var(--tk-bg2)', borderBottom: '1px solid var(--tk-line2)' }}>
+                    <div style={{ width: LEFT, position: 'sticky', left: 0, background: 'var(--tk-bg2)', zIndex: 3, padding: '6px 12px', fontSize: 13, fontWeight: 800, color: header.color }}>{header.name}</div>
                     <div style={{ width }} />
                   </div>
                 )}
-                <div style={{ display: 'flex', borderBottom: '1px solid #F3F4F6', height: ROW }}>
-                  <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: '#fff', zIndex: 3, borderRight: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--tk-hover)', height: ROW }}>
+                  <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--tk-surface)', zIndex: 3, borderRight: '1px solid var(--tk-line)', display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px' }}>
                     <button type="button" onClick={() => setExpanded((s) => { const n = new Set(s); if (n.has(t.id)) n.delete(t.id); else n.add(t.id); return n; })}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280', fontSize: 11, width: 14, visibility: t.steps.length ? 'visible' : 'hidden' }}>{open ? '▼' : '▶'}</button>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-sub)', fontSize: 11, width: 14, visibility: t.steps.length ? 'visible' : 'hidden' }}>{open ? '▼' : '▶'}</button>
                     <button type="button" onClick={() => onOpen(t.id)} title={t.title}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#1F2937', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, padding: 0 }}>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: 'var(--tk-text)', textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, padding: 0 }}>
                       {t.title}
                     </button>
                     <AvatarStack ids={t.people.length ? t.people : [...new Set(t.steps.flatMap((s) => s.owners))].slice(0, 3)} members={members} size={20} />
@@ -201,10 +201,10 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
                   </div>
                 </div>
                 {open && t.steps.map((s) => (
-                  <div key={s.id} style={{ display: 'flex', borderBottom: '1px solid #F3F4F6', height: ROW, background: '#FCFDFF' }}>
-                    <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: '#FCFDFF', zIndex: 3, borderRight: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 0 34px' }}>
+                  <div key={s.id} style={{ display: 'flex', borderBottom: '1px solid var(--tk-hover)', height: ROW, background: 'var(--tk-bg2)' }}>
+                    <div style={{ width: LEFT, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--tk-bg2)', zIndex: 3, borderRight: '1px solid var(--tk-line)', display: 'flex', alignItems: 'center', gap: 6, padding: '0 8px 0 34px' }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: STEP_STATUS[s.status].bg, flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={s.name}>{s.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--tk-text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }} title={s.name}>{s.name}</span>
                       <AvatarStack ids={s.owners} members={members} size={18} />
                     </div>
                     <div style={{ width, position: 'relative' }}>
@@ -215,7 +215,7 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
                       }) : (
                         <button type="button" onClick={async () => {
                           try { onTaskChange(await tachesApi.updateStep(s.id, { start_date: today, due_date: addDays(today, 2) })); } catch (e) { onError(apiError(e)); }
-                        }} style={{ position: 'absolute', left: x(today) + 6, top: 7, fontSize: 11, background: '#fff', border: '1px dashed #93C5FD', borderRadius: 6, color: '#2563EB', cursor: 'pointer', padding: '2px 8px' }}>
+                        }} style={{ position: 'absolute', left: x(today) + 6, top: 7, fontSize: 11, background: 'var(--tk-surface)', border: '1px dashed var(--tk-focus)', borderRadius: 6, color: 'var(--tk-link)', cursor: 'pointer', padding: '2px 8px' }}>
                           + Planifier
                         </button>
                       )}
@@ -225,23 +225,23 @@ export default function GanttView({ tasks, loading, board, boards, members, onOp
               </Fragment>
             );
           })}
-          {!rows.length && <div style={{ padding: 20, color: '#9CA3AF' }}>Aucune tâche datée.</div>}
+          {!rows.length && <div style={{ padding: 20, color: 'var(--tk-muted)' }}>Aucune tâche datée.</div>}
         </div>
       </div>
 
       {undated.length > 0 && (
-        <div style={{ marginTop: 14, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '10px 14px' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#6B7280', marginBottom: 6 }}>Sans dates ({undated.length})</div>
+        <div style={{ marginTop: 14, background: 'var(--tk-surface)', border: '1px solid var(--tk-line)', borderRadius: 10, padding: '10px 14px' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tk-sub)', marginBottom: 6 }}>Sans dates ({undated.length})</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {undated.slice(0, 120).map((t) => (
-              <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #E5E7EB', borderRadius: 8, padding: '3px 4px 3px 10px', fontSize: 13 }}>
-                <button type="button" onClick={() => onOpen(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#323338', padding: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.title}>{t.title}</button>
+              <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid var(--tk-line)', borderRadius: 8, padding: '3px 4px 3px 10px', fontSize: 13 }}>
+                <button type="button" onClick={() => onOpen(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--tk-text)', padding: 0, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.title}>{t.title}</button>
                 <button type="button" title="Placer cette semaine" onClick={async () => {
                   try { onTaskChange(await tachesApi.updateTask(t.id, { start_date: today, due_date: addDays(today, 6) })); } catch (e) { onError(apiError(e)); }
-                }} style={{ background: '#EFF6FF', border: 'none', borderRadius: 6, color: '#2563EB', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '2px 8px' }}>Planifier</button>
+                }} style={{ background: 'var(--tk-sel)', border: 'none', borderRadius: 6, color: 'var(--tk-link)', cursor: 'pointer', fontSize: 12, fontWeight: 700, padding: '2px 8px' }}>Planifier</button>
               </span>
             ))}
-            {undated.length > 120 && <span style={{ fontSize: 12, color: '#9CA3AF' }}>… et {undated.length - 120} autres</span>}
+            {undated.length > 120 && <span style={{ fontSize: 12, color: 'var(--tk-muted)' }}>… et {undated.length - 120} autres</span>}
           </div>
         </div>
       )}

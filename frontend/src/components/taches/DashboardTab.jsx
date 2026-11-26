@@ -165,11 +165,11 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
       {/* Filtres : une ligne, au-dessus de tout */}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
         <select value={boardId} onChange={(e) => setBoardId(e.target.value)}
-          style={{ ...inputStyle, width: 230, padding: '8px 10px', fontSize: 13, background: '#fff', border: 'none', boxShadow: SHADOW, borderRadius: 10 }}>
+          style={{ ...inputStyle, width: 230, padding: '8px 10px', fontSize: 13, background: 'var(--tk-surface)', border: 'none', boxShadow: SHADOW, borderRadius: 10 }}>
           <option value="all">Tous les tableaux</option>
           {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
-        <div style={{ display: 'flex', background: '#fff', borderRadius: 10, padding: 3, boxShadow: SHADOW }}>
+        <div style={{ display: 'flex', background: 'var(--tk-surface)', borderRadius: 10, padding: 3, boxShadow: SHADOW }}>
           {PERIODS.map((p) => (
             <button key={p.key} type="button" onClick={() => setPeriod(p.key)} style={{
               border: 'none', padding: '6px 12px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', borderRadius: 8,
@@ -244,7 +244,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
                   <div style={{ fontSize: 11, color: M.sub }}>ouvertes</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', height: 10, gap: 2, borderRadius: 5, overflow: 'hidden', background: '#EEF0F5', margin: '14px 0 10px' }}>
+              <div style={{ display: 'flex', height: 10, gap: 2, borderRadius: 5, overflow: 'hidden', background: 'var(--tk-line2)', margin: '14px 0 10px' }}>
                 {BUCKETS.filter((b) => p.c[b.key]).map((b) => (
                   <div key={b.key} onMouseMove={(e) => show(e, `${p.name} · ${b.label} : ${p.c[b.key]}`)} onMouseLeave={hide}
                     style={{ flex: p.c[b.key], background: b.color, minWidth: 4 }} />
@@ -253,7 +253,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
                 {[['À faire', p.c.a_faire, '#7C7F8E'], ['En cours', p.c.en_cours, '#E8930C'], ['Bloqué', p.c.bloque, '#DF2F4A']].map(([l, n, c]) => (
-                  <div key={l} style={{ background: '#F6F7FB', borderRadius: 8, padding: '6px 8px' }}>
+                  <div key={l} style={{ background: 'var(--tk-bg2)', borderRadius: 8, padding: '6px 8px' }}>
                     <div style={{ fontSize: 11, color: M.sub, display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{l}
                     </div>
@@ -262,7 +262,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
                 ))}
               </div>
               {p.c.late > 0 && (
-                <div style={{ marginTop: 10, fontSize: 12, fontWeight: 600, color: '#B91C1C', background: '#FEF2F2', borderRadius: 8, padding: '5px 8px' }}>
+                <div style={{ marginTop: 10, fontSize: 12, fontWeight: 600, color: 'var(--tk-danger)', background: 'var(--tk-dangerBg)', borderRadius: 8, padding: '5px 8px' }}>
                   ⏰ {p.c.late} en retard
                 </div>
               )}
@@ -292,14 +292,14 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
                 <div key={w.from} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', position: 'relative', zIndex: 1 }}
                   onMouseMove={(e) => show(e, `${yearly ? `${w.label} ${w.from.slice(0, 4)}` : `Semaine du ${fmtWeek(w.from)}`} : ${w.n} étape${w.n > 1 ? 's' : ''} faite${w.n > 1 ? 's' : ''}`)} onMouseLeave={hide}>
                   <span style={{ fontSize: 12, fontWeight: current ? 700 : 400, color: M.text, marginBottom: 3 }}>{w.n || ''}</span>
-                  <div style={{ width: yearly ? 18 : 24, height: `${(w.n / maxWeek) * 140}px`, background: current ? '#0073EA' : '#A9CCF5', borderRadius: '4px 4px 0 0', minHeight: w.n ? 2 : 0 }} />
+                  <div style={{ width: yearly ? 18 : 24, height: `${(w.n / maxWeek) * 140}px`, background: current ? '#0073EA' : 'var(--tk-barSoft)', borderRadius: '4px 4px 0 0', minHeight: w.n ? 2 : 0 }} />
                 </div>
               );
             })}
           </div>
           <div style={{ display: 'flex', gap: 6, marginLeft: 22, paddingTop: 5 }}>
             {stats.weeks.map((w) => (
-              <span key={w.from} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: w.current ? M.text : w.future ? '#C3C6D4' : M.sub, fontWeight: w.current ? 600 : 400 }}>
+              <span key={w.from} style={{ flex: 1, textAlign: 'center', fontSize: 11, color: w.current ? M.text : w.future ? 'var(--tk-faint)' : M.sub, fontWeight: w.current ? 600 : 400 }}>
                 {w.label}
               </span>
             ))}
@@ -313,7 +313,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
               <div key={l} style={{ display: 'grid', gridTemplateColumns: '130px 1fr 34px', alignItems: 'center', gap: 10 }}
                 onMouseMove={(e) => show(e, `${l} : ${n} tâche${n > 1 ? 's' : ''} ouverte${n > 1 ? 's' : ''}`)} onMouseLeave={hide}>
                 <span style={{ fontSize: 13, color: M.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
-                <div style={{ height: 12, background: '#EEF0F5', borderRadius: 6 }}>
+                <div style={{ height: 12, background: 'var(--tk-line2)', borderRadius: 6 }}>
                   <div style={{ height: '100%', width: `${(n / stats.labels[0][1]) * 100}%`, background: '#579BFC', borderRadius: 6, minWidth: 4 }} />
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 700, color: M.text, textAlign: 'right' }}>{n}</span>
@@ -342,7 +342,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
                 <td style={mTd}>{p.c.a_faire}</td>
                 <td style={mTd}>{p.c.en_cours}</td>
                 <td style={mTd}>{p.c.bloque}</td>
-                <td style={{ ...mTd, color: p.c.late ? '#B91C1C' : M.text, fontWeight: p.c.late ? 700 : 400 }}>{p.c.late}</td>
+                <td style={{ ...mTd, color: p.c.late ? 'var(--tk-danger)' : M.text, fontWeight: p.c.late ? 700 : 400 }}>{p.c.late}</td>
                 <td style={mTd}>{p.c.fait}</td>
                 <td style={{ ...mTd, fontWeight: 700, borderRight: 'none' }}>{p.c.open}</td>
               </tr>
@@ -361,10 +361,10 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
   );
 }
 
-const BG = '#F3F5F9';
+const BG = 'var(--tk-bg2)';
 const SHADOW = '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08)';
 const SHADOW_HOVER = '0 8px 24px rgba(16,24,40,.12)';
-const cardStyle = { background: '#fff', borderRadius: 14, padding: '16px 18px', boxShadow: SHADOW };
+const cardStyle = { background: 'var(--tk-surface)', borderRadius: 14, padding: '16px 18px', boxShadow: SHADOW };
 
 function Card({ title, sub, children, style }) {
   return (
@@ -383,7 +383,7 @@ function Tile({ icon, tint, label, value, hint, alert = false, spark }) {
   const max = spark ? Math.max(1, ...spark) : 1;
   const pts = spark ? spark.map((v, i) => `${(i / (spark.length - 1)) * 100},${28 - (v / max) * 24}`).join(' ') : '';
   return (
-    <div style={{ ...cardStyle, padding: '14px 16px', position: 'relative', overflow: 'hidden', outline: alert ? '2px solid #FCA5A5' : 'none' }}>
+    <div style={{ ...cardStyle, padding: '14px 16px', position: 'relative', overflow: 'hidden', outline: alert ? '2px solid var(--tk-dangerLine)' : 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{
           width: 34, height: 34, borderRadius: 10, background: `${tint}1A`, color: tint, display: 'inline-flex',
@@ -391,7 +391,7 @@ function Tile({ icon, tint, label, value, hint, alert = false, spark }) {
         }}>{icon}</span>
         <span style={{ fontSize: 13, color: M.sub, fontWeight: 500 }}>{label}</span>
       </div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: alert ? '#B91C1C' : M.text, marginTop: 8, lineHeight: 1.1 }}>
+      <div style={{ fontSize: 32, fontWeight: 700, color: alert ? 'var(--tk-danger)' : M.text, marginTop: 8, lineHeight: 1.1 }}>
         {value.toLocaleString('fr-FR')}
       </div>
       <div style={{ fontSize: 12, color: M.sub, marginTop: 2 }}>{hint}</div>

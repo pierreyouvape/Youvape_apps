@@ -3,7 +3,7 @@ import { tachesApi, apiError, formatDateTime, formatDay, todayStr, M, mTable, mT
 import { Avatar, StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange, ColGroup, ColResizer } from './tachesUi';
 import { useColumnWidths } from './tachesColumns';
 
-const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: '#C3C6D4', fontSize: 9, padding: 0, lineHeight: 1 };
+const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-faint)', fontSize: 9, padding: 0, lineHeight: 1 };
 
 /**
  * Étapes d'une tâche (sous-éléments Monday), modifiables en place.
@@ -61,7 +61,7 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
   };
 
   return (
-    <div style={{ overflowX: 'auto', opacity: busy ? 0.7 : 1, transition: 'opacity .15s', borderLeft: `4px solid ${color}`, background: '#fff' }}>
+    <div style={{ overflowX: 'auto', opacity: busy ? 0.7 : 1, transition: 'opacity .15s', borderLeft: `4px solid ${color}`, background: 'var(--tk-surface)' }}>
       <table style={{ ...mTable, width: cols.total }}>
         <ColGroup widths={cols.widths} />
         <thead>
@@ -93,7 +93,7 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
                 }}
                 onDrop={(e) => { e.preventDefault(); dropOn(s.id, over?.before !== false); }}
                 style={{
-                  background: isMine ? '#E5F4FF' : '#fff', opacity: before || dragId === s.id ? 0.5 : 1,
+                  background: isMine ? 'var(--tk-sel)' : 'var(--tk-surface)', opacity: before || dragId === s.id ? 0.5 : 1,
                   boxShadow: over?.id === s.id ? `inset 0 ${over.before ? 2 : -2}px 0 #0073EA` : 'none',
                 }}>
                 <td style={{ ...mTd, padding: 0 }}>
@@ -130,9 +130,9 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
                 </td>
                 <td style={{ ...mTd, borderRight: 'none', padding: 0 }}>
                   <button type="button" onClick={() => remove(s)} title="Supprimer ce sous-élément"
-                    style={{ background: 'none', border: 'none', color: '#C3C6D4', cursor: 'pointer', fontSize: 15, width: '100%', height: 36 }}
+                    style={{ background: 'none', border: 'none', color: 'var(--tk-faint)', cursor: 'pointer', fontSize: 15, width: '100%', height: 36 }}
                     onMouseEnter={(e) => { e.currentTarget.style.color = '#DF2F4A'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = '#C3C6D4'; }}>
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tk-faint)'; }}>
                     🗑
                   </button>
                 </td>
