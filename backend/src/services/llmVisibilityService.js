@@ -406,7 +406,10 @@ const askClaude = async (prompt) => {
     output_config: { effort: 'medium' },
     // Si Claude refusait, le serveur répond avec un autre modèle (noté dans `model`).
     fallbacks: 'default',
-    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'FR', city: 'Paris', timezone: 'Europe/Paris' } }],
+    // Outil de recherche STANDARD, pas web_search_20260209 : celui-ci passe par du code
+    // (filtrage dynamique) et la réponse ne porte plus de citations, donc aucune source
+    // à relever ; il épuisait aussi sa limite de recherches (essais du 26/11/2026).
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'FR', city: 'Paris', timezone: 'Europe/Paris' } }],
   };
   const usage = { input: 0, output: 0, searches: 0 };
   let messages = [{ role: 'user', content: prompt }];
