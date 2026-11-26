@@ -9,6 +9,7 @@
  *  - llm_prompts   : questions suivies (+ note d'action libre)
  *  - llm_responses : une réponse d'une IA à un prompt, un jour donné
  */
+const axios = require('axios');
 const pool = require('../config/database');
 
 const PROVIDERS = [
@@ -16,6 +17,8 @@ const PROVIDERS = [
   { key: 'perplexity', label: 'Perplexity' },
   { key: 'chatgpt', label: 'ChatGPT' },
   { key: 'gemini', label: 'Gemini' },
+  // Relevé fait par nos soins (origin 'youvape'), pas par Eskimoz.
+  { key: 'claude', label: 'Claude' },
 ];
 
 const normProvider = (s) => {
@@ -69,6 +72,22 @@ const ensureTables = async () => {
     ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'todo';
     ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status_at timestamp;
     ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status_by text;
+    -- Modèle qui a réellement répondu (relevés faits par nos soins).
+    ALTER TABLE llm_responses ADD COLUMN IF NOT EXISTS model text;
+    CREATE TABLE IF NOT EXISTS llm_runs (
+      id             serial PRIMARY KEY,
+      provider       text NOT NULL,
+      started_at     timestamp NOT NULL DEFAULT now(),
+      finished_at    timestamp,
+      started_by     text,
+      prompts        integer NOT NULL DEFAULT 0,
+      ok             integer NOT NULL DEFAULT 0,
+      errors         jsonb NOT NULL DEFAULT '[]',
+      input_tokens   bigint NOT NULL DEFAULT 0,
+      output_tokens  bigint NOT NULL DEFAULT 0,
+      searches       integer NOT NULL DEFAULT 0,
+      cost_usd       numeric(10,4)
+    );
   `);
   tablesReady = true;
 };
@@ -339,6 +358,164 @@ const updatePrompt = async (id, body, user) => {
   return r.rows[0] || null;
 };
 
+/* ─── Relevé Claude (fait par nos soins) ─────────────────── */
+
+const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+const CLAUDE_MODEL = process.env.LLM_VISIBILITY_MODEL || 'claude-opus-5-5';
+// Tarifs Claude Opus 5.5 (USD) : 4 $ / 20 $ par million de jetons, 10 $ les 1 000 recherches.
+const PRICE = { input: 4 / 1e6, output: 20 / 1e6, search: 10 / 1000 };
+
+// Concurrents reconnus dans le texte : les mêmes noms qu'Eskimoz, pour comparer les deux sources.
+const COMPETITORS = [
+  ['Le Vapoteur Discount', /vapoteur[\s-]?discount|\blvd\b/i],
+  ['Cigarette Elec', /cigarette[\s-]?elec\b|cigaretteelec/i],
+  ['Kumulus Vape', /kumulus/i],
+  ['lepetitvapoteur.com', /petit[\s-]?vapoteur/i],
+  ['Taffe Elec', /taffe[\s-]?elec/i],
+  ['Nicovip', /nicovip/i],
+  ['Arômes & Liquides', /ar[oô]mes?\s*(&|et)\s*liquides/i],
+  ['ecigplanete.com', /ecig[\s-]?plan[eè]te/i],
+  ['lepetitfumeur.fr', /petit[\s-]?fumeur/i],
+];
+const YOUVAPE_RE = /you[\s-]?vape/i;
+
+// Lit la réponse comme Eskimoz : mention, rang parmi les marques nommées, concurrents, sources citées.
+const analyzeAnswer = (text, sources) => {
+  const found = [];
+  const m = text.search(YOUVAPE_RE);
+  if (m >= 0) found.push({ name: 'YouVape', at: m });
+  for (const [name, re] of COMPETITORS) {
+    const i = text.search(re);
+    if (i >= 0) found.push({ name, at: i });
+  }
+  found.sort((a, b) => a.at - b.at);
+  const rank = found.findIndex((f) => f.name === 'YouVape');
+  return {
+    mention: m >= 0,
+    position: rank >= 0 ? rank + 1 : null,
+    citation: sources.some(isYouvape),
+    competitors: found.filter((f) => f.name !== 'YouVape').map((f) => f.name),
+  };
+};
+
+// Une question posée comme un internaute : pas de consigne, recherche web activée, depuis la France.
+const askClaude = async (prompt) => {
+  const body = {
+    model: CLAUDE_MODEL,
+    max_tokens: 16000,
+    output_config: { effort: 'medium' },
+    // Si Claude refusait, le serveur répond avec un autre modèle (noté dans `model`).
+    fallbacks: 'default',
+    tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5, user_location: { type: 'approximate', country: 'FR', city: 'Paris', timezone: 'Europe/Paris' } }],
+  };
+  const usage = { input: 0, output: 0, searches: 0 };
+  let messages = [{ role: 'user', content: prompt }];
+  let data;
+  for (let i = 0; i < 4; i++) {
+    const res = await axios.post(ANTHROPIC_URL, { ...body, messages }, {
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': 'server-side-fallback-2026-07-01',
+        'content-type': 'application/json',
+      },
+      timeout: 600000,
+    });
+    data = res.data;
+    const u = data.usage || {};
+    usage.input += (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    usage.output += u.output_tokens || 0;
+    usage.searches += u.server_tool_use?.web_search_requests || 0;
+    if (data.stop_reason !== 'pause_turn') break;
+    // Recherche longue : on renvoie la réponse partielle, le serveur reprend.
+    messages = [{ role: 'user', content: prompt }, { role: 'assistant', content: data.content }];
+  }
+  if (data.stop_reason === 'refusal') throw new Error('Claude a refusé de répondre');
+  // Texte affiché à l'internaute ; les sources sont celles qu'il cite (pas tout ce qu'il a lu).
+  const blocks = (data.content || []).filter((c) => c.type === 'text');
+  const text = blocks.map((c) => c.text).join('').trim();
+  const cited = [];
+  for (const b of blocks) {
+    for (const c of b.citations || []) if (c.url) cited.push(normUrl(c.url));
+  }
+  return { text, sources: [...new Set(cited)], model: data.model || CLAUDE_MODEL, usage, truncated: data.stop_reason === 'max_tokens' };
+};
+
+const runState = { running: false, provider: 'claude', done: 0, total: 0, errors: [], runId: null, startedAt: null };
+
+const getRunStatus = async () => {
+  await ensureTables();
+  const last = (await pool.query(
+    `SELECT id, provider, started_at, finished_at, started_by, prompts, ok, errors, searches, cost_usd
+     FROM llm_runs ORDER BY id DESC LIMIT 5`
+  )).rows;
+  return { configured: !!process.env.ANTHROPIC_API_KEY, model: CLAUDE_MODEL, state: runState, lastRuns: last };
+};
+
+/**
+ * Pose les prompts actifs à Claude et enregistre les réponses (origin 'youvape').
+ * Un prompt déjà relevé aujourd'hui n'est pas reposé. En tâche de fond : l'écran suit /run-status.
+ */
+const startClaudeRun = async ({ promptIds, user } = {}) => {
+  await ensureTables();
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error('Clé API Claude absente du serveur');
+  if (runState.running) throw new Error('Un relevé est déjà en cours');
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+  const args = [today];
+  let filter = '';
+  if (Array.isArray(promptIds) && promptIds.length) { args.push(promptIds.map(Number)); filter = 'AND p.id = ANY($2)'; }
+  const prompts = (await pool.query(
+    `SELECT p.id, p.prompt FROM llm_prompts p
+     WHERE p.active ${filter}
+       AND NOT EXISTS (SELECT 1 FROM llm_responses r WHERE r.prompt_id = p.id AND r.provider = 'claude' AND r.run_date = $1)
+     ORDER BY p.id`,
+    args
+  )).rows;
+  if (!prompts.length) return { started: false, message: 'Tous les prompts ont déjà été posés à Claude aujourd’hui.' };
+
+  const run = (await pool.query(
+    'INSERT INTO llm_runs (provider, started_by, prompts) VALUES ($1, $2, $3) RETURNING id',
+    ['claude', user || null, prompts.length]
+  )).rows[0];
+  Object.assign(runState, { running: true, done: 0, total: prompts.length, errors: [], runId: run.id, startedAt: new Date() });
+
+  (async () => {
+    const tot = { input: 0, output: 0, searches: 0 };
+    let ok = 0;
+    for (const p of prompts) {
+      try {
+        const a = await askClaude(p.prompt);
+        tot.input += a.usage.input; tot.output += a.usage.output; tot.searches += a.usage.searches;
+        if (!a.text) throw new Error('Réponse vide');
+        const r = analyzeAnswer(a.text, a.sources);
+        await pool.query(
+          `INSERT INTO llm_responses (prompt_id, provider, run_date, mention, position, citation, sentiment, competitors, response, sources, origin, model)
+           VALUES ($1, 'claude', $2, $3, $4, $5, NULL, $6, $7, $8, 'youvape', $9)
+           ON CONFLICT (prompt_id, provider, run_date, origin) DO NOTHING`,
+          [p.id, today, r.mention, r.position, r.citation, r.competitors,
+            a.truncated ? `${a.text}\n\n[réponse coupée : limite de longueur atteinte]` : a.text, a.sources, a.model]
+        );
+        ok++;
+      } catch (e) {
+        const msg = e.response?.data?.error?.message || e.message;
+        runState.errors.push({ promptId: p.id, error: msg });
+        console.error('[SEO] Relevé Claude, prompt', p.id, ':', msg);
+      }
+      runState.done++;
+    }
+    const cost = tot.input * PRICE.input + tot.output * PRICE.output + tot.searches * PRICE.search;
+    await pool.query(
+      `UPDATE llm_runs SET finished_at = now(), ok = $2, errors = $3, input_tokens = $4, output_tokens = $5, searches = $6, cost_usd = $7
+       WHERE id = $1`,
+      [run.id, ok, JSON.stringify(runState.errors), tot.input, tot.output, tot.searches, cost.toFixed(4)]
+    ).catch((e) => console.error('[SEO] Relevé Claude, clôture :', e.message));
+    runState.running = false;
+  })().catch((e) => { runState.running = false; console.error('[SEO] Relevé Claude :', e.message); });
+
+  return { started: true, runId: run.id, prompts: prompts.length };
+};
+
 module.exports = {
+  analyzeAnswer, askClaude, startClaudeRun, getRunStatus,
   PROVIDERS, PROMPT_STATUSES, ensureTables, parseCsv, importEskimozCsv, getOverview, getPrompt, getResponse, updatePrompt,
 };

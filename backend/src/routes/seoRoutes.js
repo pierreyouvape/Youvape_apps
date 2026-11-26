@@ -145,6 +145,9 @@ router.get('/llm/responses/:id', handle(async (req) => {
   if (!r) throw new Error('Réponse introuvable');
   return r;
 }));
+// Relevé Claude : pose les prompts (tous, ou `promptIds`) en tâche de fond, suivi par /llm/run-status.
+router.get('/llm/run-status', handle(() => llm.getRunStatus()));
+router.post('/llm/run', canWrite, handle((req) => llm.startClaudeRun({ promptIds: req.body?.promptIds, user: req.user?.email })));
 router.post('/llm/import', canWrite, llmUpload.single('file'), handle((req) => {
   if (!req.file) throw new Error('Fichier manquant');
   return llm.importEskimozCsv(req.file.buffer);
