@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
+import { SEO_SECTION_KEYS } from './utils/seoSections';
 import VersionWatcher from './components/VersionWatcher';
 import StationLock from './components/StationLock';
 import EcranIndisponible from './components/EcranIndisponible';
@@ -630,14 +631,20 @@ function App() {
               </PrivateRoute>
             }
           />
-          <Route
-            path="/seo"
-            element={
-              <PrivateRoute>
-                <SeoApp />
-              </PrivateRoute>
-            }
-          />
+          {/* Suivi SEO : une pile de sept apps, comme Achats. `/seo` reste servie
+              (favoris, liens déjà échangés) et renvoie sur les positions. */}
+          <Route path="/seo" element={<Navigate to="/seo/positions" replace />} />
+          {SEO_SECTION_KEYS.map(k => (
+            <Route
+              key={k}
+              path={`/seo/${k}`}
+              element={
+                <PrivateRoute>
+                  <SeoApp section={k} />
+                </PrivateRoute>
+              }
+            />
+          ))}
           <Route
             path="/inscrits"
             element={

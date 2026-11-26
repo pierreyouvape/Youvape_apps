@@ -30,6 +30,9 @@ const domainOf = (u) => String(u || '').replace(/^https?:\/\//i, '').replace(/^w
 const isYouvape = (u) => domainOf(u) === 'youvape.fr';
 const normUrl = (u) => String(u || '').trim().replace(/^http:\/\//i, 'https://').replace(/^https:\/\/www\./i, 'https://');
 
+// Où en est l'action décidée pour un prompt.
+const PROMPT_STATUSES = ['todo', 'doing', 'done', 'none'];
+
 let tablesReady = false;
 const ensureTables = async () => {
   if (tablesReady) return;
@@ -62,6 +65,10 @@ const ensureTables = async () => {
       UNIQUE (prompt_id, provider, run_date, origin)
     );
     CREATE INDEX IF NOT EXISTS llm_responses_date_idx ON llm_responses (run_date);
+    -- Suivi de l'action par prompt (26/11/2026).
+    ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'todo';
+    ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status_at timestamp;
+    ALTER TABLE llm_prompts ADD COLUMN IF NOT EXISTS status_by text;
   `);
   tablesReady = true;
 };
@@ -208,7 +215,7 @@ const byProvider = (rows) => Object.fromEntries(PROVIDERS.map((p) => [p.key, sta
 const getOverview = async (filters = {}) => {
   await ensureTables();
   const rows = await loadRows(filters);
-  const prompts = (await pool.query('SELECT id, prompt, note, tags, active FROM llm_prompts ORDER BY id')).rows;
+  const prompts = (await pool.query('SELECT id, prompt, note, tags, active, status, status_at, status_by FROM llm_prompts ORDER BY id')).rows;
   const dates = rows.map((x) => x.date).sort();
 
   // Semaine par semaine, taux par IA.
@@ -274,7 +281,7 @@ const getOverview = async (filters = {}) => {
 
 const getPrompt = async (id, filters = {}) => {
   await ensureTables();
-  const p = (await pool.query('SELECT id, prompt, note, tags, language, country, active FROM llm_prompts WHERE id = $1', [id])).rows[0];
+  const p = (await pool.query('SELECT id, prompt, note, tags, language, country, active, status, status_at, status_by FROM llm_prompts WHERE id = $1', [id])).rows[0];
   if (!p) return null;
   const rows = (await loadRows(filters)).filter((x) => x.prompt_id === id);
   const urls = new Map();
@@ -307,15 +314,31 @@ const getResponse = async (id) => {
   return r.rows[0] || null;
 };
 
-const updatePrompt = async (id, { note }) => {
+// Note et/ou statut : seul ce qui est envoyé change.
+const updatePrompt = async (id, body, user) => {
   await ensureTables();
+  const sets = [];
+  const args = [id];
+  if (body.note !== undefined) {
+    args.push(body.note === null ? null : String(body.note));
+    sets.push(`note = $${args.length}`);
+  }
+  if (body.status !== undefined) {
+    if (!PROMPT_STATUSES.includes(body.status)) throw new Error('Statut inconnu');
+    args.push(body.status);
+    sets.push(`status = $${args.length}`, 'status_at = now()');
+    args.push(user || null);
+    sets.push(`status_by = $${args.length}`);
+  }
+  if (!sets.length) throw new Error('Rien à modifier');
   const r = await pool.query(
-    'UPDATE llm_prompts SET note = $2, updated_at = now() WHERE id = $1 RETURNING id, note',
-    [id, note === undefined || note === null ? null : String(note)]
+    `UPDATE llm_prompts SET ${sets.join(', ')}, updated_at = now() WHERE id = $1
+     RETURNING id, note, status, status_at, status_by`,
+    args
   );
   return r.rows[0] || null;
 };
 
 module.exports = {
-  PROVIDERS, ensureTables, parseCsv, importEskimozCsv, getOverview, getPrompt, getResponse, updatePrompt,
+  PROVIDERS, PROMPT_STATUSES, ensureTables, parseCsv, importEskimozCsv, getOverview, getPrompt, getResponse, updatePrompt,
 };

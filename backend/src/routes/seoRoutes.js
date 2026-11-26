@@ -139,7 +139,7 @@ router.get('/llm/prompts/:id', handle(async (req) => {
   if (!p) throw new Error('Prompt introuvable');
   return p;
 }));
-router.patch('/llm/prompts/:id', canWrite, handle((req) => llm.updatePrompt(Number(req.params.id), req.body || {})));
+router.patch('/llm/prompts/:id', canWrite, handle((req) => llm.updatePrompt(Number(req.params.id), req.body || {}, req.user?.email)));
 router.get('/llm/responses/:id', handle(async (req) => {
   const r = await llm.getResponse(Number(req.params.id));
   if (!r) throw new Error('Réponse introuvable');

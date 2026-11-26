@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   ResponsiveContainer, LineChart, Line, ComposedChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts';
 import AppShell from '../components/AppShell';
-import { Seo as SeoIcon } from '../components/AppIcons';
+import { APPS } from '../components/AppIcons';
+import { appOfSeoSection } from '../utils/seoSections';
 import SeoWriterTab from './SeoWriterTab';
 import SeoKeywordsTab from './SeoKeywordsTab';
 import SeoLlmTab from './SeoLlmTab';
@@ -368,7 +370,17 @@ function SetupPanel({ status }) {
 }
 
 /* ─── APP ───────────────────────────────────────────────── */
-export default function SeoApp() {
+// Section (adresse /seo/<clé>) → écran. Les clés internes datent des onglets.
+const TAB_OF_SECTION = {
+  positions: 'suivi', cibles: 'cibles', page: 'page', recommandations: 'reco',
+  redaction: 'redaction', 'mots-cles': 'mots', 'visibilite-ia': 'ia',
+};
+
+export default function SeoApp({ section = 'positions' }) {
+  const navigate = useNavigate();
+  const tab = TAB_OF_SECTION[section] || 'suivi';
+  const app = appOfSeoSection(APPS, section);
+  const SectionIcon = app?.Icon;
   const [status, setStatus] = useState(null);
   const [country, setCountry] = useState('fra');
   const [weeks, setWeeks] = useState(12);
@@ -380,13 +392,6 @@ export default function SeoApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [syncMsg, setSyncMsg] = useState(null);
-  const [tab, setTab] = useState(() => {
-    try { return localStorage.getItem('seo-tab') || 'suivi'; } catch { return 'suivi'; }
-  });
-  const chooseTab = (t) => {
-    setTab(t);
-    try { localStorage.setItem('seo-tab', t); } catch { /* navigation privée */ }
-  };
   // Fiche page ouverte depuis une cible, une recommandation ou une requête.
   const [pageUrl, setPageUrl] = useState(() => {
     try { return localStorage.getItem('seo-page') || ''; } catch { return ''; }
@@ -394,7 +399,7 @@ export default function SeoApp() {
   const openPage = (u) => {
     setPageUrl(u);
     try { localStorage.setItem('seo-page', u); } catch { /* navigation privée */ }
-    chooseTab('page');
+    if (section !== 'page') navigate('/seo/page');
   };
 
   const loadStatus = useCallback(async () => {
@@ -419,8 +424,9 @@ export default function SeoApp() {
 
   const hasData = !!status?.dataTo;
 
+  // Les séries de positions ne servent qu'à l'app Positions.
   useEffect(() => {
-    if (!hasData) return;
+    if (!hasData || tab !== 'suivi') return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -439,16 +445,16 @@ export default function SeoApp() {
     return () => { cancelled = true; };
     // `selected` n'est lu que pour la sélection initiale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasData, weeks, country, status?.dataTo]);
+  }, [hasData, tab, weeks, country, status?.dataTo]);
 
   useEffect(() => {
-    if (!hasData || !selected) return;
+    if (!hasData || !selected || tab !== 'suivi') return;
     let cancelled = false;
     axios.get(`${API_URL}/seo/groups/${selected}`, { params: { days: detailDays, country } })
       .then(({ data }) => !cancelled && setDetail(data))
       .catch((e) => !cancelled && setError(e.response?.data?.error || e.message));
     return () => { cancelled = true; };
-  }, [hasData, selected, detailDays, country, status?.dataTo]);
+  }, [hasData, tab, selected, detailDays, country, status?.dataTo]);
 
   const startSync = async (days) => {
     setSyncMsg(null);
@@ -479,30 +485,19 @@ export default function SeoApp() {
   const sync = status?.sync;
 
   return (
-    <AppShell currentPath="/seo">
+    <AppShell currentPath={`/seo/${section}`}>
       <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: C.grisTL }}>
         <div style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 20px 60px' }}>
+          {/* La pile précède l'app pour situer sans répéter : « Suivi SEO / Mots clés ». */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <SeoIcon size={24} color="#fff" />
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: app?.color || '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {SectionIcon && <SectionIcon size={24} color="#fff" />}
             </div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 22, color: C.saphirF }}>Suivi SEO</h1>
-              <div style={{ fontSize: 13, color: C.grisM }}>Positions Google par groupe de requêtes (Search Console)</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+              <span style={{ fontSize: 14, color: C.grisM, fontWeight: 600 }}>Suivi SEO</span>
+              <span style={{ color: C.grisCL }}>/</span>
+              <h1 style={{ margin: 0, fontSize: 22, color: C.saphirF }}>{app?.label}</h1>
             </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.grisCL}`, marginBottom: 16 }}>
-            {[{ key: 'suivi', label: 'Suivi des positions' }, { key: 'cibles', label: 'Pages cibles' }, { key: 'page', label: 'Fiche page' }, { key: 'reco', label: 'Recommandations' }, { key: 'redaction', label: 'Rédaction SEO' }, { key: 'mots', label: 'Mots clés' }, { key: 'ia', label: 'Visibilité IA' }].map((t) => (
-              <button key={t.key} type="button" onClick={() => chooseTab(t.key)}
-                style={{
-                  padding: '10px 16px', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14,
-                  fontWeight: tab === t.key ? 700 : 500, color: tab === t.key ? C.saphirF : C.grisM,
-                  borderBottom: `3px solid ${tab === t.key ? '#7C3AED' : 'transparent'}`, marginBottom: -1,
-                }}>
-                {t.label}
-              </button>
-            ))}
           </div>
 
           {error && (
@@ -511,7 +506,7 @@ export default function SeoApp() {
             </Card>
           )}
 
-          {status && !status.configured && <SetupPanel status={status} />}
+          {status && !status.configured && tab !== 'ia' && <SetupPanel status={status} />}
 
           {status?.configured && tab === 'suivi' && (
             <Card style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center' }}>

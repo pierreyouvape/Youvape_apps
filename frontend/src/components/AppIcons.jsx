@@ -261,6 +261,58 @@ export const Seo = (props) => (
   </Base>
 );
 
+// Pile Suivi SEO : une icône par app, sinon sept tuiles identiques dans le dossier.
+// Pages cibles : une cible.
+export const SeoTarget = (props) => (
+  <Base {...props}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="4.5" />
+    <circle cx="12" cy="12" r="0.8" />
+  </Base>
+);
+// Fiche page : une page et sa loupe.
+export const SeoPage = (props) => (
+  <Base {...props}>
+    <path d="M5 2.5 H13 L17 6.5 V12" />
+    <path d="M5 2.5 V21.5 H11" />
+    <path d="M12.5 2.5 V7 H17" />
+    <circle cx="16.5" cy="16.5" r="3.2" />
+    <path d="M18.9 18.9 L21.5 21.5" />
+  </Base>
+);
+// Recommandations : une ampoule.
+export const SeoReco = (props) => (
+  <Base {...props}>
+    <path d="M9 17.5 H15" />
+    <path d="M10 21 H14" />
+    <path d="M9 17.5 C9 14.5 6 13.5 6 9.5 A6 6 0 0 1 18 9.5 C18 13.5 15 14.5 15 17.5" />
+  </Base>
+);
+// Rédaction SEO : un crayon sur une ligne.
+export const SeoWriter = (props) => (
+  <Base {...props}>
+    <path d="M4 20.5 H20" />
+    <path d="M6 16.5 L6.8 13 L16 3.8 L19.2 7 L10 16.2 Z" />
+    <path d="M14 5.8 L17.2 9" />
+  </Base>
+);
+// Mots clés : une clé.
+export const SeoKeywords = (props) => (
+  <Base {...props}>
+    <circle cx="7.5" cy="12" r="4" />
+    <path d="M11.5 12 H21" />
+    <path d="M18 12 V15.5" />
+    <path d="M15 12 V14.5" />
+  </Base>
+);
+// Visibilité IA : une bulle de réponse et une étincelle.
+export const SeoAi = (props) => (
+  <Base {...props}>
+    <path d="M3.5 5.5 H14 V15 H8 L4.5 18.5 V15 H3.5 Z" />
+    <path d="M18 8 L19 11 L22 12 L19 13 L18 16 L17 13 L14 12" />
+  </Base>
+);
+
 // Inscrit sans commande : silhouette + point d'interrogation (aucun achat)
 export const Inscrits = (props) => (
   <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -535,7 +587,17 @@ export const APPS = [
   { key: 'mollie', path: '/mollie', label: 'Factures Mollie', Icon: Mollie, color: '#1E293B' },
   { key: 'transporteurs', path: '/transporteurs', label: 'Transporteurs (vue globale)', Icon: Transporteurs, color: '#334155' },
   { key: 'veille', path: '/veille', label: 'Veille concurrentielle', Icon: Veille, color: '#135E84' },
-  { key: 'seo', path: '/seo', label: 'Suivi SEO', Icon: Seo, color: '#7C3AED' },
+  // SUIVI SEO : sept apps dans la pile du même nom (comme Achats), plus des onglets.
+  // `seo` reste la clé des Positions : c'est le droit que le backend exige
+  // (routes/seoRoutes.js) et celui que prefs.appOrder connaît. Les six autres
+  // l'empruntent par `permissionKey` : une seule case à cocher les ouvre toutes.
+  { key: 'seo', path: '/seo/positions', label: 'Positions Google', Icon: Seo, color: '#7C3AED' },
+  { key: 'seo-cibles', path: '/seo/cibles', label: 'Pages cibles', Icon: SeoTarget, color: '#6D28D9', permissionKey: 'seo' },
+  { key: 'seo-page', path: '/seo/page', label: 'Fiche page', Icon: SeoPage, color: '#5B21B6', permissionKey: 'seo' },
+  { key: 'seo-reco', path: '/seo/recommandations', label: 'Recommandations SEO', Icon: SeoReco, color: '#9333EA', permissionKey: 'seo' },
+  { key: 'seo-redaction', path: '/seo/redaction', label: 'Rédaction SEO', Icon: SeoWriter, color: '#A855F7', permissionKey: 'seo' },
+  { key: 'seo-mots', path: '/seo/mots-cles', label: 'Mots clés', Icon: SeoKeywords, color: '#4C1D95', permissionKey: 'seo' },
+  { key: 'seo-ia', path: '/seo/visibilite-ia', label: 'Visibilité IA', Icon: SeoAi, color: '#0071EB', permissionKey: 'seo' },
   { key: 'inscrits', path: '/inscrits', label: 'Inscrits sans commande', Icon: Inscrits, color: '#0EA5A5' },
   // Même droit que « Inscrits sans commande » : l'autre extraction d'e-mails pour Probance
   // (routes/relanceCodeRoutes.js exige `inscrits`). Pas de clé propre dans config/apps.js.
@@ -612,6 +674,14 @@ export const APP_GROUPS = [
     label: 'SAV',
     color: '#0891B2',
     members: ['tickets', 'retours'],
+  },
+  {
+    // Les sept écrans de l'ancienne app « Suivi SEO » (onglets jusqu'au 26/11/2026),
+    // devenus des apps : chacune son adresse, et la place de grandir à sa façon.
+    key: 'grp-seo',
+    label: 'Suivi SEO',
+    color: '#7C3AED',
+    members: ['seo', 'seo-cibles', 'seo-page', 'seo-reco', 'seo-redaction', 'seo-mots', 'seo-ia'],
   },
   {
     key: 'grp-factures-transporteurs',

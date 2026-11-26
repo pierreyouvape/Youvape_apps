@@ -20,6 +20,25 @@ const C = {
 // Une couleur par IA, ordre fixe (palette validée : séparation daltonisme et contraste).
 const PROVIDER_COLOR = { 'ai-mode': '#0071EB', perplexity: '#C26E00', chatgpt: '#7C3AED', gemini: '#2E9E5B' };
 
+// Où en est l'action décidée pour un prompt (couleur + libellé, jamais la couleur seule).
+const STATUSES = [
+  { key: 'todo', label: 'À faire', color: '#C26E00' },
+  { key: 'doing', label: 'En cours', color: '#0071EB' },
+  { key: 'done', label: 'Fait', color: '#2E9E5B' },
+  { key: 'none', label: 'Rien à faire', color: '#8A99A4' },
+];
+const statusOf = (k) => STATUSES.find((s) => s.key === k) || STATUSES[0];
+
+function StatusSelect({ value, onChange }) {
+  const s = statusOf(value);
+  return (
+    <select value={s.key} onClick={(e) => e.stopPropagation()} onChange={(e) => onChange(e.target.value)}
+      style={{ padding: '4px 6px', borderRadius: 6, border: `1.5px solid ${s.color}`, color: s.color, fontWeight: 700, fontSize: 12, background: '#fff', cursor: 'pointer' }}>
+      {STATUSES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+    </select>
+  );
+}
+
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: C.grisM, fontWeight: 600, borderBottom: `1px solid ${C.grisCL}`, whiteSpace: 'nowrap' };
 const td = { padding: '8px 10px', fontSize: 13, color: C.grisTF, borderBottom: `1px solid ${C.grisTL}`, verticalAlign: 'top' };
 const tdNum = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' };
@@ -111,7 +130,7 @@ function ResponseView({ id, onClose }) {
   );
 }
 
-function PromptDetail({ id, provider, providers, onClose }) {
+function PromptDetail({ id, provider, providers, onClose, onStatus, status }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
   const [note, setNote] = useState('');
@@ -142,6 +161,7 @@ function PromptDetail({ id, provider, providers, onClose }) {
       <Card style={{ borderColor: C.violet }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: 16, color: C.saphirF, flex: 1 }}>{d.prompt}</h2>
+          <StatusSelect value={status || d.status} onChange={(v) => onStatus(id, v)} />
           <button type="button" onClick={onClose} style={btn}>Fermer</button>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -233,6 +253,7 @@ export default function SeoLlmTab() {
   const [importMsg, setImportMsg] = useState(null);
   const [importing, setImporting] = useState(false);
   const [sort, setSort] = useState('mentionRate');
+  const [statusFilter, setStatusFilter] = useState('all');
   const fileRef = useRef(null);
   const detailRef = useRef(null);
 
@@ -262,6 +283,16 @@ export default function SeoLlmTab() {
     }
   };
 
+  // Statut changé depuis le tableau ou le détail : écrit, puis reporté dans la liste.
+  const setPromptStatus = async (id, status) => {
+    try {
+      const { data: r } = await axios.patch(`${API_URL}/seo/llm/prompts/${id}`, { status });
+      setData((d) => ({ ...d, prompts: d.prompts.map((p) => (p.id === id ? { ...p, ...r } : p)) }));
+    } catch (e) {
+      setErr(e.response?.data?.error || e.message);
+    }
+  };
+
   const openPrompt = (id) => {
     setSelected(id);
     setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -274,7 +305,8 @@ export default function SeoLlmTab() {
     for (const p of providers) point[p.key] = w[p.key]?.n ? w[p.key][measure] : null;
     return point;
   });
-  const prompts = [...(data?.prompts || [])].sort((a, b) => (
+  const statusCounts = STATUSES.reduce((m, s) => ({ ...m, [s.key]: (data?.prompts || []).filter((p) => p.status === s.key).length }), {});
+  const prompts = [...(data?.prompts || [])].filter((p) => statusFilter === 'all' || p.status === statusFilter).sort((a, b) => (
     sort === 'prompt' ? a.prompt.localeCompare(b.prompt) : (b[sort] ?? -1) - (a[sort] ?? -1)
   ));
   const shownProviders = provider === 'all' ? providers : providers.filter((p) => p.key === provider);
@@ -354,12 +386,25 @@ export default function SeoLlmTab() {
           </Card>
 
           <Card style={{ padding: 0, overflowX: 'auto' }}>
-            <div style={{ padding: '12px 14px' }}>
-              <b style={{ fontSize: 14, color: C.saphirF }}>Prompts suivis ({prompts.length})</b>
-              <span style={{ fontSize: 12, color: C.grisM, marginLeft: 8 }}>part des réponses qui mentionnent YouVape, par IA · cliquer une ligne pour le détail</span>
+            <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <b style={{ fontSize: 14, color: C.saphirF }}>Prompts suivis ({prompts.length})</b>
+                <span style={{ fontSize: 12, color: C.grisM, marginLeft: 8 }}>part des réponses qui mentionnent YouVape, par IA · cliquer une ligne pour le détail</span>
+              </div>
+              <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setStatusFilter('all')} style={statusFilter === 'all' ? btnPlein : btn}>
+                  Tous ({data.prompts.length})
+                </button>
+                {STATUSES.map((s) => (
+                  <button key={s.key} type="button" onClick={() => setStatusFilter(s.key)} style={statusFilter === s.key ? btnPlein : btn}>
+                    {s.label} ({statusCounts[s.key]})
+                  </button>
+                ))}
+              </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
+                <th style={th}>Statut</th>
                 <th style={{ ...th, cursor: 'pointer' }} onClick={() => setSort('prompt')}>Prompt</th>
                 {shownProviders.map((p) => <th key={p.key} style={{ ...th, textAlign: 'right' }}>{p.label}</th>)}
                 <th style={{ ...th, textAlign: 'right', cursor: 'pointer' }} onClick={() => setSort('mentionRate')}>Mentionné {sort === 'mentionRate' ? '▼' : ''}</th>
@@ -369,6 +414,7 @@ export default function SeoLlmTab() {
               <tbody>
                 {prompts.map((p) => (
                   <tr key={p.id} onClick={() => openPrompt(p.id)} style={{ cursor: 'pointer', background: selected === p.id ? '#EEF4FF' : 'transparent' }}>
+                    <td style={td}><StatusSelect value={p.status} onChange={(v) => setPromptStatus(p.id, v)} /></td>
                     <td style={{ ...td, maxWidth: 420 }}>
                       {p.prompt}
                       {p.note && <div style={{ fontSize: 11, color: C.violet, marginTop: 2 }}>📝 {p.note.split('\n')[0].slice(0, 90)}</div>}
@@ -384,7 +430,10 @@ export default function SeoLlmTab() {
           </Card>
 
           <div ref={detailRef}>
-            {selected && <PromptDetail id={selected} provider={provider} providers={providers} onClose={() => setSelected(null)} />}
+            {selected && (
+              <PromptDetail id={selected} provider={provider} providers={providers} onClose={() => setSelected(null)}
+                onStatus={setPromptStatus} status={data.prompts.find((p) => p.id === selected)?.status} />
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
