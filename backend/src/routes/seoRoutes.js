@@ -127,6 +127,29 @@ router.get('/pilot/journal', handle((req) => pilot.listJournal(req.query.url)));
 router.post('/pilot/journal', canWrite, handle((req) => pilot.addJournal(req.body || {}, req.user?.email)));
 router.delete('/pilot/journal/:id', canWrite, handle((req) => pilot.deleteJournal(Number(req.params.id))));
 
+/* ─── Visibilité dans les réponses des IA (historique Eskimoz LLM Ranking) ─── */
+const llm = require('../services/llmVisibilityService');
+// L'export « prompt-responses » d'Eskimoz pèse ~8 Mo pour deux mois.
+const llmUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } });
+const llmFilters = (req) => ({ provider: req.query.provider, from: req.query.from, to: req.query.to });
+
+router.get('/llm/overview', handle((req) => llm.getOverview(llmFilters(req))));
+router.get('/llm/prompts/:id', handle(async (req) => {
+  const p = await llm.getPrompt(Number(req.params.id), llmFilters(req));
+  if (!p) throw new Error('Prompt introuvable');
+  return p;
+}));
+router.patch('/llm/prompts/:id', canWrite, handle((req) => llm.updatePrompt(Number(req.params.id), req.body || {})));
+router.get('/llm/responses/:id', handle(async (req) => {
+  const r = await llm.getResponse(Number(req.params.id));
+  if (!r) throw new Error('Réponse introuvable');
+  return r;
+}));
+router.post('/llm/import', canWrite, llmUpload.single('file'), handle((req) => {
+  if (!req.file) throw new Error('Fichier manquant');
+  return llm.importEskimozCsv(req.file.buffer);
+}));
+
 router.post('/weekly-report', checkPermission('seo', 'write'), handle(() => gsc.sendWeeklyReport()));
 
 module.exports = router;
