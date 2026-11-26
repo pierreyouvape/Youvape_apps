@@ -16,6 +16,7 @@ const BUCKETS = [
 ];
 /** Périodes : `phrase` sert dans les textes (« 3 faites · cette année »). */
 const PERIODS = [
+  { key: 'tout', label: 'Tout', phrase: 'depuis le début' },
   { key: '7', label: '7 jours', phrase: '7 derniers jours' },
   { key: '30', label: '30 jours', phrase: '30 derniers jours' },
   { key: '90', label: '90 jours', phrase: '90 derniers jours' },
@@ -28,6 +29,7 @@ const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'aoû
 /** Bornes de la période [from, to[ en YYYY-MM-DD. */
 function periodRange(key, today) {
   const y = Number(today.slice(0, 4));
+  if (key === 'tout') return { from: '0000-01-01', to: addDays(today, 1) };
   if (key === 'mois') return { from: `${today.slice(0, 7)}-01`, to: addDays(today, 1) };
   if (key === 'annee') return { from: `${y}-01-01`, to: addDays(today, 1) };
   if (key === 'annee-1') return { from: `${y - 1}-01-01`, to: `${y}-01-01` };
@@ -78,7 +80,7 @@ const bucketOf = (st) => (st === 'fait' ? 'fait' : st === 'bloque' ? 'bloque' : 
 export default function DashboardTab({ boards, members, onOpenPerson, onError }) {
   const [tasks, setTasks] = useState(null);
   const [boardId, setBoardId] = useState('all');
-  const [period, setPeriod] = useState('30');
+  const [period, setPeriod] = useState('tout');
   const [tip, setTip] = useState(null); // { x, y, text }
 
   const load = useCallback(async () => {
@@ -95,12 +97,19 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
   const stats = useMemo(() => {
     if (!tasks) return null;
     const items = workItems(tasks);
+    // La période s'applique à tout : l'état (à faire, en cours, bloqué, retard,
+    // étiquettes) porte sur les tâches CRÉÉES dans la période ; « Fait » compte
+    // ce qui a été FAIT dans la période, quelle que soit la date de création.
+    const inRange = (d) => d && d.slice(0, 10) >= range.from && d.slice(0, 10) < range.to;
+    const scoped = period === 'tout' ? tasks : tasks.filter((x) => inRange(x.created_at));
+    const scopedIds = new Set(scoped.map((x) => x.id));
     const inPeriod = (it) => it.status === 'fait' && it.doneAt && it.doneAt.slice(0, 10) >= range.from && it.doneAt.slice(0, 10) < range.to;
     const count = (list) => {
       const c = { a_faire: 0, en_cours: 0, bloque: 0, fait: 0, late: 0, open: 0 };
       list.forEach((it) => {
         const b = bucketOf(it.status);
         if (b === 'fait') { if (inPeriod(it)) c.fait += 1; return; }
+        if (!scopedIds.has(it.task.id)) return;
         c[b] += 1;
         c.open += 1;
         if (it.due && it.due < today) c.late += 1;
@@ -108,8 +117,8 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
       return c;
     };
     // Tâches (niveau tâche)
-    const t = { total: tasks.length, fait: 0, en_cours: 0, a_faire: 0, bloque: 0, late: 0, doneInPeriod: 0 };
-    tasks.forEach((x) => {
+    const t = { total: scoped.length, fait: 0, en_cours: 0, a_faire: 0, bloque: 0, late: 0, doneInPeriod: 0 };
+    scoped.forEach((x) => {
       const b = x.status === 'longue' ? 'en_cours' : x.status;
       t[b] = (t[b] || 0) + 1;
       if (x.status !== 'fait' && x.due_date && x.due_date < today) t.late += 1;
@@ -130,7 +139,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
     const undated = items.filter((it) => it.status === 'fait' && !it.doneAt).length;
     // Par étiquette (ouvert)
     const byLabel = new Map();
-    tasks.filter((x) => x.status !== 'fait').forEach((x) => x.labels.forEach((l) => byLabel.set(l, (byLabel.get(l) || 0) + 1)));
+    scoped.filter((x) => x.status !== 'fait').forEach((x) => x.labels.forEach((l) => byLabel.set(l, (byLabel.get(l) || 0) + 1)));
     return {
       t, people, nobody, weeks, undated, all: count(items),
       labels: [...byLabel.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10),
@@ -170,9 +179,15 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
         </div>
       </div>
 
+      <div style={{ fontSize: 12, color: M.sub, margin: '-8px 0 14px' }}>
+        {period === 'tout'
+          ? 'Toutes les tâches, quelle que soit leur date. « Fait » et « Ont avancé » comptent tout ce qui a été fait.'
+          : `Tâches créées ${periodLabel} (à faire, en cours, bloquées, en retard, étiquettes, détail). « Fait » et « Ont avancé » : ce qui a été fait ${periodLabel}.`}
+      </div>
+
       {/* Chiffres clés */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-        <Tile icon="◎" tint="#0073EA" label="Tâches actives" value={stats.t.total - stats.t.fait} hint={`sur ${stats.t.total.toLocaleString('fr-FR')} au total`} />
+        <Tile icon="◎" tint="#0073EA" label="Tâches actives" value={stats.t.total - stats.t.fait} hint={period === 'tout' ? `sur ${stats.t.total.toLocaleString('fr-FR')} au total` : `sur ${stats.t.total.toLocaleString('fr-FR')} créées · ${periodLabel}`} />
         <Tile icon="○" tint="#7C7F8E" label="À faire" value={stats.t.a_faire} hint="pas encore commencées" />
         <Tile icon="◔" tint="#E8930C" label="En cours" value={stats.t.en_cours} hint="dont tâches de fond" />
         <Tile icon="⛔" tint="#DF2F4A" label="Bloquées" value={stats.t.bloque} hint="en attente de quelqu'un" />
@@ -181,14 +196,14 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
       </div>
 
       {/* Répartition globale */}
-      <Card title="Où en est le travail ?" sub={`Toutes les étapes et tâches simples · « Fait » = sur ${periodLabel}`} style={{ marginTop: 16 }}>
+      <Card title="Où en est le travail ?" sub={`Toutes les étapes et tâches simples · « Fait » = ${period === 'tout' ? 'tout ce qui a été fait' : `fait ${periodLabel}`}`} style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', height: 34, gap: 2, borderRadius: 8, overflow: 'hidden' }}>
           {BUCKETS.filter((b) => all[b.key]).map((b) => {
             const pct = Math.round((all[b.key] / allTotal) * 100);
             return (
               <div key={b.key} onMouseMove={(e) => show(e, `${b.label} : ${all[b.key]} (${pct} %)`)} onMouseLeave={hide}
                 style={{ flex: all[b.key], background: b.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: b.ink, fontSize: 13, fontWeight: 600, minWidth: 4 }}>
-                {pct >= 7 ? `${pct} %` : ''}
+                {pct >= 4 ? `${pct} %` : ''}
               </div>
             );
           })}
@@ -199,6 +214,7 @@ export default function DashboardTab({ boards, members, onOpenPerson, onError })
               <span style={{ width: 12, height: 12, borderRadius: 4, background: b.color }} />
               <span style={{ fontSize: 13, color: M.sub }}>{b.label}</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: M.text }}>{all[b.key].toLocaleString('fr-FR')}</span>
+              <span style={{ fontSize: 13, color: M.sub }}>· {Math.round((all[b.key] / allTotal) * 100)} %</span>
             </div>
           ))}
         </div>
