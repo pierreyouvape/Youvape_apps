@@ -6,7 +6,7 @@ import {
   ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText, SortMark, EdgeResizer,
 } from './tachesUi';
 import { useSort, sortRows, useKeyedWidths } from './tachesColumns';
-import { CustomCell, AddColumnButton } from './CustomCells';
+import { CustomCell, AddColumnButton, DateCell } from './CustomCells';
 import StepsTable from './StepsTable';
 
 const th = mTh;
@@ -28,6 +28,8 @@ const BUILTIN = {
   priority: { label: 'Priorité', w: 120, full: true },
   status: { label: 'Statut', w: 120, full: true },
   due: { label: 'Échéances', w: 150 },
+  start: { label: 'Date début', w: 120 },
+  end: { label: 'Date fin', w: 120 },
 };
 const DEFAULT_LAYOUT = ['id', 'title', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
 const CUSTOM_W = { checkbox: 90, people: 110, select: 130, number: 110 };
@@ -45,7 +47,7 @@ const loadCollapsed = () => {
  * liste de choix). Cases à cocher pour archiver / déplacer / supprimer en masse.
  */
 export default function TableView({
-  tasks, loading, board, boards, members, canWrite, focusUserId,
+  tasks, loading, board, boards, members, canWrite, focusUserId, hideEmptyGroups = false,
   onOpen, onTaskChange, onError, onReload, onBoardsChange,
 }) {
   const widths = useKeyedWidths('table');
@@ -89,6 +91,8 @@ export default function TableView({
       progress: (t) => (t.steps.length ? t.counts.fait / t.steps.length : ''),
       labels: (t) => t.labels.join(', '),
       due: (t) => t.due_date || t.start_date || '',
+      start: (t) => t.start_date || '',
+      end: (t) => t.due_date || '',
       created: (t) => t.created_at,
       updated: (t) => t.updated_at,
       priority: (t) => (t.priority ? ['critique', 'haute', 'moyenne', 'basse'].indexOf(t.priority) : ''),
@@ -288,6 +292,8 @@ export default function TableView({
         </td>
       );
       case 'due': return <td key="due" style={td}><DateRange start={t.start_date} end={t.due_date} late={late} onChange={(b) => save(t, b)} /></td>;
+      case 'start': return <td key="start" style={{ ...td, padding: 0 }}><DateCell value={t.start_date} onChange={(v) => save(t, { start_date: v })} /></td>;
+      case 'end': return <td key="end" style={{ ...td, padding: 0 }}><DateCell value={t.due_date} late={late} onChange={(v) => save(t, { due_date: v })} /></td>;
       default: return <td key={d.key} style={td} />;
     }
   };
@@ -354,7 +360,7 @@ export default function TableView({
         </div>
       )}
 
-      {sections.map((g) => {
+      {sections.filter((g) => !hideEmptyGroups || g.tasks.length).map((g) => {
         const shut = isCollapsed(g);
         const ids = g.tasks.map((t) => t.id);
         const allChecked = ids.length > 0 && ids.every((i) => selected.has(i));

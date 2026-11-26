@@ -21,6 +21,29 @@ const cellBtn = {
   width: '100%', height: 34, padding: '0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
 };
 
+/** Une date seule (« 25 nov. 2026 »), choisie au clic. `onChange('YYYY-MM-DD' | null)`. */
+export function DateCell({ value, onChange, late = false }) {
+  const [anchor, setAnchor] = useState(null);
+  const close = () => setAnchor(null);
+  return (
+    <>
+      <button type="button" style={{ ...cellBtn, color: value ? (late ? '#DF2F4A' : M.text) : '#C3C6D4', fontWeight: late ? 600 : 400 }}
+        onClick={(e) => setAnchor(e.currentTarget)}>
+        {value ? formatDay(`${value}T12:00:00`) : '—'}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={close} width={200}>
+          <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input type="date" defaultValue={value || ''} style={{ ...inputStyle, padding: '5px 6px' }}
+              onChange={(e) => { onChange(e.target.value || null); close(); }} />
+            {value && <button type="button" style={{ ...btn(), color: '#DF2F4A' }} onClick={() => { onChange(null); close(); }}>Effacer</button>}
+          </div>
+        </Popover>
+      )}
+    </>
+  );
+}
+
 /** Valeur d'une tâche dans une colonne ajoutée. `onChange(value)` ; null efface. */
 export function CustomCell({ column, value, onChange, members }) {
   const [anchor, setAnchor] = useState(null);

@@ -762,6 +762,8 @@ function App() {
           <Route path="/taches/:tab" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
           {/* Lien des messages Slack : ouvre la tâche */}
           <Route path="/taches/tache/:id" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
+          {/* Vue enregistrée (liste filtrée du menu de gauche) */}
+          <Route path="/taches/vue/:vid" element={<PrivateRoute><TachesApp /></PrivateRoute>} />
         </Routes>
         </Suspense>
         </EcranIndisponible>

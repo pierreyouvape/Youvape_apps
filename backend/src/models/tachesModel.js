@@ -91,14 +91,16 @@ async function checkMembers(ids) {
 
 /* Colonnes du Tableau : de base (clé fixe) ou ajoutées (« c<id> »). */
 const COLUMN_TYPES = ['text', 'number', 'date', 'period', 'link', 'people', 'checkbox', 'select'];
-const BUILTIN_COLUMNS = ['id', 'title', 'people', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
+const BUILTIN_COLUMNS = ['id', 'title', 'people', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due', 'start', 'end'];
 const DEFAULT_LAYOUT = ['id', 'title', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
+/** Tableau sans sous-éléments (suivi quotidien) : comme sur Monday, Personne / Statut / Date début / Date fin. */
+const SIMPLE_LAYOUT = ['id', 'title', 'people', 'status', 'start', 'end', 'updated'];
 
 /** Disposition valide : clés connues, sans doublon, « title » toujours présente, colonnes ajoutées jamais perdues. */
-function normalizeLayout(layout, columns) {
+function normalizeLayout(layout, columns, fallback = DEFAULT_LAYOUT) {
   const custom = columns.map((c) => `c${c.id}`);
   const known = new Set([...BUILTIN_COLUMNS, ...custom]);
-  const out = [...new Set((Array.isArray(layout) ? layout : DEFAULT_LAYOUT).filter((k) => known.has(k)))];
+  const out = [...new Set((Array.isArray(layout) ? layout : fallback).filter((k) => known.has(k)))];
   if (!out.includes('title')) out.unshift('title');
   custom.forEach((k) => { if (!out.includes(k)) out.push(k); });
   return out;
@@ -108,9 +110,14 @@ async function getBoards() {
   const { rows: boards } = await pool.query('SELECT id, name, position, layout FROM taches_boards ORDER BY position, id');
   const { rows: groups } = await pool.query('SELECT id, board_id, name, color, position FROM taches_groups ORDER BY position, id');
   const { rows: columns } = await pool.query('SELECT id, board_id, name, type, settings FROM taches_columns ORDER BY id');
+  const { rows: withSteps } = await pool.query(
+    'SELECT DISTINCT t.board_id FROM taches_tasks t JOIN taches_steps s ON s.task_id = t.id',
+  );
+  const stepped = new Set(withSteps.map((r) => r.board_id));
   return boards.map((b) => {
     const cols = columns.filter((c) => c.board_id === b.id);
-    return { ...b, groups: groups.filter((g) => g.board_id === b.id), columns: cols, layout: normalizeLayout(b.layout, cols) };
+    const fallback = stepped.has(b.id) ? DEFAULT_LAYOUT : SIMPLE_LAYOUT;
+    return { ...b, groups: groups.filter((g) => g.board_id === b.id), columns: cols, layout: normalizeLayout(b.layout, cols, fallback) };
   });
 }
 
@@ -1123,6 +1130,56 @@ async function deleteTemplate(id) {
   return getTemplates();
 }
 
+/* ─── Vues enregistrées (listes filtrées du menu) ───────── */
+
+/** Filtres admis dans une vue (mêmes que la barre de filtres). */
+function cleanFilters(f = {}) {
+  const out = {};
+  if (Number.isInteger(Number(f.board_id)) && Number(f.board_id) > 0) out.board_id = Number(f.board_id);
+  if (f.label) out.label = cleanText(f.label, 60);
+  if (PRIORITIES.includes(f.priority) || f.priority === 'none') out.priority = f.priority;
+  if (TASK_STATUSES.includes(f.status)) out.status = f.status;
+  if (Number.isInteger(Number(f.person)) && Number(f.person) > 0) out.person = Number(f.person);
+  if (f.openOnly) out.openOnly = true;
+  if (f.hideDone) out.hideDone = true;
+  if (f.q) out.q = cleanText(f.q, 100);
+  return out;
+}
+
+async function getViews() {
+  const { rows } = await pool.query(
+    `SELECT v.id, v.name, v.filters, v.position, v.created_by, ${USER_NAME('u')} AS created_by_name
+       FROM taches_views v LEFT JOIN users u ON u.id = v.created_by ORDER BY v.position, v.id`,
+  );
+  return rows;
+}
+
+async function saveView(userId, id, body) {
+  const name = cleanText(body.name, 80);
+  if (!name) throw httpError(400, 'Le nom de la vue est obligatoire');
+  const filters = cleanFilters(body.filters);
+  if (id) {
+    const { rowCount } = await pool.query('UPDATE taches_views SET name = $2, filters = $3 WHERE id = $1', [id, name, JSON.stringify(filters)]);
+    if (!rowCount) throw httpError(404, 'Vue introuvable');
+  } else {
+    await pool.query(
+      `INSERT INTO taches_views (name, filters, created_by, position)
+       VALUES ($1, $2, $3, COALESCE((SELECT max(position) + 1 FROM taches_views), 0))`,
+      [name, JSON.stringify(filters), userId],
+    );
+  }
+  return getViews();
+}
+
+/** Supprimer : son auteur, ou le droit d'écriture. */
+async function deleteView(userId, id, { canWrite }) {
+  const { rows: [v] } = await pool.query('SELECT created_by FROM taches_views WHERE id = $1', [id]);
+  if (!v) throw httpError(404, 'Vue introuvable');
+  if (!canWrite && v.created_by !== userId) throw httpError(403, 'Seul son auteur (ou le droit d\'écriture) peut supprimer cette vue');
+  await pool.query('DELETE FROM taches_views WHERE id = $1', [id]);
+  return getViews();
+}
+
 /** Étiquettes déjà utilisées, les plus fréquentes d'abord (suggestions). */
 async function getLabels() {
   const { rows } = await pool.query(
@@ -1162,6 +1219,9 @@ module.exports = {
   deleteStep,
   addComment,
   deleteComment,
+  getViews,
+  saveView,
+  deleteView,
   getNotifications,
   countUnread,
   markNotification,

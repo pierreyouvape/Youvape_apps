@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import AppShell from '../components/AppShell';
 import {
-  tachesApi, apiError, TACHES_COLOR, inputStyle, M, PRIORITY, PRIORITY_ORDER, TASK_STATUS, TASK_STATUS_ORDER,
+  tachesApi, apiError, TACHES_COLOR, inputStyle, btn, M, PRIORITY, PRIORITY_ORDER, TASK_STATUS, TASK_STATUS_ORDER,
 } from '../components/taches/tachesShared';
 import MineTab from '../components/taches/MineTab';
 import TableView from '../components/taches/TableView';
@@ -20,76 +20,84 @@ import NotificationsPanel from '../components/taches/NotificationsPanel';
 /** Clé de permission de l'app (miroir de `APPS` et de backend/src/config/apps.js). */
 const PERM_KEY = 'taches';
 
-const TABS = [
-  { key: 'moi', label: 'Mes tâches', subtitle: 'Ce que vous avez à faire, avec les étapes avant et après.' },
-  { key: 'tableau', label: 'Tableau principal', subtitle: 'Toutes les tâches, par groupe. Glisser ⠿ pour changer l\'ordre.', view: true },
-  { key: 'kanban', label: 'Kanban', subtitle: 'Glisser une carte d\'une colonne à l\'autre la modifie.', view: true },
-  { key: 'gantt', label: 'Gantt', subtitle: 'Planning : glisser une barre la déplace, tirer son bord droit l\'allonge.', view: true },
-  { key: 'calendrier', label: 'Calendrier', subtitle: 'Échéances du mois : glisser une tâche sur un autre jour la décale.', view: true },
-  { key: 'modeles', label: 'Modèles', subtitle: 'Les enchaînements d\'étapes types, recopiés à la création.' },
-  { key: 'slack', label: 'Slack', subtitle: 'Notifications dans #notifications-taches.', admin: true },
+/** Vues d'un tableau (onglets du haut, comme Monday). Les personnes s'ajoutent après le Calendrier. */
+const BOARD_TABS = [
+  { key: 'tableau', label: 'Tableau principal', subtitle: 'Toutes les tâches, par groupe. Glisser ⠿ pour changer l\'ordre.' },
+  { key: 'kanban', label: 'Kanban', subtitle: 'Glisser une carte d\'une colonne à l\'autre la modifie.' },
+  { key: 'gantt', label: 'Gantt', subtitle: 'Planning : glisser une barre la déplace, tirer son bord droit l\'allonge.' },
+  { key: 'calendrier', label: 'Calendrier', subtitle: 'Échéances du mois : glisser une tâche sur un autre jour la décale.' },
 ];
+const PAGES = {
+  moi: { title: 'Mes tâches', subtitle: 'Ce que vous avez à faire, avec les étapes avant et après.' },
+  modeles: { title: 'Modèles', subtitle: 'Les enchaînements d\'étapes types, recopiés à la création.' },
+  slack: { title: 'Slack', subtitle: 'Notifications dans #notifications-taches.', admin: true },
+};
 const BOARD_KEY = 'yv.taches.board';
+const EMPTY_FILTERS = { q: '', label: '', priority: '', status: '', person: null, openOnly: false, hideDone: false };
 
 /**
  * App Tâches — remplace Monday + Make.
- * /taches/:tab, et /taches/tache/:id (lien des messages Slack) qui ouvre la
- * tâche par-dessus le Tableau.
  *
- * Les vues (Tableau, Kanban, Gantt, Calendrier) partagent les mêmes données et
- * les mêmes filtres : chargés ici, une fois.
+ * Colonne de gauche (comme le menu « Contenu » de Monday) : Mes tâches, les
+ * tableaux, les vues enregistrées (listes filtrées, ex. « SEO (Jib) »),
+ * Modèles, Slack. En haut, les vues du tableau choisi : Tableau principal,
+ * Kanban, Gantt, Calendrier, une par personne.
+ *
+ * Adresses : /taches/:tab, /taches/vue/:vid (vue enregistrée),
+ * /taches/tache/:id (lien des messages Slack : ouvre la tâche).
  */
 export default function TachesApp() {
-  const { tab, id } = useParams();
+  const { tab, id, vid } = useParams();
   const navigate = useNavigate();
   const { permissions, isSuperAdmin, isAdmin, user } = useContext(AuthContext);
   const canRead = useMemo(() => isSuperAdmin || permissions?.[PERM_KEY]?.read === true, [isSuperAdmin, permissions]);
   const canWrite = isSuperAdmin || permissions?.[PERM_KEY]?.write === true;
+  const admin = isAdmin || isSuperAdmin;
 
   const [members, setMembers] = useState([]);
   const [labels, setLabels] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [boards, setBoards] = useState([]);
+  const [views, setViews] = useState([]);
   const [boardId, setBoardId] = useState(() => localStorage.getItem(BOARD_KEY) || '');
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [openId, setOpenId] = useState(id ? Number(id) : null);
-  const [creating, setCreating] = useState(null); // null | { group_id?, start_date?, due_date? }
+  const [creating, setCreating] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
   const [unread, setUnread] = useState(0);
 
   // Filtres communs aux vues
-  const [q, setQ] = useState('');
+  const [f, setF] = useState(EMPTY_FILTERS);
+  const setFilter = (k) => (v) => setF((cur) => ({ ...cur, [k]: v }));
   const [hits, setHits] = useState(null);
-  const [person, setPerson] = useState(null);
-  const [openOnly, setOpenOnly] = useState(false);
-  const [label, setLabel] = useState('');
-  const [priority, setPriority] = useState('');
-  const [status, setStatus] = useState('');
-  const [hideDone, setHideDone] = useState(false);
   const [archived, setArchived] = useState(false);
 
-  const currentTab = id ? 'tableau' : tab;
-  // Un onglet par personne (comme les vues « Maxime », « Pierre »… de Monday) :
-  // le Tableau principal limité à ses tâches. Insérés après le Calendrier.
+  // Où sommes-nous ?
+  const view = vid ? views.find((v) => String(v.id) === String(vid)) : null;
+  const currentTab = id ? 'tableau' : vid ? 'vue' : tab;
   const personTabs = members.filter((m) => m.has_app !== false).map((m) => ({
-    key: `p-${m.id}`, label: m.name, view: true, person: m.id,
-    subtitle: `Les tâches de ${m.name} : une étape à son nom, ou la tâche elle-même.`,
+    key: `p-${m.id}`, label: m.name, person: m.id,
+    subtitle: `Ce que ${m.name} a à faire maintenant dans ce tableau (choisissez le tableau à gauche ; décochez la case pour tout voir).`,
   }));
-  const allTabs = [...TABS.slice(0, 5), ...personTabs, ...TABS.slice(5)];
-  const tabDef = allTabs.find((t) => t.key === currentTab);
-  const isView = Boolean(tabDef?.view) || /^p-\d+$/.test(currentTab || '');
-  const forcedPerson = tabDef?.person || null;
-  const who = forcedPerson || person;
+  const boardTabs = [...BOARD_TABS, ...personTabs];
+  const boardTab = boardTabs.find((t) => t.key === currentTab);
+  const page = PAGES[currentTab];
+  const isList = Boolean(boardTab) || currentTab === 'vue' || /^p-\d+$/.test(currentTab || '');
+  const forcedPerson = boardTab?.person || null;
+  const who = forcedPerson || f.person;
 
   const loadRefs = useCallback(async () => {
     try {
-      const [m, l, t, b] = await Promise.all([tachesApi.members(), tachesApi.labels(), tachesApi.templates(), tachesApi.boards()]);
+      const [m, l, t, b, v] = await Promise.all([
+        tachesApi.members(), tachesApi.labels(), tachesApi.templates(), tachesApi.boards(), tachesApi.views(),
+      ]);
       setMembers(m);
       setLabels(l);
       setTemplates(t);
       setBoards(b);
+      setViews(v);
     } catch (e) {
       setError(apiError(e));
     }
@@ -109,12 +117,25 @@ export default function TachesApp() {
   }, [canRead, loadUnread, reloadKey]);
   useEffect(() => { if (id) setOpenId(Number(id)); }, [id]);
 
+  // Onglet d'une personne : seulement ce qu'elle a à faire, par défaut.
+  useEffect(() => {
+    if (forcedPerson) setF((cur) => ({ ...cur, openOnly: true }));
+  }, [forcedPerson]);
+
+  // Vue enregistrée : ses filtres et son tableau.
+  useEffect(() => {
+    if (!view) return;
+    const vf = view.filters || {};
+    setF({ ...EMPTY_FILTERS, ...vf, person: vf.person || null });
+    setBoardId(vf.board_id ? String(vf.board_id) : 'all');
+  }, [view]);
+
   // Tableau retenu d'une visite à l'autre ; à défaut le premier.
   const board = boards.find((b) => String(b.id) === String(boardId)) || null;
   useEffect(() => {
     if (boards.length && boardId !== 'all' && !board) setBoardId(String(boards[0].id));
   }, [boards, boardId, board]);
-  useEffect(() => { if (boardId) localStorage.setItem(BOARD_KEY, boardId); }, [boardId]);
+  useEffect(() => { if (boardId && !vid) localStorage.setItem(BOARD_KEY, boardId); }, [boardId, vid]);
 
   const loadTasks = useCallback(async () => {
     if (!boardId) return;
@@ -125,39 +146,39 @@ export default function TachesApp() {
       setError(apiError(e));
     }
   }, [boardId, archived]);
-  useEffect(() => { if (canRead && isView) loadTasks(); }, [canRead, isView, loadTasks, reloadKey]);
+  useEffect(() => { if (canRead && isList) loadTasks(); }, [canRead, isList, loadTasks, reloadKey]);
   useEffect(() => {
-    if (!isView) return undefined;
+    if (!isList) return undefined;
     const onFocus = () => loadTasks();
     window.addEventListener('focus', onFocus);
     const timer = setInterval(loadTasks, 60000);
     return () => { window.removeEventListener('focus', onFocus); clearInterval(timer); };
-  }, [isView, loadTasks]);
+  }, [isList, loadTasks]);
 
   // Recherche plein texte (titres, étapes, notes, commentaires…), côté serveur.
   useEffect(() => {
-    const term = q.trim();
+    const term = f.q.trim();
     if (term.length < 2) { setHits(null); return undefined; }
     const timer = setTimeout(() => {
       tachesApi.search(term).then(setHits).catch((e) => setError(apiError(e)));
     }, 300);
     return () => clearTimeout(timer);
-  }, [q, reloadKey]);
+  }, [f.q, reloadKey]);
 
   const filtered = useMemo(() => {
     if (!tasks) return null;
     const ids = hits ? new Set(hits.map((h) => h.task_id)) : null;
     return tasks.filter((t) => {
       if (ids && !ids.has(t.id)) return false;
-      if (label && !t.labels.includes(label)) return false;
-      if (priority && (t.priority || 'none') !== priority) return false;
-      if (status && t.status !== status) return false;
-      if (hideDone && t.status === 'fait') return false;
+      if (f.label && !t.labels.includes(f.label)) return false;
+      if (f.priority && (t.priority || 'none') !== f.priority) return false;
+      if (f.status && t.status !== f.status) return false;
+      if (f.hideDone && t.status === 'fait') return false;
       if (who) {
         const steps = t.steps.filter((s) => s.owners.includes(who));
         const own = t.people.includes(who);
         if (!steps.length && !own) return false;
-        if (openOnly) {
+        if (f.openOnly) {
           const stepOpen = steps.some((s) => s.status !== 'fait' && s.status !== 'bloque');
           const taskOpen = own && !t.steps.length && t.status !== 'fait';
           if (!stepOpen && !taskOpen) return false;
@@ -165,7 +186,7 @@ export default function TachesApp() {
       }
       return true;
     });
-  }, [tasks, hits, label, priority, status, hideDone, who, openOnly]);
+  }, [tasks, hits, f, who]);
 
   if (permissions && !canRead) {
     return (
@@ -176,12 +197,12 @@ export default function TachesApp() {
       </AppShell>
     );
   }
-  const visibleTabs = allTabs.filter((t) => !t.admin || isAdmin || isSuperAdmin);
-  // Onglet d'une personne : attendre la liste des membres avant de juger l'adresse.
-  if (/^p-\d+$/.test(currentTab || '') && !members.length) {
+  // Onglet d'une personne ou vue : attendre les listes avant de juger l'adresse.
+  if ((/^p-\d+$/.test(currentTab || '') && !members.length) || (vid && !views.length && !error)) {
     return <AppShell currentPath="/taches"><div style={{ padding: 40, color: M.sub }}>Chargement…</div></AppShell>;
   }
-  if (!tabDef || !visibleTabs.includes(tabDef)) return <Navigate to="/taches/moi" replace />;
+  const known = boardTab || (page && (!page.admin || admin)) || (currentTab === 'vue' && view);
+  if (!known) return <Navigate to="/taches/moi" replace />;
 
   const closeTask = () => {
     setOpenId(null);
@@ -192,103 +213,140 @@ export default function TachesApp() {
     tachesApi.labels().then(setLabels).catch(() => {});
   };
   const replaceTask = (t) => setTasks((list) => (list ? list.map((x) => (x.id === t.id ? { ...x, ...t } : x)) : list));
-  const refreshBoards = (b) => setBoards(b);
+  const goBoard = (bid) => {
+    setBoardId(String(bid));
+    setF(EMPTY_FILTERS);
+    navigate('/taches/tableau');
+  };
+  const currentFilters = () => ({ ...f, board_id: boardId === 'all' ? null : Number(boardId), person: f.person || forcedPerson || null });
+  const saveAsView = async () => {
+    const name = window.prompt('Nom de la vue (ex. « SEO (Jib) ») ?');
+    if (!name || !name.trim()) return;
+    try {
+      const list = await tachesApi.createView({ name: name.trim(), filters: currentFilters() });
+      setViews(list);
+      navigate(`/taches/vue/${list[list.length - 1].id}`);
+    } catch (e) { setError(apiError(e)); }
+  };
+  const viewAction = async (fn) => {
+    try { setViews(await fn()); } catch (e) { setError(apiError(e)); }
+  };
 
   const viewProps = {
     tasks: filtered || [], loading: filtered === null, board, boards, members, labels, canWrite,
+    hideEmptyGroups: Boolean(filtered && tasks && filtered.length !== tasks.length),
     focusUserId: who, onOpen: setOpenId, onTaskChange: replaceTask, onError: setError,
-    onReload: changed, onBoardsChange: refreshBoards,
+    onReload: changed, onBoardsChange: setBoards,
     onNew: (preset = {}) => setCreating(preset),
   };
 
+  const title = currentTab === 'vue' ? view.name
+    : forcedPerson ? `Tâches de ${boardTab.label}`
+      : boardTab ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : page.title;
+  const subtitle = currentTab === 'vue'
+    ? `Vue enregistrée${view.created_by_name ? ` par ${view.created_by_name}` : ''} — ${board ? board.name : 'tous les tableaux'}. Modifiez les filtres puis « Enregistrer » pour la mettre à jour.`
+    : (boardTab || page).subtitle;
+  const viewChanged = currentTab === 'vue' && JSON.stringify(cleanForCompare(view.filters, board)) !== JSON.stringify(cleanForCompare(currentFilters(), board));
+
   return (
-    <AppShell currentPath={`/taches/${currentTab}`}>
-      <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto', height: '100vh', background: '#fff', fontFamily: M.font, color: M.text }}>
-        <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: currentTab === 'modeles' || currentTab === 'slack' ? 1200 : 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <h1 style={{ fontSize: 28, fontWeight: 600, color: M.text, margin: 0 }}>
-                {forcedPerson ? `Tâches de ${tabDef.label}`
-                  : isView ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : tabDef.key === 'moi' ? 'Mes tâches' : 'Tâches'}
-              </h1>
-              <p style={{ fontSize: 14, color: M.sub, margin: '2px 0 0' }}>{tabDef.subtitle}</p>
-            </div>
-            {isView && (
-              <select value={boardId} onChange={(e) => setBoardId(e.target.value)} style={{ ...inputStyle, width: 240, fontWeight: 700 }}>
-                {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                <option value="all">Tous les tableaux</option>
-              </select>
-            )}
-            <button type="button" onClick={() => setBellOpen(true)} title="Notifications"
-              style={{ position: 'relative', background: bellOpen ? '#E5F4FF' : 'none', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 22, padding: '4px 8px', lineHeight: 1 }}>
-              🔔
-              {unread > 0 && (
-                <span style={{
-                  position: 'absolute', top: -2, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#E2445C', color: '#fff',
-                  fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
-                }}>{unread > 99 ? '99+' : unread}</span>
-              )}
-            </button>
-            {currentTab !== 'slack' && currentTab !== 'modeles' && (
-              <button type="button" onClick={() => setCreating({})} style={{
-                background: TACHES_COLOR, color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px',
-                fontSize: 14, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit',
-              }}>+ Nouvelle tâche</button>
-            )}
-          </div>
+    <AppShell currentPath="/taches/moi">
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', height: '100vh', background: '#fff', fontFamily: M.font, color: M.text }}>
+        <Sidebar {...{
+          currentTab, boards, board, boardId, views, vid, admin, canWrite, user,
+          onMine: () => navigate('/taches/moi'),
+          onBoard: goBoard,
+          onAll: () => { setBoardId('all'); setF(EMPTY_FILTERS); navigate('/taches/tableau'); },
+          onView: (v) => navigate(`/taches/vue/${v.id}`),
+          onSaveView: saveAsView, canSaveView: isList,
+          onPage: (k) => navigate(`/taches/${k}`),
+          onRenameView: (v) => {
+            const n = window.prompt('Nom de la vue', v.name);
+            if (n && n.trim()) viewAction(() => tachesApi.updateView(v.id, { name: n.trim(), filters: v.filters }));
+          },
+          onDeleteView: (v) => {
+            if (!window.confirm(`Supprimer la vue « ${v.name} » ? Les tâches ne sont pas touchées.`)) return;
+            viewAction(() => tachesApi.deleteView(v.id)).then(() => { if (String(vid) === String(v.id)) navigate('/taches/moi'); });
+          },
+        }} />
 
-          <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${M.border}`, marginBottom: 16, flexWrap: 'wrap' }}>
-            {visibleTabs.map((t) => {
-              const active = t.key === currentTab;
-              return (
-                <button key={t.key} type="button" onClick={() => navigate(`/taches/${t.key}`)} style={{
-                  background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                  padding: '9px 13px', marginBottom: -1, fontSize: 14,
-                  fontWeight: 400, color: active ? M.text : M.sub,
-                  borderBottom: `2px solid ${active ? TACHES_COLOR : 'transparent'}`,
-                }}>
-                  {t.label}
+        <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+          <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: page && currentTab !== 'moi' ? 1200 : 'none' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h1 style={{ fontSize: 28, fontWeight: 600, color: M.text, margin: 0 }}>{title}</h1>
+                <p style={{ fontSize: 14, color: M.sub, margin: '2px 0 0' }}>{subtitle}</p>
+              </div>
+              {viewChanged && (
+                <button type="button" style={btn(true)}
+                  onClick={() => viewAction(() => tachesApi.updateView(view.id, { name: view.name, filters: currentFilters() }))}>
+                  Enregistrer la vue
                 </button>
-              );
-            })}
-          </div>
-
-          {error && (
-            <div style={{ padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13, marginBottom: 10, display: 'flex' }}>
-              <span style={{ flex: 1 }}>{error}</span>
-              <button type="button" onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#B91C1C', cursor: 'pointer' }}>×</button>
+              )}
+              <button type="button" onClick={() => setBellOpen(true)} title="Notifications"
+                style={{ position: 'relative', background: bellOpen ? '#E5F4FF' : 'none', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 22, padding: '4px 8px', lineHeight: 1 }}>
+                🔔
+                {unread > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -2, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#E2445C', color: '#fff',
+                    fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
+                  }}>{unread > 99 ? '99+' : unread}</span>
+                )}
+              </button>
+              {currentTab !== 'slack' && currentTab !== 'modeles' && (
+                <button type="button" onClick={() => setCreating({})} style={{
+                  background: TACHES_COLOR, color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px',
+                  fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                }}>+ Nouvelle tâche</button>
+              )}
             </div>
-          )}
 
-          {isView && (
-            <FilterBar {...{
-              q, setQ, members, person: who, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
-              priority, setPriority, status, setStatus, lockedPerson: Boolean(forcedPerson),
-              hideDone, setHideDone, archived, setArchived,
-              count: filtered ? `${filtered.length} / ${tasks.length}` : '',
-            }} />
-          )}
-          {isView && hits && (
-            <SearchResults hits={hits} q={q} boardId={boardId} onOpen={setOpenId} />
-          )}
+            {boardTab && (
+              <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${M.border}`, marginBottom: 14, flexWrap: 'wrap' }}>
+                {boardTabs.map((t, i) => {
+                  const active = t.key === currentTab;
+                  return (
+                    <Fragmentish key={t.key} sep={i === BOARD_TABS.length}>
+                      <button type="button" onClick={() => navigate(`/taches/${t.key}`)} style={{
+                        background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '9px 12px', marginBottom: -1,
+                        fontSize: 14, color: active ? M.text : M.sub, borderBottom: `2px solid ${active ? TACHES_COLOR : 'transparent'}`,
+                      }}>{t.person ? `👤 ${t.label}` : t.label}</button>
+                    </Fragmentish>
+                  );
+                })}
+              </div>
+            )}
 
-          {currentTab === 'moi' && <MineTab members={members} reloadKey={reloadKey} onOpen={setOpenId} onError={setError} />}
-          {(currentTab === 'tableau' || forcedPerson) && <TableView {...viewProps} />}
-          {currentTab === 'kanban' && <KanbanView {...viewProps} />}
-          {currentTab === 'gantt' && <GanttView {...viewProps} />}
-          {currentTab === 'calendrier' && <CalendarView {...viewProps} />}
-          {currentTab === 'modeles' && <TemplatesTab members={members} labels={labels} templates={templates} onChange={setTemplates} />}
-          {currentTab === 'slack' && <SlackTab members={members} />}
-        </div>
-      </main>
+            {error && (
+              <div style={{ padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13, marginBottom: 10, display: 'flex' }}>
+                <span style={{ flex: 1 }}>{error}</span>
+                <button type="button" onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#B91C1C', cursor: 'pointer' }}>×</button>
+              </div>
+            )}
+
+            {isList && (
+              <FilterBar {...{
+                f, setFilter, members, labels, who, lockedPerson: Boolean(forcedPerson), archived, setArchived,
+                count: filtered ? `${filtered.length} / ${tasks.length}` : '',
+              }} />
+            )}
+            {isList && hits && <SearchResults hits={hits} q={f.q} boardId={boardId} onOpen={setOpenId} />}
+
+            {currentTab === 'moi' && <MineTab members={members} reloadKey={reloadKey} onOpen={setOpenId} onError={setError} />}
+            {(currentTab === 'tableau' || forcedPerson || currentTab === 'vue') && <TableView {...viewProps} />}
+            {currentTab === 'kanban' && <KanbanView {...viewProps} />}
+            {currentTab === 'gantt' && <GanttView {...viewProps} />}
+            {currentTab === 'calendrier' && <CalendarView {...viewProps} />}
+            {currentTab === 'modeles' && <TemplatesTab members={members} labels={labels} templates={templates} onChange={setTemplates} />}
+            {currentTab === 'slack' && <SlackTab members={members} />}
+          </div>
+        </main>
+      </div>
 
       {openId && (
         <TaskModal taskId={openId} members={members} labels={labels} boards={boards} canWrite={canWrite}
           onClose={closeTask} onChanged={changed} focusUserId={currentTab === 'moi' ? user?.id : who} />
       )}
-      {bellOpen && (
-        <NotificationsPanel onClose={() => setBellOpen(false)} onOpen={setOpenId} onUnread={setUnread} />
-      )}
+      {bellOpen && <NotificationsPanel onClose={() => setBellOpen(false)} onOpen={setOpenId} onUnread={setUnread} />}
       {creating && (
         <NewTaskModal templates={templates} members={members} labels={labels} boards={boards}
           preset={{ board_id: board?.id || boards[0]?.id, ...creating }}
@@ -299,53 +357,135 @@ export default function TachesApp() {
   );
 }
 
+/** Pour comparer une vue enregistrée aux filtres en cours (clés vides retirées). */
+function cleanForCompare(fl = {}, board) {
+  const out = {};
+  ['label', 'priority', 'status', 'q'].forEach((k) => { if (fl[k]) out[k] = fl[k]; });
+  if (fl.person) out.person = Number(fl.person);
+  if (fl.openOnly) out.openOnly = true;
+  if (fl.hideDone) out.hideDone = true;
+  out.board_id = fl.board_id ? Number(fl.board_id) : (board ? board.id : null);
+  return out;
+}
+
+/** Séparateur fin avant les onglets « personnes ». */
+function Fragmentish({ sep, children }) {
+  return (
+    <>
+      {sep && <span style={{ width: 1, background: M.border, margin: '8px 6px' }} />}
+      {children}
+    </>
+  );
+}
+
+const sideItem = (active) => ({
+  display: 'flex', alignItems: 'center', gap: 8, width: '100%', border: 'none', borderRadius: 6, cursor: 'pointer',
+  background: active ? '#CCE5FF' : 'transparent', color: M.text, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit',
+  textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+});
+const sideTitle = { fontSize: 12, fontWeight: 700, color: M.sub, padding: '14px 10px 4px', display: 'flex', alignItems: 'center' };
+
+/** Menu de gauche, comme « Contenu » dans Monday. */
+function Sidebar({
+  currentTab, boards, board, boardId, views, vid, admin, user,
+  onMine, onBoard, onAll, onView, onSaveView, canSaveView, onPage, onRenameView, onDeleteView, canWrite,
+}) {
+  const onBoardPage = ['tableau', 'kanban', 'gantt', 'calendrier'].includes(currentTab) || /^p-\d+$/.test(currentTab || '');
+  return (
+    <nav style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${M.border}`, padding: '18px 10px', overflowY: 'auto', background: '#FAFBFC' }}>
+      <button type="button" style={{ ...sideItem(currentTab === 'moi'), fontWeight: 600 }} onClick={onMine}>✓ Mes tâches</button>
+
+      <div style={sideTitle}>Tableaux</div>
+      {boards.map((b) => (
+        <button key={b.id} type="button" style={sideItem(onBoardPage && board?.id === b.id)} onClick={() => onBoard(b.id)} title={b.name}>
+          ▦ {b.name}
+        </button>
+      ))}
+      <button type="button" style={{ ...sideItem(onBoardPage && boardId === 'all'), color: M.sub }} onClick={onAll}>▦ Tous les tableaux</button>
+
+      <div style={sideTitle}>
+        <span style={{ flex: 1 }}>Vues</span>
+        {canSaveView && (
+          <button type="button" onClick={onSaveView} title="Enregistrer les filtres actuels comme une vue"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0073EA', fontSize: 18, lineHeight: 1, padding: 0 }}>+</button>
+        )}
+      </div>
+      {views.map((v) => {
+        const active = String(vid) === String(v.id);
+        return (
+          <div key={v.id} style={{ display: 'flex', alignItems: 'center' }}>
+            <button type="button" style={{ ...sideItem(active), flex: 1, minWidth: 0 }} onClick={() => onView(v)} title={v.name}>
+              ◫ {v.name}
+            </button>
+            {active && (
+              <span style={{ display: 'flex', flexShrink: 0 }}>
+                <button type="button" title="Renommer" onClick={() => onRenameView(v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 12 }}>✎</button>
+                {(canWrite || v.created_by === user?.id) && (
+                  <button type="button" title="Supprimer la vue" onClick={() => onDeleteView(v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 12 }}>🗑</button>
+                )}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      {!views.length && (
+        <div style={{ fontSize: 12, color: M.sub, padding: '4px 10px', lineHeight: 1.4 }}>
+          Filtrez un tableau (étiquette, personne…) puis « + » pour l'enregistrer ici.
+        </div>
+      )}
+
+      <div style={sideTitle}>Réglages</div>
+      <button type="button" style={sideItem(currentTab === 'modeles')} onClick={() => onPage('modeles')}>⧉ Modèles</button>
+      {admin && <button type="button" style={sideItem(currentTab === 'slack')} onClick={() => onPage('slack')}># Slack</button>}
+    </nav>
+  );
+}
+
 const chip = (active) => ({
   border: `1px solid ${active ? TACHES_COLOR : '#D1D5DB'}`, background: active ? TACHES_COLOR : '#fff', color: active ? '#fff' : '#374151',
-  borderRadius: 999, padding: '4px 11px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+  borderRadius: 999, padding: '4px 11px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
 });
 const check = { fontSize: 13, color: '#4B5563', display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' };
 
-/** Filtres communs : recherche, personne (remplace les onglets par personne de Monday), étiquette… */
-function FilterBar({
-  q, setQ, members, person, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
-  priority, setPriority, status, setStatus, lockedPerson, hideDone, setHideDone, archived, setArchived, count,
-}) {
+/** Filtres communs : recherche, étiquette, priorité, statut, personne… */
+function FilterBar({ f, setFilter, members, labels, who, lockedPerson, archived, setArchived, count }) {
+  const sel = { ...inputStyle, padding: '7px 8px', fontSize: 13 };
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ position: 'relative' }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Chercher un mot (titres, étapes, notes, commentaires…)"
-            style={{ ...inputStyle, width: 380, paddingRight: 28 }} />
-          {q && (
-            <button type="button" onClick={() => setQ('')} title="Effacer"
-              style={{ position: 'absolute', right: 6, top: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 16 }}>×</button>
+          <input value={f.q} onChange={(e) => setFilter('q')(e.target.value)} placeholder="🔍 Chercher un mot ou #ID (titres, étapes, commentaires…)"
+            style={{ ...sel, width: 270, paddingRight: 26 }} />
+          {f.q && (
+            <button type="button" onClick={() => setFilter('q')('')} title="Effacer"
+              style={{ position: 'absolute', right: 6, top: 5, background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 16 }}>×</button>
           )}
         </div>
-        <select value={label} onChange={(e) => setLabel(e.target.value)} style={{ ...inputStyle, width: 190 }}>
+        <select value={f.label} onChange={(e) => setFilter('label')(e.target.value)} style={{ ...sel, width: 160, fontWeight: f.label ? 700 : 400 }}>
           <option value="">Toutes les étiquettes</option>
           {labels.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
-        <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ ...inputStyle, width: 170 }}>
+        <select value={f.priority} onChange={(e) => setFilter('priority')(e.target.value)} style={{ ...sel, width: 140, fontWeight: f.priority ? 700 : 400 }}>
           <option value="">Toutes les priorités</option>
           {PRIORITY_ORDER.map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}
           <option value="none">Sans priorité</option>
         </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, width: 160 }}>
+        <select value={f.status} onChange={(e) => setFilter('status')(e.target.value)} style={{ ...sel, width: 130, fontWeight: f.status ? 700 : 400 }}>
           <option value="">Tous les statuts</option>
           {TASK_STATUS_ORDER.map((k) => <option key={k} value={k}>{TASK_STATUS[k].label}</option>)}
         </select>
-        <label style={check}><input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Masquer les terminées</label>
-        <label style={check}><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Voir les archives</label>
-        <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 'auto' }}>{count} tâches</span>
+        <label style={check}><input type="checkbox" checked={f.hideDone} onChange={(e) => setFilter('hideDone')(e.target.checked)} /> Masquer les terminées</label>
+        <label style={check}><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Archives</label>
+        <span style={{ fontSize: 12, color: M.sub, marginLeft: 'auto' }}>{count} tâches</span>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        {!lockedPerson && <button type="button" style={chip(!person)} onClick={() => setPerson(null)}>Tout le monde</button>}
+        {!lockedPerson && <button type="button" style={chip(!f.person)} onClick={() => setFilter('person')(null)}>Tout le monde</button>}
         {!lockedPerson && members.filter((m) => m.has_app !== false).map((m) => (
-          <button key={m.id} type="button" style={chip(person === m.id)} onClick={() => setPerson(m.id)}>{m.name}</button>
+          <button key={m.id} type="button" style={chip(f.person === m.id)} onClick={() => setFilter('person')(m.id)}>{m.name}</button>
         ))}
-        {person && (
-          <label style={{ ...check, marginLeft: 8 }}>
-            <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
+        {who && (
+          <label style={{ ...check, marginLeft: lockedPerson ? 0 : 8, fontWeight: 600, color: M.text }}>
+            <input type="checkbox" checked={f.openOnly} onChange={(e) => setFilter('openOnly')(e.target.checked)} />
             Seulement ce qui est à faire maintenant
           </label>
         )}

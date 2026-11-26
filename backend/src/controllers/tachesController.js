@@ -20,6 +20,13 @@ const body = (req) => req.body || {};
 exports.getMembers = handle(() => tachesModel.getMembers());
 exports.getLabels = handle(() => tachesModel.getLabels());
 exports.getBoards = handle(() => tachesModel.getBoards());
+exports.getViews = handle(() => tachesModel.getViews());
+exports.createView = handle((req) => tachesModel.saveView(uid(req), null, body(req)));
+exports.updateView = handle((req) => tachesModel.saveView(uid(req), id(req), body(req)));
+exports.deleteView = handle(async (req) => tachesModel.deleteView(uid(req), id(req), {
+  canWrite: userPermissionsModel.isSuperAdmin(req.user.email)
+    || await userPermissionsModel.hasPermission(uid(req), 'taches', 'write'),
+}));
 exports.setLayout = handle((req) => tachesModel.setLayout(id(req), body(req)));
 exports.createColumn = handle((req) => tachesModel.createColumn(id(req), body(req)));
 exports.updateColumn = handle((req) => tachesModel.updateColumn(id(req), body(req)));

@@ -21,7 +21,7 @@ export const TASK_STATUS = {
   a_faire:  { label: 'À faire',  bg: '#C4C4C4' },
   en_cours: { label: 'En cours', bg: '#FDAB3D' },
   bloque:   { label: 'Bloqué',   bg: '#DF2F4A' },
-  longue:   { label: 'Longue',   bg: '#784BD1' },
+  longue:   { label: 'Longue',   bg: '#4EB3E8' },
   fait:     { label: 'Terminée', bg: '#00C875' },
 };
 export const TASK_STATUS_ORDER = ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'];
@@ -48,6 +48,10 @@ const data = (p) => p.then((r) => r.data);
 export const tachesApi = {
   members: () => data(axios.get(`${base}/members`)),
   boards: () => data(axios.get(`${base}/boards`)),
+  views: () => data(axios.get(`${base}/views`)),
+  createView: (body) => data(axios.post(`${base}/views`, body)),
+  updateView: (id, body) => data(axios.put(`${base}/views/${id}`, body)),
+  deleteView: (id) => data(axios.delete(`${base}/views/${id}`)),
   createBoard: (body) => data(axios.post(`${base}/boards`, body)),
   updateBoard: (id, body) => data(axios.put(`${base}/boards/${id}`, body)),
   deleteBoard: (id) => data(axios.delete(`${base}/boards/${id}`)),

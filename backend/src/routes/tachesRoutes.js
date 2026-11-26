@@ -23,6 +23,11 @@ router.get('/board', c.getBoard);
 router.get('/search', c.search);
 
 router.get('/boards', c.getBoards);
+// Vues enregistrées (listes filtrées du menu, communes à l'équipe)
+router.get('/views', c.getViews);
+router.post('/views', c.createView);
+router.put('/views/:id', c.updateView);
+router.delete('/views/:id', c.deleteView);
 router.post('/boards', write, c.createBoard);
 router.put('/boards/:id', write, c.updateBoard);
 router.delete('/boards/:id', write, c.deleteBoard);
