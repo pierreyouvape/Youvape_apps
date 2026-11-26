@@ -6,6 +6,7 @@ import {
   tachesApi, apiError, TACHES_COLOR, inputStyle, btn, M, PRIORITY, PRIORITY_ORDER, TASK_STATUS, TASK_STATUS_ORDER,
 } from '../components/taches/tachesShared';
 import MineTab from '../components/taches/MineTab';
+import DashboardTab from '../components/taches/DashboardTab';
 import TableView from '../components/taches/TableView';
 import KanbanView from '../components/taches/KanbanView';
 import GanttView from '../components/taches/GanttView';
@@ -30,6 +31,7 @@ const BOARD_TABS = [
 ];
 const PAGES = {
   moi: { title: 'Mes tâches', subtitle: 'Ce que vous avez à faire, avec les étapes avant et après.' },
+  bord: { title: 'Tableau de bord', subtitle: 'Combien de choses à faire, en cours, bloquées, faites — en tout et par personne.' },
   modeles: { title: 'Modèles', subtitle: 'Les enchaînements d\'étapes types, recopiés à la création.' },
   slack: { title: 'Slack', subtitle: 'Notifications dans #notifications-taches.', admin: true },
 };
@@ -272,7 +274,7 @@ export default function TachesApp() {
         }} />
 
         <main className="main-scroll" style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
-          <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: page && currentTab !== 'moi' ? 1200 : 'none' }}>
+          <div style={{ padding: '22px 28px 40px', margin: '0 auto', maxWidth: page && currentTab !== 'moi' && currentTab !== 'bord' ? 1200 : 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <h1 style={{ fontSize: 28, fontWeight: 600, color: M.text, margin: 0 }}>{title}</h1>
@@ -333,6 +335,9 @@ export default function TachesApp() {
             )}
             {isList && hits && <SearchResults hits={hits} q={f.q} boardId={boardId} onOpen={setOpenId} />}
 
+            {currentTab === 'bord' && (
+              <DashboardTab boards={boards} members={members} onError={setError} onOpenPerson={(pid) => navigate(`/taches/p-${pid}`)} />
+            )}
             {currentTab === 'moi' && <MineTab members={members} reloadKey={reloadKey} onOpen={setOpenId} onError={setError} />}
             {(currentTab === 'tableau' || forcedPerson || currentTab === 'vue') && <TableView {...viewProps} />}
             {currentTab === 'kanban' && <KanbanView {...viewProps} />}
@@ -399,6 +404,7 @@ function Sidebar({
   return (
     <nav style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${M.border}`, padding: '18px 10px', overflowY: 'auto', background: '#FAFBFC' }}>
       <button type="button" style={{ ...sideItem(currentTab === 'moi'), fontWeight: 600 }} onClick={onMine}>✓ Mes tâches</button>
+      <button type="button" style={{ ...sideItem(currentTab === 'bord'), fontWeight: 600 }} onClick={() => onPage('bord')}>📊 Tableau de bord</button>
 
       <div style={sideTitle}>Tableaux</div>
       {boards.map((b) => (
