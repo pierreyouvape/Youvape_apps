@@ -200,6 +200,24 @@ async function main() {
   const textLinks = plans.flatMap((p) => p.tasks).filter((t) => t.link_text);
   if (textLinks.length) console.log(`\n${textLinks.length} « liens » qui ne sont pas des adresses : recopiés dans la description.`);
 
+  // Ce que l'app a encore mais que Monday n'a plus (supprimé dans Monday) : listé, jamais supprimé ici.
+  const seenTasks = plans.flatMap((p) => [...p.tasks.map((t) => t.monday_id), ...p.templates.map((t) => t.monday_id)]);
+  const seenSteps = plans.flatMap((p) => p.tasks.flatMap((t) => t.steps.map((s) => s.monday_id)));
+  const { rows: goneTasks } = await pool.query(
+    `SELECT t.id, t.title FROM taches_tasks t JOIN taches_boards b ON b.id = t.board_id
+      WHERE t.monday_id IS NOT NULL AND NOT (t.monday_id = ANY($1)) AND b.monday_id = ANY($2) ORDER BY t.id`,
+    [seenTasks, BOARDS.map(Number)],
+  );
+  const { rows: goneSteps } = await pool.query(
+    `SELECT s.id, s.name, s.status, t.id AS task_id, t.title FROM taches_steps s JOIN taches_tasks t ON t.id = s.task_id
+      JOIN taches_boards b ON b.id = t.board_id
+      WHERE s.monday_id IS NOT NULL AND NOT (s.monday_id = ANY($1)) AND b.monday_id = ANY($2) ORDER BY t.id, s.position`,
+    [seenSteps, BOARDS.map(Number)],
+  );
+  console.log(`\nPlus dans Monday (gardés dans l'app) : ${goneTasks.length} tâches, ${goneSteps.length} étapes.`);
+  goneTasks.forEach((t) => console.log(`  tâche #${t.id} ${t.title}`));
+  goneSteps.forEach((s) => console.log(`  étape #${s.id} « ${s.name} » (${s.status}) — tâche #${s.task_id} ${s.title}`));
+
   if (!APPLY) {
     console.log('\nSimulation seulement. Relancer avec --apply pour écrire.');
     await pool.end();
