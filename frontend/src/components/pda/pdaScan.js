@@ -35,7 +35,9 @@ export const useScanner = (onScan, enabled) => {
       if (e.key === 'Enter') {
         const code = buffer.current.trim();
         buffer.current = '';
-        if (code.length >= 3) handler.current(code);
+        // Le Entrée de la douchette ne doit pas « cliquer » le bouton qui a le
+        // focus (un + ou un « Tout » cliqué juste avant compterait en plus)
+        if (code.length >= 3) { e.preventDefault(); handler.current(code); }
         return;
       }
       if (e.key.length === 1) buffer.current += e.key;

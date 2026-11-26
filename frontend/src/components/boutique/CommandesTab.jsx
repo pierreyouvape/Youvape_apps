@@ -27,6 +27,75 @@ const fmtInt = (v) => (parseInt(v, 10) || 0).toLocaleString('fr-FR').replace(NBS
 // '2026-10-12T09:15:00.000Z' → '12/10/2026 11:15' (heure de Paris)
 const fmtDate = (v) => (v ? new Date(v).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'short', timeStyle: 'short' }) : '-');
 
+// Case de quantité saisie à la main. La valeur part à Entrée ou en quittant la
+// case, pas à chaque touche. La douchette tape vite (quelques ms entre les
+// caractères) : si elle écrit dans la case (curseur resté dedans après une
+// saisie), c'est un SCAN. La quantité tapée avant est gardée, le code est
+// traité comme un scan. Avant, ses chiffres s'ajoutaient à la quantité de la ligne.
+const SCAN_GAP_MS = 50;
+function QtyInput({ value, onCommit, onScan, style, className }) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  const draftRef = useRef(String(value));
+  const burst = useRef({ t: 0, start: '', chars: '' });
+  const skipBlur = useRef(false);
+  useEffect(() => { if (!editing) { setDraft(String(value)); draftRef.current = String(value); } }, [value, editing]);
+
+  const commit = (raw) => {
+    const txt = String(raw).trim();
+    // Filet : 8 chiffres et plus ne sont jamais une quantité, c'est un code-barres
+    if (/^\d{8,}$/.test(txt)) { onScan(txt); return; }
+    const n = parseInt(txt, 10);
+    if (Number.isNaN(n) || n < 0 || n === Number(value)) return;
+    onCommit(n);
+  };
+  const onKeyDown = (e) => {
+    const now = Date.now();
+    const b = burst.current;
+    const fast = now - b.t < SCAN_GAP_MS;
+    b.t = now;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const code = fast ? b.chars : '';
+      b.chars = '';
+      if (code.length >= 3) {
+        // Scan : la quantité d'avant le scan est gardée, le code part en scan
+        draftRef.current = b.start;
+        setDraft(b.start);
+        commit(b.start);
+        skipBlur.current = true;
+        e.currentTarget.blur();
+        onScan(code);
+        return;
+      }
+      e.currentTarget.blur();
+      return;
+    }
+    if (e.key === 'Escape') {
+      draftRef.current = String(value);
+      setDraft(String(value));
+      skipBlur.current = true;
+      e.currentTarget.blur();
+      return;
+    }
+    if (e.key.length === 1) {
+      if (fast) b.chars += e.key;
+      else { b.start = draftRef.current; b.chars = e.key; }
+    }
+  };
+  return (
+    <input type="number" min="0" inputMode="numeric" className={className} style={style} value={draft}
+      onChange={(e) => { draftRef.current = e.target.value; setDraft(e.target.value); }}
+      onFocus={(e) => { setEditing(true); e.target.select(); }}
+      onBlur={() => {
+        setEditing(false);
+        if (skipBlur.current) { skipBlur.current = false; return; }
+        commit(draftRef.current);
+      }}
+      onKeyDown={onKeyDown} />
+  );
+}
+
 const MOTIFS = [
   { value: 'reliquat', label: 'Reliquat (arrivera plus tard)' },
   { value: 'solde', label: 'Soldé (remboursé par le fournisseur)' },
@@ -425,8 +494,9 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
     return () => clearInterval(t);
   }, [counting, anyModal, base, orderId, apply]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PDA : la douchette est lue partout sur l'écran, même hors du champ de scan
-  useScanner((code) => handleScan(code), !!pda && !!counting && !anyModal);
+  // La douchette est lue partout sur l'écran, même hors du champ de scan (PDA et PC,
+  // comme la réception du site). Un scan fait DANS le champ passe par son formulaire.
+  useScanner((code) => handleScan(code), !!counting && !anyModal);
 
   const lines = (data?.items || []).map((x) => ({ ...x, counted: counts[x.id] || 0 }));
   const othersLines = lines.filter((x) => lockedBy(x.id, owners));
@@ -568,8 +638,7 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
               ) : (
                 <>
                   <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 18 }} onClick={() => setCount(x.id, x.counted - 1)} disabled={x.counted <= 0}>−</button>
-                  <input type="number" min="0" inputMode="numeric" value={x.counted} onChange={(e) => setCount(x.id, e.target.value)}
-                    onFocus={(e) => e.target.select()}
+                  <QtyInput value={x.counted} onCommit={(n) => setCount(x.id, n)} onScan={handleScan}
                     style={{ width: 60, padding: 8, fontSize: 17, textAlign: 'center', border: '1px solid #d1d5db', borderRadius: 8 }} />
                   <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 18 }} onClick={() => addPieces(x, 1)}>+</button>
                 </>
@@ -580,6 +649,14 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
                 </span>
               )}
             </div>
+            {counting && !done && !other && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 1, padding: '8px 10px', fontSize: 15, fontWeight: 600 }}
+                  onClick={() => setCount(x.id, 0)} disabled={x.counted === 0}>Rien</button>
+                <button className="btn btn-secondary" style={{ flex: 1, padding: '8px 10px', fontSize: 15, fontWeight: 600 }}
+                  onClick={() => setCount(x.id, x.remaining)} disabled={x.counted === x.remaining}>Tout ({fmtInt(x.remaining)})</button>
+              </div>
+            )}
           </div>
         );
       })}
@@ -670,10 +747,14 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
                           </>
                         ) : (
                           <>
+                            <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} title="Remettre à zéro"
+                              onClick={() => setCount(x.id, 0)} disabled={x.counted === 0}>Rien</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => setCount(x.id, x.counted - 1)} disabled={x.counted <= 0}>−</button>
-                            <input type="number" min="0" className="qty-input" style={{ margin: '0 4px' }} value={x.counted}
-                              onChange={(e) => setCount(x.id, e.target.value)} />
+                            <QtyInput className="qty-input" style={{ margin: '0 4px' }} value={x.counted}
+                              onCommit={(n) => setCount(x.id, n)} onScan={handleScan} />
                             <button className="btn btn-secondary btn-sm" onClick={() => addPieces(x, 1)}>+</button>
+                            <button className="btn btn-secondary btn-sm" style={{ marginLeft: 4 }} title="Tout réceptionner (quantité attendue)"
+                              onClick={() => setCount(x.id, x.remaining)} disabled={x.counted === x.remaining}>Tout</button>
                           </>
                         )}
                       </td>
