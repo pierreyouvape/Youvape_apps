@@ -8,8 +8,9 @@ import { useScanner, beep } from '../pda/pdaScan';
  * Scanner ou chercher un produit de la boutique, voir son stock (lu en direct
  * dans Nextore), ses ventes (30 j, 90 j, 365 j, total), ses arrivages (nos
  * commandes ouvertes + achats « en attente » Nextore), et passer un mouvement
- * de stock Nextore : mêmes motifs que le PDA du site (Ajustement entrée/sortie,
- * Défectueux sortie), sortie refusée au-delà du stock.
+ * de stock Nextore : motifs du PDA du site (Ajustement entrée/sortie, Défectueux
+ * sortie) + « Pour site » et « DLUO » (sortie), lus dans la réponse du serveur ;
+ * sortie refusée au-delà du stock.
  */
 
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api/auth').replace('/auth', '');

@@ -735,7 +735,8 @@ Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fic
 scan ou recherche → fiche de l'onglet Produits + stock **lu en direct** dans Nextore, ventes 30 j / 90 j / 1 an /
 total (base de ventes depuis le 01/12/2023), arrivages (nos commandes ouvertes + achats « en attente » Nextore,
 comme « En commande » des Besoins), derniers mouvements.
-- **Mouvement de stock** : motifs du PDA du site (Ajustement entrée/sortie, Défectueux sortie), sortie refusée
+- **Mouvement de stock** : motifs du PDA du site (Ajustement entrée/sortie, Défectueux sortie) + « Pour site » et
+  « DLUO » (sortie, 26/11/2026 ; « Pour site » sort la pièce de la boutique, n'entre rien au site), sortie refusée
   au-delà du stock relu en direct. `PUT /stocks` en delta, une ligne `boutique_stock_moves` posée en `sending`
   AVANT l'appel. **Un échec se juge en relisant le stock** : inchangé = `error` (rien n'est passé), avant +
   mouvement = `sent`, autre = `uncertain` (« VÉRIFIEZ dans Nextore », jamais renvoyé seul).

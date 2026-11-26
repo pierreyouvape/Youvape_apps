@@ -9,8 +9,8 @@
  *     saisis dans Nextore, comme la colonne « En commande » des Besoins ;
  *   - les derniers mouvements passés depuis le PDA.
  *
- * Mouvement : mêmes motifs que le PDA du site (Ajustement entrée/sortie,
- * Défectueux sortie). Envoyé à Nextore en DELTA (PUT /stocks), une ligne
+ * Mouvement : motifs du PDA du site (Ajustement entrée/sortie, Défectueux
+ * sortie), plus « Pour site » et « DLUO » (sortie). Envoyé à Nextore en DELTA (PUT /stocks), une ligne
  * `boutique_stock_moves` par mouvement, posée en `sending` AVANT l'appel. Une
  * erreur ne se juge jamais sur l'appel seul : on relit le stock (inchangé =
  * rien n'est passé ; avant + mouvement = passé ; autre = « VÉRIFIEZ »).
@@ -20,9 +20,13 @@ const pool = require('../config/database');
 const api = require('../services/nextoreApiClient');
 const nextoreModel = require('./nextoreModel');
 
+// « Pour site » et « DLUO » ajoutés le 26/11/2026 (demande Pierre), en sortie seule.
+// « Pour site » ne fait que SORTIR la pièce du stock boutique : il n'entre rien au site.
 const REASONS = {
   ajustement: { label: 'Ajustement', directions: ['in', 'out'] },
   defectueux: { label: 'Défectueux', directions: ['out'] },
+  pour_site: { label: 'Pour site', directions: ['out'] },
+  dluo: { label: 'DLUO', directions: ['out'] },
 };
 const REASON_LIST = Object.entries(REASONS).map(([key, r]) => ({ key, ...r }));
 const MAX_QTY = 9999;
