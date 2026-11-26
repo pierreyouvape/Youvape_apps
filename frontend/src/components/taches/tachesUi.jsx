@@ -23,7 +23,10 @@ export function Popover({ anchor, onClose, children, width = 200 }) {
       if (ref.current && !ref.current.contains(e.target) && !anchor?.contains(e.target)) onClose();
     };
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    const onScroll = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
+    // Un défilement juste après l'ouverture vient du navigateur qui amène le bouton
+    // à l'écran (tableau large) : il ne doit pas refermer le menu aussitôt.
+    const openedAt = Date.now();
+    const onScroll = (e) => { if (Date.now() - openedAt > 400 && !ref.current?.contains(e.target)) onClose(); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('scroll', onScroll, true);
@@ -422,4 +425,33 @@ export function ColResizer({ index, cols }) {
 export function SortMark({ sort, col }) {
   if (!sort || sort.col !== col) return null;
   return <span style={{ color: '#0073EA', fontSize: 10, marginLeft: 4 }}>{sort.dir === 1 ? '▲' : '▼'}</span>;
+}
+
+/** Poignée de redimensionnement pour une colonne repérée par sa clé (Tableau principal). */
+export function EdgeResizer({ width, onResize, onReset }) {
+  const [active, setActive] = useState(false);
+  const start = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const x0 = e.clientX;
+    setActive(true);
+    const move = (ev) => onResize(width + ev.clientX - x0);
+    const up = () => {
+      setActive(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <span onPointerDown={start} onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => { e.stopPropagation(); onReset(); }}
+      draggable={false} onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      title="Tirer pour redimensionner (double-clic : largeur par défaut)"
+      style={{ position: 'absolute', top: 0, right: -3, width: 7, height: '100%', cursor: 'col-resize', zIndex: 2, background: active ? '#0073EA' : 'transparent', touchAction: 'none' }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = '#0073EA'; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }} />
+  );
 }

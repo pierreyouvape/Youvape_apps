@@ -65,3 +65,18 @@ export function sortRows(rows, sort, accessors) {
     return c * sort.dir;
   });
 }
+
+/**
+ * Largeurs par CLÉ de colonne (colonnes déplaçables ou ajoutées : l'index ne
+ * suffit plus). Retenues dans ce navigateur ; absente = largeur par défaut.
+ */
+export function useKeyedWidths(key) {
+  const storage = `yv.taches.colw.${key}`;
+  const [map, setMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(storage) || '{}') || {}; } catch { return {}; }
+  });
+  const write = (next) => { localStorage.setItem(storage, JSON.stringify(next)); return next; };
+  const set = useCallback((k, w) => setMap((cur) => write({ ...cur, [k]: Math.max(40, Math.round(w)) })), [storage]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reset = useCallback((k) => setMap((cur) => { const n = { ...cur }; delete n[k]; return write(n); }), [storage]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { map, set, reset };
+}

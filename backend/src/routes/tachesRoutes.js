@@ -28,6 +28,11 @@ router.put('/boards/:id', write, c.updateBoard);
 router.delete('/boards/:id', write, c.deleteBoard);
 router.post('/boards/:id/groups', write, c.createGroup);
 router.put('/groups/:id', write, c.updateGroup);
+// Colonnes du Tableau : disposition et colonnes ajoutées (supprimer = droit d'écriture, les valeurs partent avec)
+router.put('/boards/:id/layout', c.setLayout);
+router.post('/boards/:id/columns', c.createColumn);
+router.patch('/columns/:id', c.updateColumn);
+router.delete('/columns/:id', write, c.deleteColumn);
 router.delete('/groups/:id', write, c.deleteGroup);
 router.get('/mine', c.getMine);
 
@@ -55,6 +60,7 @@ router.delete('/tasks/:id', write, c.deleteTask);
 router.post('/tasks/:id/steps', c.addStep);
 router.post('/tasks/:id/comments', c.addComment);
 router.post('/tasks/:id/steps/reorder', c.reorderSteps);
+router.put('/tasks/:id/values/:columnId', c.setValue);
 
 router.patch('/steps/:id', c.updateStep);
 router.post('/steps/:id/move', c.moveStep);

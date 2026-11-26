@@ -89,10 +89,155 @@ async function checkMembers(ids) {
 
 /* ─── Tableaux et groupes ───────────────────────────────── */
 
+/* Colonnes du Tableau : de base (clé fixe) ou ajoutées (« c<id> »). */
+const COLUMN_TYPES = ['text', 'number', 'date', 'period', 'link', 'people', 'checkbox', 'select'];
+const BUILTIN_COLUMNS = ['id', 'title', 'people', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
+const DEFAULT_LAYOUT = ['id', 'title', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
+
+/** Disposition valide : clés connues, sans doublon, « title » toujours présente, colonnes ajoutées jamais perdues. */
+function normalizeLayout(layout, columns) {
+  const custom = columns.map((c) => `c${c.id}`);
+  const known = new Set([...BUILTIN_COLUMNS, ...custom]);
+  const out = [...new Set((Array.isArray(layout) ? layout : DEFAULT_LAYOUT).filter((k) => known.has(k)))];
+  if (!out.includes('title')) out.unshift('title');
+  custom.forEach((k) => { if (!out.includes(k)) out.push(k); });
+  return out;
+}
+
 async function getBoards() {
-  const { rows: boards } = await pool.query('SELECT id, name, position FROM taches_boards ORDER BY position, id');
+  const { rows: boards } = await pool.query('SELECT id, name, position, layout FROM taches_boards ORDER BY position, id');
   const { rows: groups } = await pool.query('SELECT id, board_id, name, color, position FROM taches_groups ORDER BY position, id');
-  return boards.map((b) => ({ ...b, groups: groups.filter((g) => g.board_id === b.id) }));
+  const { rows: columns } = await pool.query('SELECT id, board_id, name, type, settings FROM taches_columns ORDER BY id');
+  return boards.map((b) => {
+    const cols = columns.filter((c) => c.board_id === b.id);
+    return { ...b, groups: groups.filter((g) => g.board_id === b.id), columns: cols, layout: normalizeLayout(b.layout, cols) };
+  });
+}
+
+const boardColumns = async (db, boardId) => (await db.query(
+  'SELECT id, board_id, name, type, settings FROM taches_columns WHERE board_id = $1 ORDER BY id', [boardId],
+)).rows;
+
+async function saveLayout(db, boardId, layout) {
+  const cols = await boardColumns(db, boardId);
+  await db.query('UPDATE taches_boards SET layout = $2 WHERE id = $1', [boardId, JSON.stringify(normalizeLayout(layout, cols))]);
+}
+
+/** Ordre (et choix) des colonnes affichées d'un tableau, commun à toute l'équipe. */
+async function setLayout(boardId, body) {
+  const { rows } = await pool.query('SELECT id FROM taches_boards WHERE id = $1', [boardId]);
+  if (!rows.length) throw httpError(404, 'Tableau introuvable');
+  if (!Array.isArray(body.layout)) throw httpError(400, 'Disposition invalide');
+  await saveLayout(pool, boardId, body.layout.map(String));
+  return getBoards();
+}
+
+function cleanSettings(type, settings = {}) {
+  if (type !== 'select') return {};
+  const PALETTE = ['#00C875', '#FDAB3D', '#E2445C', '#579BFC', '#A25DDC', '#037F4C', '#FF158A', '#784BD1', '#C4C4C4'];
+  const options = (Array.isArray(settings.options) ? settings.options : [])
+    .map((o, i) => ({ label: cleanText(typeof o === 'string' ? o : o?.label, 60), color: /^#[0-9A-Fa-f]{6}$/.test(o?.color) ? o.color : PALETTE[i % PALETTE.length] }))
+    .filter((o) => o.label);
+  return { options: options.filter((o, i) => options.findIndex((x) => x.label === o.label) === i).slice(0, 30) };
+}
+
+/** Nouvelle colonne, ajoutée tout à droite (ou à la place `at` de la disposition). */
+async function createColumn(boardId, body) {
+  const name = cleanText(body.name, 60);
+  if (!name) throw httpError(400, 'Le nom de la colonne est obligatoire');
+  if (!COLUMN_TYPES.includes(body.type)) throw httpError(400, 'Type de colonne inconnu');
+  await withTx(async (db) => {
+    const { rows: [b] } = await db.query('SELECT id, layout FROM taches_boards WHERE id = $1 FOR UPDATE', [boardId]);
+    if (!b) throw httpError(404, 'Tableau introuvable');
+    const cols = await boardColumns(db, boardId);
+    const { rows: [c] } = await db.query(
+      'INSERT INTO taches_columns (board_id, name, type, settings) VALUES ($1, $2, $3, $4) RETURNING id',
+      [boardId, name, body.type, JSON.stringify(cleanSettings(body.type, body.settings))],
+    );
+    const layout = normalizeLayout(b.layout, cols);
+    const at = Number.isInteger(body.at) ? Math.max(0, Math.min(layout.length, body.at)) : layout.length;
+    layout.splice(at, 0, `c${c.id}`);
+    await saveLayout(db, boardId, layout);
+  });
+  return getBoards();
+}
+
+async function updateColumn(id, body) {
+  const { rows: [c] } = await pool.query('SELECT id, type FROM taches_columns WHERE id = $1', [id]);
+  if (!c) throw httpError(404, 'Colonne introuvable');
+  if ('name' in body) {
+    const name = cleanText(body.name, 60);
+    if (!name) throw httpError(400, 'Le nom de la colonne est obligatoire');
+    await pool.query('UPDATE taches_columns SET name = $2 WHERE id = $1', [id, name]);
+  }
+  if ('settings' in body) {
+    await pool.query('UPDATE taches_columns SET settings = $2 WHERE id = $1', [id, JSON.stringify(cleanSettings(c.type, body.settings))]);
+  }
+  return getBoards();
+}
+
+/** Supprime la colonne ET ses valeurs (irréversible). */
+async function deleteColumn(id) {
+  await withTx(async (db) => {
+    const { rows: [c] } = await db.query('DELETE FROM taches_columns WHERE id = $1 RETURNING board_id', [id]);
+    if (!c) throw httpError(404, 'Colonne introuvable');
+    const { rows: [b] } = await db.query('SELECT layout FROM taches_boards WHERE id = $1', [c.board_id]);
+    await saveLayout(db, c.board_id, (b.layout || DEFAULT_LAYOUT).filter((k) => k !== `c${id}`));
+  });
+  return getBoards();
+}
+
+/** Valeur d'une tâche dans une colonne ajoutée, vérifiée selon le type. null / vide = effacer. */
+async function setValue(userId, taskId, columnId, raw) {
+  const { rows: [c] } = await pool.query(
+    `SELECT c.id, c.type, c.settings FROM taches_columns c JOIN taches_tasks t ON t.board_id = c.board_id
+      WHERE c.id = $1 AND t.id = $2`, [columnId, taskId],
+  );
+  if (!c) throw httpError(404, 'Colonne introuvable pour cette tâche');
+  let v = raw;
+  const empty = v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length);
+  if (!empty) {
+    switch (c.type) {
+      case 'text': v = cleanText(v, 2000); break;
+      case 'number': {
+        const n = Number(String(v).replace(',', '.').replace(/\s/g, ''));
+        if (!Number.isFinite(n)) throw httpError(400, 'Nombre invalide');
+        v = n;
+        break;
+      }
+      case 'date': v = validDate(v); break;
+      case 'period': {
+        const start = validDate(v.start);
+        const end = validDate(v.end);
+        checkDates(start, end);
+        v = start || end ? { start: start || end, end: end || start } : null;
+        break;
+      }
+      case 'link': {
+        const url = validUrl(typeof v === 'string' ? v : v.url);
+        v = url ? { url, text: cleanText(typeof v === 'string' ? '' : v.text, 200) } : null;
+        break;
+      }
+      case 'people': v = toIds(v); await checkMembers(v); if (!v.length) v = null; break;
+      case 'checkbox': v = v === true || v === 'true' ? true : null; break;
+      case 'select':
+        v = cleanText(v, 60);
+        if (!(c.settings?.options || []).some((o) => o.label === v)) throw httpError(400, 'Choix inconnu pour cette colonne');
+        break;
+      default: throw httpError(400, 'Type de colonne inconnu');
+    }
+  }
+  if (empty || v === null || v === '') {
+    await pool.query('DELETE FROM taches_task_values WHERE task_id = $1 AND column_id = $2', [taskId, columnId]);
+  } else {
+    await pool.query(
+      `INSERT INTO taches_task_values (task_id, column_id, value) VALUES ($1, $2, $3)
+       ON CONFLICT (task_id, column_id) DO UPDATE SET value = EXCLUDED.value, updated_at = ${PARIS_NOW}`,
+      [taskId, columnId, JSON.stringify(v)],
+    );
+  }
+  await touch(pool, taskId, userId);
+  return getTask(taskId);
 }
 
 async function createBoard(body) {
@@ -239,11 +384,16 @@ async function loadTasks(db, where, params) {
   );
   const byTask = new Map(tasks.map((t) => [t.id, []]));
   steps.forEach((s) => byTask.get(s.task_id).push(s));
+  const { rows: vals } = await db.query(
+    'SELECT task_id, column_id, value FROM taches_task_values WHERE task_id = ANY($1)', [tasks.map((t) => t.id)],
+  );
+  const values = new Map(tasks.map((t) => [t.id, {}]));
+  vals.forEach((v) => { values.get(v.task_id)[v.column_id] = v.value; });
   return tasks.map((t) => {
     const list = byTask.get(t.id);
     const counts = Object.fromEntries(STEP_STATUSES.map((k) => [k, 0]));
     list.forEach((s) => { counts[s.status] += 1; });
-    return { ...t, status: taskStatus(list, t.manual_status), counts, steps: list };
+    return { ...t, status: taskStatus(list, t.manual_status), counts, steps: list, values: values.get(t.id) };
   });
 }
 
@@ -349,6 +499,10 @@ async function search(q) {
        SELECT s.task_id, 'note d''étape', s.name || ' : ' || s.note, NULL, NULL FROM taches_steps s WHERE ${FOLD('s.note')} LIKE $1
        UNION ALL
        SELECT c.task_id, 'commentaire', c.body, c.user_id, c.created_at FROM taches_comments c WHERE ${FOLD('c.body')} LIKE $1
+       UNION ALL
+       SELECT v.task_id, lower(k.name), coalesce(v.value #>> '{}', v.value->>'url'), NULL, NULL
+         FROM taches_task_values v JOIN taches_columns k ON k.id = v.column_id
+        WHERE k.type IN ('text', 'link', 'select') AND ${FOLD("coalesce(v.value #>> '{}', v.value::text)")} LIKE $1
      )
      SELECT h.task_id, h.field, h.text, ${USER_NAME('u')} AS user_name,
             to_char(h.at, 'YYYY-MM-DD"T"HH24:MI:SS') AS at,
@@ -391,8 +545,8 @@ const logEvent = (db, { taskId, stepId = null, userId = null, kind, detail = {} 
  * Notification dans l'app (cloche). Jamais à soi-même : l'auteur du geste
  * (`actorId`) est retiré des destinataires.
  */
-async function notify(db, { userIds, kind, taskId, stepId = null, actorId, body = '' }) {
-  const ids = [...new Set((userIds || []).map(Number))].filter((id) => id && id !== Number(actorId));
+async function notify(db, { userIds, kind, taskId, stepId = null, actorId, body = '', includeActor = false }) {
+  const ids = [...new Set((userIds || []).map(Number))].filter((id) => id && (includeActor || id !== Number(actorId)));
   if (!ids.length) return;
   await db.query(
     `INSERT INTO taches_notifications (user_id, kind, task_id, step_id, actor_id, body)
@@ -804,10 +958,11 @@ async function addComment(userId, taskId, body) {
   const { rows } = await pool.query('SELECT id, title, created_by FROM taches_tasks WHERE id = $1', [taskId]);
   if (!rows.length) throw httpError(404, 'Tâche introuvable');
   const active = new Set((await getMembers()).map((m) => m.id));
-  const mentions = toIds(body.mentions).filter((id) => active.has(id) && id !== userId);
+  // On peut se mentionner soi-même (pense-bête, essai) : notification et Slack comme pour un autre.
+  const mentions = toIds(body.mentions).filter((id) => active.has(id));
   await withTx(async (db) => {
     await db.query('INSERT INTO taches_comments (task_id, user_id, body, mentions) VALUES ($1, $2, $3, $4)', [taskId, userId, text, mentions]);
-    await notify(db, { userIds: mentions, kind: 'mention', taskId, actorId: userId, body: text });
+    await notify(db, { userIds: mentions, kind: 'mention', taskId, actorId: userId, body: text, includeActor: true });
     const { rows: subs } = await db.query(
       `SELECT user_id FROM taches_task_people WHERE task_id = $1
        UNION SELECT p.user_id FROM taches_step_people p JOIN taches_steps s ON s.id = p.step_id WHERE s.task_id = $1
@@ -982,6 +1137,11 @@ async function getLabels() {
 module.exports = {
   getMembers,
   getBoards,
+  setLayout,
+  createColumn,
+  updateColumn,
+  deleteColumn,
+  setValue,
   createBoard,
   updateBoard,
   deleteBoard,
