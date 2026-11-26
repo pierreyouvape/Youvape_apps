@@ -94,7 +94,7 @@ const COLUMN_TYPES = ['text', 'number', 'date', 'period', 'link', 'people', 'che
 const BUILTIN_COLUMNS = ['id', 'title', 'people', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due', 'start', 'end'];
 const DEFAULT_LAYOUT = ['id', 'title', 'link', 'progress', 'labels', 'created', 'updated', 'priority', 'status', 'due'];
 /** Tableau sans sous-éléments (suivi quotidien) : comme sur Monday, Personne / Statut / Date début / Date fin. */
-const SIMPLE_LAYOUT = ['id', 'title', 'people', 'status', 'start', 'end', 'updated'];
+const SIMPLE_LAYOUT = ['id', 'title', 'people', 'status', 'start', 'end', 'created', 'updated'];
 
 /** Disposition valide : clés connues, sans doublon, « title » toujours présente, colonnes ajoutées jamais perdues. */
 function normalizeLayout(layout, columns, fallback = DEFAULT_LAYOUT) {
