@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { M, formatDayShort, inputStyle, btn } from './tachesShared';
 import { Popover, InlineText, PeoplePicker, DateRange } from './tachesUi';
 
@@ -32,27 +32,74 @@ export function DateCell({ value, onChange, late = false }) {
         {value ? formatDayShort(`${value}T12:00:00`) : '—'}
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={close} width={200}>
-          <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <PickerInput value={value} onPick={(v) => { onChange(v); close(); }} />
-            {value && <button type="button" style={{ ...btn(), color: '#DF2F4A' }} onClick={() => { onChange(null); close(); }}>Effacer</button>}
-          </div>
+        <Popover anchor={anchor} onClose={close} width={252}>
+          <MiniCalendar value={value} onPick={(v) => { onChange(v); close(); }} />
         </Popover>
       )}
     </>
   );
 }
 
-/** Champ date qui ouvre tout de suite le calendrier (pas de saisie au clavier à faire). */
-function PickerInput({ value, onPick }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    try { ref.current?.showPicker(); } catch { ref.current?.focus(); }
-  }, []);
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const navBtn = {
+  background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--tk-text)', width: 28, height: 28, borderRadius: 6, fontFamily: 'inherit',
+};
+
+/** Petit calendrier : un clic sur un jour choisit la date (pas de saisie au clavier). */
+function MiniCalendar({ value, onPick }) {
+  const now = new Date();
+  const today = ymd(now.getFullYear(), now.getMonth(), now.getDate());
+  const base = value ? new Date(`${value}T12:00:00`) : now;
+  const [view, setView] = useState({ y: base.getFullYear(), m: base.getMonth() });
+  const first = new Date(view.y, view.m, 1);
+  const offset = (first.getDay() + 6) % 7; // lundi en premier
+  const days = [];
+  for (let i = 0; i < 42; i += 1) {
+    const d = new Date(view.y, view.m, 1 - offset + i);
+    days.push({ key: ymd(d.getFullYear(), d.getMonth(), d.getDate()), n: d.getDate(), inMonth: d.getMonth() === view.m });
+  }
+  const weeks = days[35].inMonth ? 6 : 5;
+  const move = (delta) => setView((v) => {
+    const d = new Date(v.y, v.m + delta, 1);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
   return (
-    <input ref={ref} type="date" defaultValue={value || ''} style={{ ...inputStyle, padding: '5px 6px', cursor: 'pointer' }}
-      onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* navigateur sans showPicker */ } }}
-      onChange={(e) => onPick(e.target.value || null)} />
+    <div style={{ padding: 4, userSelect: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+        <button type="button" style={navBtn} onClick={() => move(-1)} title="Mois précédent">‹</button>
+        <span style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--tk-text)', textTransform: 'capitalize' }}>
+          {MONTHS[view.m]} {view.y}
+        </span>
+        <button type="button" style={navBtn} onClick={() => move(1)} title="Mois suivant">›</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+          <span key={i} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--tk-sub)', padding: '2px 0' }}>{d}</span>
+        ))}
+        {days.slice(0, weeks * 7).map((d) => {
+          const sel = d.key === value;
+          const isToday = d.key === today;
+          return (
+            <button key={d.key} type="button" onClick={() => onPick(d.key)} style={{
+              height: 30, border: isToday && !sel ? '1px solid #0073EA' : '1px solid transparent', borderRadius: 6, cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 13, fontWeight: sel || isToday ? 700 : 400,
+              background: sel ? '#0073EA' : 'transparent',
+              color: sel ? '#fff' : d.inMonth ? 'var(--tk-text)' : 'var(--tk-faint)',
+            }}
+              onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = 'var(--tk-hover)'; }}
+              onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = 'transparent'; }}>
+              {d.n}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, borderTop: '1px solid var(--tk-line)', paddingTop: 6 }}>
+        <button type="button" style={{ ...navBtn, width: 'auto', padding: '0 8px', fontSize: 13, color: 'var(--tk-link)' }} onClick={() => onPick(today)}>Aujourd'hui</button>
+        {value && <button type="button" style={{ ...navBtn, width: 'auto', padding: '0 8px', fontSize: 13, color: 'var(--tk-danger)' }} onClick={() => onPick(null)}>Effacer</button>}
+      </div>
+    </div>
   );
 }
 
@@ -91,11 +138,8 @@ export function CustomCell({ column, value, onChange, members }) {
             {value ? formatDayShort(`${value}T12:00:00`) : '—'}
           </button>
           {anchor && (
-            <Popover anchor={anchor} onClose={close} width={200}>
-              <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <PickerInput value={value} onPick={(v) => { onChange(v); close(); }} />
-                {value && <button type="button" style={{ ...btn(), color: '#DF2F4A' }} onClick={() => { onChange(null); close(); }}>Effacer</button>}
-              </div>
+            <Popover anchor={anchor} onClose={close} width={252}>
+              <MiniCalendar value={value} onPick={(v) => { onChange(v); close(); }} />
             </Popover>
           )}
         </>
