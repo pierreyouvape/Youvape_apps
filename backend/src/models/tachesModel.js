@@ -695,6 +695,16 @@ async function updateTask(userId, id, body) {
       if (body.manual_status === 'fait') {
         const { rows } = await db.query('SELECT 1 FROM taches_steps WHERE task_id = $1 LIMIT 1', [id]);
         if (!rows.length) notice = { taskId: id, userId };
+        // Comme dans Monday : une tâche terminée descend dans le groupe des terminées, en tête.
+        if (!rows.length && !('group_id' in body) && !('board_id' in body)) {
+          const { rows: [done] } = await db.query(
+            "SELECT id FROM taches_groups WHERE board_id = $1 AND name ~* 'termin' ORDER BY position, id LIMIT 1", [boardId],
+          );
+          if (done && done.id !== cur.group_id) {
+            set('group_id', done.id);
+            sets.push(`position = COALESCE((SELECT min(position) - 1 FROM taches_tasks WHERE group_id = ${Number(done.id)}), 0)`);
+          }
+        }
       }
     }
     if ('archived' in body) sets.push(body.archived ? `archived_at = COALESCE(archived_at, ${PARIS_NOW})` : 'archived_at = NULL');

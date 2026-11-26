@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from 'react';
 import {
-  tachesApi, apiError, ago, todayStr, formatDay, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
+  tachesApi, apiError, ago, todayStr, formatDayShort, labelChip, inputStyle, btn, M, mTable, mTh, mTd, mCell, ellipsis,
 } from './tachesShared';
 import {
   ProgressBar, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, DotsMenu, DateRange, InlineText, SortMark, EdgeResizer,
@@ -279,7 +279,7 @@ export default function TableView({
           </span>
         </td>
       );
-      case 'created': return <td key="created" style={{ ...td, fontSize: 13, color: M.sub }} title={t.created_at}>{formatDay(t.created_at)}</td>;
+      case 'created': return <td key="created" style={{ ...td, fontSize: 13, color: M.sub }} title={t.created_at}>{formatDayShort(t.created_at)}</td>;
       case 'updated': return (
         <td key="updated" style={{ ...td, fontSize: 13, color: M.sub }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -440,6 +440,16 @@ export default function TableView({
                     </tr>
                   </thead>
                   <tbody>
+                    {g.id !== 'none' && (
+                      <tr>
+                        <td colSpan={span} style={{ ...td, textAlign: 'left', paddingLeft: 82, borderRight: 'none' }}>
+                          <input value={quick[g.id] || ''} onChange={(e) => setQuick((s) => ({ ...s, [g.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === 'Enter') quickAdd(g); }}
+                            placeholder="+ Ajouter tâche"
+                            style={{ border: 'none', outline: 'none', width: '100%', fontSize: 14, fontFamily: 'inherit', color: M.text }} />
+                        </td>
+                      </tr>
+                    )}
                     {g.tasks.map((t) => {
                       const open = expanded.has(t.id);
                       const late = t.due_date && t.status !== 'fait' && t.due_date < today;
@@ -492,16 +502,6 @@ export default function TableView({
                         </Fragment>
                       );
                     })}
-                    {g.id !== 'none' && (
-                      <tr>
-                        <td colSpan={span} style={{ ...td, textAlign: 'left', paddingLeft: 82, borderRight: 'none' }}>
-                          <input value={quick[g.id] || ''} onChange={(e) => setQuick((s) => ({ ...s, [g.id]: e.target.value }))}
-                            onKeyDown={(e) => { if (e.key === 'Enter') quickAdd(g); }}
-                            placeholder="+ Ajouter tâche"
-                            style={{ border: 'none', outline: 'none', width: '100%', fontSize: 14, fontFamily: 'inherit', color: M.text }} />
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { M, formatDay, inputStyle, btn } from './tachesShared';
+import { useEffect, useRef, useState } from 'react';
+import { M, formatDayShort, inputStyle, btn } from './tachesShared';
 import { Popover, InlineText, PeoplePicker, DateRange } from './tachesUi';
 
 /* Colonnes ajoutées au Tableau : un rendu par type, et le menu « + ». */
@@ -29,18 +29,30 @@ export function DateCell({ value, onChange, late = false }) {
     <>
       <button type="button" style={{ ...cellBtn, color: value ? (late ? '#DF2F4A' : M.text) : 'var(--tk-faint)', fontWeight: late ? 600 : 400 }}
         onClick={(e) => setAnchor(e.currentTarget)}>
-        {value ? formatDay(`${value}T12:00:00`) : '—'}
+        {value ? formatDayShort(`${value}T12:00:00`) : '—'}
       </button>
       {anchor && (
         <Popover anchor={anchor} onClose={close} width={200}>
           <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <input type="date" defaultValue={value || ''} style={{ ...inputStyle, padding: '5px 6px' }}
-              onChange={(e) => { onChange(e.target.value || null); close(); }} />
+            <PickerInput value={value} onPick={(v) => { onChange(v); close(); }} />
             {value && <button type="button" style={{ ...btn(), color: '#DF2F4A' }} onClick={() => { onChange(null); close(); }}>Effacer</button>}
           </div>
         </Popover>
       )}
     </>
+  );
+}
+
+/** Champ date qui ouvre tout de suite le calendrier (pas de saisie au clavier à faire). */
+function PickerInput({ value, onPick }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    try { ref.current?.showPicker(); } catch { ref.current?.focus(); }
+  }, []);
+  return (
+    <input ref={ref} type="date" defaultValue={value || ''} style={{ ...inputStyle, padding: '5px 6px', cursor: 'pointer' }}
+      onClick={(e) => { try { e.currentTarget.showPicker(); } catch { /* navigateur sans showPicker */ } }}
+      onChange={(e) => onPick(e.target.value || null)} />
   );
 }
 
@@ -76,13 +88,12 @@ export function CustomCell({ column, value, onChange, members }) {
       return (
         <>
           <button type="button" style={{ ...cellBtn, color: value ? M.text : 'var(--tk-faint)' }} onClick={(e) => setAnchor(e.currentTarget)}>
-            {value ? formatDay(`${value}T12:00:00`) : '—'}
+            {value ? formatDayShort(`${value}T12:00:00`) : '—'}
           </button>
           {anchor && (
             <Popover anchor={anchor} onClose={close} width={200}>
               <div style={{ padding: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <input type="date" defaultValue={value || ''} style={{ ...inputStyle, padding: '5px 6px' }}
-                  onChange={(e) => { onChange(e.target.value || null); close(); }} />
+                <PickerInput value={value} onPick={(v) => { onChange(v); close(); }} />
                 {value && <button type="button" style={{ ...btn(), color: '#DF2F4A' }} onClick={() => { onChange(null); close(); }}>Effacer</button>}
               </div>
             </Popover>

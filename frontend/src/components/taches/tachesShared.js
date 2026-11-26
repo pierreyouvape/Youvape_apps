@@ -134,6 +134,13 @@ export function ago(ts) {
 export const formatDate = (d) => (d ? new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
 /** « 25 nov. 2026 » à partir d'un horodatage. */
 export const formatDay = (ts) => (ts ? new Date(ts).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+/** « 25 nov. » cette année, « 25 nov. 2025 » sinon (une date d'une autre année reste sans ambiguïté). */
+export const formatDayShort = (ts) => {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString('fr-FR', sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+};
 export const formatDateTime = (ts) => (ts ? new Date(ts).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 /** Ajoute n jours à une date YYYY-MM-DD (calcul en UTC : pas de décalage d'heure d'été). */
 export const addDays = (d, n) => {
