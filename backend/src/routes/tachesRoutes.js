@@ -31,6 +31,12 @@ router.put('/groups/:id', write, c.updateGroup);
 router.delete('/groups/:id', write, c.deleteGroup);
 router.get('/mine', c.getMine);
 
+// Cloche : notifications de l'utilisateur connecté (bornées à req.user.id)
+router.get('/notifications', c.getNotifications);
+router.get('/notifications/count', c.countNotifications);
+router.post('/notifications/read-all', c.markAllNotifications);
+router.post('/notifications/:id/read', c.markNotification);
+
 router.get('/templates', c.getTemplates);
 router.post('/templates', write, c.createTemplate);
 router.put('/templates/:id', write, c.updateTemplate);
@@ -42,11 +48,13 @@ router.post('/slack/test', checkAdmin, c.testSlack);
 
 router.post('/tasks', c.createTask);
 router.post('/tasks/bulk', c.bulk);
+router.post('/tasks/reorder', c.reorderTasks);
 router.get('/tasks/:id', c.getTask);
 router.patch('/tasks/:id', c.updateTask);
 router.delete('/tasks/:id', write, c.deleteTask);
 router.post('/tasks/:id/steps', c.addStep);
 router.post('/tasks/:id/comments', c.addComment);
+router.post('/tasks/:id/steps/reorder', c.reorderSteps);
 
 router.patch('/steps/:id', c.updateStep);
 router.post('/steps/:id/move', c.moveStep);

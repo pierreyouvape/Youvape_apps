@@ -280,7 +280,7 @@ async function getTask(id) {
   const [task] = await loadTasks(pool, 't.id = $1', [id]);
   if (!task) throw httpError(404, 'Tâche introuvable');
   const { rows: comments } = await pool.query(
-    `SELECT c.id, c.user_id, ${USER_NAME('u')} AS user_name, c.body,
+    `SELECT c.id, c.user_id, ${USER_NAME('u')} AS user_name, c.body, c.mentions,
             to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at
        FROM taches_comments c LEFT JOIN users u ON u.id = c.user_id
       WHERE c.task_id = $1 ORDER BY c.created_at, c.id`,
@@ -320,7 +320,17 @@ function snippet(text, q) {
  */
 async function search(q) {
   const term = cleanText(q, 100);
-  if (term.length < 2) return [];
+  // « 123 » ou « #123 » : la tâche de ce numéro, en tête.
+  const idMatch = /^#?(\d+)$/.exec(term);
+  let byId = [];
+  if (idMatch) {
+    const { rows: found } = await pool.query(
+      `SELECT t.id AS task_id, t.title, t.board_id, b.name AS board_name, (t.archived_at IS NOT NULL) AS archived
+         FROM taches_tasks t JOIN taches_boards b ON b.id = t.board_id WHERE t.id = $1`, [Number(idMatch[1])],
+    );
+    byId = found.map((x) => ({ ...x, field: 'numéro', by: null, at: null, snippet: `#${x.task_id}` }));
+  }
+  if (term.length < 2) return byId;
   const like = `%${foldJs(term).replace(/[\\%_]/g, '\\$&')}%`;
   const { rows } = await pool.query(
     `WITH hits AS (
@@ -352,7 +362,7 @@ async function search(q) {
       LIMIT 300`,
     [like],
   );
-  return rows.map((r) => ({
+  return [...byId, ...rows.map((r) => ({
     task_id: r.task_id,
     title: r.title,
     board_id: r.board_id,
@@ -362,7 +372,7 @@ async function search(q) {
     by: r.field === 'commentaire' ? r.user_name : null,
     at: r.at,
     snippet: snippet(r.text, term),
-  }));
+  }))];
 }
 
 /* ─── Écriture : tâches ─────────────────────────────────── */
@@ -376,6 +386,24 @@ const logEvent = (db, { taskId, stepId = null, userId = null, kind, detail = {} 
   'INSERT INTO taches_events (task_id, step_id, user_id, kind, detail) VALUES ($1, $2, $3, $4, $5)',
   [taskId, stepId, userId, kind, JSON.stringify(detail)],
 );
+
+/**
+ * Notification dans l'app (cloche). Jamais à soi-même : l'auteur du geste
+ * (`actorId`) est retiré des destinataires.
+ */
+async function notify(db, { userIds, kind, taskId, stepId = null, actorId, body = '' }) {
+  const ids = [...new Set((userIds || []).map(Number))].filter((id) => id && id !== Number(actorId));
+  if (!ids.length) return;
+  await db.query(
+    `INSERT INTO taches_notifications (user_id, kind, task_id, step_id, actor_id, body)
+     SELECT unnest($1::int[]), $2, $3, $4, $5, $6`,
+    [ids, kind, taskId, stepId, actorId || null, String(body || '').slice(0, 500)],
+  );
+}
+
+const stepOwners = async (db, stepId) => (await db.query(
+  "SELECT user_id FROM taches_step_people WHERE step_id = $1 AND role = 'owner'", [stepId],
+)).rows.map((r) => r.user_id);
 
 async function setStepPeople(db, stepId, role, ids) {
   await db.query('DELETE FROM taches_step_people WHERE step_id = $1 AND role = $2', [stepId, role]);
@@ -445,6 +473,7 @@ async function createTask(userId, body) {
         manual, startDate, dueDate, cleanText(body.description, 5000), userId],
     );
     await setTaskPeople(db, task.id, people);
+    await notify(db, { userIds: people, kind: 'assigned', taskId: task.id, actorId: userId, body: title });
     for (let i = 0; i < steps.length; i += 1) {
       const { rows: [step] } = await db.query(
         'INSERT INTO taches_steps (task_id, position, name, status) VALUES ($1, $2, $3, $4) RETURNING id',
@@ -452,6 +481,7 @@ async function createTask(userId, body) {
       );
       await setStepPeople(db, step.id, 'owner', steps[i].owners);
       await setStepPeople(db, step.id, 'notify', steps[i].notify);
+      await notify(db, { userIds: steps[i].owners, kind: 'assigned', taskId: task.id, stepId: step.id, actorId: userId, body: steps[i].name });
     }
     await logEvent(db, { taskId: task.id, userId, kind: 'created', detail: { title } });
     return task.id;
@@ -510,7 +540,9 @@ async function updateTask(userId, id, body) {
     if ('people' in body) {
       const people = toIds(body.people);
       await checkMembers(people);
+      const before = (await db.query('SELECT user_id FROM taches_task_people WHERE task_id = $1', [id])).rows.map((r) => r.user_id);
       await setTaskPeople(db, id, people);
+      await notify(db, { userIds: people.filter((u) => !before.includes(u)), kind: 'assigned', taskId: id, actorId: userId, body: cur.title });
     }
     params.push(userId);
     await db.query(
@@ -571,8 +603,8 @@ async function addStep(userId, taskId, body) {
   const name = cleanText(body.name, 200);
   if (!name) throw httpError(400, "Le nom de l'étape est obligatoire");
   const owners = toIds(body.owners);
-  const notify = toIds(body.notify);
-  await checkMembers([...owners, ...notify]);
+  const notifyIds = toIds(body.notify);
+  await checkMembers([...owners, ...notifyIds]);
   await withTx(async (db) => {
     const { rows: t } = await db.query('SELECT id FROM taches_tasks WHERE id = $1 FOR UPDATE', [taskId]);
     if (!t.length) throw httpError(404, 'Tâche introuvable');
@@ -588,7 +620,8 @@ async function addStep(userId, taskId, body) {
       [taskId, agg.pos, name, status, validDate(body.due_date)],
     );
     await setStepPeople(db, step.id, 'owner', owners);
-    await setStepPeople(db, step.id, 'notify', notify);
+    await setStepPeople(db, step.id, 'notify', notifyIds);
+    await notify(db, { userIds: owners, kind: 'assigned', taskId, stepId: step.id, actorId: userId, body: name });
     await touch(db, taskId, userId);
   });
   return getTask(taskId);
@@ -644,7 +677,12 @@ async function updateStep(userId, stepId, body) {
     }
     if ('owners' in body || 'notify' in body) {
       await checkMembers([...('owners' in body ? toIds(body.owners) : []), ...('notify' in body ? toIds(body.notify) : [])]);
-      if ('owners' in body) await setStepPeople(db, stepId, 'owner', toIds(body.owners));
+      if ('owners' in body) {
+        const before = await stepOwners(db, stepId);
+        const owners = toIds(body.owners);
+        await setStepPeople(db, stepId, 'owner', owners);
+        await notify(db, { userIds: owners.filter((u) => !before.includes(u)), kind: 'assigned', taskId: tid, stepId, actorId: userId, body: step.name });
+      }
       if ('notify' in body) await setStepPeople(db, stepId, 'notify', toIds(body.notify));
     }
 
@@ -666,6 +704,10 @@ async function updateStep(userId, stepId, body) {
           await logEvent(db, {
             taskId: tid, stepId: plan.unblock.id, userId, kind: 'status',
             detail: { from: 'bloque', to: 'a_faire', name: plan.unblock.name, auto: true },
+          });
+          await notify(db, {
+            userIds: await stepOwners(db, plan.unblock.id), kind: 'unblocked', taskId: tid,
+            stepId: plan.unblock.id, actorId: userId, body: plan.unblock.name,
           });
         }
         if (plan.recipients.length) notice = { taskId: tid, stepId, plan, userId };
@@ -750,13 +792,136 @@ async function deleteStep(userId, stepId) {
 
 /* ─── Commentaires ──────────────────────────────────────── */
 
+/**
+ * Commentaire, avec mentions @ (`mentions` = ids choisis dans la liste).
+ * Mentionnés : notification « mention » + message Slack. Les autres personnes
+ * qui suivent la tâche (personnes, responsables, à prévenir, auteur, anciens
+ * commentateurs) : notification « comment », sans Slack.
+ */
 async function addComment(userId, taskId, body) {
   const text = cleanText(body.body, 5000);
   if (!text) throw httpError(400, 'Commentaire vide');
-  const { rows } = await pool.query('SELECT 1 FROM taches_tasks WHERE id = $1', [taskId]);
+  const { rows } = await pool.query('SELECT id, title, created_by FROM taches_tasks WHERE id = $1', [taskId]);
   if (!rows.length) throw httpError(404, 'Tâche introuvable');
-  await pool.query('INSERT INTO taches_comments (task_id, user_id, body) VALUES ($1, $2, $3)', [taskId, userId, text]);
-  await touch(pool, taskId, userId);
+  const active = new Set((await getMembers()).map((m) => m.id));
+  const mentions = toIds(body.mentions).filter((id) => active.has(id) && id !== userId);
+  await withTx(async (db) => {
+    await db.query('INSERT INTO taches_comments (task_id, user_id, body, mentions) VALUES ($1, $2, $3, $4)', [taskId, userId, text, mentions]);
+    await notify(db, { userIds: mentions, kind: 'mention', taskId, actorId: userId, body: text });
+    const { rows: subs } = await db.query(
+      `SELECT user_id FROM taches_task_people WHERE task_id = $1
+       UNION SELECT p.user_id FROM taches_step_people p JOIN taches_steps s ON s.id = p.step_id WHERE s.task_id = $1
+       UNION SELECT user_id FROM taches_comments WHERE task_id = $1 AND user_id IS NOT NULL
+       UNION SELECT created_by FROM taches_tasks WHERE id = $1 AND created_by IS NOT NULL`,
+      [taskId],
+    );
+    await notify(db, {
+      userIds: subs.map((x) => x.user_id).filter((id) => active.has(id) && !mentions.includes(id)),
+      kind: 'comment', taskId, actorId: userId, body: text,
+    });
+    await touch(db, taskId, userId);
+  });
+  if (mentions.length) {
+    sendMentionNotice({ task: rows[0], userId, text, mentions }).catch((e) => console.error('[Tâches] Slack mention :', e.message));
+  }
+  return getTask(taskId);
+}
+
+async function sendMentionNotice({ task, userId, text, mentions }) {
+  const names = await namesMap();
+  const result = await tachesSlack.sendMentionNotice({ task, author: names.get(userId), text, recipients: mentions, names });
+  await logEvent(pool, {
+    taskId: task.id, userId, kind: result.ok ? 'slack' : 'slack_error',
+    detail: result.ok ? { to: mentions, mention: true } : { error: result.error },
+  });
+}
+
+/* ─── Cloche : notifications de l'utilisateur ───────────── */
+
+/** `tab` : all | mention | assigned ; `unread` ; `q` cherche dans tâche, texte, auteur. */
+async function getNotifications(userId, { tab = 'all', unread = false, q = '' } = {}) {
+  const params = [userId];
+  let where = 'n.user_id = $1';
+  if (tab === 'mention') where += " AND n.kind = 'mention'";
+  if (tab === 'assigned') where += " AND n.kind IN ('assigned', 'unblocked')";
+  if (unread) where += ' AND n.read_at IS NULL';
+  const term = cleanText(q, 100);
+  if (term) {
+    params.push(`%${foldJs(term).replace(/[\\%_]/g, '\\$&')}%`);
+    where += ` AND ${FOLD(`coalesce(t.title, '') || ' ' || n.body || ' ' || coalesce(${USER_NAME('a')}, '')`)} LIKE $${params.length}`;
+  }
+  const { rows } = await pool.query(
+    `SELECT n.id, n.kind, n.task_id, n.step_id, n.body, n.actor_id, ${USER_NAME('a')} AS actor_name,
+            t.title AS task_title, s.name AS step_name,
+            to_char(n.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at,
+            (n.read_at IS NOT NULL) AS read
+       FROM taches_notifications n
+       LEFT JOIN users a ON a.id = n.actor_id
+       LEFT JOIN taches_tasks t ON t.id = n.task_id
+       LEFT JOIN taches_steps s ON s.id = n.step_id
+      WHERE ${where}
+      ORDER BY n.created_at DESC, n.id DESC
+      LIMIT 200`,
+    params,
+  );
+  return { items: rows, unread: await countUnread(userId) };
+}
+
+async function countUnread(userId) {
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM taches_notifications WHERE user_id = $1 AND read_at IS NULL', [userId]);
+  return rows[0].n;
+}
+
+/** Lue (ou non lue avec `read: false`). Bornée à l'utilisateur. */
+async function markNotification(userId, id, read = true) {
+  await pool.query(
+    `UPDATE taches_notifications SET read_at = ${read ? PARIS_NOW : 'NULL'} WHERE id = $1 AND user_id = $2`, [id, userId],
+  );
+  return { unread: await countUnread(userId) };
+}
+
+async function markAllNotifications(userId) {
+  await pool.query(`UPDATE taches_notifications SET read_at = ${PARIS_NOW} WHERE user_id = $1 AND read_at IS NULL`, [userId]);
+  return { unread: 0 };
+}
+
+/* ─── Ordre (glisser-déposer) ────────────────────────────── */
+
+/**
+ * Nouvel ordre d'un groupe après un glisser-déposer : `ids` = toutes les tâches
+ * du groupe, dans l'ordre affiché. Une tâche venue d'un autre groupe (ou
+ * tableau) y est rangée au passage.
+ */
+async function reorderTasks(userId, body) {
+  const ids = toIds(body.ids);
+  const { rows: [g] } = await pool.query('SELECT id, board_id FROM taches_groups WHERE id = $1', [Number(body.group_id)]);
+  if (!g) throw httpError(400, 'Groupe introuvable');
+  await withTx(async (db) => {
+    for (let i = 0; i < ids.length; i += 1) {
+      await db.query(
+        `UPDATE taches_tasks SET position = $2, group_id = $3, board_id = $4,
+                updated_at = CASE WHEN group_id IS DISTINCT FROM $3 THEN ${PARIS_NOW} ELSE updated_at END,
+                updated_by = CASE WHEN group_id IS DISTINCT FROM $3 THEN $5 ELSE updated_by END
+          WHERE id = $1`,
+        [ids[i], i, g.id, g.board_id, userId],
+      );
+    }
+  });
+  return { success: true };
+}
+
+/** Nouvel ordre des étapes d'une tâche : `ids` = toutes ses étapes. */
+async function reorderSteps(userId, taskId, body) {
+  const ids = toIds(body.ids);
+  await withTx(async (db) => {
+    const { rows } = await db.query('SELECT id FROM taches_steps WHERE task_id = $1 FOR UPDATE', [taskId]);
+    const own = new Set(rows.map((x) => x.id));
+    if (ids.length !== own.size || ids.some((id) => !own.has(id))) throw httpError(400, "Liste d'étapes incomplète");
+    for (let i = 0; i < ids.length; i += 1) {
+      await db.query('UPDATE taches_steps SET position = $2 WHERE id = $1', [ids[i], i]);
+    }
+    await touch(db, taskId, userId);
+  });
   return getTask(taskId);
 }
 
@@ -837,6 +1002,12 @@ module.exports = {
   deleteStep,
   addComment,
   deleteComment,
+  getNotifications,
+  countUnread,
+  markNotification,
+  markAllNotifications,
+  reorderTasks,
+  reorderSteps,
   getTemplates,
   saveTemplate,
   deleteTemplate,

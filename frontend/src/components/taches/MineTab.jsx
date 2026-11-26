@@ -21,7 +21,7 @@ const GROUPS = [
  * toute la chaîne, les étapes passées en grisé.
  */
 export default function MineTab({ members, reloadKey, onOpen, onError }) {
-  const cols = useColumnWidths('mine', [32, 420, 300, 120, 90, 150, 150, 120]);
+  const cols = useColumnWidths('mine', [32, 420, 70, 300, 120, 90, 150, 150, 120]);
   const { user } = useContext(AuthContext);
   const me = user?.id;
   const [tasks, setTasks] = useState(null);
@@ -86,6 +86,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
   const statusRank = (r) => (r.step ? STEP_STATUS_ORDER.indexOf(r.step.status) : ['a_faire', 'en_cours', 'bloque', 'longue', 'fait'].indexOf(r.task.status));
   const accessors = {
     task: (r) => r.task.title,
+    id: (r) => r.task.id,
     step: (r) => r.step?.name || '',
     created: (r) => r.task.created_at,
     owner: (r) => (r.step ? r.step.owners : r.task.people).map((id) => members.find((m) => m.id === id)?.name || '').join(', '),
@@ -149,12 +150,13 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                     <tr>
                       <th style={mTh}><ColResizer index={0} cols={cols} /></th>
                       <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('task')} title="Trier">Tâche<SortMark sort={sort} col="task" /><ColResizer index={1} cols={cols} /></th>
-                      <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('step')} title="Trier">Mon étape<SortMark sort={sort} col="step" /><ColResizer index={2} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={3} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('owner')} title="Trier">Owner<SortMark sort={sort} col="owner" /><ColResizer index={4} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={5} cols={cols} /></th>
-                      <th style={sortTh(mTh)} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={6} cols={cols} /></th>
-                      <th style={sortTh({ ...mTh, borderRight: 'none' })} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={7} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('id')} title="Trier">ID<SortMark sort={sort} col="id" /><ColResizer index={2} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, textAlign: 'left' })} onClick={() => toggle('step')} title="Trier">Mon étape<SortMark sort={sort} col="step" /><ColResizer index={3} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={4} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('owner')} title="Trier">Owner<SortMark sort={sort} col="owner" /><ColResizer index={5} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={6} cols={cols} /></th>
+                      <th style={sortTh(mTh)} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={7} cols={cols} /></th>
+                      <th style={sortTh({ ...mTh, borderRight: 'none' })} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={8} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -190,6 +192,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                                 )}
                               </span>
                             </td>
+                            <td style={{ ...mTd, color: M.sub, fontSize: 13 }}>#{task.id}</td>
                             <td style={{ ...mTd, textAlign: 'left' }} title={step ? step.name : ''}>
                               {step ? (
                                 <button type="button" onClick={() => onOpen(task.id)} style={{
@@ -222,7 +225,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                           {open && (
                             <tr>
                               <td style={{ ...mTd, background: '#F5F6F8' }} />
-                              <td colSpan={7} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: '#F5F6F8' }}>
+                              <td colSpan={8} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: '#F5F6F8' }}>
                                 <StepsTable task={task} members={members} focusUserId={me} color={g.color}
                                   onChange={(t) => { replace(t); load(); }} onError={onError} />
                               </td>
@@ -232,7 +235,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                       );
                     })}
                     {!list.length && (
-                      <tr><td colSpan={8} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>{filtering ? 'Aucun élément ne correspond aux filtres.' : 'Rien à faire pour l\'instant 🎉'}</td></tr>
+                      <tr><td colSpan={9} style={{ ...mTd, color: M.sub, textAlign: 'left', paddingLeft: 40, borderRight: 'none' }}>{filtering ? 'Aucun élément ne correspond aux filtres.' : 'Rien à faire pour l\'instant 🎉'}</td></tr>
                     )}
                   </tbody>
                 </table>

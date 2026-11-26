@@ -107,6 +107,26 @@ function buildTaskDoneMessage({ task, doneBy, names }) {
   };
 }
 
+/** Mention @ dans un commentaire : les mentionnés sont notifiés, avec l'extrait. */
+function buildMentionMessage({ task, author, text, recipients, members, names }) {
+  const who = recipients.map((id) => mention(id, members, names)).join(' ');
+  const excerpt = String(text || '').replace(/\s+/g, ' ').slice(0, 300);
+  const url = `${APP_URL}/taches/tache/${task.id}`;
+  return {
+    text: `${author || 'Quelqu’un'} vous a mentionné dans « ${task.title} »`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `💬 ${who} *${esc(author || 'Quelqu’un')}* vous a mentionné.\n*Tâche :* ${esc(task.title)}\n> ${esc(excerpt)}`,
+        },
+      },
+      { type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Ouvrir la tâche' }, url }] },
+    ],
+  };
+}
+
 async function post(webhookUrl, payload) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10000);
@@ -140,6 +160,12 @@ async function sendTaskDoneNotice(args) {
   return post(url, buildTaskDoneMessage(args));
 }
 
+async function sendMentionNotice(args) {
+  const { webhook_url: url, members } = await readConfig();
+  if (!url) return { ok: false, error: 'Slack non configuré' };
+  return post(url, buildMentionMessage({ ...args, members }));
+}
+
 async function sendTest(userName) {
   const { webhook_url: url } = await readConfig();
   if (!url) return { ok: false, error: 'Slack non configuré' };
@@ -147,5 +173,6 @@ async function sendTest(userName) {
 }
 
 module.exports = {
-  getPublicConfig, saveConfig, sendDoneNotice, sendTaskDoneNotice, sendTest, buildDoneMessage, buildTaskDoneMessage,
+  getPublicConfig, saveConfig, sendDoneNotice, sendTaskDoneNotice, sendMentionNotice, sendTest,
+  buildDoneMessage, buildTaskDoneMessage, buildMentionMessage,
 };

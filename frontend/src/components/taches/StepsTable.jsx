@@ -31,6 +31,21 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
     }
   };
   const update = (step, body) => run(() => tachesApi.updateStep(step.id, body));
+  // Glisser-déposer des sous-éléments (poignée ⠿)
+  const [dragId, setDragId] = useState(null);
+  const [over, setOver] = useState(null); // { id, before }
+  const dropOn = (targetId, before) => {
+    const moving = dragId;
+    setDragId(null);
+    setOver(null);
+    if (!moving || moving === targetId) return;
+    const ids = steps.map((x) => x.id).filter((x) => x !== moving);
+    let at = ids.indexOf(targetId);
+    if (!before) at += 1;
+    ids.splice(at, 0, moving);
+    run(() => tachesApi.reorderSteps(task.id, ids));
+  };
+
   const mineIdx = focusUserId ? steps.findIndex((s) => s.status !== 'fait' && s.owners.includes(focusUserId)) : -1;
 
   const add = (e) => {
@@ -68,14 +83,23 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
             const before = mineIdx >= 0 && i < mineIdx;
             const late = s.due_date && s.status !== 'fait' && s.due_date < today;
             return (
-              <tr key={s.id} style={{ background: isMine ? '#E5F4FF' : '#fff', opacity: before ? 0.5 : 1 }}>
+              <tr key={s.id}
+                onDragOver={(e) => {
+                  if (!dragId) return;
+                  e.preventDefault();
+                  const box = e.currentTarget.getBoundingClientRect();
+                  setOver({ id: s.id, before: e.clientY < box.top + box.height / 2 });
+                }}
+                onDrop={(e) => { e.preventDefault(); dropOn(s.id, over?.before !== false); }}
+                style={{
+                  background: isMine ? '#E5F4FF' : '#fff', opacity: before || dragId === s.id ? 0.5 : 1,
+                  boxShadow: over?.id === s.id ? `inset 0 ${over.before ? 2 : -2}px 0 #0073EA` : 'none',
+                }}>
                 <td style={{ ...mTd, padding: 0 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                    <button type="button" style={{ ...arrow, visibility: i ? 'visible' : 'hidden' }} title="Monter"
-                      onClick={() => run(() => tachesApi.moveStep(s.id, 'up'))}>▲</button>
-                    <button type="button" style={{ ...arrow, visibility: i < steps.length - 1 ? 'visible' : 'hidden' }} title="Descendre"
-                      onClick={() => run(() => tachesApi.moveStep(s.id, 'down'))}>▼</button>
-                  </div>
+                  <span draggable title="Glisser pour changer l'ordre"
+                    onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(s.id)); setDragId(s.id); }}
+                    onDragEnd={() => { setDragId(null); setOver(null); }}
+                    style={{ ...arrow, display: 'block', fontSize: 13, cursor: 'grab', userSelect: 'none', textAlign: 'center' }}>⠿</span>
                 </td>
                 <td style={{ ...mTd, textAlign: 'left', fontWeight: isMine ? 600 : 400 }}
                   title={s.status === 'fait' && s.done_by_name ? `${s.name}\nFait par ${s.done_by_name} · ${formatDateTime(s.done_at)}` : s.name}>

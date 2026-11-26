@@ -25,7 +25,7 @@ export default function TableView({
   tasks, loading, board, boards, members, canWrite, focusUserId,
   onOpen, onTaskChange, onError, onReload, onBoardsChange,
 }) {
-  const cols = useColumnWidths('table', [34, 26, 380, 90, 170, 130, 160, 150, 120, 130, 120, 120, 36]);
+  const cols = useColumnWidths('table', [34, 26, 380, 70, 90, 170, 130, 160, 150, 120, 130, 120, 120, 36]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [selected, setSelected] = useState(() => new Set());
@@ -35,6 +35,9 @@ export default function TableView({
 
   // Sections : les groupes du tableau (ou de tous les tableaux), puis « Sans groupe ».
   const { sort, toggle } = useSort('table');
+  // Glisser-déposer : `drag` = tâche saisie, `over` = { id, before } ou { group } (déposer en fin de groupe).
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
 
   // Sections : les groupes du tableau (ou de tous les tableaux), puis « Sans groupe ».
   // Le tri (clic sur un en-tête) s'applique dans chaque groupe, comme sur Monday.
@@ -42,6 +45,7 @@ export default function TableView({
     const name = (id) => members.find((m) => m.id === id)?.name || '';
     const accessors = {
       title: (t) => t.title,
+      id: (t) => t.id,
       people: (t) => t.people.map(name).join(', '),
       link: (t) => t.link_url || '',
       progress: (t) => (t.steps.length ? t.counts.fait / t.steps.length : ''),
@@ -92,6 +96,23 @@ export default function TableView({
       onReload();
     } catch (e) { onError(apiError(e)); }
   };
+  /** Range la tâche saisie avant / après `target` (ou en fin de groupe) et enregistre l'ordre du groupe. */
+  const dropOn = async (g, targetId, before) => {
+    const moving = drag;
+    setDrag(null);
+    setOver(null);
+    if (!moving || moving.id === targetId || g.id === 'none') return;
+    const ids = g.tasks.map((x) => x.id).filter((x) => x !== moving.id);
+    let at = targetId ? ids.indexOf(targetId) : ids.length;
+    if (targetId && !before) at += 1;
+    ids.splice(at < 0 ? ids.length : at, 0, moving.id);
+    try {
+      await tachesApi.reorderTasks(g.id, ids);
+      onReload();
+    } catch (e) { onError(apiError(e)); }
+  };
+  const canDrag = !sort;
+
   const one = async (t, action, extra = {}) => {
     if (action === 'delete' && !window.confirm(`Supprimer définitivement « ${t.title} », ses étapes et ses commentaires ?`)) return;
     try {
@@ -141,7 +162,9 @@ export default function TableView({
         const allChecked = ids.length > 0 && ids.every((i) => selected.has(i));
         const done = g.tasks.filter((t) => t.status === 'fait').length;
         return (
-          <div key={g.id} style={{ marginBottom: 22 }}>
+          <div key={g.id} style={{ marginBottom: 22 }}
+            onDragOver={(e) => { if (drag && !g.tasks.length) { e.preventDefault(); setOver({ group: g.id }); } }}
+            onDrop={(e) => { if (drag && !g.tasks.length) { e.preventDefault(); dropOn(g, null, false); } }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <button type="button" onClick={() => flip(g)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: g.color, fontSize: 14 }}>
                 {shut ? '▶' : '▼'}
@@ -184,16 +207,17 @@ export default function TableView({
                       <ColResizer index={0} cols={cols} /></th>
                       <th style={th}><ColResizer index={1} cols={cols} /></th>
                       <th style={{ ...th, textAlign: 'left', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('title')} title="Trier">Tâche<SortMark sort={sort} col="title" /><ColResizer index={2} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('people')} title="Trier">Personne<SortMark sort={sort} col="people" /><ColResizer index={3} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('link')} title="Trier">Lien produit<SortMark sort={sort} col="link" /><ColResizer index={4} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('progress')} title="Trier">Sous-éléments<SortMark sort={sort} col="progress" /><ColResizer index={5} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('labels')} title="Trier">Étiquettes<SortMark sort={sort} col="labels" /><ColResizer index={6} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={7} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={8} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('updated')} title="Trier">Mise à jour<SortMark sort={sort} col="updated" /><ColResizer index={9} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={10} cols={cols} /></th>
-                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={11} cols={cols} /></th>
-                      <th style={{ ...th, borderRight: 'none' }}><ColResizer index={12} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('id')} title="Trier">ID<SortMark sort={sort} col="id" /><ColResizer index={3} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('people')} title="Trier">Personne<SortMark sort={sort} col="people" /><ColResizer index={4} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('link')} title="Trier">Lien produit<SortMark sort={sort} col="link" /><ColResizer index={5} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('progress')} title="Trier">Sous-éléments<SortMark sort={sort} col="progress" /><ColResizer index={6} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('labels')} title="Trier">Étiquettes<SortMark sort={sort} col="labels" /><ColResizer index={7} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('due')} title="Trier">Échéances<SortMark sort={sort} col="due" /><ColResizer index={8} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('created')} title="Trier">Créée le<SortMark sort={sort} col="created" /><ColResizer index={9} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('updated')} title="Trier">Mise à jour<SortMark sort={sort} col="updated" /><ColResizer index={10} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('priority')} title="Trier">Priorité<SortMark sort={sort} col="priority" /><ColResizer index={11} cols={cols} /></th>
+                      <th style={{ ...th, cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle('status')} title="Trier">Statut<SortMark sort={sort} col="status" /><ColResizer index={12} cols={cols} /></th>
+                      <th style={{ ...th, borderRight: 'none' }}><ColResizer index={13} cols={cols} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -202,13 +226,32 @@ export default function TableView({
                       const late = t.due_date && t.status !== 'fait' && t.due_date < today;
                       return (
                         <Fragment key={t.id}>
-                          <tr style={{ background: selected.has(t.id) ? '#CCE5FF' : open ? M.hover : '#fff', opacity: t.archived_at ? 0.6 : 1 }}>
+                          <tr
+                            onDragOver={(e) => {
+                              if (!drag) return;
+                              e.preventDefault();
+                              const r0 = e.currentTarget.getBoundingClientRect();
+                              setOver({ id: t.id, before: e.clientY < r0.top + r0.height / 2 });
+                            }}
+                            onDrop={(e) => { e.preventDefault(); dropOn(g, t.id, over?.before !== false); }}
+                            style={{
+                              background: selected.has(t.id) ? '#CCE5FF' : open ? M.hover : '#fff',
+                              opacity: t.archived_at || drag?.id === t.id ? 0.5 : 1,
+                              boxShadow: over?.id === t.id ? `inset 0 ${over.before ? 2 : -2}px 0 #0073EA` : 'none',
+                            }}>
                             <td style={{ ...td, padding: 0 }}><input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSet(setSelected, t.id)} /></td>
                             <td style={{ ...td, padding: 0 }}>
-                              {t.steps.length > 0 && (
-                                <button type="button" onClick={() => toggleSet(setExpanded, t.id)} title={open ? 'Replier' : 'Voir les étapes'}
-                                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 11, width: '100%', height: 36 }}>{open ? '▼' : '▶'}</button>
-                              )}
+                              <span style={{ display: 'flex', alignItems: 'center', height: 36 }}>
+                                <span draggable={canDrag}
+                                  onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(t.id)); setDrag({ id: t.id, group: g.id }); }}
+                                  onDragEnd={() => { setDrag(null); setOver(null); }}
+                                  title={canDrag ? 'Glisser pour déplacer (aussi vers un autre groupe)' : 'Retirez le tri (clic sur l\'en-tête trié) pour réordonner'}
+                                  style={{ cursor: canDrag ? 'grab' : 'not-allowed', color: '#C3C6D4', fontSize: 13, padding: '0 1px', userSelect: 'none' }}>⠿</span>
+                                {t.steps.length > 0 && (
+                                  <button type="button" onClick={() => toggleSet(setExpanded, t.id)} title={open ? 'Replier' : 'Voir les étapes'}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 10, padding: 0, height: 36, flex: 1 }}>{open ? '▼' : '▶'}</button>
+                                )}
+                              </span>
                             </td>
                             <td style={{ ...td, textAlign: 'left' }} title={t.title}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -226,6 +269,7 @@ export default function TableView({
                                 </span>
                               </span>
                             </td>
+                            <td style={{ ...td, color: M.sub, fontSize: 13 }}>#{t.id}</td>
                             <td style={td}><PeoplePicker title="Personne(s) de la tâche" value={t.people} members={members} onChange={(people) => save(t, { people })} /></td>
                             <td style={{ ...td, textAlign: 'left' }}>
                               {t.link_url && <a href={t.link_url} target="_blank" rel="noreferrer" style={{ ...ellipsis, fontSize: 13, color: '#0073EA' }} title={t.link_url}>{shortUrl(t.link_url)}</a>}
@@ -260,7 +304,7 @@ export default function TableView({
                           {open && (
                             <tr>
                               <td colSpan={2} style={{ borderBottom: `1px solid ${M.grid}`, background: M.hover }} />
-                              <td colSpan={11} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
+                              <td colSpan={12} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
                                 <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} color={g.color} />
                               </td>
                             </tr>
@@ -272,7 +316,7 @@ export default function TableView({
                       <tr>
                         <td style={td} />
                         <td style={td} />
-                        <td colSpan={11} style={{ ...td, textAlign: 'left' }}>
+                        <td colSpan={12} style={{ ...td, textAlign: 'left' }}>
                           <input value={quick[g.id] || ''} onChange={(e) => setQuick((s) => ({ ...s, [g.id]: e.target.value }))}
                             onKeyDown={(e) => { if (e.key === 'Enter') quickAdd(g); }}
                             placeholder="+ Ajouter tâche"

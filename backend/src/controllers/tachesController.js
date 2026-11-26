@@ -51,6 +51,15 @@ exports.deleteStep = handle((req) => tachesModel.deleteStep(uid(req), id(req)));
 exports.addComment = handle((req) => tachesModel.addComment(uid(req), id(req), body(req)));
 exports.deleteComment = handle((req) => tachesModel.deleteComment(uid(req), id(req)));
 
+exports.getNotifications = handle((req) => tachesModel.getNotifications(uid(req), {
+  tab: req.query.tab, unread: req.query.unread === '1', q: req.query.q,
+}));
+exports.countNotifications = handle(async (req) => ({ unread: await tachesModel.countUnread(uid(req)) }));
+exports.markNotification = handle((req) => tachesModel.markNotification(uid(req), id(req), body(req).read !== false));
+exports.markAllNotifications = handle((req) => tachesModel.markAllNotifications(uid(req)));
+exports.reorderTasks = handle((req) => tachesModel.reorderTasks(uid(req), body(req)));
+exports.reorderSteps = handle((req) => tachesModel.reorderSteps(uid(req), id(req), body(req)));
+
 exports.getTemplates = handle(() => tachesModel.getTemplates());
 exports.createTemplate = handle((req) => tachesModel.saveTemplate(null, body(req)));
 exports.updateTemplate = handle((req) => tachesModel.saveTemplate(id(req), body(req)));

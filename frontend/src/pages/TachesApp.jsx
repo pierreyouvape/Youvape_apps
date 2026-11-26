@@ -15,13 +15,14 @@ import SlackTab from '../components/taches/SlackTab';
 import TaskModal from '../components/taches/TaskModal';
 import NewTaskModal from '../components/taches/NewTaskModal';
 import SearchResults from '../components/taches/SearchResults';
+import NotificationsPanel from '../components/taches/NotificationsPanel';
 
 /** Clé de permission de l'app (miroir de `APPS` et de backend/src/config/apps.js). */
 const PERM_KEY = 'taches';
 
 const TABS = [
   { key: 'moi', label: 'Mes tâches', subtitle: 'Ce que vous avez à faire, avec les étapes avant et après.' },
-  { key: 'tableau', label: 'Tableau', subtitle: 'Toutes les tâches, par groupe.', view: true },
+  { key: 'tableau', label: 'Tableau principal', subtitle: 'Toutes les tâches, par groupe. Glisser ⠿ pour changer l\'ordre.', view: true },
   { key: 'kanban', label: 'Kanban', subtitle: 'Glisser une carte d\'une colonne à l\'autre la modifie.', view: true },
   { key: 'gantt', label: 'Gantt', subtitle: 'Planning : glisser une barre la déplace, tirer son bord droit l\'allonge.', view: true },
   { key: 'calendrier', label: 'Calendrier', subtitle: 'Échéances du mois : glisser une tâche sur un autre jour la décale.', view: true },
@@ -55,6 +56,8 @@ export default function TachesApp() {
   const [openId, setOpenId] = useState(id ? Number(id) : null);
   const [creating, setCreating] = useState(null); // null | { group_id?, start_date?, due_date? }
   const [reloadKey, setReloadKey] = useState(0);
+  const [bellOpen, setBellOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   // Filtres communs aux vues
   const [q, setQ] = useState('');
@@ -68,8 +71,17 @@ export default function TachesApp() {
   const [archived, setArchived] = useState(false);
 
   const currentTab = id ? 'tableau' : tab;
-  const tabDef = TABS.find((t) => t.key === currentTab);
-  const isView = Boolean(tabDef?.view);
+  // Un onglet par personne (comme les vues « Maxime », « Pierre »… de Monday) :
+  // le Tableau principal limité à ses tâches. Insérés après le Calendrier.
+  const personTabs = members.filter((m) => m.has_app !== false).map((m) => ({
+    key: `p-${m.id}`, label: m.name, view: true, person: m.id,
+    subtitle: `Les tâches de ${m.name} : une étape à son nom, ou la tâche elle-même.`,
+  }));
+  const allTabs = [...TABS.slice(0, 5), ...personTabs, ...TABS.slice(5)];
+  const tabDef = allTabs.find((t) => t.key === currentTab);
+  const isView = Boolean(tabDef?.view) || /^p-\d+$/.test(currentTab || '');
+  const forcedPerson = tabDef?.person || null;
+  const who = forcedPerson || person;
 
   const loadRefs = useCallback(async () => {
     try {
@@ -83,6 +95,18 @@ export default function TachesApp() {
     }
   }, []);
   useEffect(() => { if (canRead) loadRefs(); }, [canRead, loadRefs]);
+
+  // Cloche : nombre de notifications non lues, relu chaque minute et au retour sur l'onglet.
+  const loadUnread = useCallback(() => {
+    tachesApi.notificationCount().then((d) => setUnread(d.unread)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!canRead) return undefined;
+    loadUnread();
+    window.addEventListener('focus', loadUnread);
+    const timer = setInterval(loadUnread, 60000);
+    return () => { window.removeEventListener('focus', loadUnread); clearInterval(timer); };
+  }, [canRead, loadUnread, reloadKey]);
   useEffect(() => { if (id) setOpenId(Number(id)); }, [id]);
 
   // Tableau retenu d'une visite à l'autre ; à défaut le premier.
@@ -129,9 +153,9 @@ export default function TachesApp() {
       if (priority && (t.priority || 'none') !== priority) return false;
       if (status && t.status !== status) return false;
       if (hideDone && t.status === 'fait') return false;
-      if (person) {
-        const steps = t.steps.filter((s) => s.owners.includes(person));
-        const own = t.people.includes(person);
+      if (who) {
+        const steps = t.steps.filter((s) => s.owners.includes(who));
+        const own = t.people.includes(who);
         if (!steps.length && !own) return false;
         if (openOnly) {
           const stepOpen = steps.some((s) => s.status !== 'fait' && s.status !== 'bloque');
@@ -141,7 +165,7 @@ export default function TachesApp() {
       }
       return true;
     });
-  }, [tasks, hits, label, priority, status, hideDone, person, openOnly]);
+  }, [tasks, hits, label, priority, status, hideDone, who, openOnly]);
 
   if (permissions && !canRead) {
     return (
@@ -152,7 +176,11 @@ export default function TachesApp() {
       </AppShell>
     );
   }
-  const visibleTabs = TABS.filter((t) => !t.admin || isAdmin || isSuperAdmin);
+  const visibleTabs = allTabs.filter((t) => !t.admin || isAdmin || isSuperAdmin);
+  // Onglet d'une personne : attendre la liste des membres avant de juger l'adresse.
+  if (/^p-\d+$/.test(currentTab || '') && !members.length) {
+    return <AppShell currentPath="/taches"><div style={{ padding: 40, color: M.sub }}>Chargement…</div></AppShell>;
+  }
   if (!tabDef || !visibleTabs.includes(tabDef)) return <Navigate to="/taches/moi" replace />;
 
   const closeTask = () => {
@@ -168,7 +196,7 @@ export default function TachesApp() {
 
   const viewProps = {
     tasks: filtered || [], loading: filtered === null, board, boards, members, labels, canWrite,
-    focusUserId: person, onOpen: setOpenId, onTaskChange: replaceTask, onError: setError,
+    focusUserId: who, onOpen: setOpenId, onTaskChange: replaceTask, onError: setError,
     onReload: changed, onBoardsChange: refreshBoards,
     onNew: (preset = {}) => setCreating(preset),
   };
@@ -180,7 +208,8 @@ export default function TachesApp() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <h1 style={{ fontSize: 28, fontWeight: 600, color: M.text, margin: 0 }}>
-                {isView ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : tabDef.key === 'moi' ? 'Mes tâches' : 'Tâches'}
+                {forcedPerson ? `Tâches de ${tabDef.label}`
+                  : isView ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : tabDef.key === 'moi' ? 'Mes tâches' : 'Tâches'}
               </h1>
               <p style={{ fontSize: 14, color: M.sub, margin: '2px 0 0' }}>{tabDef.subtitle}</p>
             </div>
@@ -190,6 +219,16 @@ export default function TachesApp() {
                 <option value="all">Tous les tableaux</option>
               </select>
             )}
+            <button type="button" onClick={() => setBellOpen(true)} title="Notifications"
+              style={{ position: 'relative', background: bellOpen ? '#E5F4FF' : 'none', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 22, padding: '4px 8px', lineHeight: 1 }}>
+              🔔
+              {unread > 0 && (
+                <span style={{
+                  position: 'absolute', top: -2, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#E2445C', color: '#fff',
+                  fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
+                }}>{unread > 99 ? '99+' : unread}</span>
+              )}
+            </button>
             {currentTab !== 'slack' && currentTab !== 'modeles' && (
               <button type="button" onClick={() => setCreating({})} style={{
                 background: TACHES_COLOR, color: '#fff', border: 'none', borderRadius: 4, padding: '8px 16px',
@@ -223,8 +262,8 @@ export default function TachesApp() {
 
           {isView && (
             <FilterBar {...{
-              q, setQ, members, person, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
-              priority, setPriority, status, setStatus,
+              q, setQ, members, person: who, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
+              priority, setPriority, status, setStatus, lockedPerson: Boolean(forcedPerson),
               hideDone, setHideDone, archived, setArchived,
               count: filtered ? `${filtered.length} / ${tasks.length}` : '',
             }} />
@@ -234,7 +273,7 @@ export default function TachesApp() {
           )}
 
           {currentTab === 'moi' && <MineTab members={members} reloadKey={reloadKey} onOpen={setOpenId} onError={setError} />}
-          {currentTab === 'tableau' && <TableView {...viewProps} />}
+          {(currentTab === 'tableau' || forcedPerson) && <TableView {...viewProps} />}
           {currentTab === 'kanban' && <KanbanView {...viewProps} />}
           {currentTab === 'gantt' && <GanttView {...viewProps} />}
           {currentTab === 'calendrier' && <CalendarView {...viewProps} />}
@@ -245,7 +284,10 @@ export default function TachesApp() {
 
       {openId && (
         <TaskModal taskId={openId} members={members} labels={labels} boards={boards} canWrite={canWrite}
-          onClose={closeTask} onChanged={changed} focusUserId={currentTab === 'moi' ? user?.id : person} />
+          onClose={closeTask} onChanged={changed} focusUserId={currentTab === 'moi' ? user?.id : who} />
+      )}
+      {bellOpen && (
+        <NotificationsPanel onClose={() => setBellOpen(false)} onOpen={setOpenId} onUnread={setUnread} />
       )}
       {creating && (
         <NewTaskModal templates={templates} members={members} labels={labels} boards={boards}
@@ -266,7 +308,7 @@ const check = { fontSize: 13, color: '#4B5563', display: 'flex', gap: 6, alignIt
 /** Filtres communs : recherche, personne (remplace les onglets par personne de Monday), étiquette… */
 function FilterBar({
   q, setQ, members, person, setPerson, openOnly, setOpenOnly, labels, label, setLabel,
-  priority, setPriority, status, setStatus, hideDone, setHideDone, archived, setArchived, count,
+  priority, setPriority, status, setStatus, lockedPerson, hideDone, setHideDone, archived, setArchived, count,
 }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -297,8 +339,8 @@ function FilterBar({
         <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 'auto' }}>{count} tâches</span>
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button type="button" style={chip(!person)} onClick={() => setPerson(null)}>Tout le monde</button>
-        {members.filter((m) => m.has_app !== false).map((m) => (
+        {!lockedPerson && <button type="button" style={chip(!person)} onClick={() => setPerson(null)}>Tout le monde</button>}
+        {!lockedPerson && members.filter((m) => m.has_app !== false).map((m) => (
           <button key={m.id} type="button" style={chip(person === m.id)} onClick={() => setPerson(m.id)}>{m.name}</button>
         ))}
         {person && (

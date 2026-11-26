@@ -3,6 +3,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { tachesApi, apiError, formatDateTime, STEP_STATUS, TASK_STATUS, TACHES_COLOR, btn, inputStyle } from './tachesShared';
 import { InlineText, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, LabelsInput, DateRange } from './tachesUi';
 import StepsTable from './StepsTable';
+import MentionInput, { CommentBody } from './MentionInput';
 
 const label = { fontSize: 12, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6 };
 
@@ -11,7 +12,6 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
   const { user } = useContext(AuthContext);
   const [task, setTask] = useState(null);
   const [error, setError] = useState(null);
-  const [comment, setComment] = useState('');
   const [showLog, setShowLog] = useState(false);
 
   const load = useCallback(async () => {
@@ -34,13 +34,15 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
     try { apply(await tachesApi.updateTask(taskId, body)); } catch (e) { setError(apiError(e)); }
   };
 
-  const send = async (e) => {
-    e.preventDefault();
-    if (!comment.trim()) return;
+  // Renvoie false en cas d'échec : le texte reste dans la zone pour être renvoyé.
+  const send = async (text, mentions) => {
     try {
-      apply(await tachesApi.addComment(taskId, comment));
-      setComment('');
-    } catch (err) { setError(apiError(err)); }
+      apply(await tachesApi.addComment(taskId, text, mentions));
+      return true;
+    } catch (err) {
+      setError(apiError(err));
+      return false;
+    }
   };
 
   const remove = async () => {
@@ -68,6 +70,7 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
               <div style={{ flex: 1, minWidth: 0 }}>
                 <InlineText value={task.title} onSave={(title) => save({ title })} style={{ fontSize: 22, fontWeight: 800, color: '#1F2937', width: '100%' }} />
                 <div style={{ fontSize: 12, color: '#9CA3AF', marginTop: 4 }}>
+                  <span title="Numéro de la tâche (cherchable : #123)" style={{ color: '#676879', fontWeight: 700 }}>#{task.id}</span>{' · '}
                   {task.updated_by_name ? `Modifiée par ${task.updated_by_name} · ` : ''}{formatDateTime(task.updated_at)}
                   {task.archived_at && <strong style={{ color: '#B45309' }}> · Archivée le {formatDateTime(task.archived_at)}</strong>}
                 </div>
@@ -156,18 +159,12 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                             }}>Supprimer</button>
                         )}
                       </div>
-                      <div style={{ fontSize: 14, color: '#1F2937', whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                      <div style={{ fontSize: 14, color: '#1F2937', whiteSpace: 'pre-wrap' }}><CommentBody body={c.body} mentions={c.mentions} members={members} /></div>
                     </div>
                   </div>
                 ))}
               </div>
-              <form onSubmit={send} style={{ display: 'flex', gap: 8 }}>
-                <textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2}
-                  placeholder="Écrire un commentaire… (Ctrl+Entrée pour envoyer)"
-                  onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send(e); }}
-                  style={{ flex: 1, border: '1px solid #D1D5DB', borderRadius: 8, padding: 8, fontFamily: 'inherit', fontSize: 14, resize: 'vertical' }} />
-                <button type="submit" style={btn(true)} disabled={!comment.trim()}>Envoyer</button>
-              </form>
+              <MentionInput members={members} onSubmit={send} />
             </div>
 
             <div style={{ padding: '12px 22px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
