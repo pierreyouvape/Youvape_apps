@@ -257,31 +257,6 @@ export default function SeoLlmTab() {
   const fileRef = useRef(null);
   const detailRef = useRef(null);
 
-  // Relevé Claude : état du relevé en cours et des derniers passages.
-  const [run, setRun] = useState(null);
-  const [runMsg, setRunMsg] = useState(null);
-  const loadRun = useCallback(() => axios.get(`${API_URL}/seo/llm/run-status`).then(({ data: d }) => { setRun(d); return d; }).catch(() => null), []);
-  useEffect(() => { loadRun(); }, [loadRun]);
-  const running = !!run?.state?.running;
-  useEffect(() => {
-    if (!running) return undefined;
-    const t = setInterval(async () => {
-      const d = await loadRun();
-      if (d && !d.state.running) load();
-    }, 5000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, loadRun]);
-  const startRun = async () => {
-    setRunMsg(null);
-    try {
-      const { data: r } = await axios.post(`${API_URL}/seo/llm/run`, {});
-      setRunMsg(r.started ? `Relevé lancé : ${r.prompts} prompt(s), environ 1 minute chacun.` : r.message);
-      loadRun();
-    } catch (e) { setRunMsg(e.response?.data?.error || e.message); }
-  };
-  const lastRun = run?.lastRuns?.[0];
-
   const load = useCallback(() => {
     setErr(null);
     axios.get(`${API_URL}/seo/llm/overview`, { params: { provider } })
@@ -342,17 +317,11 @@ export default function SeoLlmTab() {
         <div style={{ fontSize: 13, color: C.grisF }}>
           <div><b>Ce que mesure l&apos;onglet :</b> les questions qu&apos;un vapoteur pose aux IA, et si YouVape apparaît dans leurs réponses.</div>
           <div>
-            <b>Données :</b> {data && !empty ? `${data.total.n} réponses du ${longDate(data.from)} au ${longDate(data.to)} (Eskimoz LLM Ranking jusqu'au 26/11/2026 ; Claude : relevés faits par l'app)` : 'aucune pour l’instant'}
+            <b>Données :</b> {data && !empty ? `${data.total.n} réponses du ${longDate(data.from)} au ${longDate(data.to)} (Eskimoz LLM Ranking jusqu'au 26/11/2026 ; Claude : relevés faits à la demande)` : 'aucune pour l’instant'}
           </div>
           <div style={{ color: C.grisM, fontSize: 12 }}>Mentionné = YouVape nommé dans le texte · Cité = une page youvape.fr dans les sources.</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {run?.configured && (
-            <button type="button" disabled={running} onClick={startRun} style={btnPlein}
-              title="Pose les prompts à Claude (recherche web, depuis la France) et enregistre les réponses du jour.">
-              {running ? `Claude : ${run.state.done}/${run.state.total}…` : 'Interroger Claude'}
-            </button>
-          )}
           <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={(e) => upload(e.target.files?.[0])} />
           <button type="button" disabled={importing} onClick={() => fileRef.current?.click()} style={btn}
             title="Export « prompt-responses_….csv » de l'outil LLM Ranking. Ré-importer le même fichier n'ajoute pas de doublon.">
@@ -360,14 +329,6 @@ export default function SeoLlmTab() {
           </button>
         </div>
         {importMsg && <div style={{ width: '100%', fontSize: 13, color: C.grisF }}>{importMsg}</div>}
-        {runMsg && <div style={{ width: '100%', fontSize: 13, color: C.grisF }}>{runMsg}</div>}
-        {lastRun && (
-          <div style={{ width: '100%', fontSize: 12, color: C.grisM }}>
-            Dernier relevé Claude : {new Date(lastRun.started_at).toLocaleString('fr-FR')} · {lastRun.finished_at ? `${lastRun.ok}/${lastRun.prompts} réponses` : 'en cours'}
-            {lastRun.cost_usd !== null && lastRun.cost_usd !== undefined ? ` · coût ${Number(lastRun.cost_usd).toFixed(2).replace('.', ',')} $` : ''}
-            {lastRun.errors?.length ? ` · ${lastRun.errors.length} erreur(s) : ${lastRun.errors[0].error}` : ''}
-          </div>
-        )}
       </Card>
 
       {err && <Card style={{ borderColor: C.rouge }}><span style={{ color: C.rouge, fontSize: 13 }}>{err}</span></Card>}
