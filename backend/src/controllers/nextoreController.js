@@ -6,6 +6,7 @@
 const nextoreModel = require('../models/nextoreModel');
 const nextoreImportModel = require('../models/nextoreImportModel');
 const boutiqueOrderModel = require('../models/boutiqueOrderModel');
+const boutiqueProductPdaModel = require('../models/boutiqueProductPdaModel');
 const comptageModel = require('../models/nextoreComptageModel');
 const { resolveWarehouse } = require('../config/nextore');
 
@@ -318,6 +319,37 @@ async function getProduct(req, res) {
   }
 }
 
+// GET /:shop/pda/products/:productId — fiche PDA (stock en direct, ventes, arrivages, mouvements)
+async function getPdaProduct(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const product = await boutiqueProductPdaModel.getPdaProduct(wh.id, req.params.productId);
+    if (!product) return res.status(404).json({ error: 'Produit inconnu' });
+    res.json({ warehouse: wh, product });
+  } catch (err) {
+    console.error('Nextore getPdaProduct:', err);
+    res.status(500).json({ error: err.message || 'Erreur' });
+  }
+}
+
+// POST /:shop/pda/products/:productId/moves — { reason, direction: in|out, qty, comment }
+async function postPdaMove(req, res) {
+  const wh = getShopOr400(req, res);
+  if (!wh) return;
+  try {
+    const move = await boutiqueProductPdaModel.recordMove(wh, req.params.productId, req.body || {}, req.user?.email || null);
+    console.log(`Boutique ${wh.code} mouvement PDA #${move.id} produit ${req.params.productId} ${move.delta > 0 ? '+' : ''}${move.delta} `
+      + `(${move.reason}) par ${req.user?.email}`);
+    const product = await boutiqueProductPdaModel.getPdaProduct(wh.id, req.params.productId);
+    res.json({ ok: true, move, product });
+  } catch (err) {
+    if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message, code: err.code });
+    console.error('Nextore postPdaMove:', err);
+    res.status(err.status || 500).json({ error: err.message || 'Erreur', ...(err.code ? { code: err.code } : {}) });
+  }
+}
+
 // POST /:shop/products/:productId/suppliers — { action: add|principal|remove, supplier_id }
 // Écrit la fiche Nextore (commune aux deux boutiques) ; retirer écarte aussi des besoins.
 async function postProductSupplier(req, res) {
@@ -549,6 +581,8 @@ module.exports = {
   getStockHistory,
   getProduct,
   postProductsDisabled,
+  getPdaProduct,
+  postPdaMove,
   // Comptage (inventaire)
   getCategories,
   searchProducts,

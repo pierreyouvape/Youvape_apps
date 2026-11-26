@@ -72,7 +72,7 @@ export default function PdaHome() {
             </div>
             {shops.map(s => (
               <PdaTile
-                key={s.slug} label={`Boutique ${s.label}`} hint="Comptage, réception" Icon={BoutiqueIcon} color={s.color}
+                key={s.slug} label={`Boutique ${s.label}`} hint="Comptage, réception, produit" Icon={BoutiqueIcon} color={s.color}
                 onClick={() => navigate(`/pda/boutique/${s.slug}`)}
               />
             ))}

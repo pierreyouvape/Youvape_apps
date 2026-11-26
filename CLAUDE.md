@@ -731,6 +731,16 @@ Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fic
   et `sending_only_by` dit à qui sont les lignes : un envoi interrompu ne se reprend que pour elles.
   Migration `add_boutique_reception_send_mine.sql` AVANT le code.
 
+**Lot 3 = Produit** (26/11/2026, `PdaProduitBoutique.jsx`, `boutiqueProductPdaModel.js`, routes `…/pda/products/:id`) :
+scan ou recherche → fiche de l'onglet Produits + stock **lu en direct** dans Nextore, ventes 30 j / 90 j / 1 an /
+total (base de ventes depuis le 01/12/2023), arrivages (nos commandes ouvertes + achats « en attente » Nextore,
+comme « En commande » des Besoins), derniers mouvements.
+- **Mouvement de stock** : motifs du PDA du site (Ajustement entrée/sortie, Défectueux sortie), sortie refusée
+  au-delà du stock relu en direct. `PUT /stocks` en delta, une ligne `boutique_stock_moves` posée en `sending`
+  AVANT l'appel. **Un échec se juge en relisant le stock** : inchangé = `error` (rien n'est passé), avant +
+  mouvement = `sent`, autre = `uncertain` (« VÉRIFIEZ dans Nextore », jamais renvoyé seul).
+- Migration `add_boutique_stock_moves.sql` AVANT le code.
+
 ### Catalogue caisse : produits du site → Nextore (10/11/2026)
 
 `nextoreCatalogSyncService`, cron `20 8-20 * * *`, **éteint tant que `app_config.nextore_autocreate_since`

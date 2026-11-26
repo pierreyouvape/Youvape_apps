@@ -1,12 +1,13 @@
 import { useContext } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
-import { Inventory as InventoryIcon, Reception as ReceptionIcon } from '../components/AppIcons';
+import { Catalog as ProductIcon, Inventory as InventoryIcon, Reception as ReceptionIcon } from '../components/AppIcons';
 import { C } from '../components/picking/pickingUi';
 import PdaLayout from '../components/pda/PdaLayout';
 import PdaTile from '../components/pda/PdaTile';
 import ComptageTab from '../components/boutique/ComptageTab';
 import CommandesTab from '../components/boutique/CommandesTab';
+import PdaProduitBoutique from '../components/boutique/PdaProduitBoutique';
 import { SHOPS } from '../components/boutique/shops';
 
 /**
@@ -18,13 +19,15 @@ import { SHOPS } from '../components/boutique/shops';
  * Chaque écran porte le nom et la couleur de la boutique : un comptage passé
  * dans la mauvaise boutique écrirait un faux stock dans Nextore.
  *
- * Lots : 1 Comptage (23/11) ; 2 Réception (24/11) ; 3 Fiche produit. Pas
+ * Lots : 1 Comptage (23/11) ; 2 Réception (24/11) ; 3 Produit (26/11). Pas
  * d'« Étiquettes à refaire » sur le PDA (décision Pierre).
  */
 const SHOP_APPS = [
   { key: 'comptage', label: 'Comptage', hint: 'Inventaire de la boutique (Nextore)', Icon: InventoryIcon, color: '#7C3AED' },
   // Recevoir et valider une commande fournisseur ; créer / modifier : au PC
   { key: 'reception', label: 'Réception', hint: 'Recevoir une commande fournisseur', Icon: ReceptionIcon, color: '#0891B2' },
+  // Stock, ventes, arrivages, mouvement de stock Nextore
+  { key: 'produit', label: 'Produit', hint: 'Stock, ventes, arrivages, mouvement', Icon: ProductIcon, color: '#135E84' },
 ];
 
 function ShopBand({ shop, app }) {
@@ -70,6 +73,7 @@ export default function PdaBoutique() {
       <div style={{ padding: 10, background: C.grey }}>
         {app.key === 'comptage' && <ComptageTab shop={shop} token={token} pda />}
         {app.key === 'reception' && <CommandesTab shop={shop} token={token} pda />}
+        {app.key === 'produit' && <PdaProduitBoutique shop={shop} token={token} />}
       </div>
     </PdaLayout>
   );

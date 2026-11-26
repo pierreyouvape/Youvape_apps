@@ -80,6 +80,9 @@ router.get('/:shop/products/search', boutiquePerm('read'), nextoreController.sea
 router.post('/:shop/products/disabled', boutiquePerm('write'), nextoreController.postProductsDisabled);
 router.get('/:shop/products/:productId', boutiquePerm('read'), nextoreController.getProduct);
 router.post('/:shop/products/:productId/suppliers', boutiquePerm('write'), nextoreController.postProductSupplier);
+// PDA › Produit : fiche (stock en direct, ventes, arrivages) et mouvement de stock Nextore
+router.get('/:shop/pda/products/:productId', boutiquePerm('read'), nextoreController.getPdaProduct);
+router.post('/:shop/pda/products/:productId/moves', boutiquePerm('write'), nextoreController.postPdaMove);
 
 // Comptage (inventaire) — écriture Nextore : count/validate en permission 'write'
 router.get('/:shop/comptages', boutiquePerm('read'), nextoreController.listComptages);
