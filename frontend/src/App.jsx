@@ -7,6 +7,7 @@ import PrivateRoute from './components/PrivateRoute';
 import { SECTION_KEYS } from './utils/purchaseSections';
 import { SEO_SECTION_KEYS } from './utils/seoSections';
 import VersionWatcher from './components/VersionWatcher';
+import AppFavicon from './components/AppFavicon';
 import StationLock from './components/StationLock';
 import EcranIndisponible from './components/EcranIndisponible';
 import { page } from './utils/lazyPage';
@@ -155,6 +156,8 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <PageTitle />
+        {/* Favicon = couleur + pictogramme de l'app ouverte (repérer ses onglets) */}
+        <AppFavicon />
         {/* Prévient qu'un déploiement a eu lieu : un onglet ouvert exécute son
             code de départ tant qu'on ne le recharge pas, et passer d'un écran à
             l'autre ne recharge rien dans une SPA. */}
