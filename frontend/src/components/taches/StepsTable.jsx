@@ -104,7 +104,12 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
                 </td>
                 <td style={{ ...mTd, textAlign: 'left', fontWeight: isMine ? 600 : 400 }}
                   title={s.status === 'fait' && s.done_by_name ? `${s.name}\nFait par ${s.done_by_name} · ${formatDateTime(s.done_at)}` : s.name}>
-                  <InlineText value={s.name} onSave={(name) => update(s, { name })} style={{ ...ellipsis, width: '100%' }} />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <InlineText value={s.name} onSave={(name) => update(s, { name })} style={{ ...ellipsis, flex: 1, minWidth: 0 }} />
+                    <button type="button" onClick={() => update(s, { ask_link: !s.ask_link })}
+                      title={s.ask_link ? 'Le lien de la fiche produit sera demandé au passage à « Fait » (cliquer pour ne plus le demander)' : 'Demander le lien de la fiche produit au passage à « Fait »'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, padding: 0, flexShrink: 0, opacity: s.ask_link ? 1 : 0.2 }}>🔗</button>
+                  </span>
                 </td>
                 <td style={mTd}><PeoplePicker title="Owner (qui fait le travail)" value={s.owners} members={members} onChange={(owners) => update(s, { owners })} /></td>
                 <td style={mCell}><StepStatusPill cell status={s.status} onChange={(status) => update(s, { status })} /></td>

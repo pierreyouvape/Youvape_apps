@@ -29,8 +29,14 @@ export default function StepsEditor({ steps, members, onChange }) {
             <button type="button" style={{ ...small, visibility: i ? 'visible' : 'hidden' }} onClick={() => move(i, -1)} title="Monter">▲</button>
             <button type="button" style={{ ...small, visibility: i < steps.length - 1 ? 'visible' : 'hidden' }} onClick={() => move(i, 1)} title="Descendre">▼</button>
           </span>
-          <input value={s.name} onChange={(e) => set(i, { name: e.target.value })} placeholder={`Étape ${i + 1}`}
-            style={{ ...inputStyle, padding: '6px 8px' }} />
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input value={s.name} onChange={(e) => set(i, { name: e.target.value })} placeholder={`Étape ${i + 1}`}
+              style={{ ...inputStyle, padding: '6px 8px' }} />
+            <label title="Demander le lien de la fiche produit au passage à « Fait »"
+              style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 12, color: '#676879', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+              <input type="checkbox" checked={s.ask_link === true} onChange={(e) => set(i, { ask_link: e.target.checked })} />🔗 lien
+            </label>
+          </span>
           <span style={{ textAlign: 'center' }}>
             <PeoplePicker title="Responsable(s)" value={s.owners || []} members={members} onChange={(owners) => set(i, { owners })} />
           </span>

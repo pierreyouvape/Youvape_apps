@@ -77,7 +77,7 @@ export default function TemplatesTab({ members, labels, templates, onChange }) {
                 <ol style={{ margin: 0, paddingLeft: 22, fontSize: 14, color: '#374151' }}>
                   {t.steps.map((s, i) => (
                     <li key={i} style={{ padding: '2px 0' }}>
-                      <strong>{s.name}</strong>
+                      <strong>{s.name}</strong>{s.ask_link && <span title="Demande le lien de la fiche produit"> 🔗</span>}
                       <span style={{ color: '#6B7280' }}> — fait par {names(s.owners)} · prévient {names(s.notify)}</span>
                     </li>
                   ))}

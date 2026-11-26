@@ -217,6 +217,7 @@ app.listen(PORT, async () => {
 
   // Rappels des tâches récurrentes de l'app Tableau (écran + email) - chaque minute
   setupTableauRemindersCron();
+  require('./services/tachesStockService').setup(); // Tâches : « Stockage » coché quand le produit a du stock
 
   // Initialiser le cron d'envoi automatique des rapports par email (journalier/hebdo/mensuel)
   setupReportEmailCron();

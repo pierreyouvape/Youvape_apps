@@ -9,7 +9,8 @@ const handle = (fn) => async (req, res) => {
     res.json(result === undefined ? { success: true } : result);
   } catch (error) {
     if (!error.statusCode) console.error('Tâches :', error);
-    res.status(error.statusCode || 500).json({ error: error.message || 'Erreur serveur' });
+    // `code` / `details` : réponses que l'écran sait traiter (ex. LINK_REQUIRED → demander le lien).
+    res.status(error.statusCode || 500).json({ error: error.message || 'Erreur serveur', code: error.code, details: error.details });
   }
 };
 

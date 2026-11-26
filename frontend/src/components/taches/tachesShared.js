@@ -43,6 +43,30 @@ export const initials = (name) => String(name || '?').split(/\s+/).map((w) => w[
 export const apiError = (e) => e?.response?.data?.error || e?.message || 'Erreur';
 
 const base = `${API_URL}/taches`;
+
+/**
+ * Passage d'une étape à « Fait ». Si l'étape demande le lien de la fiche
+ * produit (« Rédaction texte »), le serveur répond LINK_REQUIRED avec le lien
+ * actuel : on le fait confirmer ou saisir, puis on renvoie. Annuler = rien ne change.
+ */
+async function updateStepAsking(id, body) {
+  try {
+    return (await axios.patch(`${base}/steps/${id}`, body)).data;
+  } catch (e) {
+    if (e?.response?.data?.code !== 'LINK_REQUIRED') throw e;
+    const current = e.response.data.details?.current || '';
+    const link = window.prompt(
+      'Lien de la fiche produit créée sur le site (obligatoire pour terminer cette étape) :',
+      /youvape\.fr/i.test(current) ? current : 'https://www.youvape.fr/produit/',
+    );
+    if (link === null) {
+      const cancel = new Error('Étape non terminée : lien de la fiche non renseigné.');
+      cancel.response = { data: { error: cancel.message } };
+      throw cancel;
+    }
+    return (await axios.patch(`${base}/steps/${id}`, { ...body, link_url: link.trim() })).data;
+  }
+}
 const data = (p) => p.then((r) => r.data);
 
 export const tachesApi = {
@@ -68,7 +92,7 @@ export const tachesApi = {
   updateTask: (id, body) => data(axios.patch(`${base}/tasks/${id}`, body)),
   deleteTask: (id) => data(axios.delete(`${base}/tasks/${id}`)),
   addStep: (taskId, body) => data(axios.post(`${base}/tasks/${taskId}/steps`, body)),
-  updateStep: (id, body) => data(axios.patch(`${base}/steps/${id}`, body)),
+  updateStep: (id, body) => updateStepAsking(id, body),
   moveStep: (id, direction) => data(axios.post(`${base}/steps/${id}/move`, { direction })),
   deleteStep: (id) => data(axios.delete(`${base}/steps/${id}`)),
   addComment: (taskId, body, mentions = []) => data(axios.post(`${base}/tasks/${taskId}/comments`, { body, mentions })),

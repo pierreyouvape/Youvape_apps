@@ -348,7 +348,7 @@ async function deleteGroup(id) {
 /* ─── Lecture ───────────────────────────────────────────── */
 
 const TASK_COLS = `
-  t.id, t.board_id, t.group_id, t.title, t.link_url, t.labels, t.priority, t.manual_status,
+  t.id, t.board_id, t.group_id, t.title, t.link_url, t.wp_product_id, t.labels, t.priority, t.manual_status,
   t.description, t.position, t.created_by, t.updated_by, ${USER_NAME('uu')} AS updated_by_name,
   to_char(t.start_date, 'YYYY-MM-DD') AS start_date,
   to_char(t.due_date, 'YYYY-MM-DD') AS due_date,
@@ -359,7 +359,7 @@ const TASK_COLS = `
   (SELECT count(*)::int FROM taches_comments c WHERE c.task_id = t.id) AS comment_count`;
 
 const STEP_COLS = `
-  s.id, s.task_id, s.position, s.name, s.status, s.priority, s.note,
+  s.id, s.task_id, s.position, s.name, s.status, s.priority, s.note, s.ask_link,
   to_char(s.start_date, 'YYYY-MM-DD') AS start_date,
   to_char(s.due_date, 'YYYY-MM-DD') AS due_date,
   to_char(s.done_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS done_at,
@@ -600,7 +600,7 @@ async function initialSteps(db, body) {
     steps = rows[0].steps;
   }
   return (steps || [])
-    .map((s) => ({ name: cleanText(s.name, 200), owners: toIds(s.owners), notify: toIds(s.notify) }))
+    .map((s) => ({ name: cleanText(s.name, 200), owners: toIds(s.owners), notify: toIds(s.notify), ask_link: s.ask_link === true }))
     .filter((s) => s.name);
 }
 
@@ -637,8 +637,8 @@ async function createTask(userId, body) {
     await notify(db, { userIds: people, kind: 'assigned', taskId: task.id, actorId: userId, body: title });
     for (let i = 0; i < steps.length; i += 1) {
       const { rows: [step] } = await db.query(
-        'INSERT INTO taches_steps (task_id, position, name, status) VALUES ($1, $2, $3, $4) RETURNING id',
-        [task.id, i, steps[i].name, i === 0 ? 'a_faire' : 'bloque'],
+        'INSERT INTO taches_steps (task_id, position, name, status, ask_link) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [task.id, i, steps[i].name, i === 0 ? 'a_faire' : 'bloque', steps[i].ask_link],
       );
       await setStepPeople(db, step.id, 'owner', steps[i].owners);
       await setStepPeople(db, step.id, 'notify', steps[i].notify);
@@ -664,7 +664,7 @@ async function updateTask(userId, id, body) {
       if (!title) throw httpError(400, 'Le titre est obligatoire');
       set('title', title);
     }
-    if ('link_url' in body) set('link_url', validUrl(body.link_url));
+    if ('link_url' in body) { set('link_url', validUrl(body.link_url)); sets.push('wp_product_id = NULL'); }
     if ('labels' in body) set('labels', toLabels(body.labels || []));
     if ('priority' in body) set('priority', validPriority(body.priority));
     if ('description' in body) set('description', cleanText(body.description, 5000));
@@ -793,8 +793,9 @@ async function addStep(userId, taskId, body) {
  * prévient Slack (après validation de la transaction : un message ne doit
  * jamais annoncer un changement annulé).
  */
-async function updateStep(userId, stepId, body) {
+async function updateStep(userId, stepId, body, { auto = null } = {}) {
   let notice = null;
+  let linkChanged = false;
   const taskId = await withTx(async (db) => {
     const tid = await lockTaskOfStep(db, stepId);
     const { rows: [step] } = await db.query(
@@ -802,6 +803,27 @@ async function updateStep(userId, stepId, body) {
          FROM taches_steps WHERE id = $1`,
       [stepId],
     );
+
+    // Étape qui demande le lien de la fiche (« Rédaction texte ») : pas de « fait » sans lui.
+    // L'écran reçoit LINK_REQUIRED avec le lien actuel, le fait confirmer, puis renvoie avec `link_url`.
+    if (body.status === 'fait' && step.status !== 'fait' && step.ask_link) {
+      const { rows: [cur] } = await db.query('SELECT link_url, description FROM taches_tasks WHERE id = $1', [tid]);
+      if (!('link_url' in body)) {
+        const e = httpError(409, 'Lien de la fiche produit à renseigner');
+        e.code = 'LINK_REQUIRED';
+        e.details = { current: cur.link_url || '' };
+        throw e;
+      }
+      const url = validUrl(body.link_url);
+      if (!url) throw httpError(400, 'Le lien de la fiche produit est obligatoire pour terminer cette étape');
+      if (url !== cur.link_url) {
+        // Un ancien lien (souvent le fournisseur) n'est pas perdu : il passe dans la description.
+        const keep = cur.link_url && !/youvape\.fr/i.test(cur.link_url)
+          ? `${cur.description ? `${cur.description}\n` : ''}Lien fournisseur : ${cur.link_url}` : cur.description;
+        await db.query('UPDATE taches_tasks SET link_url = $2, description = $3, wp_product_id = NULL WHERE id = $1', [tid, url, keep]);
+        linkChanged = true;
+      }
+    }
 
     const sets = [];
     const params = [stepId];
@@ -820,6 +842,7 @@ async function updateStep(userId, stepId, body) {
     }
     if ('note' in body) set('note', cleanText(body.note, 2000));
     if ('priority' in body) set('priority', validPriority(body.priority));
+    if ('ask_link' in body) set('ask_link', body.ask_link === true);
 
     const newStatus = body.status;
     if (newStatus !== undefined && !STEP_STATUSES.includes(newStatus)) throw httpError(400, 'Statut invalide');
@@ -871,7 +894,16 @@ async function updateStep(userId, stepId, body) {
             stepId: plan.unblock.id, actorId: userId, body: plan.unblock.name,
           });
         }
-        if (plan.recipients.length) notice = { taskId: tid, stepId, plan, userId };
+        if (plan.recipients.length) notice = { taskId: tid, stepId, plan, userId, auto };
+        // Toutes les étapes faites : la tâche part aux archives (décision Maxime, 26/11/2026).
+        if (plan.finished) {
+          await db.query(`UPDATE taches_tasks SET archived_at = COALESCE(archived_at, ${PARIS_NOW}) WHERE id = $1`, [tid]);
+          await logEvent(db, { taskId: tid, userId, kind: 'auto_archived', detail: {} });
+        }
+      } else if (step.status === 'fait') {
+        // Une étape rouverte ressort la tâche des archives.
+        const { rowCount } = await db.query('UPDATE taches_tasks SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL', [tid]);
+        if (rowCount) await logEvent(db, { taskId: tid, userId, kind: 'auto_unarchived', detail: { name: step.name } });
       }
     }
     await touch(db, tid, userId);
@@ -880,14 +912,41 @@ async function updateStep(userId, stepId, body) {
 
   // Slack en dehors de la transaction, sans faire échouer la mise à jour.
   if (notice) sendDoneNotice(notice).catch((e) => console.error('[Tâches] Slack :', e.message));
+  if (linkChanged) resolveProduct(taskId).catch((e) => console.error('[Tâches] produit :', e.message));
   return getTask(taskId);
+}
+
+/* ─── Produit du site lié à une tâche (pour « Stockage » automatique) ─── */
+
+/** Slug d'un lien de fiche produit du site (…/produit/…/<slug>/), sinon null. */
+function productSlug(url) {
+  const m = /youvape\.fr\/produit\/(?:[^?#]*\/)?([^/?#]+)\/?(?:[?#].*)?$/i.exec(String(url || ''));
+  return m ? decodeURIComponent(m[1]).toLowerCase() : null;
+}
+
+/** Retrouve le produit WooCommerce du lien de la tâche et le range dans wp_product_id (0 = introuvable). */
+async function resolveProduct(taskId) {
+  const { rows: [t] } = await pool.query('SELECT link_url FROM taches_tasks WHERE id = $1', [taskId]);
+  const slug = productSlug(t?.link_url);
+  if (!slug) return null;
+  const { rows: [c] } = await pool.query('SELECT consumer_key, consumer_secret, woocommerce_url FROM rewards_config LIMIT 1');
+  const { rows: [u] } = await pool.query("SELECT config_value FROM app_config WHERE config_key = 'wc_sync_wp_url'");
+  const base = (u?.config_value || c.woocommerce_url).replace(/\/$/, '');
+  const qs = new URLSearchParams({ consumer_key: c.consumer_key, consumer_secret: c.consumer_secret, slug, _fields: 'id,slug' });
+  const res = await fetch(`${base}/wp-json/wc/v3/products?${qs}`, { signal: AbortSignal.timeout(20000) });
+  const data = await res.json().catch(() => null);
+  // Un 200 n'est pas une preuve (page du pare-feu) : on veut un tableau JSON.
+  if (!res.ok || !Array.isArray(data)) throw new Error(`WooCommerce ${res.status} pour le slug ${slug}`);
+  const id = data[0]?.id || 0;
+  await pool.query('UPDATE taches_tasks SET wp_product_id = $2 WHERE id = $1 AND link_url = $3', [taskId, id, t.link_url]);
+  return id;
 }
 
 const namesMap = async () => new Map(
   (await pool.query(`SELECT id, ${USER_NAME('u')} AS name FROM users u`)).rows.map((r) => [r.id, r.name]),
 );
 
-async function sendDoneNotice({ taskId, stepId, plan, userId }) {
+async function sendDoneNotice({ taskId, stepId, plan, userId, auto }) {
   const { rows: [task] } = await pool.query('SELECT id, title FROM taches_tasks WHERE id = $1', [taskId]);
   const names = await namesMap();
   const result = await tachesSlack.sendDoneNotice({
@@ -896,7 +955,7 @@ async function sendDoneNotice({ taskId, stepId, plan, userId }) {
     nextStep: plan.next,
     unblocked: Boolean(plan.unblock),
     finished: plan.finished,
-    doneBy: names.get(userId),
+    doneBy: auto || names.get(userId),
     recipients: plan.recipients,
     names,
   });
@@ -1105,7 +1164,7 @@ async function saveTemplate(id, body) {
   const name = cleanText(body.name, 100);
   if (!name) throw httpError(400, 'Le nom du modèle est obligatoire');
   const steps = (Array.isArray(body.steps) ? body.steps : [])
-    .map((s) => ({ name: cleanText(s.name, 200), owners: toIds(s.owners), notify: toIds(s.notify) }))
+    .map((s) => ({ name: cleanText(s.name, 200), owners: toIds(s.owners), notify: toIds(s.notify), ask_link: s.ask_link === true }))
     .filter((s) => s.name);
   await checkMembers([...new Set(steps.flatMap((s) => [...s.owners, ...s.notify]))]);
   const labels = toLabels(body.labels || []);
@@ -1232,6 +1291,8 @@ module.exports = {
   markAllNotifications,
   reorderTasks,
   reorderSteps,
+  resolveProduct,
+  productSlug,
   getTemplates,
   saveTemplate,
   deleteTemplate,
