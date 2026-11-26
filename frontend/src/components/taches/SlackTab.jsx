@@ -61,10 +61,11 @@ export default function SlackTab({ members }) {
         Sans identifiant, le nom est écrit en gras mais la personne n'est pas notifiée.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {members.filter((m) => m.has_app !== false).map((m) => (
+        {members.map((m) => (
           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Avatar id={m.id} name={m.name} size={28} />
             <span style={{ width: 120, fontWeight: 700, color: '#374151' }}>{m.name}</span>
+            {m.has_app === false && <span style={{ fontSize: 12, color: '#9CA3AF', width: 150 }}>pas encore accès à l'app</span>}
             <input value={ids[m.id] || ''} onChange={(e) => setIds({ ...ids, [m.id]: e.target.value })}
               placeholder="U0123ABCD" style={{ ...inputStyle, width: 200 }} />
           </div>
