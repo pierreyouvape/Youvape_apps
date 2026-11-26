@@ -1,15 +1,13 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
-import { AuthContext } from '../../context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
 import { tachesApi, apiError, formatDateTime, STEP_STATUS, TASK_STATUS, TACHES_COLOR, btn, inputStyle } from './tachesShared';
-import { InlineText, PriorityPill, TaskStatusPill, Avatar, PeoplePicker, LabelsInput, DateRange } from './tachesUi';
+import { InlineText, PriorityPill, TaskStatusPill, PeoplePicker, LabelsInput, DateRange } from './tachesUi';
 import StepsTable from './StepsTable';
-import MentionInput, { CommentBody } from './MentionInput';
+import { CommentsThread } from './CommentsThread';
 
 const label = { fontSize: 12, fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 6 };
 
 /** Fenêtre large d'une tâche : champs, étapes, commentaires, journal. */
 export default function TaskModal({ taskId, members, labels, boards, canWrite, onClose, onChanged, focusUserId }) {
-  const { user } = useContext(AuthContext);
   const [task, setTask] = useState(null);
   const [error, setError] = useState(null);
   const [showLog, setShowLog] = useState(false);
@@ -32,17 +30,6 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
   const apply = (t) => { setTask(t); setError(null); onChanged?.(t); };
   const save = async (body) => {
     try { apply(await tachesApi.updateTask(taskId, body)); } catch (e) { setError(apiError(e)); }
-  };
-
-  // Renvoie false en cas d'échec : le texte reste dans la zone pour être renvoyé.
-  const send = async (text, mentions) => {
-    try {
-      apply(await tachesApi.addComment(taskId, text, mentions));
-      return true;
-    } catch (err) {
-      setError(apiError(err));
-      return false;
-    }
   };
 
   const remove = async () => {
@@ -126,6 +113,17 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
             {error && <div style={{ margin: '0 22px 10px', padding: '8px 12px', background: '#FEE2E2', color: '#B91C1C', borderRadius: 8, fontSize: 13 }}>{error}</div>}
 
             <div style={{ padding: '0 22px 18px' }}>
+              <div style={label}>Description</div>
+              <InlineText multiline value={task.description} placeholder="Ajouter une description…" onSave={(description) => save({ description })}
+                style={{ fontSize: 14, color: '#374151', whiteSpace: 'pre-wrap', width: '100%' }} />
+            </div>
+
+            <div style={{ padding: '16px 22px', borderTop: '1px solid #E5E7EB', borderBottom: '1px solid #E5E7EB', background: '#FAFBFC', marginBottom: 16 }}>
+              <div style={label}>Commentaires ({task.comments.length})</div>
+              <CommentsThread task={task} members={members} onTask={apply} onError={setError} />
+            </div>
+
+            <div style={{ padding: '0 22px 18px' }}>
               <div style={label}>Étapes</div>
               <div style={{ border: '1px solid #E5E7EB', borderLeft: `4px solid ${TACHES_COLOR}`, borderRadius: 8 }}>
                 <StepsTable task={task} members={members} onChange={apply} onError={setError} focusUserId={focusUserId} />
@@ -134,37 +132,6 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                 Passer une étape à « Fait » débloque la suivante et prévient sur Slack les personnes « À prévenir »
                 (à défaut, le responsable de l'étape suivante). 🗑 supprime une étape.
               </p>
-            </div>
-
-            <div style={{ padding: '0 22px 18px' }}>
-              <div style={label}>Description</div>
-              <InlineText multiline value={task.description} placeholder="Ajouter une description…" onSave={(description) => save({ description })}
-                style={{ fontSize: 14, color: '#374151', whiteSpace: 'pre-wrap', width: '100%' }} />
-            </div>
-
-            <div style={{ padding: '16px 22px', borderTop: '1px solid #E5E7EB', background: '#FAFBFC' }}>
-              <div style={label}>Commentaires ({task.comments.length})</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-                {task.comments.map((c) => (
-                  <div key={c.id} style={{ display: 'flex', gap: 10 }}>
-                    <Avatar id={c.user_id || 0} name={c.user_name || 'Monday'} size={30} />
-                    <div style={{ flex: 1, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10, padding: '8px 12px' }}>
-                      <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
-                        <span><strong style={{ color: '#374151' }}>{c.user_name || 'Import Monday'}</strong> · {formatDateTime(c.created_at)}</span>
-                        {c.user_id === user?.id && (
-                          <button type="button" style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 12 }}
-                            onClick={async () => {
-                              if (!window.confirm('Supprimer ce commentaire ?')) return;
-                              try { apply(await tachesApi.deleteComment(c.id)); } catch (e) { setError(apiError(e)); }
-                            }}>Supprimer</button>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 14, color: '#1F2937', whiteSpace: 'pre-wrap' }}><CommentBody body={c.body} mentions={c.mentions} members={members} /></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <MentionInput members={members} onSubmit={send} />
             </div>
 
             <div style={{ padding: '12px 22px', borderTop: '1px solid #E5E7EB', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

@@ -8,6 +8,7 @@ import {
 import { useSort, sortRows, useKeyedWidths } from './tachesColumns';
 import { CustomCell, AddColumnButton, DateCell } from './CustomCells';
 import StepsTable from './StepsTable';
+import CommentsPopup from './CommentsThread';
 
 const th = mTh;
 const td = mTd;
@@ -50,6 +51,7 @@ export default function TableView({
   tasks, loading, board, boards, members, canWrite, focusUserId, hideEmptyGroups = false,
   onOpen, onTaskChange, onError, onReload, onBoardsChange,
 }) {
+  const [commentsId, setCommentsId] = useState(null);
   const widths = useKeyedWidths('table');
   const [expanded, setExpanded] = useState(() => new Set());
   const [collapsed, setCollapsed] = useState(loadCollapsed);
@@ -249,16 +251,17 @@ export default function TableView({
     switch (d.key) {
       case 'id': return <td key="id" style={{ ...td, color: M.sub, fontSize: 13 }}>#{t.id}</td>;
       case 'title': return (
-        <td key="title" style={{ ...td, textAlign: 'left' }} title={t.title}>
+        <td key="title" style={{ ...td, textAlign: 'left', cursor: 'pointer' }} title={t.title} onClick={() => onOpen(t.id)}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button type="button" onClick={() => onOpen(t.id)} style={{
+            <button type="button" style={{
               ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
               fontSize: 14, color: M.text, textAlign: 'left', flex: '0 1 auto', minWidth: 0,
             }}>{t.title}</button>
             {t.steps.length > 0 && <span style={{ fontSize: 12, color: M.sub, background: '#E6E9EF', borderRadius: 4, padding: '0 5px', flexShrink: 0 }}>{t.steps.length}</span>}
             {t.archived_at && <span style={{ fontSize: 11, color: '#B45309', fontWeight: 700, flexShrink: 0 }}>ARCHIVÉE</span>}
             <span style={{ flex: 1 }} />
-            <span title="Commentaires" style={{ fontSize: 13, color: t.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>💬{t.comment_count ? ` ${t.comment_count}` : ''}</span>
+            <button type="button" title="Voir les commentaires" onClick={(e) => { e.stopPropagation(); setCommentsId(t.id); }}
+              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: t.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>💬{t.comment_count ? ` ${t.comment_count}` : ''}</button>
           </span>
         </td>
       );
@@ -341,6 +344,7 @@ export default function TableView({
 
   return (
     <div>
+      {commentsId && <CommentsPopup taskId={commentsId} members={members} onClose={() => setCommentsId(null)} onChanged={onTaskChange} onOpenTask={onOpen} />}
       {selected.size > 0 && (
         <div style={{
           position: 'sticky', top: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',

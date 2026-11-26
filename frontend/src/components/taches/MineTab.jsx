@@ -7,6 +7,7 @@ import {
 import { Avatar, PriorityPill, AvatarStack, StepStatusPill, TaskStatusPill, DateRange, ColGroup, ColResizer, SortMark } from './tachesUi';
 import { useColumnWidths, useSort, sortRows } from './tachesColumns';
 import StepsTable from './StepsTable';
+import CommentsPopup from './CommentsThread';
 
 const GROUPS = [
   { key: 'now', title: 'À traiter maintenant', color: '#579BFC' },
@@ -32,6 +33,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
   const [fLabel, setFLabel] = useState('');
   const [fPriority, setFPriority] = useState('');
   const [fStatus, setFStatus] = useState('');
+  const [commentsId, setCommentsId] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -122,6 +124,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
 
   return (
     <div style={{ fontFamily: M.font, color: M.text }}>
+      {commentsId && <CommentsPopup taskId={commentsId} members={members} onClose={() => setCommentsId(null)} onChanged={() => load()} onOpenTask={onOpen} />}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Filtrer (tâche, étape, étiquette)" style={{ ...sel, width: 260 }} />
         <select value={fLabel} onChange={(e) => setFLabel(e.target.value)} style={sel}>
@@ -194,17 +197,18 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                                 </button>
                               )}
                             </td>
-                            <td style={{ ...mTd, textAlign: 'left' }} title={task.title}>
+                            <td style={{ ...mTd, textAlign: 'left', cursor: 'pointer' }} title={task.title} onClick={() => onOpen(task.id)}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <button type="button" onClick={() => onOpen(task.id)} style={{
+                                <button type="button" style={{
                                   ...ellipsis, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit',
                                   fontSize: 14, color: M.text, textAlign: 'left', flex: 1, minWidth: 0,
                                 }}>
                                   {task.title}
                                 </button>
-                                {task.comment_count > 0 && <span style={{ fontSize: 12, color: '#0073EA', flexShrink: 0 }}>💬 {task.comment_count}</span>}
+                                <button type="button" title="Voir les commentaires" onClick={(e) => { e.stopPropagation(); setCommentsId(task.id); }}
+              style={{ background: 'none', border: 'none', padding: '2px 4px', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: task.comment_count ? '#0073EA' : '#C3C6D4', flexShrink: 0 }}>💬{task.comment_count ? ` ${task.comment_count}` : ''}</button>
                                 {task.link_url && (
-                                  <a href={task.link_url} target="_blank" rel="noreferrer" title={task.link_url}
+                                  <a href={task.link_url} target="_blank" rel="noreferrer" title={task.link_url} onClick={(e) => e.stopPropagation()}
                                     style={{ flexShrink: 0, color: '#0073EA', textDecoration: 'none' }}>↗</a>
                                 )}
                               </span>
