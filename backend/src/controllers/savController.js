@@ -1236,6 +1236,14 @@ const savController = {
           guest: true,
         };
       }
+      // Compte sans nom : un client sur quatre (compte WordPress créé sans
+      // prénom ni nom, qui n'existent que dans la facturation des commandes).
+      // On complète depuis la commande, sans quoi Prénom / Nom restaient vides
+      // et la fiche client à droite affichait « — » (cas 1278316, 27/11/2026).
+      if (!String(customer.first_name || '').trim() && !String(customer.last_name || '').trim()) {
+        customer.first_name = order.billing_first_name || '';
+        customer.last_name  = order.billing_last_name || '';
+      }
       // Téléphone : pas de colonne sur customers → on prend celui du billing.
       customer.billing_phone = order.billing_phone || '';
 

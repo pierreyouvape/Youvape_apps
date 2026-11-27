@@ -22,10 +22,27 @@ const MAX_FILES = 10;
 
 // Stockage temporaire en mémoire — les fichiers sont déplacés vers leur dossier
 // final dans le contrôleur, une fois le ticket validé.
+// `fieldSize` : le corps du message est un champ TEXTE du multipart, et multer
+// le borne à 1 Mo par défaut. Une image collée qui n'a pas pu être uploadée à
+// part (création de ticket : le ticket n'existe pas encore) y voyage en base64
+// (`data:image/…`, rangée ensuite par `persistDataUriImages`) : une photo de
+// téléphone dépasse le Mo et tout l'envoi tombait en « Field value too long ».
+// Le plafond réel reste celui de nginx (30 Mo pour la requête entière).
+const MAX_FIELD_SIZE = 25 * 1024 * 1024;
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES },
+  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FILES, fieldSize: MAX_FIELD_SIZE },
 });
+
+// Messages lisibles pour un refus de multer. Sans ce gestionnaire, Express
+// répond sa page d'erreur HTML et l'écran affichait
+// « Unexpected token '<', "<!DOCTYPE "... is not valid JSON ».
+const MULTER_MESSAGES = {
+  LIMIT_FIELD_VALUE: 'Message trop lourd (images collées comprises). Joignez les photos avec le trombone plutôt que de les coller.',
+  LIMIT_FILE_SIZE:   `Fichier trop lourd (max ${MAX_FILE_SIZE / 1024 / 1024} Mo).`,
+  LIMIT_FILE_COUNT:  `Trop de fichiers (max ${MAX_FILES}).`,
+  LIMIT_UNEXPECTED_FILE: `Trop de fichiers (max ${MAX_FILES}).`,
+};
 
 // ─── Limites propres à l'EMAIL ENTRANT ───────────────────────────────────────
 // Un client qui photographie un colis abîmé sous tous les angles dépasse
@@ -343,5 +360,13 @@ router.put('/:id/notes',               canRead, savController.updateNotes);
 // Note portée par la fiche client (≠ note du ticket ci-dessus). Trois segments,
 // donc aucun recouvrement avec '/:id/notes'.
 router.put('/customers/:customerId/note', canRead, savController.updateCustomerNote);
+
+// Refus de multer → JSON (le front lit toujours `res.json()`).
+router.use((err, req, res, next) => {
+  if (!(err instanceof multer.MulterError)) return next(err);
+  console.warn(`[SAV] Envoi refusé par multer (${err.code}) sur ${req.method} ${req.originalUrl}`);
+  const status = err.code === 'LIMIT_FIELD_VALUE' || err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+  res.status(status).json({ success: false, error: MULTER_MESSAGES[err.code] || err.message });
+});
 
 module.exports = router;
