@@ -712,7 +712,8 @@ Lot 1 = Comptage (`ComptageTab` en mode `pda`) ; lots suivants : Réception, Fic
 - Migration `add_nextore_comptage_lock.sql` AVANT le code.
 
 **Lot 2 = Réception** (24/11/2026, `CommandesTab` en mode `pda`, vue en cartes) : le PDA reçoit **et valide**
-(motifs compris, choix Pierre). Créer, modifier, supprimer une commande et abandonner une réception : PC.
+(motifs compris, choix Pierre). Créer, modifier, supprimer une commande et abandonner TOUTE une réception : PC. Le PDA a **« Abandonner mes lignes »**
+(27/11/2026) : les seules lignes de la personne, non envoyées, remises à 0 donc libérées ; la réception continue.
 - Le comptage d'une ligne s'envoie en **valeur absolue** : deux appareils sur la même ligne s'écrasaient.
   D'où le même verrou par personne (`boutique_reception_counts.counted_by`, contrôlé dans l'upsert de
   `boutiqueOrderModel.setCount`, 409 `LOCKED`). **Remettre la ligne à 0 la libère** ; « Libérer » au PC

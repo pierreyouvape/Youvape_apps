@@ -324,8 +324,18 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
   };
 
   const startSession = () => run(async () => apply((await axios.post(`${base}/orders/${orderId}/session`, {}, auth)).data));
-  const abandon = () => window.confirm('Abandonner cette réception ? Le comptage sera perdu, rien ne part dans Nextore.') &&
+  // PC : abandonne TOUTE la réception. Plusieurs personnes comptent : on dit
+  // combien de lignes des AUTRES partent avec, pas seulement les siennes.
+  const abandon = () => {
+    const others = Object.entries(countsRef.current)
+      .filter(([id, n]) => n > 0 && !sentRef.current[id] && lockedBy(id));
+    const who = [...new Set(others.map(([id]) => lockedBy(id).name))];
+    const anySentLines = Object.keys(sentRef.current).length > 0;
+    if (!window.confirm('Abandonner cette réception ?\n\nLe comptage en cours sera perdu, rien de plus ne part dans Nextore.'
+      + (others.length ? `\n\n⚠️ ${others.length} ligne(s) comptée(s) par ${who.join(', ')} seront perdues aussi.` : '')
+      + (anySentLines ? '\n\nLes lignes déjà envoyées dans Nextore y restent (leur stock est entré).' : ''))) return;
     run(async () => { await flushWrites(); await axios.post(`${base}/sessions/${session.id}/abandon`, {}, auth); await load(); });
+  };
 
   // Pose une valeur absolue ; l'écran suit tout de suite, la base derrière.
   // En cas d'échec, on recharge depuis la base : c'est elle que la validation lit.
@@ -382,6 +392,22 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
       apply(res.data);
       say(`${fmtInt(res.data.pieces)} pièce(s) mises en stock : achat « ${res.data.nextore_reference} »`
         + (res.data.order.status !== 'open' ? ' — commande entièrement reçue' : ''));
+    });
+  };
+
+  // PDA : « Abandonner » ne touche que MES lignes (27/11/2026) : remises à 0, donc
+  // libérées pour les autres ; la réception continue. Les lignes déjà envoyées
+  // dans Nextore ne bougent pas (leur stock est entré).
+  const abandonMine = (mine) => {
+    const pieces = mine.reduce((a, x) => a + x.counted, 0);
+    if (!window.confirm(`Abandonner vos ${mine.length} ligne(s) (${fmtInt(pieces)} pièce(s)) ?\n\n`
+      + 'Elles repassent à 0 et redeviennent libres pour les autres. La réception continue, '
+      + 'les lignes des autres ne bougent pas.')) return;
+    run(async () => {
+      for (const x of mine) setCount(x.id, 0);
+      await flushWrites();
+      await load();
+      say(`${mine.length} ligne(s) abandonnée(s)`);
     });
   };
 
@@ -602,6 +628,8 @@ function OrderScreen({ shop, auth, orderId, onBack, pda }) {
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
               « Valider la réception » clôt tout, motifs des manquants compris : quand tout le monde a fini.
             </div>
+            <button className="btn btn-secondary" style={{ ...pdaBtn, width: '100%', marginTop: 10, color: '#b91c1c', borderColor: '#fca5a5' }}
+              onClick={() => abandonMine(myLines)} disabled={busy || myLines.length === 0}>Abandonner mes lignes ({myLines.length})</button>
           </>
         )}
       </div>
