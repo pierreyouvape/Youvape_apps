@@ -113,12 +113,16 @@ const variants = (s) => {
 
 const attrsOf = (p) => Object.fromEntries((p.attributes || []).map((a) => [decode(a.name), a.terms.map((t) => decode(t.name))]));
 
+// Un sel de nicotine est aussi rangé en « Eliquides 10ml » (filtres de la page 10 ml) : il reste un sel,
+// jamais un flacon 10 ml (format, ordre des formats, « la recette existe en 10 ml »).
+const formatCats = (slugs) => (slugs.includes('eliquides-sels-de-nicotine') ? slugs.filter((c) => c !== 'eliquides-10ml') : slugs);
+
 const summarize = (p) => ({
   id: p.id,
   nom: decode(p.name),
   url: p.permalink,
   chemin: pathOf(p.permalink),
-  categories: (p.categories || []).map((c) => c.slug),
+  categories: formatCats((p.categories || []).map((c) => c.slug)),
   attributs: attrsOf(p),
   description_courte: textOf(p.short_description),
   description_longue: textOf(p.description),
@@ -228,7 +232,7 @@ const loadDeclinaisons = async (key, marque) => {
   const out = [];
   for (const id of ids) {
     const p = await wpGet(`wc/store/v1/products/${id}`).catch(() => null);
-    const cat = p && DECLINAISON_CATS.find((c) => (p.categories || []).some((x) => x.slug === c));
+    const cat = p && DECLINAISON_CATS.find((c) => formatCats((p.categories || []).map((x) => x.slug)).includes(c));
     if (!cat) continue;
     // Pas de description : celle de la page parle de tous ses goûts, et elle gonflerait chaque appel à Claude.
     const { attributs } = summarize(p);
@@ -279,7 +283,7 @@ const dossierFromPayload = async (p) => {
     url: p.permalink || null,
     chemin: p.permalink ? pathOf(p.permalink) : null,
     statut: p.status || null,
-    categories: Array.isArray(p.categories) ? p.categories.map(String) : [],
+    categories: formatCats(Array.isArray(p.categories) ? p.categories.map(String) : []),
     attributs: Object.fromEntries(Object.entries(p.attributes || {}).map(([k, v]) => [decode(k), (Array.isArray(v) ? v : [v]).map((x) => decode(String(x)))])),
     description_courte: textOf(p.short_description),
     description_longue: textOf(p.description),
@@ -1051,6 +1055,7 @@ const resumeJobs = async () => {
 };
 
 module.exports = {
+  formatCats,
   usage,
   run, readCompetitorPage, loadDossier, dossierFromPayload, loadGsc, loadAds, loadCompetitors, loadMaillage, generate, lint, factCheck, revise, recipeKey,
   createJob, getJob, resumeJobs,

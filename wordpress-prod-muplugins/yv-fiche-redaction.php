@@ -2,7 +2,7 @@
 /**
  * Plugin Name: YouVape – rédaction des fiches produits
  * Description: Encadré « Module création fiche produit » sur la fiche produit : propose title et méta Yoast, H1, composition aromatique (par recette) et texte de marque. Rien n'est appliqué sans clic, rien n'est publié.
- * Version:     0.1.0
+ * Version:     0.2.0
  *
  * À placer dans wp-content/mu-plugins/. Deux réglages dans wp-config.php :
  *   define( 'YV_FICHE_REDACTION_URL', 'https://…' );   // adresse de l'application YouVape
@@ -12,6 +12,11 @@
  * « Composition aromatique » et « La marque » sont lus par l'extension yv-fiche-blocs
  * (taxonomie yv_recette, métas yv_composition et yv_texte_marque). Sans elle, ces deux
  * champs restent affichés mais ne peuvent pas être appliqués.
+ *
+ * 0.2.0 (18/11/2026) : suivi de la génération espacé (5 s puis jusqu'à 30 s), suspendu quand l'onglet
+ * est masqué, arrêté après 20 min ; état de la demande gardé 10 s côté site (plusieurs onglets = un seul
+ * appel) et une fois terminée, gardé 1 h. Title et méta-description écrits par l'API de Yoast
+ * (WPSEO_Meta::set_value) quand elle est là.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -208,6 +213,15 @@ function yvfr_render_box( WP_Post $post ): void {
 		const $ = (id) => document.getElementById(id);
 		const STEPS = { dossier: 'lecture de la fiche et des autres formats', 'search console': 'Search Console', 'google ads': 'Google Ads', concurrents: 'fiches concurrentes', 'rédaction': 'rédaction', 'contrôles': 'contrôles', maillage: 'maillage interne' };
 		let timer = null;
+		// Suivi espacé : 5 s, puis +50 % à chaque passage jusqu'à 30 s ; rien quand l'onglet est masqué ; arrêt après 20 min.
+		let delay = 5000, pending = false, since = 0;
+		const later = () => {
+			pending = true;
+			if (Date.now() - since > 20 * 60 * 1000) { pending = false; setStatus('Toujours en cours : rechargez la page plus tard pour voir le résultat.'); return; }
+			if (!document.hidden) timer = setTimeout(poll, delay);
+			delay = Math.min(Math.round(delay * 1.5), 30000);
+		};
+		document.addEventListener('visibilitychange', () => { if (!document.hidden && pending) { clearTimeout(timer); poll(); } });
 
 		const el = (tag, attrs, ...children) => {
 			const n = document.createElement(tag);
@@ -226,11 +240,13 @@ function yvfr_render_box( WP_Post $post ): void {
 
 		const poll = async () => {
 			clearTimeout(timer);
+			pending = false;
+			if (!since) since = Date.now();
 			try {
 				const job = await post('yvfr_status');
 				if (!job) return;
-				if (job.status === 'queued') { setStatus('En attente' + (job.ahead ? ' (' + job.ahead + ' fiche(s) avant)' : '') + '…'); timer = setTimeout(poll, 4000); return; }
-				if (job.status === 'running') { setStatus('En cours : ' + (STEPS[job.step] || job.step || '…')); timer = setTimeout(poll, 4000); return; }
+				if (job.status === 'queued') { setStatus('En attente' + (job.ahead ? ' (' + job.ahead + ' fiche(s) avant)' : '') + '…'); later(); return; }
+				if (job.status === 'running') { setStatus('En cours : ' + (STEPS[job.step] || job.step || '…')); later(); return; }
 				$('yvfr-start').disabled = false;
 				if (job.status === 'error') { setStatus('Échec : ' + job.error, 'yvfr-err'); return; }
 				setStatus('Proposition du ' + new Date(job.finished_at).toLocaleString('fr-FR') + (job.cost_usd != null ? ' · coût ' + job.cost_usd.toFixed(2) + ' $' : ''));
@@ -341,7 +357,7 @@ function yvfr_render_box( WP_Post $post ): void {
 		$('yvfr-start').addEventListener('click', async () => {
 			$('yvfr-start').disabled = true;
 			setStatus('Envoi…');
-			try { await post('yvfr_start'); poll(); } catch (e) { setStatus(e.message, 'yvfr-err'); $('yvfr-start').disabled = false; }
+			try { await post('yvfr_start'); delay = 5000; since = 0; poll(); } catch (e) { setStatus(e.message, 'yvfr-err'); $('yvfr-start').disabled = false; }
 		});
 		if (D.job) { $('yvfr-start').disabled = true; poll(); }
 	})();
@@ -381,13 +397,40 @@ add_action( 'wp_ajax_yvfr_start', function () {
 	wp_send_json_success( array( 'id' => (int) $res['id'] ) );
 } );
 
+/**
+ * État d'une demande, gardé côté site : 10 s tant qu'elle tourne (plusieurs onglets ou utilisateurs sur la même
+ * fiche = un seul appel à l'application), 1 h une fois terminée (une relance crée une autre demande).
+ */
+function yvfr_job( int $job_id ) {
+	$cle = 'yvfr_job_' . $job_id;
+	$res = get_transient( $cle );
+	if ( false !== $res ) {
+		return $res;
+	}
+	$res = yvfr_api( 'GET', '/jobs/' . $job_id );
+	if ( ! is_wp_error( $res ) ) {
+		$fini = in_array( $res['status'] ?? '', array( 'done', 'error' ), true );
+		set_transient( $cle, $res, $fini ? HOUR_IN_SECONDS : 10 );
+	}
+	return $res;
+}
+
+/** Title et méta Yoast : par l'API de Yoast si elle est chargée (Yoast reconstruit alors son index de la fiche). */
+function yvfr_yoast( int $post_id, string $champ, string $texte ): void {
+	if ( class_exists( 'WPSEO_Meta' ) && method_exists( 'WPSEO_Meta', 'set_value' ) ) {
+		WPSEO_Meta::set_value( $champ, $texte, $post_id );
+	} else {
+		update_post_meta( $post_id, '_yoast_wpseo_' . $champ, $texte );
+	}
+}
+
 add_action( 'wp_ajax_yvfr_status', function () {
 	$post_id = yvfr_check();
 	$job_id  = (int) get_post_meta( $post_id, YVFR_META_JOB, true );
 	if ( ! $job_id ) {
 		wp_send_json_success( null );
 	}
-	$res = yvfr_api( 'GET', '/jobs/' . $job_id );
+	$res = yvfr_job( $job_id );
 	if ( is_wp_error( $res ) ) {
 		wp_send_json_error( $res->get_error_message() );
 	}
@@ -409,12 +452,12 @@ add_action( 'wp_ajax_yvfr_apply', function () {
 
 	switch ( $field ) {
 		case 'title':
-			update_post_meta( $post_id, '_yoast_wpseo_title', $text );
+			yvfr_yoast( $post_id, 'title', $text );
 			wp_send_json_success( array( 'message' => 'Title Yoast enregistré.', 'reload' => true ) );
 			break;
 
 		case 'meta':
-			update_post_meta( $post_id, '_yoast_wpseo_metadesc', $text );
+			yvfr_yoast( $post_id, 'metadesc', $text );
 			wp_send_json_success( array( 'message' => 'Méta-description enregistrée.', 'reload' => true ) );
 			break;
 
@@ -457,7 +500,7 @@ add_action( 'wp_ajax_yvfr_apply', function () {
 			if ( ! taxonomy_exists( YVFR_TAX_RECIPE ) || ! current_user_can( 'manage_product_terms' ) ) {
 				wp_send_json_error( 'Extension yv-fiche-blocs absente ou droits insuffisants.' );
 			}
-			$job = yvfr_api( 'GET', '/jobs/' . (int) get_post_meta( $post_id, YVFR_META_JOB, true ) );
+			$job = yvfr_job( (int) get_post_meta( $post_id, YVFR_META_JOB, true ) );
 			if ( is_wp_error( $job ) || (int) ( $job['product_id'] ?? 0 ) !== $post_id || empty( $job['recipe'] ) ) {
 				wp_send_json_error( 'Recette introuvable : relancez la génération.' );
 			}

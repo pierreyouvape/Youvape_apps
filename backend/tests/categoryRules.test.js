@@ -58,3 +58,10 @@ assert.deepStrictEqual(pickCategory(P([7]), byId), { category: 'Box &amp; Mods E
   'nom brut, comme yousync');
 
 console.log('categoryRules : OK');
+
+// ── Module de rédaction : un sel rangé aussi en 10 ml reste un sel ──────────
+const { formatCats } = require('../src/services/productWriterService');
+assert.deepStrictEqual(formatCats(['eliquides-10ml', 'eliquides-sels-de-nicotine']), ['eliquides-sels-de-nicotine']);
+assert.deepStrictEqual(formatCats(['eliquides-10ml']), ['eliquides-10ml']);
+assert.deepStrictEqual(formatCats(['eliquides', 'eliquides-sels-de-nicotine']), ['eliquides', 'eliquides-sels-de-nicotine']);
+console.log('formatCats : OK');

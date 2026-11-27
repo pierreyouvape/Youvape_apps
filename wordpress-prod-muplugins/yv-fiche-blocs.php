@@ -2,7 +2,7 @@
 /**
  * Plugin Name: YouVape – blocs automatiques des fiches produits
  * Description: Tableau d'attributs, autres formats, conditions d'utilisation et questions, construits depuis les attributs WooCommerce. « Composition aromatique » (par recette) et « La marque » (par marque) se saisissent une fois.
- * Version:     0.4.2
+ * Version:     0.4.4
  *
  * À placer dans wp-content/mu-plugins/. Branchement : trois modifications des gabarits
  * views/woo/partials/accordions/ (short-description.twig, description.twig, faq.twig) du thème enfant, et l'affichage des accordéons
@@ -26,6 +26,13 @@
  * 0.4.1 (09/11/2026) : « Note fraîche : Oui », sans parler de menthe (attribut distinct).
  * 0.4.2 (09/11/2026) : termes comparés en entiers (le cache n'est plus vidé à chaque sauvegarde) ; titres des
  * fiches de la marque chargés d'un coup ; en-têtes du tableau resserrés pour tenir en mobile.
+ * 0.4.3 (18/11/2026) : cache vidé par marque, plus pour tout le catalogue : seule la marque de la fiche qui change
+ * est périmée, et seulement si la fiche est (ou était) publiée. Les brouillons, les catégories et les
+ * attributs du parent ne vident plus rien. Le cache entier ne se vide plus que si un goût (pa_gout) ou une
+ * marque est renommé ou déplacé.
+ * 0.4.4 (27/11/2026) : un sel de nicotine peut être rangé aussi en « Eliquides 10ml » (pour les filtres de la page
+ * 10 ml) : il reste un « sel » partout (format, ligne Catégorie du tableau, phrase des autres formats) et n'entre
+ * pas dans la liste des déclinaisons par goût des flacons. Rendu identique à un sel rangé dans sa seule catégorie.
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -285,7 +292,12 @@ function yvfb_premier( WC_Product $p, string $tax ): string {
 }
 
 function yvfb_format( WC_Product $p ): string {
-	foreach ( yvfb_termes( $p, 'product_cat', 'slugs' ) as $slug ) {
+	$slugs = yvfb_termes( $p, 'product_cat', 'slugs' );
+	// Un sel de nicotine est aussi rangé en « Eliquides 10ml » (filtres de la page 10 ml) : le sel l'emporte.
+	if ( in_array( 'eliquides-sels-de-nicotine', $slugs, true ) ) {
+		return 'sel';
+	}
+	foreach ( $slugs as $slug ) {
 		if ( isset( YVFB_FORMATS[ $slug ] ) ) {
 			return YVFB_FORMATS[ $slug ];
 		}
@@ -388,13 +400,53 @@ function yvfb_donnees_format( WC_Product $f ): array {
 	);
 }
 
-/** Numéro du cache : il change dès qu'une fiche apparaît, disparaît ou change de nom, ce qui périme toutes les listes. */
-function yvfb_version(): int {
-	return (int) get_option( 'yvfb_version', 1 );
+/**
+ * Numéro du cache d'une marque : global (renommage d'un goût ou d'une marque, rare) + celui de la marque racine,
+ * qui change dès qu'une de ses fiches publiées apparaît, disparaît, change de nom ou de recette. Toutes les listes
+ * mises en cache (formats, déclinaisons, fiches de la marque) ne contiennent que des fiches de la même marque racine.
+ */
+function yvfb_version( ?WP_Term $marque = null ): string {
+	$par_marque = $marque ? (int) ( get_option( 'yvfb_versions_marques', array() )[ $marque->term_id ] ?? 0 ) : 0;
+	return (int) get_option( 'yvfb_version', 1 ) . '.' . $par_marque;
 }
 
+/** Vide tout le cache : réservé aux renommages de goût et de marque. */
 function yvfb_invalider(): void {
-	update_option( 'yvfb_version', yvfb_version() + 1, true );
+	update_option( 'yvfb_version', (int) get_option( 'yvfb_version', 1 ) + 1, true );
+}
+
+/** Vide le cache des marques racines de ces termes Perfect Brands. */
+function yvfb_invalider_marques( array $termes ): void {
+	$racines = array();
+	foreach ( array_map( 'intval', $termes ) as $id ) {
+		$t = get_term( $id, YVFB_TAX_MARQUE );
+		for ( $n = 0; $t instanceof WP_Term && $t->parent && $n < 10; $n++ ) {
+			$t = get_term( $t->parent, YVFB_TAX_MARQUE );
+		}
+		if ( $t instanceof WP_Term ) {
+			$racines[ $t->term_id ] = true;
+		}
+	}
+	if ( ! $racines ) {
+		return;
+	}
+	$versions = get_option( 'yvfb_versions_marques', array() );
+	$versions = is_array( $versions ) ? $versions : array();
+	foreach ( array_keys( $racines ) as $id ) {
+		$versions[ $id ] = (int) ( $versions[ $id ] ?? 0 ) + 1;
+	}
+	update_option( 'yvfb_versions_marques', $versions, true );
+}
+
+/** Vide le cache de la marque d'une fiche (la fiche parente pour une déclinaison). */
+function yvfb_invalider_fiche( int $id ): void {
+	if ( 'product_variation' === get_post_type( $id ) ) {
+		$id = (int) wp_get_post_parent_id( $id );
+	}
+	$termes = $id ? wp_get_object_terms( $id, YVFB_TAX_MARQUE, array( 'fields' => 'ids' ) ) : array();
+	if ( ! is_wp_error( $termes ) ) {
+		yvfb_invalider_marques( $termes );
+	}
 }
 
 /** Charge d'un coup les fiches d'une liste : sans cela, une requête par fiche. */
@@ -406,8 +458,9 @@ function yvfb_amorcer( array $ids ): void {
 
 /** Autres formats de la recette : terme yv_recette s'il existe, sinon même marque et même nom. */
 function yvfb_autres_formats( WC_Product $p ): array {
-	$cle = 'yvfb_formats_' . yvfb_version() . '_' . $p->get_id();
-	$ids = get_transient( $cle );
+	$marque = yvfb_marque( $p );
+	$cle    = 'yvfb_formats_' . yvfb_version( $marque ) . '_' . $p->get_id();
+	$ids    = get_transient( $cle );
 	if ( false === $ids ) {
 		$ids     = array();
 		$args    = array(
@@ -419,7 +472,6 @@ function yvfb_autres_formats( WC_Product $p ): array {
 			'post__not_in'   => array( $p->get_id() ),
 		);
 		$recette = yvfb_termes( $p, YVFB_TAX_RECETTE, 'ids' );
-		$marque  = yvfb_marque( $p );
 		if ( $recette ) {
 			$args['tax_query'] = array( array( 'taxonomy' => YVFB_TAX_RECETTE, 'terms' => $recette ) );
 			$ids               = get_posts( $args );
@@ -463,7 +515,7 @@ function yvfb_declinaisons( WC_Product $p ): array {
 	if ( '' === $recette ) {
 		return array();
 	}
-	$cle  = 'yvfb_declinaisons_' . yvfb_version() . '_' . $p->get_id();
+	$cle  = 'yvfb_declinaisons_' . yvfb_version( $marque ) . '_' . $p->get_id();
 	$vars = get_transient( $cle );
 	if ( false === $vars ) {
 		// Le nom de la fiche, et les autres noms de la même recette (Luv 66 et Love 66).
@@ -495,7 +547,8 @@ function yvfb_declinaisons( WC_Product $p ): array {
 		$cats = yvfb_termes( $f, 'product_cat', 'slugs' );
 		$puff = in_array( 'puffs', $cats, true );
 		$cart = in_array( 'cartouches-pre-remplies', $cats, true );
-		if ( ! $puff && ! $cart && ! in_array( 'eliquides-10ml', $cats, true ) ) {
+		// Les sels rangés aussi en 10 ml restent hors de cette liste (formats par goût des flacons, puffs, cartouches).
+		if ( ! $puff && ! $cart && ( ! in_array( 'eliquides-10ml', $cats, true ) || in_array( 'eliquides-sels-de-nicotine', $cats, true ) ) ) {
 			continue;
 		}
 		$m = yvfb_marque( $f );
@@ -589,7 +642,7 @@ function yvfb_fiches_marque( WC_Product $p, array $noms ): array {
 	if ( ! $marque ) {
 		return array();
 	}
-	$cle = 'yvfb_fiches_marque_' . yvfb_version() . '_' . $marque->term_id;
+	$cle = 'yvfb_fiches_marque_' . yvfb_version( $marque ) . '_' . $marque->term_id;
 	$ids = get_transient( $cle );
 	if ( false === $ids ) {
 		$ids = get_posts( array(
@@ -1275,41 +1328,61 @@ function yvfb_questions( $produit ): array {
  * Recettes et textes saisis une fois
  * ------------------------------------------------------------------ */
 
-// Le cache des listes ne se périme que sur ce qui les change : pas à chaque mise à jour de stock.
+// Le cache des listes ne se périme que sur ce qui les change, et seulement pour la marque concernée.
+// Les listes ne retiennent que des fiches publiées : un brouillon modifié ne périme rien.
 add_action( 'transition_post_status', function ( $nouveau, $ancien, $post ) {
-	if ( $nouveau !== $ancien && in_array( $post->post_type, array( 'product', 'product_variation' ), true ) ) {
-		yvfb_invalider();
+	if ( $nouveau !== $ancien && ( 'publish' === $nouveau || 'publish' === $ancien )
+		&& in_array( $post->post_type, array( 'product', 'product_variation' ), true ) ) {
+		yvfb_invalider_fiche( (int) $post->ID );
 	}
 }, 10, 3 );
 add_action( 'post_updated', function ( $id, $apres, $avant ) {
-	if ( 'product' === $apres->post_type && $apres->post_title !== $avant->post_title ) {
-		yvfb_invalider();
+	if ( 'product' === $apres->post_type && 'publish' === $apres->post_status && $apres->post_title !== $avant->post_title ) {
+		yvfb_invalider_fiche( (int) $id );
 	}
 }, 10, 3 );
-add_action( 'deleted_post', function ( $id, $post = null ) {
-	if ( $post && in_array( $post->post_type, array( 'product', 'product_variation' ), true ) ) {
-		yvfb_invalider();
+add_action( 'before_delete_post', function ( $id, $post = null ) {
+	// Avant la suppression : après, la fiche n'a plus de marque.
+	if ( $post && 'publish' === $post->post_status && in_array( $post->post_type, array( 'product', 'product_variation' ), true ) ) {
+		yvfb_invalider_fiche( (int) $id );
 	}
 }, 10, 2 );
 add_action( 'set_object_terms', function ( $id, $termes, $apres, $tax, $ajout, $avant ) {
+	if ( ! in_array( $tax, array( YVFB_TAX_RECETTE, YVFB_TAX_MARQUE ), true ) || 'publish' !== get_post_status( $id ) ) {
+		return;
+	}
 	// WordPress donne les nouveaux identifiants en chaînes et les anciens en entiers.
 	$apres = array_map( 'intval', (array) $apres );
 	$avant = array_map( 'intval', (array) $avant );
 	sort( $apres );
 	sort( $avant );
-	if ( in_array( $tax, array( YVFB_TAX_RECETTE, YVFB_TAX_MARQUE, 'product_cat', 'pa_gout' ), true ) && $apres !== $avant ) {
-		yvfb_invalider();
+	if ( $apres === $avant ) {
+		return;
+	}
+	if ( YVFB_TAX_MARQUE === $tax ) {
+		// Ici les identifiants sont des term_taxonomy_id : on relit les termes des deux côtés.
+		$ids = array();
+		foreach ( array_merge( $apres, $avant ) as $tt ) {
+			$t = get_term_by( 'term_taxonomy_id', $tt, YVFB_TAX_MARQUE );
+			if ( $t ) {
+				$ids[] = $t->term_id;
+			}
+		}
+		yvfb_invalider_marques( $ids );
+	} else {
+		yvfb_invalider_fiche( (int) $id );
 	}
 }, 10, 6 );
 add_action( 'edited_term', function ( $id, $tt, $tax ) {
-	if ( in_array( $tax, array( YVFB_TAX_RECETTE, YVFB_TAX_MARQUE, 'product_cat', 'pa_gout' ), true ) ) {
+	// Renommer un goût change les déclinaisons trouvées par son nom ; déplacer une marque change sa racine.
+	if ( in_array( $tax, array( YVFB_TAX_MARQUE, 'pa_gout' ), true ) ) {
 		yvfb_invalider();
 	}
 }, 10, 3 );
 foreach ( array( 'added_post_meta', 'updated_post_meta' ) as $yvfb_action ) {
 	add_action( $yvfb_action, function ( $meta, $id, $cle ) {
-		if ( 'attribute_pa_gout' === $cle ) {
-			yvfb_invalider();
+		if ( 'attribute_pa_gout' === $cle && 'publish' === get_post_status( $id ) ) {
+			yvfb_invalider_fiche( (int) $id );
 		}
 	}, 10, 3 );
 }
