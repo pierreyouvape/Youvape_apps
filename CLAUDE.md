@@ -794,6 +794,10 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
   sans contenance → « … 10ML », sel → « … SALT 10ML ». Avant, le nom du site seul (« Pastèque Cerise Extra Frais 50ml ») :
   introuvable en tapant « Bad Bunniz », les 6 fiches ont été recréées à la main le 17/11 avec les mêmes codes-barres.
   La marque n'est jamais retirée du nom (« Gorilla Kong » de Gorilla resterait « KONG »).
+- **Sous-catégorie** (27/11/2026, `catalogSyncRules.pickSubcategory`) : envoyée à la création (`subcategory_id`).
+  E-LIQUIDES → Salt (sel de nicotine du site), CBD, sinon contenance lue dans le nom (10 / 50 — pack 60 ml compris —
+  / 100 / 200 ml) ; AROMES → 10 / 20 / 30 / 60 ml ; ailleurs rien. Avant, aucune : ~850 liquides en « E-LIQUIDES »
+  seul. Rattrapage : `scripts/backfillNextoreSubcategories.js [--apply]`.
 - **Marque** : champ Nextore `cf1` (texte libre, pas de liste à créer), écrit à la création par `pickBrand`
   (orthographe Nextore reprise). Les 2 166 fiches créées le 10/11 sans marque : `scripts/backfillNextoreBrands.js`.
 - **Prix** (quand l'alignement est actif) : `boutique_nx_sync.price_pushed` = dernier prix du site aligné. 1re comparaison avec écart → « prix »

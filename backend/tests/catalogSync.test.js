@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -89,5 +89,27 @@ assert.strictEqual(priceDecision({ sitePrice: 5.9, nxPrice: 7.0, state: { price_
 assert.strictEqual(priceDecision({ sitePrice: 6.5, nxPrice: 5.9, state: { price_pushed: 5.9, price_locked: true } }), 'locked');
 assert.strictEqual(priceDecision({ sitePrice: 0, nxPrice: 5.9, state: null }), 'none', 'sans prix site : rien');
 assert.strictEqual(priceGapPct(99, 69.9), -29.4);
+
+// Sous-catégorie caisse des fiches créées (27/11/2026 : ~850 liquides en « E-LIQUIDES » seul).
+const subs = [
+  { id: '2', category_id: '1', name: '10 ml' }, { id: '1', category_id: '1', name: '50 ml' },
+  { id: '7', category_id: '1', name: '100 ml' }, { id: '16', category_id: '1', name: '200 ml' },
+  { id: '13', category_id: '1', name: 'Salt' }, { id: '14', category_id: '1', name: 'CBD' },
+  { id: '5', category_id: '6', name: '10 ml' }, { id: '17', category_id: '6', name: '30 ml' },
+];
+const LIQ = { categoryId: '1', categoryName: 'E-LIQUIDES' };
+const ARO = { categoryId: '6', categoryName: 'AROMES' };
+const GF = 'Eliquides Grands Formats 50ml, 100ml, 200ml';
+assert.strictEqual(pickSubcategory({ name: 'Menthe Intense 10ml', sub: 'Eliquides 10ml' }, { ...LIQ, nxName: 'MENTHE INTENSE 10ML - NATURAL - 12MG' }, subs), '2');
+assert.strictEqual(pickSubcategory({ name: 'Green Dragon 50ml', sub: GF }, { ...LIQ, nxName: 'PACK GREEN DRAGON 60ML - MY PULP - 3MG' }, subs), '1', 'pack 60 ml = 50 ml');
+assert.strictEqual(pickSubcategory({ name: 'Talok 100ml', sub: GF }, { ...LIQ, nxName: 'TALOK 100ML - ARTEFACT' }, subs), '7');
+assert.strictEqual(pickSubcategory({ name: 'Flipz 200ml', sub: GF }, { ...LIQ, nxName: 'FLIPZ 200ML XXL - BELGI OHM' }, subs), '16');
+assert.strictEqual(pickSubcategory({ name: 'Granité Fruits Bleus 10ml', sub: 'Eliquides Sel de Nicotine' }, { ...LIQ, nxName: 'GRANITE FRUITS BLEUS POD LIQUIDE 10ML - LE POD LIQUIDE - 10MG' }, subs), '13', 'sel avant contenance');
+assert.strictEqual(pickSubcategory({ name: 'Jack Herer CBD', sub: 'E-liquides CBD - Cannabis' }, { ...LIQ, nxName: 'JACK HERER CBD 2000MG - WHITE RABIT' }, subs), '14');
+assert.strictEqual(pickSubcategory({ name: 'Saturn 170ml', sub: GF }, { ...LIQ, nxName: 'SATURN 170ML - CUSTARD MISSION' }, subs), null, '170 ml : aucune sous-catégorie');
+assert.strictEqual(pickSubcategory({ name: 'Caramel Latte 30ml', sub: 'Arômes et Concentrés Grands Formats' }, { ...ARO, nxName: 'CONCENTRE CARAMEL LATTE 30ML - VAMPIRE VAPE' }, subs), '17');
+assert.strictEqual(pickSubcategory({ name: 'Bonbon Acidulé', sub: 'Arômes et Concentrés 10ml' }, { ...ARO, nxName: 'CONCENTRE BONBON ACIDULE - SUPERVAPE' }, subs), '5', 'contenance lue dans la catégorie du site');
+assert.strictEqual(pickSubcategory({ name: 'Pod Xros 4', sub: 'Pods' }, { categoryId: '19', categoryName: 'POD', nxName: 'XROS 4' }, subs), null, 'hors liquides : rien');
+assert.strictEqual(pickSubcategory({ name: 'X 10ml', sub: '' }, { ...LIQ, categoryId: '99', nxName: 'X 10ML' }, subs), null, 'sous-catégorie d\'une autre catégorie : jamais');
 
 console.log('✓ catalogSync.test.js');

@@ -144,6 +144,42 @@ const pickCategory = (stats, cat, sub) => {
 };
 
 /**
+ * Sous-catégorie caisse d'une fiche créée par l'app (27/11/2026). Avant, aucune :
+ * ~850 liquides rangés dans « E-LIQUIDES » seul, quand les fiches de l'équipe sont
+ * toutes en « 10 ml », « 50 ml », « Salt »… La catégorie du site ne suffit pas
+ * (« Grands Formats 50ml, 100ml, 200ml ») : on lit la contenance dans le nom.
+ *  - E-LIQUIDES : sel de nicotine → Salt, CBD → CBD, sinon 10 / 50 (pack 60 ml
+ *    compris) / 100 / 200 ml ;
+ *  - AROMES : 10 / 20 / 30 / 60 ml.
+ * Ailleurs, ou contenance sans sous-catégorie (170 ml) : null, la fiche reste sans.
+ * `subcategories` : [{ id, category_id, name }] de Nextore ; `p` : { name, sub }
+ * du site, `nxName` : nom de la fiche caisse.
+ */
+const SUBCATEGORY_VOLUMES = {
+  'E-LIQUIDES': { 10: '10 ml', 50: '50 ml', 60: '50 ml', 100: '100 ml', 200: '200 ml' },
+  AROMES: { 10: '10 ml', 20: '20 ml', 30: '30 ml', 60: '60 ml' },
+};
+const subKey = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+const pickSubcategory = (p, { categoryId, categoryName, nxName = '' }, subcategories) => {
+  const cat = String(categoryName || '').trim().toUpperCase();
+  const volumes = SUBCATEGORY_VOLUMES[cat];
+  if (!volumes || !categoryId) return null;
+  const siteSub = String(p?.sub || '');
+  let label = null;
+  if (cat === 'E-LIQUIDES' && /sel de nicotine/i.test(siteSub)) label = 'Salt';
+  else if (cat === 'E-LIQUIDES' && /\bcbd\b/i.test(siteSub)) label = 'CBD';
+  else {
+    // Le nom caisse d'abord (contenance normalisée « 60ML »), puis celui du site.
+    const ml = [nxName, p?.name].map((t) => String(t || '').match(/(?:^|[^\d])(\d{2,3})\s?ml\b/i)).find(Boolean);
+    if (ml) label = volumes[Number(ml[1])] || null;
+    else if (/10\s?ml/i.test(siteSub)) label = volumes[10] || null;
+  }
+  if (!label) return null;
+  const hit = (subcategories || []).find((s) => String(s.category_id) === String(categoryId) && subKey(s.name) === subKey(label));
+  return hit ? String(hit.id) : null;
+};
+
+/**
  * Prix : que faire pour une paire (produit du site, fiche caisse) ?
  *  - 'locked'  : « garder le prix caisse » choisi → rien
  *  - 'same'    : 1re comparaison, prix égaux → on retient le prix (plus rien à faire)
@@ -200,5 +236,5 @@ const pickBrand = (site, nxBrands) => {
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, priceDecision, priceGapPct,
 };
