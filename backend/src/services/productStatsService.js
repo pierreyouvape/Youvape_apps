@@ -39,10 +39,26 @@ class ProductStatsService {
       ORDER BY wp_product_id ASC
     `;
     const variantsResult = await pool.query(variantsQuery, [parentId]);
-    const variants = variantsResult.rows;
+    const allVariants = variantsResult.rows;
 
-    // allProducts = parent + variantes
-    const allProducts = [parent, ...variants];
+    // Variations supprimées dans WC (wc_deleted_at) : on les masque des listes par déclinaison
+    // si elles n'ont jamais été vendues (ex. copies créées par une duplication de produit),
+    // mais on les garde dans allProducts pour que les totaux de ventes restent complets.
+    const deletedIds = allVariants.filter(v => v.wc_deleted_at).map(v => v.wp_product_id);
+    let soldDeleted = new Set();
+    if (deletedIds.length > 0) {
+      const soldRes = await pool.query(
+        `SELECT product_id, variation_id
+           FROM order_items
+          WHERE variation_id = ANY($1::bigint[]) OR product_id = ANY($1::bigint[])`,
+        [deletedIds]
+      );
+      soldDeleted = new Set(soldRes.rows.flatMap(r => [String(r.product_id), String(r.variation_id)]));
+    }
+    const variants = allVariants.filter(v => !v.wc_deleted_at || soldDeleted.has(String(v.wp_product_id)));
+
+    // allProducts = parent + toutes les variantes (historique de ventes complet)
+    const allProducts = [parent, ...allVariants];
 
     return { parent, variants, allProducts };
   }

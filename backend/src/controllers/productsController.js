@@ -1102,7 +1102,7 @@ exports.getBmsLocations = async (req, res) => {
     const { rows } = await pool.query(
       `SELECT wp_product_id, wp_parent_id, sku, post_title, product_type
        FROM products
-       WHERE (wp_product_id = $1 OR wp_parent_id = $1) AND sku IS NOT NULL AND sku != ''
+       WHERE (wp_product_id = $1 OR (wp_parent_id = $1 AND wc_deleted_at IS NULL)) AND sku IS NOT NULL AND sku != ''
        ORDER BY wp_parent_id NULLS FIRST, wp_product_id`,
       [productId]
     );
