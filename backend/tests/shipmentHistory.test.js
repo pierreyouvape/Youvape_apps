@@ -88,7 +88,15 @@ console.log('Filtres');
 test('la recherche ignore la période', () => {
   const { where, params } = buildWhere({ q: ' 1262491 ', from: '2026-09-22', to: '2026-09-29' }, []);
   assert.ok(!where.includes('created_at'));
-  assert.deepStrictEqual(params, ['%1262491%']);
+  // Un nombre est aussi cherché comme n° de ticket SAV (exact), d'où le 2e paramètre.
+  assert.deepStrictEqual(params, ['%1262491%', 1262491]);
+  assert.ok(where.includes('claim_sav_ticket'));
+});
+
+test('une recherche non numérique ne cherche pas de ticket SAV', () => {
+  const { where, params } = buildWhere({ q: 'Dupont' }, []);
+  assert.deepStrictEqual(params, ['%Dupont%']);
+  assert.ok(!where.includes('claim_sav_ticket'));
 });
 
 test('période en heure de Paris, dates mal formées ignorées', () => {
