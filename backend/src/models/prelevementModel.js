@@ -31,6 +31,8 @@ const SITE_SQL = `
          COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
          COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand,
          COALESCE(NULLIF(p.sub_category, ''), pp.sub_category) AS sub,
+         (SELECT string_agg(DISTINCT a.value, '|') FROM wp_product_attributes a
+           WHERE a.wp_product_id = COALESCE(pp.wp_product_id, p.wp_product_id) AND a.attribute = 'pa_types-de-batteries') AS battery,
          array_remove(ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' AND ${rules.uniqueSiteBarcodeSql('b')} ORDER BY b.id), NULL) AS barcodes
     FROM products p
     LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
@@ -355,14 +357,20 @@ const createInNextore = async (warehouseId, productId, categoryId, userId, { qui
     const { rows: nxBrands } = await pool.query(
       `SELECT DISTINCT brand FROM nextore_products WHERE COALESCE(brand, '') <> '' AND COALESCE(status, '') <> 'deleted'`
     );
-    const { pickBrand, pickSubcategory } = require('../services/catalogSyncRules');
+    const { pickBrand, pickSubcategory, refineCategoryName } = require('../services/catalogSyncRules');
     const known = nxBrands.map((r) => r.brand);
     const brand = pickBrand(p, known);
     // Le NOM porte toujours la sous-marque quand il y en a une (« … - BAD BUNNIZ »),
     // même absente des marques Nextore : c'est elle qu'on tape pour retrouver la fiche.
     const nameBrand = p.sub_brand ? pickBrand({ sub_brand: p.sub_brand }, known) : brand;
     const { rows: [cat] } = await pool.query('SELECT name FROM nextore_categories WHERE id = $1', [String(categoryId || '')]);
-    const categoryName = cat?.name || null;
+    let categoryName = cat?.name || null;
+    // Box / kit : l'attribut batterie du site tranche ACCU ↔ INTEGRE (la catégorie apprise ne le voit pas).
+    const refined = refineCategoryName(categoryName, p.battery);
+    if (refined && refined !== categoryName) {
+      const { rows: [r] } = await pool.query('SELECT id, name FROM nextore_categories WHERE upper(trim(name)) = $1 LIMIT 1', [refined]);
+      if (r) { categoryId = r.id; categoryName = r.name; }
+    }
     // Sous-catégorie (10 ml, 50 ml, Salt…) : sans elle, la fiche tombe dans la catégorie mère.
     const { rows: subcategories } = await pool.query(
       'SELECT id, category_id, name FROM nextore_subcategories WHERE category_id = $1', [String(categoryId || '')]

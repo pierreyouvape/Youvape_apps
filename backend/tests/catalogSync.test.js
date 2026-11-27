@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -111,5 +111,23 @@ assert.strictEqual(pickSubcategory({ name: 'Caramel Latte 30ml', sub: 'Arômes e
 assert.strictEqual(pickSubcategory({ name: 'Bonbon Acidulé', sub: 'Arômes et Concentrés 10ml' }, { ...ARO, nxName: 'CONCENTRE BONBON ACIDULE - SUPERVAPE' }, subs), '5', 'contenance lue dans la catégorie du site');
 assert.strictEqual(pickSubcategory({ name: 'Pod Xros 4', sub: 'Pods' }, { categoryId: '19', categoryName: 'POD', nxName: 'XROS 4' }, subs), null, 'hors liquides : rien');
 assert.strictEqual(pickSubcategory({ name: 'X 10ml', sub: '' }, { ...LIQ, categoryId: '99', nxName: 'X 10ML' }, subs), null, 'sous-catégorie d\'une autre catégorie : jamais');
+
+// Box / kit : attribut WC « Types de batteries ».
+const accuSubs = [
+  { id: '6', category_id: '7', name: '1 accu' }, { id: '15', category_id: '7', name: '2 accus' },
+  { id: '20', category_id: '18', name: '1 accu' }, { id: '21', category_id: '18', name: '2 accus' },
+];
+const BOXA = { categoryId: '7', categoryName: 'BOX ACCU' };
+const KITA = { categoryId: '18', categoryName: 'KIT ACCU' };
+assert.strictEqual(pickSubcategory({ name: 'Box Huracan EX', battery: 'Simple accu' }, BOXA, accuSubs), '6');
+assert.strictEqual(pickSubcategory({ name: 'Kit Gen Max', battery: 'Double accu' }, KITA, accuSubs), '21');
+assert.strictEqual(pickSubcategory({ name: 'Box X', battery: 'Simple accu | Double accu' }, BOXA, accuSubs), null, 'deux valeurs : on ne tranche pas');
+assert.strictEqual(pickSubcategory({ name: 'Batterie Elfa Turbo', battery: null }, BOXA, accuSubs), null, 'sans attribut : rien');
+assert.strictEqual(refineCategoryName('KIT ACCU', 'Batterie intégrée'), 'KIT INTEGRE', 'Huracan LX');
+assert.strictEqual(refineCategoryName('BOX ACCU', 'Batterie intégrée'), 'BOX INTEGRE', 'Kiwi Power Bank');
+assert.strictEqual(refineCategoryName('BOX INTEGRE', 'Double accu'), 'BOX ACCU');
+assert.strictEqual(refineCategoryName('BOX ACCU', 'Simple accu'), 'BOX ACCU');
+assert.strictEqual(refineCategoryName('BOX ACCU', null), 'BOX ACCU', 'sans attribut : inchangée');
+assert.strictEqual(refineCategoryName('POD', 'Batterie intégrée'), 'POD', 'autre catégorie : jamais déplacée');
 
 console.log('✓ catalogSync.test.js');

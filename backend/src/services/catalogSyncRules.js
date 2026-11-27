@@ -150,20 +150,54 @@ const pickCategory = (stats, cat, sub) => {
  * (« Grands Formats 50ml, 100ml, 200ml ») : on lit la contenance dans le nom.
  *  - E-LIQUIDES : sel de nicotine → Salt, CBD → CBD, sinon 10 / 50 (pack 60 ml
  *    compris) / 100 / 200 ml ;
- *  - AROMES : 10 / 20 / 30 / 60 ml.
+ *  - AROMES : 10 / 20 / 30 / 60 ml ;
+ *  - BOX ACCU / KIT ACCU : attribut WC « Types de batteries » (`p.battery`),
+ *    Simple accu → 1 accu, Double accu → 2 accus (concordance totale sur les
+ *    fiches de l'équipe, 27/11/2026).
  * Ailleurs, ou contenance sans sous-catégorie (170 ml) : null, la fiche reste sans.
- * `subcategories` : [{ id, category_id, name }] de Nextore ; `p` : { name, sub }
- * du site, `nxName` : nom de la fiche caisse.
+ * `subcategories` : [{ id, category_id, name }] de Nextore ; `p` : { name, sub,
+ * battery } du site, `nxName` : nom de la fiche caisse.
  */
 const SUBCATEGORY_VOLUMES = {
   'E-LIQUIDES': { 10: '10 ml', 50: '50 ml', 60: '50 ml', 100: '100 ml', 200: '200 ml' },
   AROMES: { 10: '10 ml', 20: '20 ml', 30: '30 ml', 60: '60 ml' },
 };
 const subKey = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+// Valeur UNIQUE de l'attribut batterie (plusieurs valeurs = on ne tranche pas).
+const batteryKind = (battery) => {
+  const values = [...new Set(String(battery || '').split('|').map((v) => v.trim()).filter(Boolean))];
+  if (values.length !== 1) return null;
+  if (/int[ée]gr/i.test(values[0])) return 'integre';
+  if (/^simple/i.test(values[0])) return 'simple';
+  if (/^double/i.test(values[0])) return 'double';
+  return null;
+};
+const BATTERY_FAMILY = { 'BOX ACCU': 'BOX', 'BOX INTEGRE': 'BOX', 'KIT ACCU': 'KIT', 'KIT INTEGRE': 'KIT' };
+/**
+ * Catégorie caisse corrigée par l'attribut batterie : une box ou un kit à batterie
+ * intégrée va en « BOX/KIT INTEGRE », à accus en « BOX/KIT ACCU » (Huracan LX,
+ * Kiwi Power Bank créés en BOX ACCU). Ne change jamais de famille (box ↔ kit), ni
+ * une autre catégorie. Renvoie le NOM de la catégorie (inchangé si rien à faire).
+ */
+const refineCategoryName = (categoryName, battery) => {
+  const fam = BATTERY_FAMILY[String(categoryName || '').trim().toUpperCase()];
+  const kind = batteryKind(battery);
+  if (!fam || !kind) return categoryName;
+  return `${fam} ${kind === 'integre' ? 'INTEGRE' : 'ACCU'}`;
+};
 const pickSubcategory = (p, { categoryId, categoryName, nxName = '' }, subcategories) => {
   const cat = String(categoryName || '').trim().toUpperCase();
+  if (!categoryId) return null;
+  const find = (label) => {
+    const hit = label && (subcategories || []).find((s) => String(s.category_id) === String(categoryId) && subKey(s.name) === subKey(label));
+    return hit ? String(hit.id) : null;
+  };
+  if (cat === 'BOX ACCU' || cat === 'KIT ACCU') {
+    const kind = batteryKind(p?.battery);
+    return find(kind === 'simple' ? '1 accu' : kind === 'double' ? '2 accus' : null);
+  }
   const volumes = SUBCATEGORY_VOLUMES[cat];
-  if (!volumes || !categoryId) return null;
+  if (!volumes) return null;
   const siteSub = String(p?.sub || '');
   let label = null;
   if (cat === 'E-LIQUIDES' && /sel de nicotine/i.test(siteSub)) label = 'Salt';
@@ -174,9 +208,7 @@ const pickSubcategory = (p, { categoryId, categoryName, nxName = '' }, subcatego
     if (ml) label = volumes[Number(ml[1])] || null;
     else if (/10\s?ml/i.test(siteSub)) label = volumes[10] || null;
   }
-  if (!label) return null;
-  const hit = (subcategories || []).find((s) => String(s.category_id) === String(categoryId) && subKey(s.name) === subKey(label));
-  return hit ? String(hit.id) : null;
+  return find(label);
 };
 
 /**
@@ -236,5 +268,5 @@ const pickBrand = (site, nxBrands) => {
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, priceDecision, priceGapPct,
 };

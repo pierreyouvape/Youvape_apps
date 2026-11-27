@@ -796,7 +796,9 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
   La marque n'est jamais retirée du nom (« Gorilla Kong » de Gorilla resterait « KONG »).
 - **Sous-catégorie** (27/11/2026, `catalogSyncRules.pickSubcategory`) : envoyée à la création (`subcategory_id`).
   E-LIQUIDES → Salt (sel de nicotine du site), CBD, sinon contenance lue dans le nom (10 / 50 — pack 60 ml compris —
-  / 100 / 200 ml) ; AROMES → 10 / 20 / 30 / 60 ml ; ailleurs rien. Avant, aucune : ~850 liquides en « E-LIQUIDES »
+  / 100 / 200 ml) ; AROMES → 10 / 20 / 30 / 60 ml ; BOX/KIT ACCU → 1 accu / 2 accus par l'attribut WC
+  `pa_types-de-batteries` (Simple / Double accu) ; ailleurs rien. « Batterie intégrée » **change la catégorie** en
+  BOX/KIT INTEGRE (`refineCategoryName`, jamais box ↔ kit). Avant, aucune : ~850 liquides en « E-LIQUIDES »
   seul. Rattrapage : `scripts/backfillNextoreSubcategories.js [--apply]`.
 - **Marque** : champ Nextore `cf1` (texte libre, pas de liste à créer), écrit à la création par `pickBrand`
   (orthographe Nextore reprise). Les 2 166 fiches créées le 10/11 sans marque : `scripts/backfillNextoreBrands.js`.
