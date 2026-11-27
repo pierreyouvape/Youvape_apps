@@ -945,6 +945,8 @@ const runNextoreNightly = async () => {
 const prelevementPushService = require('./prelevementPushService');
 const nextoreCatalogSyncService = require('./nextoreCatalogSyncService');
 let prelevementJob = null;
+const transferPushService = require('./transferPushService');
+let transferJob = null;
 let catalogSyncJob = null;
 
 const setupNextoreCrons = () => {
@@ -966,6 +968,11 @@ const setupNextoreCrons = () => {
   }, { timezone: 'Europe/Paris' });
   prelevementJob = cron.schedule('* 7-21 * * *', () => {
     prelevementPushService.processQueue().catch((error) => console.error('Erreur cron prélèvements boutique:', error.message));
+  }, { timezone: 'Europe/Paris' });
+  // Transferts de stock site ↔ boutiques : sorties de stock en file (même rythme).
+  transferJob?.stop();
+  transferJob = cron.schedule('* 7-21 * * *', () => {
+    transferPushService.processQueue().catch((error) => console.error('Erreur cron transferts de stock:', error.message));
   }, { timezone: 'Europe/Paris' });
   nextoreCatalogJob?.stop();
   nextoreStockJobs.forEach((j) => j.stop());

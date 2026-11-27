@@ -620,4 +620,6 @@ const exportRows = async (warehouseId, from, to) => {
 module.exports = {
   lookup, productView, searchNextore, record, link, createInNextore, list, cancel, resolveStep, exportRows, releaseWaiting,
   addSiteBarcodesToNx, unlink,
+  // Partagés avec les transferts de stock (stockTransferModel) : même produit caisse, même stock du site.
+  loadSite, loadNx, resolveNxFor, siteAvailability,
 };

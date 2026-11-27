@@ -54,6 +54,7 @@ const PdaDebug = page('pda', () => import('./pages/PdaDebug'));
 const PdaPrelevement = page('pda', () => import('./pages/PdaPrelevement'));
 const PdaBoutique = page('pda', () => import('./pages/PdaBoutique'));
 const InventoryApp = page('inventaire', () => import('./pages/InventoryApp'));
+const TransfertsApp = page('transferts', () => import('./pages/TransfertsApp'));
 const ReturnsApp = page('retours', () => import('./pages/ReturnsApp'));
 const ReceptionApp = page('reception', () => import('./pages/ReceptionApp'));
 const FinancierApp = page('financier', () => import('./pages/FinancierApp'));
@@ -109,6 +110,7 @@ const PAGE_TITLES = {
   '/pda/debug': 'Diagnostic scan PDA',
   '/pda/prelevement': 'Prélèvement boutique PDA',
   '/inventaire': 'Inventaire',
+  '/transferts': 'Transferts de stock',
   '/retours': 'Retours',
   '/reception': 'Réception',
   '/financier': 'Financier',
@@ -475,6 +477,17 @@ function App() {
               </PrivateRoute>
             }
           />
+          {['/transferts', '/transferts/:id'].map(path => (
+            <Route
+              key={path}
+              path={path}
+              element={
+                <PrivateRoute>
+                  <TransfertsApp />
+                </PrivateRoute>
+              }
+            />
+          ))}
           {/* Retours client : droit tickets (AppIcons : permissionKey). Une seule
               page, qui lit l'adresse : liste, fiche, SAV fournisseurs. */}
           {['/retours', '/retours/fournisseurs', '/retours/fournisseurs/:supplierId', '/retours/:id'].map(path => (

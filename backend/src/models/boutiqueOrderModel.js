@@ -397,6 +397,8 @@ async function addItems(orderId, warehouseId, lines) {
 /** Supprime une commande sur laquelle rien n'a été reçu (ses pièces seraient déjà en stock Nextore). */
 async function deleteOrder(orderId, warehouseId) {
   const order = await getOrderRow(orderId, warehouseId);
+  // Commande d'un transfert (app Transferts) : le stock est déjà sorti du site
+  if (order.source === 'transfert') throw httpError(400, 'Commande créée par un transfert de stock : elle ne se supprime pas, ses pièces sont déjà sorties du site. Soldez les manquants à la réception.');
   const { rows } = await pool.query(
     `SELECT EXISTS (SELECT 1 FROM boutique_order_items WHERE order_id = $1 AND qty_received > 0) AS received,
             EXISTS (SELECT 1 FROM boutique_reception_sessions WHERE order_id = $1 AND status = 'validated') AS validated,
@@ -425,6 +427,7 @@ async function updateOrder(orderId, warehouseId, { reference, lines }) {
     // Verrou sur la commande : une réception ne s'ouvre pas pendant la modification
     const order = await getOrderRow(orderId, warehouseId, client, true);
     if (order.status !== 'open') throw httpError(400, 'Cette commande est close');
+    if (order.source === 'transfert') throw httpError(400, 'Commande créée par un transfert de stock : ses lignes sont celles sorties du site, elles ne se modifient pas. Un écart se traite à la réception.');
     const { rows: open } = await client.query(
       "SELECT 1 FROM boutique_reception_sessions WHERE order_id = $1 AND status IN ('counting', 'sending')",
       [order.id]

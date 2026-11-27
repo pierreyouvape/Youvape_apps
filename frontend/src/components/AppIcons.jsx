@@ -480,6 +480,14 @@ export const Inventory = (props) => (
   </Base>
 );
 
+export const Transfer = (props) => (
+  <Base {...props}>
+    {/* Deux flèches opposées : le stock qui part, le stock qui revient */}
+    <path d="M4 8 H17 M13.5 4.5 L17 8 L13.5 11.5" />
+    <path d="M20 16 H7 M10.5 12.5 L7 16 L10.5 19.5" />
+  </Base>
+);
+
 export const Returns = (props) => (
   <Base {...props}>
     {/* Le colis, et la flèche qui le ramène */}
@@ -571,6 +579,9 @@ export const APPS = [
   // Droit propre (backend/src/config/apps.js) : créer un inventaire et le suivre.
   // Le comptage se fait au PDA (/pda/inventaire), avec le droit Picking.
   { key: 'inventaire', path: '/inventaire', label: 'Inventaire',             Icon: Inventory, color: '#0369A1' },
+  // Transferts de stock site ↔ boutiques (27/11/2026) : sortie à l'envoi, entrée à la
+  // réception de la commande créée (Boutique › Commandes ou app Réception).
+  { key: 'transferts', path: '/transferts', label: 'Transferts de stock',   Icon: Transfer,  color: '#0F766E' },
   { key: 'catalog',   path: '/catalog',   label: 'Produits',                 Icon: Catalog,   color: '#059669' },
   { key: 'financier',  path: '/financier',  label: 'Rapport',                  Icon: Stats,         color: '#135E84' },
   // « clients » pour la distinguer des commandes FOURNISSEUR de la pile Achats.

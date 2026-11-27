@@ -693,6 +693,34 @@ jamais `real_unit_price`). Refacturation EMC → EMC2 de fin d'année faite au j
   les routes acceptent le droit `picking` en plus de `boutique-cast` (`prelevementPerm`, nextoreRoutes).
 - Tests : `tests/prelevement.test.js`.
 
+### Transferts de stock site ↔ boutiques (app `/transferts`, 27/11/2026)
+
+Le site donne aux boutiques (surtout Montpellier), les boutiques donnent au site. Droit `transferts`.
+Code : `stockTransferModel.js`, `services/transferPushService.js` (cron `* 7-21`), règles pures
+`services/transferRules.js` (`tests/stockTransfer.test.js`), `pages/TransfertsApp.jsx`.
+
+- **Brouillon** (rien ne bouge) → **Envoyer** : contrôles d'abord (fiche caisse, conversion, stock libre à
+  l'origine, coût connu), un seul problème et rien ne part. Puis le stock **SORT tout de suite** de l'origine
+  (file, `sending` posé avant l'appel, « VÉRIFIEZ » si incertain) et une commande « en attente de réception »
+  est créée. Le stock **n'ENTRE qu'à la validation de la réception**, là où elle se fait déjà.
+- **Site → boutique** : sortie BMS (`siteStock.removeFromSite`) ; commande boutique `source = 'transfert'`,
+  fournisseur Nextore **SARL EMC (33342) pour les deux boutiques**, réf. `TRF-<id>`, reçue dans Boutique ›
+  Commandes (achat REÇU Nextore). Elle ne se modifie ni ne se supprime dans l'app Boutique.
+- **Boutique → site** : sortie Nextore en delta, jugée sur le stock relu (comme le mouvement du PDA boutique) ;
+  commande d'achat BMS chez **YouVape Montpelliier (39) / YouVape Castelnau (38)** (décision Pierre), reçue dans
+  l'app Réception. **Pas d'envoi partiel** : un produit absent de BMS laisse la commande en erreur, à créer
+  dans BMS puis « Réessayer » (sinon la pièce sortie de la boutique ne rentrerait jamais).
+- **Coût = TOUJOURS celui du site** (PMP FIFO du jour de l'envoi, `costAtDate`), figé sur la ligne : c'est la
+  refacturation (export CSV). La pièce boutique vaut coût site × articles ÷ pièces.
+- **Quantités dans l'unité de l'ORIGINE** : articles du site (site → boutique), pièces boutique (boutique → site).
+  Résistance « Pack N » au site = N pièces boutique ; une sortie boutique doit tomber sur un nombre entier de packs.
+- Pivot = **produit du site** ; fiche caisse comme les prélèvements (`boutique_site_links`, sinon code-barres
+  unique). Sans fiche caisse : ligne refusée, à rattacher / créer dans Boutique › Catalogue caisse.
+- Écart à la réception = **comme une commande classique** (motifs boutique, réception BMS). Un transfert envoyé
+  ne s'annule pas dans l'app (lot 1). La réception se lit sur la commande, jamais recopiée.
+- Le Prélèvement boutique de Castelnau reste à part, inchangé.
+- Migration `add_stock_transfers.sql` AVANT le code (élargit aussi `boutique_orders_source_check`).
+
 ### Boutiques sur le PDA : comptage à plusieurs (23/11/2026)
 
 Section « Boutiques » de l'accueil `/pda` (au-dessus du Diagnostic) : une tuile par boutique,
