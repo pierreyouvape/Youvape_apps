@@ -10,6 +10,7 @@ const refundLinesService = require('./refundLinesService');
 const yousyncClient = require('./yousyncClient');
 const { sendAlert } = require('./alertService');
 const { decodeWpText } = require('../utils/wpText');
+const { applyCategoryMap } = require('./categoryMapService');
 const { validateEvent } = require('../utils/yousyncPayload');
 
 // Code passerelle WooCommerce → libellé tel que le site l'écrit d'habitude
@@ -598,6 +599,8 @@ const wcSyncService = {
     }
 
     // Full create/update
+    // yousync envoie la 1re catégorie par NOM : remplacée par la catégorie retenue (categoryMapService).
+    await applyCategoryMap(db, data);
     await db.query(`
       INSERT INTO products (
         wp_product_id, wp_parent_id, product_type, post_title, sku, post_status,

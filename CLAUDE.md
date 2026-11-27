@@ -789,6 +789,24 @@ prix **aligné sur `regular_price`** (prix normal, la remise WDR est exclue web)
   rangée directement dans `nextore_products`.
 - Tests : `tests/catalogSync.test.js` (cas réels de la simulation).
 
+### Catégorie d'un produit : `categoryMapService` fait autorité (27/11/2026)
+
+`products.category` / `sub_category` = UNE catégorie par produit (parent / terme). yousync prend la
+1re **par nom** et ne suit pas les renommages : 1 324 lignes portaient d'anciens noms le 27/11/2026
+(rattrapées, sauvegarde `products_category_backup_20261127`). Comme pour les marques, la correction
+vit dans le backend (l'agence écrase le plugin).
+
+- Choix (`categoryRules.pickCategory`, testé) : **catégorie principale Yoast**, lue dans le permalien
+  (`/produit/<parent>/<terme>/…`) ; sinon le terme le plus profond, Sels avant 10 ml, puis le nom.
+  DLUO / promo / prix cassé / Non classé seulement si le produit n'a rien d'autre.
+- Cron `40 * * * *` : relit le site (wc/v3, brouillons compris), réécrit `wp_product_category_map`
+  et réaligne `products` (déclinaisons = leur parent). À l'ingestion, `applyCategoryMap` remplace la
+  valeur de yousync. Simulation : `refreshCategoryMap({ dryRun: true })`.
+- Noms **bruts** (« Box &amp; Mods »), comme yousync. **« DLUO » = l'ancien « Non classé »** (id 15,
+  slug `non-classe`), catégorie par défaut de WooCommerce : un produit sans catégorie y tombe.
+- Un produit peut être dans deux catégories sur le site (sels de nicotine ET 10 ml) : nos stats ne le
+  comptent qu'une fois, dans sa principale. Metorik, lui, le compte dans chacune.
+
 ### Doutes sur une table/colonne
 Introspecter avec `\d+ nom_table` plutôt qu'inventer.
 

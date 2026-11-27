@@ -802,6 +802,21 @@ const { ensureTable: ensureProductAttributeTable } = require("./productAttribute
 
 let brandMapCronJob = null;
 
+// Catégories : yousync garde la 1re par nom et ne suit pas les renommages (categoryMapService).
+const { refreshCategoryMap, ensureTable: ensureCategoryMapTable } = require("./categoryMapService");
+let categoryMapCronJob = null;
+
+const runCategoryMapJob = async () => {
+  try {
+    const r = await refreshCategoryMap();
+    if (r.updated > 0 || r.variations > 0) {
+      console.log(`Catégories: ${r.mapped} produit(s) lus sur ${r.products}, ${r.updated} réaligné(s), ${r.variations} déclinaison(s)`);
+    }
+  } catch (error) {
+    console.error("Erreur cron catégories:", error.message);
+  }
+};
+
 const runBrandMapJob = async () => {
   try {
     const r = await refreshBrandMap();
@@ -823,12 +838,21 @@ const setupBrandMapCron = () => {
   brandMapCronJob = cron.schedule("10 * * * *", runBrandMapJob, {
     timezone: "Europe/Paris"
   });
+  // Catégories (categoryMapService) : même cadence, décalée pour ne pas charger le site en même temps.
+  if (categoryMapCronJob) categoryMapCronJob.stop();
+  categoryMapCronJob = cron.schedule("40 * * * *", runCategoryMapJob, {
+    timezone: "Europe/Paris"
+  });
   console.log("Cron sous-marques configure: toutes les heures (Europe/Paris)");
   // Remplit wp_product_brands des le demarrage : sans elle, le filtre marque
   // du catalogue ignore les produits rattaches a plusieurs marques.
   ensureBrandMapTables()
     .then(runBrandMapJob)
     .catch((error) => console.error("Erreur init sous-marques:", error.message));
+
+  ensureCategoryMapTable()
+    .then(runCategoryMapJob)
+    .catch((error) => console.error("Erreur init catégories:", error.message));
 
   // Les filtres par attribut lisent wp_product_attributes : la table doit exister
   // des le demarrage, meme si elle n'est remplie qu'a la resynchro produits de 3h.
