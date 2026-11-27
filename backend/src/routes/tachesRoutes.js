@@ -76,6 +76,8 @@ const withFiles = (req, res, next) => commentUpload.array('files', MAX_FILES)(re
 router.post('/tasks/:id/comments', withFiles, c.addComment);
 router.get('/files/:file', c.getFile);
 router.post('/tasks/:id/steps/reorder', c.reorderSteps);
+router.post('/tasks/:id/links', c.addLink);
+router.delete('/tasks/:id/links/:linkId', c.deleteLink);
 router.put('/tasks/:id/values/:columnId', c.setValue);
 
 router.patch('/steps/:id', c.updateStep);

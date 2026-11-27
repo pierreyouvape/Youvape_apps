@@ -373,7 +373,7 @@ export default function TachesApp() {
 
       {openId && (
         <TaskModal taskId={openId} members={members} labels={labels} boards={boards} canWrite={canWrite}
-          onClose={closeTask} onChanged={changed} focusUserId={currentTab === 'moi' ? user?.id : who} />
+          onClose={closeTask} onChanged={changed} onOpenTask={setOpenId} focusUserId={currentTab === 'moi' ? user?.id : who} />
       )}
       {bellOpen && <NotificationsPanel onClose={() => setBellOpen(false)} onOpen={setOpenId} onUnread={setUnread} />}
       {creating && (

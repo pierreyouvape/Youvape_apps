@@ -5,7 +5,7 @@ import { Avatar } from './tachesUi';
 import MentionInput, { CommentBody } from './MentionInput';
 
 /** Fil de commentaires d'une tâche + zone de saisie (fiche et fenêtre 💬). */
-export function CommentsThread({ task, members, onTask, onError }) {
+export function CommentsThread({ task, members, onTask, onError, onOpenTask }) {
   const { user } = useContext(AuthContext);
   const [editingId, setEditingId] = useState(null);
 
@@ -66,7 +66,7 @@ export function CommentsThread({ task, members, onTask, onError }) {
               )}
               {c.body && editingId !== c.id && (
                 <div style={{ fontSize: 14, color: 'var(--tk-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                  <CommentBody body={c.body} mentions={c.mentions} members={members} />
+                  <CommentBody body={c.body} mentions={c.mentions} members={members} onOpenTask={onOpenTask} />
                 </div>
               )}
               {c.files?.length > 0 && <CommentFiles files={c.files} onError={onError} />}
@@ -183,7 +183,8 @@ export default function CommentsPopup({ taskId, members, onClose, onChanged, onO
         </div>
         <div style={{ padding: '14px 18px' }}>
           {error && <div style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--tk-dangerBg)', color: 'var(--tk-danger)', borderRadius: 8, fontSize: 13 }}>{error}</div>}
-          {task ? <CommentsThread task={task} members={members} onTask={apply} onError={setError} />
+          {task ? <CommentsThread task={task} members={members} onTask={apply} onError={setError}
+            onOpenTask={onOpenTask ? (tid) => { onClose(); onOpenTask(tid); } : undefined} />
             : !error && <div style={{ color: 'var(--tk-sub)' }}>Chargement…</div>}
         </div>
       </div>

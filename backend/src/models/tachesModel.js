@@ -452,7 +452,69 @@ async function getTask(id) {
       WHERE e.task_id = $1 ORDER BY e.created_at DESC, e.id DESC LIMIT 100`,
     [id],
   );
-  return { ...task, comments, events };
+  const links = await getLinks(id);
+  return { ...task, comments, events, links };
+}
+
+/* ─── Tâches liées ──────────────────────────────────────── */
+
+/** Liaisons d'une tâche, vues depuis elle : « liée à », « bloque », « bloquée par ». */
+async function getLinks(id) {
+  const { rows } = await pool.query(
+    `SELECT id, kind, task_id = $1 AS outgoing, CASE WHEN task_id = $1 THEN other_id ELSE task_id END AS tid
+       FROM taches_task_links WHERE task_id = $1 OR other_id = $1 ORDER BY id`,
+    [id],
+  );
+  if (!rows.length) return [];
+  const tasks = await loadTasks(pool, 't.id = ANY($1::int[])', [rows.map((r) => r.tid)]);
+  const { rows: boards } = await pool.query('SELECT id, name FROM taches_boards');
+  return rows.map((r) => {
+    const t = tasks.find((x) => x.id === r.tid);
+    if (!t) return null;
+    return {
+      id: r.id,
+      kind: r.kind === 'relates' ? 'relates' : r.outgoing ? 'blocks' : 'blocked_by',
+      task: { id: t.id, title: t.title, status: t.status, archived_at: t.archived_at, board: boards.find((b) => b.id === t.board_id)?.name || '' },
+    };
+  }).filter(Boolean);
+}
+
+const LINK_KINDS = ['relates', 'blocks', 'blocked_by'];
+
+/** Lie deux tâches. `blocked_by` est rangé à l'envers (l'autre bloque celle-ci). */
+async function addLink(userId, taskId, body) {
+  const otherId = Number(String(body.other_id || '').replace('#', ''));
+  const kind = LINK_KINDS.includes(body.kind) ? body.kind : 'relates';
+  if (!otherId) throw httpError(400, 'Numéro de tâche manquant');
+  if (otherId === taskId) throw httpError(400, 'Une tâche ne peut pas être liée à elle-même');
+  const { rows: found } = await pool.query('SELECT id, title FROM taches_tasks WHERE id = ANY($1::int[])', [[taskId, otherId]]);
+  if (!found.some((r) => r.id === taskId)) throw httpError(404, 'Tâche introuvable');
+  const other = found.find((r) => r.id === otherId);
+  if (!other) throw httpError(404, `La tâche #${otherId} n'existe pas`);
+  const [from, to] = kind === 'blocked_by' ? [otherId, taskId] : [taskId, otherId];
+  try {
+    await pool.query('INSERT INTO taches_task_links (task_id, other_id, kind, created_by) VALUES ($1, $2, $3, $4)',
+      [from, to, kind === 'relates' ? 'relates' : 'blocks', userId]);
+  } catch (e) {
+    if (e.code === '23505') throw httpError(409, `Ces deux tâches sont déjà liées (#${otherId})`);
+    throw e;
+  }
+  const { rows: [me] } = await pool.query('SELECT title FROM taches_tasks WHERE id = $1', [taskId]);
+  await logEvent(pool, { taskId, userId, kind: 'linked', detail: { kind, id: otherId, title: other.title } });
+  const back = kind === 'relates' ? 'relates' : kind === 'blocks' ? 'blocked_by' : 'blocks';
+  await logEvent(pool, { taskId: otherId, userId, kind: 'linked', detail: { kind: back, id: taskId, title: me.title } });
+  return getTask(taskId);
+}
+
+async function deleteLink(userId, taskId, linkId) {
+  const { rows: [l] } = await pool.query(
+    'DELETE FROM taches_task_links WHERE id = $1 AND (task_id = $2 OR other_id = $2) RETURNING task_id, other_id', [linkId, taskId],
+  );
+  if (!l) throw httpError(404, 'Liaison introuvable');
+  const otherId = l.task_id === taskId ? l.other_id : l.task_id;
+  await logEvent(pool, { taskId, userId, kind: 'unlinked', detail: { id: otherId } });
+  await logEvent(pool, { taskId: otherId, userId, kind: 'unlinked', detail: { id: taskId } });
+  return getTask(taskId);
 }
 
 /* ─── Recherche ─────────────────────────────────────────── */
@@ -1368,6 +1430,8 @@ module.exports = {
   deleteStep,
   addComment,
   updateComment,
+  addLink,
+  deleteLink,
   deleteComment,
   getViews,
   saveView,

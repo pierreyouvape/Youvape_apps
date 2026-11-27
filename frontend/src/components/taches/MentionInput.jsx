@@ -191,13 +191,46 @@ export default function MentionInput({
 }
 
 /** Texte d'un commentaire, les « @Nom » mentionnés en bleu. */
-export function CommentBody({ body, mentions = [], members }) {
+export function CommentBody({ body, mentions = [], members, onOpenTask }) {
   const names = mentions.map((id) => members.find((m) => m.id === id)?.name).filter(Boolean)
     .sort((a, b) => b.length - a.length);
-  if (!names.length) return body;
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const parts = String(body).split(new RegExp(`(@(?:${names.map(esc).join('|')}))`, 'g'));
+  const parts = names.length ? String(body).split(new RegExp(`(@(?:${names.map(esc).join('|')}))`, 'g')) : [String(body)];
   return parts.map((p, i) => (p.startsWith('@') && names.includes(p.slice(1))
     ? <span key={i} style={{ color: 'var(--tk-link)', background: 'var(--tk-sel)', borderRadius: 4, padding: '0 3px' }}>{p}</span>
-    : p));
+    : <Linkified key={i} text={p} onOpenTask={onOpenTask} />));
+}
+
+// Adresse web, ou « #123 » (numéro de tâche) en début de texte ou après un espace / une parenthèse.
+const TOKEN = /(https?:\/\/[^\s<>"]+)|(^|[\s(])#(\d{1,7})\b/g;
+const linkStyle = { color: 'var(--tk-link)', textDecoration: 'underline', overflowWrap: 'anywhere', cursor: 'pointer' };
+
+/** Texte d'un commentaire : liens ouverts dans un nouvel onglet, #123 ouvre la tâche. */
+function Linkified({ text, onOpenTask }) {
+  const out = [];
+  let last = 0;
+  let m;
+  TOKEN.lastIndex = 0;
+  while ((m = TOKEN.exec(text))) {
+    if (m[1]) {
+      // La ponctuation qui suit une adresse n'en fait pas partie.
+      const url = m[1].replace(/[.,;:!?)\]]+$/, '');
+      out.push(text.slice(last, m.index));
+      out.push(<a key={m.index} href={url} target="_blank" rel="noreferrer" style={linkStyle} onClick={(e) => e.stopPropagation()}>{url}</a>);
+      last = m.index + url.length;
+      TOKEN.lastIndex = last;
+    } else {
+      const start = m.index + m[2].length;
+      const tid = Number(m[3]);
+      out.push(text.slice(last, start));
+      out.push(onOpenTask
+        ? <a key={start} role="button" tabIndex={0} title={`Ouvrir la tâche #${tid}`} style={{ ...linkStyle, textDecoration: 'none', fontWeight: 600 }}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpenTask(tid); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') onOpenTask(tid); }}>#{tid}</a>
+        : `#${tid}`);
+      last = start + 1 + m[3].length;
+    }
+  }
+  out.push(text.slice(last));
+  return <>{out}</>;
 }

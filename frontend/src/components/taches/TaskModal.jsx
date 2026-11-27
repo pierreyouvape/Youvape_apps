@@ -3,11 +3,12 @@ import { tachesApi, apiError, formatDateTime, STEP_STATUS, TASK_STATUS, TACHES_C
 import { InlineText, PriorityPill, TaskStatusPill, PeoplePicker, LabelsInput, DateRange } from './tachesUi';
 import StepsTable from './StepsTable';
 import { CommentsThread } from './CommentsThread';
+import LinkedTasks from './LinkedTasks';
 
 const label = { fontSize: 12, fontWeight: 800, color: 'var(--tk-muted)', textTransform: 'uppercase', marginBottom: 6 };
 
 /** Fenêtre large d'une tâche : champs, étapes, commentaires, journal. */
-export default function TaskModal({ taskId, members, labels, boards, canWrite, onClose, onChanged, focusUserId }) {
+export default function TaskModal({ taskId, members, labels, boards, canWrite, onClose, onChanged, focusUserId, onOpenTask }) {
   const [task, setTask] = useState(null);
   const [error, setError] = useState(null);
   const [showLog, setShowLog] = useState(false);
@@ -118,9 +119,11 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
                 style={{ fontSize: 14, color: 'var(--tk-text2)', whiteSpace: 'pre-wrap', width: '100%' }} />
             </div>
 
+            <LinkedTasks task={task} onTask={apply} onError={setError} onOpenTask={onOpenTask} />
+
             <div style={{ padding: '16px 22px', borderTop: '1px solid var(--tk-line)', borderBottom: '1px solid var(--tk-line)', background: 'var(--tk-bg2)', marginBottom: 16 }}>
               <div style={label}>Commentaires ({task.comments.length})</div>
-              <CommentsThread task={task} members={members} onTask={apply} onError={setError} />
+              <CommentsThread task={task} members={members} onTask={apply} onError={setError} onOpenTask={onOpenTask} />
             </div>
 
             <div style={{ padding: '0 22px 18px' }}>
@@ -165,6 +168,8 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
   );
 }
 
+const LINK_LABEL = { relates: 'liée à', blocks: 'bloque', blocked_by: 'bloquée par' };
+
 function eventText(e, members) {
   const d = e.detail || {};
   const names = (ids) => (ids || []).map((id) => members.find((m) => m.id === id)?.name || '?').join(', ');
@@ -175,6 +180,8 @@ function eventText(e, members) {
         ? `« ${d.name} » débloquée automatiquement (${STEP_STATUS[d.to]?.label})`
         : `${e.user_name || '?'} : « ${d.name} » ${STEP_STATUS[d.from]?.label} → ${STEP_STATUS[d.to]?.label}`;
     case 'task_status': return `${e.user_name || '?'} : statut ${TASK_STATUS[d.from]?.label} → ${TASK_STATUS[d.to]?.label}`;
+    case 'linked': return `${e.user_name || '?'} a lié la tâche #${d.id}${d.title ? ` « ${d.title} »` : ''} (${LINK_LABEL[d.kind] || 'liée à'})`;
+    case 'unlinked': return `${e.user_name || '?'} a retiré le lien avec la tâche #${d.id}`;
     case 'step_deleted': return `${e.user_name || '?'} a supprimé l'étape « ${d.name} »`;
     case 'slack': return `Slack envoyé${d.to?.length ? ` (${names(d.to)})` : ''}`;
     case 'slack_error': return <span style={{ color: 'var(--tk-danger)' }}>Slack non envoyé : {d.error}</span>;

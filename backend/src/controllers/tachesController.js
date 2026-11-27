@@ -74,6 +74,8 @@ exports.getFile = async (req, res) => {
   return res.sendFile(file);
 };
 exports.updateComment = handle((req) => tachesModel.updateComment(uid(req), id(req), body(req)));
+exports.addLink = handle((req) => tachesModel.addLink(uid(req), id(req), body(req)));
+exports.deleteLink = handle((req) => tachesModel.deleteLink(uid(req), id(req), Number(req.params.linkId)));
 exports.deleteComment = handle((req) => tachesModel.deleteComment(uid(req), id(req)));
 
 exports.getNotifications = handle((req) => tachesModel.getNotifications(uid(req), {

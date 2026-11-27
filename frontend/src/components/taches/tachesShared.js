@@ -118,6 +118,8 @@ export const tachesApi = {
   reorderSteps: (taskId, ids) => data(axios.post(`${base}/tasks/${taskId}/steps/reorder`, { ids })),
   updateComment: (id, body, mentions = []) => data(axios.patch(`${base}/comments/${id}`, { body, mentions })),
   deleteComment: (id) => data(axios.delete(`${base}/comments/${id}`)),
+  addLink: (taskId, otherId, kind) => data(axios.post(`${base}/tasks/${taskId}/links`, { other_id: otherId, kind })),
+  deleteLink: (taskId, linkId) => data(axios.delete(`${base}/tasks/${taskId}/links/${linkId}`)),
   templates: () => data(axios.get(`${base}/templates`)),
   createTemplate: (body) => data(axios.post(`${base}/templates`, body)),
   updateTemplate: (id, body) => data(axios.put(`${base}/templates/${id}`, body)),
