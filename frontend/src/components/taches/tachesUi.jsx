@@ -39,7 +39,7 @@ export function Popover({ anchor, onClose, children, width = 200 }) {
 
   if (!pos) return null;
   return (
-    <div ref={ref} data-taches-popover style={{
+    <div ref={ref} data-taches-popover className="tk-pop" style={{
       position: 'fixed', ...pos, width, zIndex: 3500, background: 'var(--tk-surface)', borderRadius: 10,
       boxShadow: '0 10px 30px rgba(15,23,42,0.18)', border: '1px solid var(--tk-line)', padding: 6,
       maxHeight: 320, overflowY: 'auto',

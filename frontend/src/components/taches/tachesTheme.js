@@ -32,6 +32,10 @@ export const THEME_CSS = `
 .tk-root[data-theme="dark"] input::placeholder,.tk-root[data-theme="dark"] textarea::placeholder{color:var(--tk-muted);}
 .tk-root[data-theme="dark"] a{color:var(--tk-link);}
 .tk-root[data-theme="dark"] mark{color:var(--tk-text);}
+.tk-root[data-theme="dark"] .tk-overlay{background:rgba(5,6,15,.62)!important;}
+.tk-root[data-theme="dark"] .tk-pop{border:1px solid #6A6F96!important;
+  box-shadow:0 0 0 1px rgba(255,255,255,.05),0 0 28px rgba(150,170,255,.22),0 24px 60px rgba(0,0,0,.6)!important;}
+.tk-root[data-theme="dark"] .tk-pop-side{border-width:0 0 0 1px!important;}
 `;
 
 const KEY = 'yv.taches.theme';

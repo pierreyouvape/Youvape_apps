@@ -241,7 +241,8 @@ export default function TachesApp() {
   const viewProps = {
     tasks: filtered || [], loading: filtered === null, board, boards, members, labels, canWrite,
     hideEmptyGroups: Boolean(filtered && tasks && filtered.length !== tasks.length),
-    focusUserId: who, onOpen: setOpenId, onTaskChange: replaceTask, onError: setError,
+    // Onglet d'une personne = liste personnelle : sous-éléments « Fait » masqués par défaut.
+    focusUserId: who, hideDoneSteps: Boolean(forcedPerson), onOpen: setOpenId, onTaskChange: replaceTask, onError: setError,
     onReload: changed, onBoardsChange: setBoards,
     onNew: (preset = {}) => setCreating(preset),
   };

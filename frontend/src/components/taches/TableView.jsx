@@ -48,7 +48,7 @@ const loadCollapsed = () => {
  * liste de choix). Cases à cocher pour archiver / déplacer / supprimer en masse.
  */
 export default function TableView({
-  tasks, loading, board, boards, members, canWrite, focusUserId, hideEmptyGroups = false,
+  tasks, loading, board, boards, members, canWrite, focusUserId, hideEmptyGroups = false, hideDoneSteps = false,
   onOpen, onTaskChange, onError, onReload, onBoardsChange,
 }) {
   const [commentsId, setCommentsId] = useState(null);
@@ -495,7 +495,7 @@ export default function TableView({
                           {open && (
                             <tr>
                               <td colSpan={span} style={{ padding: '8px 12px 14px 40px', borderBottom: `1px solid ${M.grid}`, background: M.hover }}>
-                                <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} color={g.color} />
+                                <StepsTable task={t} members={members} onChange={onTaskChange} onError={onError} focusUserId={focusUserId} color={g.color} hideDone={hideDoneSteps} />
                               </td>
                             </tr>
                           )}

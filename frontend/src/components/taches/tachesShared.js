@@ -95,7 +95,16 @@ export const tachesApi = {
   updateStep: (id, body) => updateStepAsking(id, body),
   moveStep: (id, direction) => data(axios.post(`${base}/steps/${id}/move`, { direction })),
   deleteStep: (id) => data(axios.delete(`${base}/steps/${id}`)),
-  addComment: (taskId, body, mentions = []) => data(axios.post(`${base}/tasks/${taskId}/comments`, { body, mentions })),
+  addComment: (taskId, body, mentions = [], files = []) => {
+    if (!files.length) return data(axios.post(`${base}/tasks/${taskId}/comments`, { body, mentions }));
+    const form = new FormData();
+    form.append('body', body);
+    form.append('mentions', JSON.stringify(mentions));
+    files.forEach((f) => form.append('files', f, f.name));
+    return data(axios.post(`${base}/tasks/${taskId}/comments`, form));
+  },
+  /** Pièce jointe d'un commentaire, lue avec la session (pas de lien public). */
+  commentFile: (file) => data(axios.get(`${base}/files/${encodeURIComponent(file)}`, { responseType: 'blob' })),
   notifications: (params = {}) => data(axios.get(`${base}/notifications`, { params })),
   notificationCount: () => data(axios.get(`${base}/notifications/count`)),
   readNotification: (id, read = true) => data(axios.post(`${base}/notifications/${id}/read`, { read })),

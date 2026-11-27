@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const c = require('../controllers/tachesController');
+const multer = require('multer');
 const { checkPermission, checkAdmin } = require('../middleware/permissionMiddleware');
+const { MAX_SIZE, MAX_FILES } = require('../utils/tachesFiles');
 
 /*
  * App Tâches — tâches d'équipe en étapes enchaînées (remplace Monday + Make).
@@ -63,7 +65,16 @@ router.get('/tasks/:id', c.getTask);
 router.patch('/tasks/:id', c.updateTask);
 router.delete('/tasks/:id', write, c.deleteTask);
 router.post('/tasks/:id/steps', c.addStep);
-router.post('/tasks/:id/comments', c.addComment);
+// Commentaire : JSON, ou multipart avec pièces jointes (`files`, cf. utils/tachesFiles).
+const commentUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_SIZE, files: MAX_FILES } });
+const withFiles = (req, res, next) => commentUpload.array('files', MAX_FILES)(req, res, (err) => {
+  if (!err) return next();
+  const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Fichier trop lourd (25 Mo maximum)'
+    : err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE' ? `${MAX_FILES} fichiers maximum par commentaire` : err.message;
+  return res.status(400).json({ error: msg });
+});
+router.post('/tasks/:id/comments', withFiles, c.addComment);
+router.get('/files/:file', c.getFile);
 router.post('/tasks/:id/steps/reorder', c.reorderSteps);
 router.put('/tasks/:id/values/:columnId', c.setValue);
 

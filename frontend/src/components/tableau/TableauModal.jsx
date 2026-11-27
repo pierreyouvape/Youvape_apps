@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 /** Fenêtre modale simple de l'app Tableau (fermeture : voile, Échap, ×). */
-export default function TableauModal({ title, onClose, children, width = 460 }) {
+export default function TableauModal({ title, onClose, children, width = 460, overlayClassName, boxClassName }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
@@ -10,13 +10,14 @@ export default function TableauModal({ title, onClose, children, width = 460 }) 
 
   return (
     <div
+      className={overlayClassName}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,0.45)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
       }}
     >
-      <div style={{
+      <div className={boxClassName} style={{
         background: '#fff', borderRadius: 14, width, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)',
         overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif",
       }}>

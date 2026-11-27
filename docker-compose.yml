@@ -34,6 +34,8 @@ services:
       - process_uploads:/usr/src/app/uploads/process
       # Images de l'app Tableau (posées seules ou dans les post-its)
       - tableau_uploads:/usr/src/app/uploads/tableau
+      # Pièces jointes des commentaires de l'app Tâches
+      - taches_uploads:/usr/src/app/uploads/taches
       # Factures et avoirs fournisseur : pièces comptables, à conserver et
       # retéléchargeables. Volume nommé, donc survit aux rebuilds d'image.
       - supplier_docs:/usr/src/app/uploads/supplier_docs
@@ -69,6 +71,7 @@ volumes:
   process_uploads:
   supplier_docs:
   tableau_uploads:
+  taches_uploads:
 
 networks:
   youvape_network:

@@ -259,7 +259,7 @@ export default function MineTab({ members, reloadKey, onOpen, onError }) {
                             <tr>
                               <td style={{ ...mTd, background: 'var(--tk-hover)' }} />
                               <td colSpan={9} style={{ padding: '8px 12px 14px 0', borderBottom: `1px solid ${M.grid}`, background: 'var(--tk-hover)' }}>
-                                <StepsTable task={task} members={members} focusUserId={me} color={g.color}
+                                <StepsTable task={task} members={members} focusUserId={me} color={g.color} hideDone
                                   onChange={(t) => { replace(t); load(); }} onError={onError} />
                               </td>
                             </tr>

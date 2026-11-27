@@ -52,7 +52,7 @@ export default function NewTaskModal({ templates, members, labels, boards, prese
   };
 
   return (
-    <TableauModal title="Nouvelle tâche" onClose={onClose} width={720}>
+    <TableauModal title="Nouvelle tâche" onClose={onClose} width={720} overlayClassName="tk-overlay" boxClassName="tk-pop">
       <form onSubmit={submit}>
         <label style={{ ...lbl, marginTop: 0 }}>Titre *</label>
         <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} placeholder="Xlim 4 Pro" />

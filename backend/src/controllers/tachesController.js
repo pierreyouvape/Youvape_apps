@@ -61,7 +61,18 @@ exports.updateStep = handle((req) => tachesModel.updateStep(uid(req), id(req), b
 exports.moveStep = handle((req) => tachesModel.moveStep(uid(req), id(req), body(req).direction));
 exports.deleteStep = handle((req) => tachesModel.deleteStep(uid(req), id(req)));
 
-exports.addComment = handle((req) => tachesModel.addComment(uid(req), id(req), body(req)));
+exports.addComment = handle((req) => tachesModel.addComment(uid(req), id(req), body(req), req.files || []));
+
+/** Pièce jointe d'un commentaire : image ou PDF affichés, le reste en téléchargement. */
+exports.getFile = async (req, res) => {
+  const tachesFiles = require('../utils/tachesFiles');
+  const file = tachesFiles.resolvePath(req.params.file);
+  if (!file) return res.status(404).json({ error: 'Fichier introuvable' });
+  res.setHeader('Content-Type', tachesFiles.contentType(file));
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  return res.sendFile(file);
+};
 exports.deleteComment = handle((req) => tachesModel.deleteComment(uid(req), id(req)));
 
 exports.getNotifications = handle((req) => tachesModel.getNotifications(uid(req), {

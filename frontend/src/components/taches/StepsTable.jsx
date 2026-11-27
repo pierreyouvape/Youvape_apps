@@ -1,7 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { tachesApi, apiError, formatDateTime, formatDay, todayStr, M, mTable, mTh, mTd, mCell, ellipsis } from './tachesShared';
 import { Avatar, StepStatusPill, PeoplePicker, InlineText, PriorityPill, DateRange, ColGroup, ColResizer } from './tachesUi';
 import { useColumnWidths } from './tachesColumns';
+
+/*
+ * Listes personnelles (Mes tâches, onglet d'une personne) : les sous-éléments
+ * « Fait » sont masqués par défaut. Le choix « Afficher » est gardé dans ce
+ * navigateur et vaut pour toutes les tâches dépliées à la fois.
+ */
+const SHOW_DONE_KEY = 'yv.taches.showDoneSteps';
+const SHOW_DONE_EVENT = 'yv-taches-show-done-steps';
+function useShowDoneSteps() {
+  const [show, setShow] = useState(() => localStorage.getItem(SHOW_DONE_KEY) === '1');
+  useEffect(() => {
+    const sync = () => setShow(localStorage.getItem(SHOW_DONE_KEY) === '1');
+    window.addEventListener(SHOW_DONE_EVENT, sync);
+    return () => window.removeEventListener(SHOW_DONE_EVENT, sync);
+  }, []);
+  const toggle = () => {
+    localStorage.setItem(SHOW_DONE_KEY, show ? '0' : '1');
+    window.dispatchEvent(new Event(SHOW_DONE_EVENT));
+  };
+  return [show, toggle];
+}
 
 const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tk-faint)', fontSize: 9, padding: 0, lineHeight: 1 };
 
@@ -13,12 +34,15 @@ const arrow = { background: 'none', border: 'none', cursor: 'pointer', color: 'v
  * Chaque modification renvoie la tâche complète (`onChange`), y compris
  * l'étape suivante débloquée par un « Fait ».
  */
-export default function StepsTable({ task, members, onChange, onError, focusUserId = null, color = '#579BFC' }) {
+export default function StepsTable({ task, members, onChange, onError, focusUserId = null, color = '#579BFC', hideDone = false }) {
   const cols = useColumnWidths('steps', [26, 360, 96, 150, 96, 150, 150, 120, 180, 40]);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
   const steps = task.steps || [];
   const today = todayStr();
+  const [showDone, toggleShowDone] = useShowDoneSteps();
+  const doneCount = steps.filter((s) => s.status === 'fait').length;
+  const hiding = hideDone && !showDone;
 
   const run = async (fn) => {
     setBusy(true);
@@ -80,6 +104,7 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
         </thead>
         <tbody>
           {steps.map((s, i) => {
+            if (hiding && s.status === 'fait') return null;
             const isMine = focusUserId && s.status !== 'fait' && s.owners.includes(focusUserId);
             const before = mineIdx >= 0 && i < mineIdx;
             const late = s.due_date && s.status !== 'fait' && s.due_date < today;
@@ -139,6 +164,19 @@ export default function StepsTable({ task, members, onChange, onError, focusUser
               </tr>
             );
           })}
+          {hideDone && doneCount > 0 && (
+            <tr>
+              <td style={mTd} />
+              <td colSpan={9} style={{ ...mTd, textAlign: 'left', borderRight: 'none', fontSize: 13, color: M.sub }}>
+                {hiding ? `${doneCount} sous-élément${doneCount > 1 ? 's' : ''} « Fait » masqué${doneCount > 1 ? 's' : ''}` : `${doneCount} sous-élément${doneCount > 1 ? 's' : ''} « Fait » affiché${doneCount > 1 ? 's' : ''}`}
+                {' · '}
+                <button type="button" onClick={toggleShowDone}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--tk-link)' }}>
+                  {hiding ? 'Afficher' : 'Masquer'}
+                </button>
+              </td>
+            </tr>
+          )}
           <tr>
             <td style={mTd} />
             <td colSpan={9} style={{ ...mTd, textAlign: 'left', borderRight: 'none' }}>

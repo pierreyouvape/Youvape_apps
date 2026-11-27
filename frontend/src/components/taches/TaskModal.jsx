@@ -44,11 +44,11 @@ export default function TaskModal({ taskId, members, labels, boards, canWrite, o
   const board = task && boards.find((b) => b.id === task.board_id);
 
   return (
-    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
+    <div className="tk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
       position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,0.45)',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto',
     }}>
-      <div style={{ background: 'var(--tk-surface)', borderRadius: 14, width: 1180, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
+      <div className="tk-pop" style={{ background: 'var(--tk-surface)', borderRadius: 14, width: 1180, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
         {!task ? (
           <div style={{ padding: 40, color: error ? 'var(--tk-danger)' : 'var(--tk-sub)' }}>{error || 'Chargement…'}</div>
         ) : (

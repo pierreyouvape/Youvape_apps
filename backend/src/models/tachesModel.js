@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const userPermissionsModel = require('./userPermissionsModel');
 const { nextStepPlan, taskStatus, STEP_STATUSES, TASK_STATUSES } = require('../services/tachesRules');
 const tachesSlack = require('../services/tachesSlack');
+const tachesFiles = require('../utils/tachesFiles');
 
 /**
  * App Tâches : tableaux d'équipe (remplace Monday + Make).
@@ -437,7 +438,7 @@ async function getTask(id) {
   const [task] = await loadTasks(pool, 't.id = $1', [id]);
   if (!task) throw httpError(404, 'Tâche introuvable');
   const { rows: comments } = await pool.query(
-    `SELECT c.id, c.user_id, ${USER_NAME('u')} AS user_name, c.body, c.mentions,
+    `SELECT c.id, c.user_id, ${USER_NAME('u')} AS user_name, c.body, c.mentions, c.files,
             to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at
        FROM taches_comments c LEFT JOIN users u ON u.id = c.user_id
       WHERE c.task_id = $1 ORDER BY c.created_at, c.id`,
@@ -726,9 +727,16 @@ async function updateTask(userId, id, body) {
   return getTask(id);
 }
 
+/** Fichiers joints aux commentaires de ces tâches (à effacer avec elles). */
+const commentFiles = async (ids) => (await pool.query(
+  "SELECT f->>'file' AS file FROM taches_comments c, jsonb_array_elements(c.files) f WHERE c.task_id = ANY($1)", [ids],
+)).rows.map((r) => r.file);
+
 async function deleteTask(id) {
+  const files = await commentFiles([id]);
   const { rowCount } = await pool.query('DELETE FROM taches_tasks WHERE id = $1', [id]);
   if (!rowCount) throw httpError(404, 'Tâche introuvable');
+  tachesFiles.removeFiles(files);
 }
 
 /** Actions sur plusieurs tâches : archive | unarchive | delete | move ({ group_id }). */
@@ -745,7 +753,9 @@ async function bulk(userId, body, { canDelete }) {
     );
   } else if (action === 'delete') {
     if (!canDelete) throw httpError(403, "Supprimer des tâches demande le droit d'écriture sur l'app Tâches");
+    const files = await commentFiles(ids);
     await pool.query('DELETE FROM taches_tasks WHERE id = ANY($1)', [ids]);
+    tachesFiles.removeFiles(files);
   } else if (action === 'move') {
     const { rows: [g] } = await pool.query('SELECT id, board_id FROM taches_groups WHERE id = $1', [Number(body.group_id)]);
     if (!g) throw httpError(400, 'Groupe introuvable');
@@ -1028,17 +1038,26 @@ async function deleteStep(userId, stepId) {
  * qui suivent la tâche (personnes, responsables, à prévenir, auteur, anciens
  * commentateurs) : notification « comment », sans Slack.
  */
-async function addComment(userId, taskId, body) {
+async function addComment(userId, taskId, body, uploads = []) {
   const text = cleanText(body.body, 5000);
-  if (!text) throw httpError(400, 'Commentaire vide');
+  if (!text && !uploads.length) throw httpError(400, 'Commentaire vide');
   const { rows } = await pool.query('SELECT id, title, created_by FROM taches_tasks WHERE id = $1', [taskId]);
   if (!rows.length) throw httpError(404, 'Tâche introuvable');
+  // Envoi en multipart (pièces jointes) : les mentions arrivent en texte JSON.
+  if (typeof body.mentions === 'string') {
+    try { body = { ...body, mentions: JSON.parse(body.mentions) }; } catch { body = { ...body, mentions: [] }; }
+  }
+  const files = await tachesFiles.saveFiles(uploads);
+  const notice = text || `📎 ${files.length} pièce${files.length > 1 ? 's' : ''} jointe${files.length > 1 ? 's' : ''}`;
   const active = new Set((await getMembers()).map((m) => m.id));
   // On peut se mentionner soi-même (pense-bête, essai) : notification et Slack comme pour un autre.
   const mentions = toIds(body.mentions).filter((id) => active.has(id));
   await withTx(async (db) => {
-    await db.query('INSERT INTO taches_comments (task_id, user_id, body, mentions) VALUES ($1, $2, $3, $4)', [taskId, userId, text, mentions]);
-    await notify(db, { userIds: mentions, kind: 'mention', taskId, actorId: userId, body: text, includeActor: true });
+    await db.query(
+      'INSERT INTO taches_comments (task_id, user_id, body, mentions, files) VALUES ($1, $2, $3, $4, $5)',
+      [taskId, userId, text, mentions, JSON.stringify(files)],
+    );
+    await notify(db, { userIds: mentions, kind: 'mention', taskId, actorId: userId, body: notice, includeActor: true });
     const { rows: subs } = await db.query(
       `SELECT user_id FROM taches_task_people WHERE task_id = $1
        UNION SELECT p.user_id FROM taches_step_people p JOIN taches_steps s ON s.id = p.step_id WHERE s.task_id = $1
@@ -1048,12 +1067,12 @@ async function addComment(userId, taskId, body) {
     );
     await notify(db, {
       userIds: subs.map((x) => x.user_id).filter((id) => active.has(id) && !mentions.includes(id)),
-      kind: 'comment', taskId, actorId: userId, body: text,
+      kind: 'comment', taskId, actorId: userId, body: notice,
     });
     await touch(db, taskId, userId);
-  });
+  }).catch((e) => { tachesFiles.removeFiles(files.map((f) => f.file)); throw e; });
   if (mentions.length) {
-    sendMentionNotice({ task: rows[0], userId, text, mentions }).catch((e) => console.error('[Tâches] Slack mention :', e.message));
+    sendMentionNotice({ task: rows[0], userId, text: notice, mentions }).catch((e) => console.error('[Tâches] Slack mention :', e.message));
   }
   return getTask(taskId);
 }
@@ -1158,8 +1177,9 @@ async function reorderSteps(userId, taskId, body) {
 
 /** Seul l'auteur supprime son commentaire. */
 async function deleteComment(userId, commentId) {
-  const { rows } = await pool.query('DELETE FROM taches_comments WHERE id = $1 AND user_id = $2 RETURNING task_id', [commentId, userId]);
+  const { rows } = await pool.query('DELETE FROM taches_comments WHERE id = $1 AND user_id = $2 RETURNING task_id, files', [commentId, userId]);
   if (!rows.length) throw httpError(404, 'Commentaire introuvable');
+  tachesFiles.removeFiles((rows[0].files || []).map((f) => f.file));
   return getTask(rows[0].task_id);
 }
 

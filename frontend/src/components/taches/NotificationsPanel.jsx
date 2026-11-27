@@ -22,7 +22,9 @@ const VERB = {
  */
 export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
   const [tab, setTab] = useState('all');
-  const [unreadOnly, setUnreadOnly] = useState(false);
+  // Gardée dans ce navigateur : la case reste cochée d'une ouverture et d'un rechargement à l'autre.
+  const [unreadOnly, setUnreadOnlyState] = useState(() => localStorage.getItem('yv.taches.notifUnreadOnly') === '1');
+  const setUnreadOnly = (v) => { localStorage.setItem('yv.taches.notifUnreadOnly', v ? '1' : '0'); setUnreadOnlyState(v); };
   const [q, setQ] = useState('');
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -111,9 +113,9 @@ export default function NotificationsPanel({ onClose, onOpen, onUnread }) {
   );
 
   return (
-    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    <div className="tk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 2900, background: 'rgba(15,23,42,0.25)' }}>
-      <div style={{
+      <div className="tk-pop tk-pop-side" style={{
         position: 'absolute', top: 0, right: 0, bottom: 0, width: 560, maxWidth: '100%', background: 'var(--tk-surface)',
         boxShadow: '-10px 0 30px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column', fontFamily: M.font,
       }}>

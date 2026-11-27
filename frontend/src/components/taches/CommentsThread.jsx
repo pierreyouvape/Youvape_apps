@@ -9,9 +9,9 @@ export function CommentsThread({ task, members, onTask, onError }) {
   const { user } = useContext(AuthContext);
 
   // Renvoie false en cas d'échec : le texte reste dans la zone pour être renvoyé.
-  const send = async (text, mentions) => {
+  const send = async (text, mentions, files = []) => {
     try {
-      onTask(await tachesApi.addComment(task.id, text, mentions));
+      onTask(await tachesApi.addComment(task.id, text, mentions, files));
       return true;
     } catch (err) {
       onError(apiError(err));
@@ -37,15 +37,82 @@ export function CommentsThread({ task, members, onTask, onError }) {
                     }}>Supprimer</button>
                 )}
               </div>
-              <div style={{ fontSize: 14, color: 'var(--tk-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                <CommentBody body={c.body} mentions={c.mentions} members={members} />
-              </div>
+              {c.body && (
+                <div style={{ fontSize: 14, color: 'var(--tk-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                  <CommentBody body={c.body} mentions={c.mentions} members={members} />
+                </div>
+              )}
+              {c.files?.length > 0 && <CommentFiles files={c.files} onError={onError} />}
             </div>
           </div>
         ))}
       </div>
       <MentionInput members={members} onSubmit={send} />
     </>
+  );
+}
+
+/** Lit une pièce jointe avec la session (blob) ; l'adresse locale est libérée au démontage. */
+function useFileUrl(file, enabled = true) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    let made = null;
+    tachesApi.commentFile(file).then((blob) => {
+      made = URL.createObjectURL(blob);
+      if (alive) setUrl(made); else URL.revokeObjectURL(made);
+    }).catch(() => {});
+    return () => { alive = false; if (made) URL.revokeObjectURL(made); };
+  }, [file, enabled]);
+  return url;
+}
+
+const sizeText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round(n / 1024))} Ko`);
+
+function ImageFile({ f }) {
+  const url = useFileUrl(f.file);
+  return (
+    <a href={url || undefined} target="_blank" rel="noreferrer" title={`${f.name} — ouvrir en grand`}
+      style={{ display: 'block', border: '1px solid var(--tk-line)', borderRadius: 8, overflow: 'hidden', background: 'var(--tk-bg2)', lineHeight: 0 }}>
+      {url
+        ? <img src={url} alt={f.name} style={{ display: 'block', maxWidth: 260, maxHeight: 180, objectFit: 'contain' }} />
+        : <span style={{ display: 'block', width: 120, height: 80 }} />}
+    </a>
+  );
+}
+
+function DocFile({ f, onError }) {
+  const download = async () => {
+    try {
+      const blob = await tachesApi.commentFile(f.file);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { onError?.(apiError(e)); }
+  };
+  return (
+    <button type="button" onClick={download} title={`Télécharger ${f.name}`} style={{
+      display: 'flex', alignItems: 'center', gap: 6, maxWidth: 260, border: '1px solid var(--tk-line)', borderRadius: 8,
+      background: 'var(--tk-bg2)', padding: '6px 10px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--tk-link)',
+    }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {f.name}</span>
+      <span style={{ color: 'var(--tk-muted)', flexShrink: 0 }}>{sizeText(f.size || 0)}</span>
+    </button>
+  );
+}
+
+/** Pièces jointes d'un commentaire : vignettes pour les images, boutons de téléchargement sinon. */
+function CommentFiles({ files, onError }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start', marginTop: 6 }}>
+      {files.map((f) => (f.kind === 'image' ? <ImageFile key={f.file} f={f} /> : <DocFile key={f.file} f={f} onError={onError} />))}
+    </div>
   );
 }
 
@@ -67,11 +134,11 @@ export default function CommentsPopup({ taskId, members, onClose, onChanged, onO
   const apply = (t) => { setTask(t); setError(null); onChanged?.(t); };
 
   return (
-    <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
+    <div className="tk-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{
       position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,0.35)',
       display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 16px', overflowY: 'auto',
     }}>
-      <div style={{ background: 'var(--tk-bg2)', borderRadius: 14, width: 680, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
+      <div className="tk-pop" style={{ background: 'var(--tk-bg2)', borderRadius: 14, width: 680, maxWidth: '100%', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif" }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--tk-line)', background: 'var(--tk-surface)', borderRadius: '14px 14px 0 0' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--tk-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
