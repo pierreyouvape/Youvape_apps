@@ -116,6 +116,7 @@ export const tachesApi = {
   setValue: (taskId, columnId, value) => data(axios.put(`${base}/tasks/${taskId}/values/${columnId}`, { value })),
   reorderTasks: (groupId, ids) => data(axios.post(`${base}/tasks/reorder`, { group_id: groupId, ids })),
   reorderSteps: (taskId, ids) => data(axios.post(`${base}/tasks/${taskId}/steps/reorder`, { ids })),
+  updateComment: (id, body, mentions = []) => data(axios.patch(`${base}/comments/${id}`, { body, mentions })),
   deleteComment: (id) => data(axios.delete(`${base}/comments/${id}`)),
   templates: () => data(axios.get(`${base}/templates`)),
   createTemplate: (body) => data(axios.post(`${base}/templates`, body)),

@@ -7,6 +7,19 @@ import MentionInput, { CommentBody } from './MentionInput';
 /** Fil de commentaires d'une tâche + zone de saisie (fiche et fenêtre 💬). */
 export function CommentsThread({ task, members, onTask, onError }) {
   const { user } = useContext(AuthContext);
+  const [editingId, setEditingId] = useState(null);
+
+  // Modification d'un commentaire (auteur seulement) : renvoie false en cas d'échec, le texte reste.
+  const save = async (commentId, text, mentions) => {
+    try {
+      onTask(await tachesApi.updateComment(commentId, text, mentions));
+      setEditingId(null);
+      return true;
+    } catch (err) {
+      onError(apiError(err));
+      return false;
+    }
+  };
 
   // Renvoie false en cas d'échec : le texte reste dans la zone pour être renvoyé.
   const send = async (text, mentions, files = []) => {
@@ -28,16 +41,30 @@ export function CommentsThread({ task, members, onTask, onError }) {
             <Avatar id={c.user_id || 0} name={c.user_name || 'Monday'} size={30} />
             <div style={{ flex: 1, minWidth: 0, background: 'var(--tk-surface)', border: '1px solid var(--tk-line)', borderRadius: 10, padding: '8px 12px' }}>
               <div style={{ fontSize: 12, color: 'var(--tk-sub)', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
-                <span><strong style={{ color: 'var(--tk-text2)' }}>{c.user_name || 'Import Monday'}</strong> · {formatDateTime(c.created_at)}</span>
-                {c.user_id === user?.id && (
-                  <button type="button" style={{ background: 'none', border: 'none', color: 'var(--tk-muted)', cursor: 'pointer', fontSize: 12 }}
-                    onClick={async () => {
-                      if (!window.confirm('Supprimer ce commentaire ?')) return;
-                      try { onTask(await tachesApi.deleteComment(c.id)); } catch (e) { onError(apiError(e)); }
-                    }}>Supprimer</button>
+                <span>
+                  <strong style={{ color: 'var(--tk-text2)' }}>{c.user_name || 'Import Monday'}</strong> · {formatDateTime(c.created_at)}
+                  {c.edited_at && <span title={`Modifié le ${formatDateTime(c.edited_at)}`} style={{ color: 'var(--tk-muted)' }}> · modifié</span>}
+                </span>
+                {c.user_id === user?.id && editingId !== c.id && (
+                  <span style={{ display: 'flex', gap: 4 }}>
+                    <button type="button" style={{ background: 'none', border: 'none', color: 'var(--tk-muted)', cursor: 'pointer', fontSize: 12 }}
+                      onClick={() => setEditingId(c.id)}>Modifier</button>
+                    <button type="button" style={{ background: 'none', border: 'none', color: 'var(--tk-muted)', cursor: 'pointer', fontSize: 12 }}
+                      onClick={async () => {
+                        if (!window.confirm('Supprimer ce commentaire ?')) return;
+                        try { onTask(await tachesApi.deleteComment(c.id)); } catch (e) { onError(apiError(e)); }
+                      }}>Supprimer</button>
+                  </span>
                 )}
               </div>
-              {c.body && (
+              {editingId === c.id && (
+                <div style={{ margin: '4px 0 2px' }}>
+                  <MentionInput members={members} initialText={c.body} initialMentions={c.mentions} allowFiles={false}
+                    submitLabel="Enregistrer" onCancel={() => setEditingId(null)}
+                    onSubmit={(text, mentions) => save(c.id, text, mentions)} />
+                </div>
+              )}
+              {c.body && editingId !== c.id && (
                 <div style={{ fontSize: 14, color: 'var(--tk-text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   <CommentBody body={c.body} mentions={c.mentions} members={members} />
                 </div>

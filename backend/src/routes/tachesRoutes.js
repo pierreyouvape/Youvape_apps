@@ -82,6 +82,7 @@ router.patch('/steps/:id', c.updateStep);
 router.post('/steps/:id/move', c.moveStep);
 router.delete('/steps/:id', c.deleteStep);
 
+router.patch('/comments/:id', c.updateComment);
 router.delete('/comments/:id', c.deleteComment);
 
 module.exports = router;

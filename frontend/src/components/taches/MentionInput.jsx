@@ -23,9 +23,13 @@ function named(file) {
   return new File([file], name, { type: file.type });
 }
 
-export default function MentionInput({ members, onSubmit, placeholder }) {
-  const [text, setText] = useState('');
-  const [picked, setPicked] = useState([]); // [{ id, name }]
+export default function MentionInput({
+  members, onSubmit, placeholder, initialText = '', initialMentions = [], submitLabel = 'Envoyer', onCancel = null, allowFiles = true,
+}) {
+  const [text, setText] = useState(initialText);
+  // Modification : les personnes déjà mentionnées restent reconnues dans le texte.
+  const [picked, setPicked] = useState(() => initialMentions
+    .map((id) => members.find((m) => m.id === id)).filter(Boolean).map((m) => ({ id: m.id, name: m.name }))); // [{ id, name }]
   const [query, setQuery] = useState(null); // texte après « @ », ou null
   const [active, setActive] = useState(0);
   const [files, setFiles] = useState([]); // [{ file, url }] — url = aperçu des images
@@ -53,6 +57,7 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
     return cur.filter((_, j) => j !== i);
   });
   const onPaste = (e) => {
+    if (!allowFiles) return;
     const pasted = [...(e.clipboardData?.items || [])].filter((it) => it.kind === 'file').map((it) => it.getAsFile());
     if (!pasted.length) return; // du texte : collage normal
     e.preventDefault();
@@ -99,11 +104,12 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
 
   return (
     <div style={{ display: 'flex', gap: 8, position: 'relative' }}
-      onDragOver={(e) => { if ([...e.dataTransfer.types].includes('Files')) { e.preventDefault(); setDragging(true); } }}
+      onDragOver={(e) => { if (allowFiles && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
-      onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); } }}>
+      onDrop={(e) => { if (allowFiles && e.dataTransfer.files.length) { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files); } }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
-        <textarea ref={ref} value={text} rows={2} onPaste={onPaste}
+        <textarea ref={ref} value={text} rows={onCancel ? 3 : 2} onPaste={onPaste} autoFocus={Boolean(onCancel)}
+          onFocus={(e) => { if (onCancel) { const n = e.target.value.length; e.target.setSelectionRange(n, n); } }}
           placeholder={placeholder || 'Écrire un commentaire… « @ » pour mentionner (Ctrl+Entrée pour envoyer)'}
           onChange={(e) => { setText(e.target.value); detect(e.target.value, e.target.selectionStart); }}
           onClick={(e) => detect(text, e.target.selectionStart)}
@@ -115,12 +121,13 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
               if (e.key === 'Escape') { e.stopPropagation(); setQuery(null); return; }
             }
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+            if (e.key === 'Escape' && onCancel) { e.stopPropagation(); onCancel(); }
           }}
           style={{
             width: '100%', boxSizing: 'border-box', border: `1px solid ${dragging ? '#0073EA' : M.border}`, borderRadius: 8, padding: 8,
             fontFamily: 'inherit', fontSize: 14, resize: 'vertical', outline: dragging ? '2px dashed #0073EA' : undefined,
           }} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+        {allowFiles && <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
           <input ref={picker} type="file" multiple style={{ display: 'none' }}
             onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
           <button type="button" onClick={() => picker.current?.click()} title="Joindre un fichier de votre poste (ou glissez-le ici)"
@@ -129,7 +136,7 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
           </button>
           <span style={{ fontSize: 12, color: 'var(--tk-muted)' }}>ou collez une capture d'écran (Ctrl+V / ⌘+V), ou glissez un fichier</span>
           {fileError && <span style={{ fontSize: 12, color: 'var(--tk-danger)' }}>{fileError}</span>}
-        </div>
+        </div>}
         {files.length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
             {files.map((f, i) => (
@@ -167,10 +174,18 @@ export default function MentionInput({ members, onSubmit, placeholder }) {
           </div>
         )}
       </div>
-      <button type="button" onClick={send} disabled={!canSend} style={{
-        background: '#0073EA', color: '#fff', border: 'none', borderRadius: 4, padding: '0 16px', fontSize: 14, height: 52, alignSelf: 'flex-start',
-        cursor: canSend ? 'pointer' : 'default', opacity: canSend ? 1 : 0.5, fontFamily: 'inherit',
-      }}>{sending ? 'Envoi…' : 'Envoyer'}</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignSelf: 'flex-start' }}>
+        <button type="button" onClick={send} disabled={!canSend} style={{
+          background: '#0073EA', color: '#fff', border: 'none', borderRadius: 4, padding: '0 16px', fontSize: 14, height: onCancel ? 36 : 52,
+          cursor: canSend ? 'pointer' : 'default', opacity: canSend ? 1 : 0.5, fontFamily: 'inherit',
+        }}>{sending ? 'Envoi…' : submitLabel}</button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} style={{
+            background: 'none', color: M.sub, border: `1px solid ${M.border}`, borderRadius: 4, padding: '0 16px', fontSize: 14, height: 32,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>Annuler</button>
+        )}
+      </div>
     </div>
   );
 }

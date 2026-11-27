@@ -439,6 +439,7 @@ async function getTask(id) {
   if (!task) throw httpError(404, 'Tâche introuvable');
   const { rows: comments } = await pool.query(
     `SELECT c.id, c.user_id, ${USER_NAME('u')} AS user_name, c.body, c.mentions, c.files,
+            to_char(c.edited_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS edited_at,
             to_char(c.created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at
        FROM taches_comments c LEFT JOIN users u ON u.id = c.user_id
       WHERE c.task_id = $1 ORDER BY c.created_at, c.id`,
@@ -1175,6 +1176,34 @@ async function reorderSteps(userId, taskId, body) {
   return getTask(taskId);
 }
 
+/**
+ * Seul l'auteur modifie son commentaire (texte et mentions ; les pièces jointes
+ * restent). Une personne NOUVELLEMENT mentionnée est prévenue (cloche + Slack),
+ * celles déjà mentionnées ne le sont pas une seconde fois.
+ */
+async function updateComment(userId, commentId, body) {
+  const { rows: [cur] } = await pool.query(
+    'SELECT c.id, c.task_id, c.user_id, c.body, c.mentions, c.files, t.title, t.created_by FROM taches_comments c JOIN taches_tasks t ON t.id = c.task_id WHERE c.id = $1',
+    [commentId],
+  );
+  if (!cur || cur.user_id !== userId) throw httpError(404, 'Commentaire introuvable');
+  const text = cleanText(body.body, 5000);
+  if (!text && !(cur.files || []).length) throw httpError(400, 'Commentaire vide');
+  const active = new Set((await getMembers()).map((m) => m.id));
+  const mentions = toIds(body.mentions).filter((id) => active.has(id));
+  const added = mentions.filter((id) => !cur.mentions.includes(id));
+  if (text === cur.body && !added.length && mentions.length === cur.mentions.length) return getTask(cur.task_id);
+  await withTx(async (db) => {
+    await db.query(`UPDATE taches_comments SET body = $2, mentions = $3, edited_at = ${PARIS_NOW} WHERE id = $1`, [commentId, text, mentions]);
+    await notify(db, { userIds: added, kind: 'mention', taskId: cur.task_id, actorId: userId, body: text, includeActor: true });
+  });
+  if (added.length) {
+    sendMentionNotice({ task: { id: cur.task_id, title: cur.title, created_by: cur.created_by }, userId, text, mentions: added })
+      .catch((e) => console.error('[Tâches] Slack mention :', e.message));
+  }
+  return getTask(cur.task_id);
+}
+
 /** Seul l'auteur supprime son commentaire. */
 async function deleteComment(userId, commentId) {
   const { rows } = await pool.query('DELETE FROM taches_comments WHERE id = $1 AND user_id = $2 RETURNING task_id, files', [commentId, userId]);
@@ -1311,6 +1340,7 @@ module.exports = {
   moveStep,
   deleteStep,
   addComment,
+  updateComment,
   deleteComment,
   getViews,
   saveView,

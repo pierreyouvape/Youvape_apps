@@ -73,6 +73,7 @@ exports.getFile = async (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=86400');
   return res.sendFile(file);
 };
+exports.updateComment = handle((req) => tachesModel.updateComment(uid(req), id(req), body(req)));
 exports.deleteComment = handle((req) => tachesModel.deleteComment(uid(req), id(req)));
 
 exports.getNotifications = handle((req) => tachesModel.getNotifications(uid(req), {
