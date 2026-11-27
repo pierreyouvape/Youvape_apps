@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 
-/** Fenêtre modale simple de l'app Tableau (fermeture : voile, Échap, ×). */
+/**
+ * Fenêtre modale simple de l'app Tableau (fermeture : voile, Échap, ×).
+ * Couleurs du thème des Tâches (--tk-*) quand elle s'ouvre dedans, blanc sinon.
+ */
 export default function TableauModal({ title, onClose, children, width = 460, overlayClassName, boxClassName }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -18,16 +21,16 @@ export default function TableauModal({ title, onClose, children, width = 460, ov
       }}
     >
       <div className={boxClassName} style={{
-        background: '#fff', borderRadius: 14, width, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)',
+        background: 'var(--tk-surface, #fff)', color: 'var(--tk-text, inherit)', borderRadius: 14, width, maxWidth: '100%', maxHeight: 'calc(100vh - 32px)',
         overflowY: 'auto', boxShadow: '0 20px 50px rgba(0,0,0,0.25)', fontFamily: "'Lato', sans-serif",
       }}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 18px', borderBottom: '1px solid #E5E7EB',
+          padding: '14px 18px', borderBottom: '1px solid var(--tk-line, #E5E7EB)',
         }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#1F2937' }}>{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--tk-text, #1F2937)' }}>{title}</div>
           <button onClick={onClose} title="Fermer" style={{
-            background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: '#9CA3AF', cursor: 'pointer',
+            background: 'none', border: 'none', fontSize: 22, lineHeight: 1, color: 'var(--tk-muted, #9CA3AF)', cursor: 'pointer',
           }}>×</button>
         </div>
         <div style={{ padding: 18 }}>{children}</div>
