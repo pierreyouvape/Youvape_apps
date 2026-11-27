@@ -5,7 +5,7 @@
 
 const assert = require('assert');
 const {
-  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, priceDecision, priceGapPct,
+  normalize, similarity, closest, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, cartridgeKind, priceDecision, priceGapPct,
 } = require('../src/services/catalogSyncRules');
 
 // ── Normalisation ───────────────────────────────────────────────────────────
@@ -129,5 +129,22 @@ assert.strictEqual(refineCategoryName('BOX INTEGRE', 'Double accu'), 'BOX ACCU')
 assert.strictEqual(refineCategoryName('BOX ACCU', 'Simple accu'), 'BOX ACCU');
 assert.strictEqual(refineCategoryName('BOX ACCU', null), 'BOX ACCU', 'sans attribut : inchangée');
 assert.strictEqual(refineCategoryName('POD', 'Batterie intégrée'), 'POD', 'autre catégorie : jamais déplacée');
+
+// Cartouches (27/11/2026).
+const CP = 'Cartouches Pods';
+assert.strictEqual(cartridgeKind({ name: 'Cartouches CLK One 20mg - Fraise', sub: 'Cartouches Pré-remplies' }), 'PREREMPLIE');
+assert.strictEqual(cartridgeKind({ name: 'Pack 2 Cartouches Pixo - 0.40 Ω', sub: CP }), 'Resistance');
+assert.strictEqual(cartridgeKind({ name: 'Pack 2 Cartouches Fluffi - 1 Ω', sub: CP }), 'Resistance', 'Ω en fin de nom');
+assert.strictEqual(cartridgeKind({ name: 'Pack 2X Cartouches J Series (résistances intégrées)', sub: CP }), 'Resistance');
+assert.strictEqual(cartridgeKind({ name: 'Cartouche vide DotPod Max - Red', sub: CP }), 'Vide');
+assert.strictEqual(cartridgeKind({ name: 'Pack 2 Cartouches Argus (résistance interchangeable)', sub: CP }), 'Vide');
+assert.strictEqual(cartridgeKind({ name: 'Aegis Boost Rba', sub: CP }), 'Vide');
+assert.strictEqual(cartridgeKind({ name: 'Pack 2 Cartouches Pod Feelin', sub: CP, coils_compatible: 'SPL 10 (Nevoks)' }), 'Vide');
+assert.strictEqual(cartridgeKind({ name: 'Cartouche ElfX Mega - 10 ml', sub: CP, coil_value: '0.60 Ω' }), 'Resistance');
+assert.strictEqual(cartridgeKind({ name: 'Pack 3 Cartouches Argus Multi-Ohm', sub: CP }), null, '« Multi-Ohm » sans valeur : on ne devine pas');
+assert.strictEqual(cartridgeKind({ name: 'Cartouche Meteorite - Cyan', sub: CP }), null);
+assert.strictEqual(cartridgeKind({ name: 'Reservoir Tank DotAio V4', sub: 'Réservoirs de Rechange' }), null);
+const cartSubs = [{ id: '24', category_id: '2', name: 'PREREMPLIE' }, { id: '23', category_id: '2', name: 'Resistance' }, { id: '22', category_id: '2', name: 'Vide' }];
+assert.strictEqual(pickSubcategory({ name: 'Cartouche Avata - 0.60 Ω', sub: CP }, { categoryId: '2', categoryName: 'CARTOUCHES' }, cartSubs), '23');
 
 console.log('✓ catalogSync.test.js');

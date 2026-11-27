@@ -154,9 +154,10 @@ const pickCategory = (stats, cat, sub) => {
  *  - BOX ACCU / KIT ACCU : attribut WC « Types de batteries » (`p.battery`),
  *    Simple accu → 1 accu, Double accu → 2 accus (concordance totale sur les
  *    fiches de l'équipe, 27/11/2026).
+ *  - CARTOUCHES : voir cartridgeKind.
  * Ailleurs, ou contenance sans sous-catégorie (170 ml) : null, la fiche reste sans.
  * `subcategories` : [{ id, category_id, name }] de Nextore ; `p` : { name, sub,
- * battery } du site, `nxName` : nom de la fiche caisse.
+ * battery, coils_compatible, coil_value } du site, `nxName` : nom de la fiche caisse.
  */
 const SUBCATEGORY_VOLUMES = {
   'E-LIQUIDES': { 10: '10 ml', 50: '50 ml', 60: '50 ml', 100: '100 ml', 200: '200 ml' },
@@ -172,6 +173,31 @@ const batteryKind = (battery) => {
   if (/^double/i.test(values[0])) return 'double';
   return null;
 };
+/**
+ * Cartouches : « Cartouches Pré-remplies » du site → PREREMPLIE (88/88 chez l'équipe).
+ * « Cartouches Pods » : Vide (résistance à part) ou Resistance (intégrée), lu dans
+ * le nom puis dans les attributs WC — 72/75 justes sur les fiches de l'équipe
+ * (27/11/2026). Rien de lisible (« Cartouche Meteorite ») : null, on ne devine pas.
+ */
+const cartridgeKind = (p) => {
+  const sub = String(p?.sub || '');
+  const name = String(p?.name || '');
+  if (/pr[ée]-?rempli/i.test(sub)) return 'PREREMPLIE';
+  if (!/^cartouches pods$/i.test(sub.trim())) return null;
+  if (/\bvides?\b|interchangeable|\brba\b/i.test(name)) return 'Vide';
+  if (/\d(?:[.,]\d+)?\s*(?:Ω|ohms?\b)/i.test(name) || /r[ée]sistances? int[ée]gr/i.test(name)) return 'Resistance';
+  if (p?.coils_compatible) return 'Vide';
+  if (p?.coil_value) return 'Resistance';
+  return null;
+};
+// Attributs WC lus par pickSubcategory / refineCategoryName (alias p / pp = produit / parent).
+const siteAttr = (attr, alias) => `(SELECT string_agg(DISTINCT a.value, '|') FROM wp_product_attributes a
+           WHERE a.wp_product_id = COALESCE(pp.wp_product_id, p.wp_product_id) AND a.attribute = '${attr}') AS ${alias}`;
+const SITE_ATTRS_SQL = [
+  siteAttr('pa_types-de-batteries', 'battery'),
+  siteAttr('pa_resistances-compatibles', 'coils_compatible'),
+  siteAttr('pa_valeur-de-resistance', 'coil_value'),
+].join(',\n         ');
 const BATTERY_FAMILY = { 'BOX ACCU': 'BOX', 'BOX INTEGRE': 'BOX', 'KIT ACCU': 'KIT', 'KIT INTEGRE': 'KIT' };
 /**
  * Catégorie caisse corrigée par l'attribut batterie : une box ou un kit à batterie
@@ -196,6 +222,7 @@ const pickSubcategory = (p, { categoryId, categoryName, nxName = '' }, subcatego
     const kind = batteryKind(p?.battery);
     return find(kind === 'simple' ? '1 accu' : kind === 'double' ? '2 accus' : null);
   }
+  if (cat === 'CARTOUCHES') return find(cartridgeKind(p));
   const volumes = SUBCATEGORY_VOLUMES[cat];
   if (!volumes) return null;
   const siteSub = String(p?.sub || '');
@@ -268,5 +295,5 @@ const pickBrand = (site, nxBrands) => {
 const priceGapPct = (sitePrice, nxPrice) => Math.round(((Number(nxPrice) - Number(sitePrice)) / Number(sitePrice)) * 1000) / 10;
 
 module.exports = {
-  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, priceDecision, priceGapPct,
+  normalize, tokens, similarity, closest, buildIndex, isSameName, isResistance, pickBrand, DOUBLON_SCORE, pickCategory, pickSubcategory, refineCategoryName, cartridgeKind, SITE_ATTRS_SQL, priceDecision, priceGapPct,
 };

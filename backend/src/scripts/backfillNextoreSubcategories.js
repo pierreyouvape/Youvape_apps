@@ -4,6 +4,7 @@
  * (~850 liquides rangés dans « E-LIQUIDES » seul, ~185 arômes dans « AROMES »).
  * Box / kit : 1 accu / 2 accus selon l'attribut batterie du site, et une batterie
  * intégrée rangée en BOX/KIT ACCU part en BOX/KIT INTEGRE (catégorie changée).
+ * Cartouches : PREREMPLIE / Vide / Resistance (catalogSyncRules.cartridgeKind).
  *
  *   node src/scripts/backfillNextoreSubcategories.js           → simulation (rien n'est écrit)
  *   node src/scripts/backfillNextoreSubcategories.js --apply   → écrit dans Nextore (PUT /products :
@@ -17,7 +18,7 @@
 require('dotenv').config();
 const pool = require('../config/database');
 const nextoreApi = require('../services/nextoreApiClient');
-const { pickSubcategory, refineCategoryName } = require('../services/catalogSyncRules');
+const { pickSubcategory, refineCategoryName, SITE_ATTRS_SQL } = require('../services/catalogSyncRules');
 
 const apply = process.argv.includes('--apply');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,8 +31,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const { rows } = await pool.query(`
     SELECT l.nx_product_id, np.name AS nx_name, np.category_id, c.name AS category_name,
            p.post_title AS name, COALESCE(NULLIF(p.sub_category, ''), pp.sub_category) AS sub,
-           (SELECT string_agg(DISTINCT a.value, '|') FROM wp_product_attributes a
-             WHERE a.wp_product_id = COALESCE(pp.wp_product_id, p.wp_product_id) AND a.attribute = 'pa_types-de-batteries') AS battery
+           ${SITE_ATTRS_SQL}
       FROM boutique_site_links l
       JOIN nextore_products np ON np.product_id = l.nx_product_id AND COALESCE(np.status, '') <> 'deleted'
       JOIN nextore_categories c ON c.id = np.category_id
@@ -63,7 +63,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const leftByCat = {};
   for (const r of left) leftByCat[r.category_name] = (leftByCat[r.category_name] || 0) + 1;
   console.log(`Laissées sans sous-catégorie : ${left.length} (${Object.entries(leftByCat).map(([k, n]) => `${k} ${n}`).join(', ')})`);
-  for (const r of left.filter((x) => ['E-LIQUIDES', 'AROMES', 'BOX ACCU', 'KIT ACCU'].includes(x.category_name)).slice(0, 10)) {
+  for (const r of left.filter((x) => ['E-LIQUIDES', 'AROMES', 'BOX ACCU', 'KIT ACCU', 'CARTOUCHES'].includes(x.category_name)).slice(0, 40)) {
     console.log(`    ${r.nx_name}`);
   }
   if (!apply) {

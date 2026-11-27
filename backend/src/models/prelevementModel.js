@@ -31,8 +31,7 @@ const SITE_SQL = `
          COALESCE(NULLIF(p.brand, ''), pp.brand) AS brand,
          COALESCE(NULLIF(p.sub_brand, ''), pp.sub_brand) AS sub_brand,
          COALESCE(NULLIF(p.sub_category, ''), pp.sub_category) AS sub,
-         (SELECT string_agg(DISTINCT a.value, '|') FROM wp_product_attributes a
-           WHERE a.wp_product_id = COALESCE(pp.wp_product_id, p.wp_product_id) AND a.attribute = 'pa_types-de-batteries') AS battery,
+         ${require('../services/catalogSyncRules').SITE_ATTRS_SQL},
          array_remove(ARRAY(SELECT b.barcode FROM product_barcodes b WHERE b.product_id = p.id AND b.type = 'unit' AND ${rules.uniqueSiteBarcodeSql('b')} ORDER BY b.id), NULL) AS barcodes
     FROM products p
     LEFT JOIN products pp ON p.product_type = 'variation' AND pp.wp_product_id = p.wp_parent_id
