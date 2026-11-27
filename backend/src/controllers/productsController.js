@@ -765,7 +765,7 @@ exports.getVariationsBarcodes = async (req, res) => {
     const variations = await pool.query(`
       SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0) as stock, p.product_attributes
       FROM products p
-      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation' AND p.wc_deleted_at IS NULL
       ORDER BY p.post_title ASC
     `, [wpProductId]);
 
@@ -796,7 +796,7 @@ exports.getVariationsNeeds = async (req, res) => {
     const variations = await pool.query(`
       SELECT p.id, p.wp_product_id, p.post_title, p.sku, COALESCE(p.stock, 0)::int as stock, p.product_attributes
       FROM products p
-      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation' AND p.wc_deleted_at IS NULL
       ORDER BY p.post_title ASC
     `, [wpProductId]);
 

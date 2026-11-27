@@ -112,7 +112,7 @@ function statsCtes({ periodWhere, lifeWhere, searchClause, stockExpr, periodDays
             THEN ((COALESCE(ps.ca_ht, 0) - COALESCE(ps.cost_ht, 0)) / COALESCE(ps.ca_ht, 0) * 100)
             ELSE 0 END AS margin_percent,
           ls.first_sold, ls.last_sold,
-          (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id) AS variations_count
+          (SELECT COUNT(*) FROM products WHERE wp_parent_id = p.wp_product_id AND wc_deleted_at IS NULL) AS variations_count
         FROM products p
         LEFT JOIN period_stats ps ON ps.parent_id = p.wp_product_id
         LEFT JOIN lifetime_stats ls ON ls.parent_id = p.wp_product_id
@@ -335,11 +335,11 @@ class ProductModel {
         p.*,
         COALESCE(
           p.computed_cost, p.wc_cog_cost,
-          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id)
+          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.wc_deleted_at IS NULL)
         ) as cost_price,
         (p.price - COALESCE(
           p.computed_cost, p.wc_cog_cost,
-          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id),
+          (SELECT AVG(COALESCE(v.computed_cost, v.wc_cog_cost)) FROM products v WHERE v.wp_parent_id = p.wp_product_id AND v.wc_deleted_at IS NULL),
           0
         )) as unit_margin,
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE product_id = p.wp_product_id) as total_quantity_sold,
@@ -490,7 +490,7 @@ class ProductModel {
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
-      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation' AND p.wc_deleted_at IS NULL
       ORDER BY p.post_title ASC
     `;
     const result = await pool.query(query, [wpParentId]);
@@ -624,7 +624,7 @@ class ProductModel {
         (SELECT COALESCE(SUM(qty), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_quantity_sold,
         (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE wp_product_id = p.wp_product_id) as total_revenue
       FROM products p
-      WHERE p.wp_product_id = $1 OR p.wp_parent_id = $1
+      WHERE p.wp_product_id = $1 OR (p.wp_parent_id = $1 AND p.wc_deleted_at IS NULL)
       ORDER BY p.product_type DESC, p.post_title ASC
     `;
     const result = await pool.query(familyQuery, [parentId]);
@@ -649,7 +649,7 @@ class ProductModel {
         COALESCE(SUM(oi.qty * COALESCE(p.computed_cost, p.wc_cog_cost, 0)), 0) as total_cost
       FROM products p
       LEFT JOIN order_items oi ON oi.wp_product_id = p.wp_product_id
-      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation' AND p.wc_deleted_at IS NULL
       GROUP BY p.wp_product_id, p.post_title, p.product_attributes, p.stock, p.stock_status, p.price, p.wc_cog_cost, p.computed_cost
       ORDER BY total_sold DESC
     `;
@@ -1140,7 +1140,7 @@ class ProductModel {
         AND o.post_status IN ('wc-completed', 'wc-delivered', 'wc-processing', 'wc-awaiting-delivery', 'wc-shipped', 'wc-being-delivered')
         ${countryFilter}
       ) life ON true
-      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation'
+      WHERE p.wp_parent_id = $1 AND p.product_type = 'variation' AND p.wc_deleted_at IS NULL
       ORDER BY qty_sold DESC NULLS LAST
     `;
     const result = await pool.query(query, params);
