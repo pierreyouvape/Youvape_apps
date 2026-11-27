@@ -21,7 +21,7 @@ const body = (req) => req.body || {};
 exports.getMembers = handle(() => tachesModel.getMembers());
 exports.getLabels = handle(() => tachesModel.getLabels());
 exports.getBoards = handle(() => tachesModel.getBoards());
-exports.getViews = handle(() => tachesModel.getViews());
+exports.getViews = handle((req) => tachesModel.getViews(uid(req)));
 exports.createView = handle((req) => tachesModel.saveView(uid(req), null, body(req)));
 exports.updateView = handle((req) => tachesModel.saveView(uid(req), id(req), body(req)));
 exports.deleteView = handle(async (req) => tachesModel.deleteView(uid(req), id(req), {

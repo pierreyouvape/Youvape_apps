@@ -1268,38 +1268,65 @@ function cleanFilters(f = {}) {
   return out;
 }
 
-async function getViews() {
+/**
+ * Vues du menu : PERSONNELLES par défaut (décision Maxime, 27/11/2026). Chacun voit
+ * les siennes, plus celles partagées avec toute l'équipe ou avec lui nommément.
+ * Les administrateurs ne voient pas les vues privées des autres.
+ */
+const VIEW_VISIBLE = '(v.created_by = $1 OR v.shared_all OR $1 = ANY(v.shared_with))';
+
+async function getViews(userId) {
   const { rows } = await pool.query(
-    `SELECT v.id, v.name, v.filters, v.position, v.created_by, ${USER_NAME('u')} AS created_by_name
-       FROM taches_views v LEFT JOIN users u ON u.id = v.created_by ORDER BY v.position, v.id`,
+    `SELECT v.id, v.name, v.filters, v.position, v.created_by, ${USER_NAME('u')} AS created_by_name,
+            v.shared_all, v.shared_with, (v.created_by = $1) AS mine
+       FROM taches_views v LEFT JOIN users u ON u.id = v.created_by
+      WHERE ${VIEW_VISIBLE}
+      ORDER BY (v.created_by = $1) DESC, v.position, v.id`,
+    [userId],
   );
   return rows;
 }
 
+/** Partage demandé : { shared, shared_all, shared_with } → colonnes ; absent = inchangé. */
+async function viewSharing(body) {
+  if (!('shared' in body)) return null;
+  if (!body.shared) return { all: false, ids: [] };
+  if (body.shared_all) return { all: true, ids: [] };
+  const active = new Set((await getMembers()).map((m) => m.id));
+  const ids = toIds(body.shared_with).filter((x) => active.has(x));
+  if (!ids.length) throw httpError(400, 'Choisissez avec qui partager la vue (ou « Toute l\'équipe »)');
+  return { all: false, ids };
+}
+
+/** Créer, ou modifier SA vue (nom, filtres, partage) : seul l'auteur la modifie. */
 async function saveView(userId, id, body) {
   const name = cleanText(body.name, 80);
   if (!name) throw httpError(400, 'Le nom de la vue est obligatoire');
   const filters = cleanFilters(body.filters);
+  const share = await viewSharing(body);
   if (id) {
-    const { rowCount } = await pool.query('UPDATE taches_views SET name = $2, filters = $3 WHERE id = $1', [id, name, JSON.stringify(filters)]);
-    if (!rowCount) throw httpError(404, 'Vue introuvable');
+    const { rows: [v] } = await pool.query('SELECT created_by FROM taches_views WHERE id = $1', [id]);
+    if (!v) throw httpError(404, 'Vue introuvable');
+    if (v.created_by !== userId) throw httpError(403, 'Seul son auteur peut modifier cette vue');
+    await pool.query('UPDATE taches_views SET name = $2, filters = $3 WHERE id = $1', [id, name, JSON.stringify(filters)]);
+    if (share) await pool.query('UPDATE taches_views SET shared_all = $2, shared_with = $3 WHERE id = $1', [id, share.all, share.ids]);
   } else {
     await pool.query(
-      `INSERT INTO taches_views (name, filters, created_by, position)
-       VALUES ($1, $2, $3, COALESCE((SELECT max(position) + 1 FROM taches_views), 0))`,
-      [name, JSON.stringify(filters), userId],
+      `INSERT INTO taches_views (name, filters, created_by, position, shared_all, shared_with)
+       VALUES ($1, $2, $3, COALESCE((SELECT max(position) + 1 FROM taches_views), 0), $4, $5)`,
+      [name, JSON.stringify(filters), userId, share?.all || false, share?.ids || []],
     );
   }
-  return getViews();
+  return getViews(userId);
 }
 
-/** Supprimer : son auteur, ou le droit d'écriture. */
+/** Supprimer : son auteur, ou le droit d'écriture (sur une vue partagée, seule visible). */
 async function deleteView(userId, id, { canWrite }) {
-  const { rows: [v] } = await pool.query('SELECT created_by FROM taches_views WHERE id = $1', [id]);
+  const { rows: [v] } = await pool.query(`SELECT created_by FROM taches_views v WHERE id = $2 AND ${VIEW_VISIBLE}`, [userId, id]);
   if (!v) throw httpError(404, 'Vue introuvable');
   if (!canWrite && v.created_by !== userId) throw httpError(403, 'Seul son auteur (ou le droit d\'écriture) peut supprimer cette vue');
   await pool.query('DELETE FROM taches_views WHERE id = $1', [id]);
-  return getViews();
+  return getViews(userId);
 }
 
 /** Étiquettes déjà utilisées, les plus fréquentes d'abord (suggestions). */

@@ -17,6 +17,7 @@ import TaskModal from '../components/taches/TaskModal';
 import NewTaskModal from '../components/taches/NewTaskModal';
 import SearchResults from '../components/taches/SearchResults';
 import NotificationsPanel from '../components/taches/NotificationsPanel';
+import ViewModal from '../components/taches/ViewModal';
 import { Popover } from '../components/taches/tachesUi';
 import { THEME_CSS, useTachesTheme } from '../components/taches/tachesTheme';
 
@@ -63,6 +64,7 @@ export default function TachesApp() {
   const [templates, setTemplates] = useState([]);
   const [boards, setBoards] = useState([]);
   const [views, setViews] = useState([]);
+  const [refsLoaded, setRefsLoaded] = useState(false);
   const [boardId, setBoardId] = useState(() => localStorage.getItem(BOARD_KEY) || '');
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
@@ -72,6 +74,7 @@ export default function TachesApp() {
   const [bellOpen, setBellOpen] = useState(false);
   const [theme, toggleTheme] = useTachesTheme();
   const [unread, setUnread] = useState(0);
+  const [viewModal, setViewModal] = useState(null); // { view } : null = création
 
   // Filtres communs aux vues
   const [f, setF] = useState(EMPTY_FILTERS);
@@ -103,6 +106,7 @@ export default function TachesApp() {
       setTemplates(t);
       setBoards(b);
       setViews(v);
+      setRefsLoaded(true);
     } catch (e) {
       setError(apiError(e));
     }
@@ -204,7 +208,7 @@ export default function TachesApp() {
     );
   }
   // Onglet d'une personne ou vue : attendre les listes avant de juger l'adresse.
-  if ((/^p-\d+$/.test(currentTab || '') && !members.length) || (vid && !views.length && !error)) {
+  if ((/^p-\d+$/.test(currentTab || '') && !members.length) || (vid && !refsLoaded && !error)) {
     return <AppShell currentPath="/taches"><Themed theme={theme}><div style={{ flex: 1, padding: 40, color: M.sub, background: 'var(--tk-surface)', minHeight: '100vh' }}>Chargement…</div></Themed></AppShell>;
   }
   const known = boardTab || (page && (!page.admin || admin)) || (currentTab === 'vue' && view);
@@ -225,14 +229,23 @@ export default function TachesApp() {
     navigate('/taches/tableau');
   };
   const currentFilters = () => ({ ...f, board_id: boardId === 'all' ? null : Number(boardId), person: f.person || forcedPerson || null });
-  const saveAsView = async () => {
-    const name = window.prompt('Nom de la vue (ex. « SEO (Jib) ») ?');
-    if (!name || !name.trim()) return;
+  const saveAsView = () => setViewModal({ view: null });
+  // Fenêtre « Nouvelle vue » / « Modifier la vue » : renvoie un message d'erreur, ou rien si c'est fait.
+  const submitView = async (form) => {
+    const target = viewModal.view;
     try {
-      const list = await tachesApi.createView({ name: name.trim(), filters: currentFilters() });
-      setViews(list);
-      navigate(`/taches/vue/${list[list.length - 1].id}`);
-    } catch (e) { setError(apiError(e)); }
+      if (target) {
+        setViews(await tachesApi.updateView(target.id, { ...form, filters: target.filters }));
+      } else {
+        const before = new Set(views.map((v) => v.id));
+        const list = await tachesApi.createView({ ...form, filters: currentFilters() });
+        setViews(list);
+        const created = list.find((v) => !before.has(v.id));
+        if (created) navigate(`/taches/vue/${created.id}`);
+      }
+      setViewModal(null);
+      return null;
+    } catch (e) { return apiError(e); }
   };
   const viewAction = async (fn) => {
     try { setViews(await fn()); } catch (e) { setError(apiError(e)); }
@@ -251,13 +264,18 @@ export default function TachesApp() {
     : forcedPerson ? `Tâches de ${boardTab.label}`
       : boardTab ? (board?.name || (boardId === 'all' ? 'Tous les tableaux' : 'Tâches')) : page.title;
   const subtitle = currentTab === 'vue'
-    ? `Vue enregistrée${view.created_by_name ? ` par ${view.created_by_name}` : ''} — ${board ? board.name : 'tous les tableaux'}. Modifiez les filtres puis « Enregistrer » pour la mettre à jour.`
+    ? (view.mine
+      ? `Vue ${view.shared_all ? 'partagée avec toute l\'équipe' : view.shared_with?.length ? `partagée avec ${view.shared_with.map((pid) => members.find((m) => m.id === pid)?.name).filter(Boolean).join(', ')}` : 'personnelle'} — ${board ? board.name : 'tous les tableaux'}. Modifiez les filtres puis « Enregistrer la vue » pour la mettre à jour.`
+      : `Vue partagée par ${view.created_by_name || 'un collègue'} — ${board ? board.name : 'tous les tableaux'}. Vous pouvez changer les filtres pour vous, sans modifier la vue.`)
     : (boardTab || page).subtitle;
-  const viewChanged = currentTab === 'vue' && JSON.stringify(cleanForCompare(view.filters, board)) !== JSON.stringify(cleanForCompare(currentFilters(), board));
+  const viewChanged = currentTab === 'vue' && view.mine && JSON.stringify(cleanForCompare(view.filters, board)) !== JSON.stringify(cleanForCompare(currentFilters(), board));
 
   return (
     <AppShell currentPath="/taches/moi"><Themed theme={theme}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', height: '100vh', background: 'var(--tk-surface)', fontFamily: M.font, color: M.text }}>
+        {viewModal && (
+          <ViewModal view={viewModal.view} members={members} meId={user?.id} onClose={() => setViewModal(null)} onSave={submitView} />
+        )}
         <Sidebar {...{
           currentTab, boards, board, boardId, views, vid, admin, canWrite, user,
           onMine: () => navigate('/taches/moi'),
@@ -266,10 +284,7 @@ export default function TachesApp() {
           onView: (v) => navigate(`/taches/vue/${v.id}`),
           onSaveView: saveAsView, canSaveView: isList,
           onPage: (k) => navigate(`/taches/${k}`),
-          onRenameView: (v) => {
-            const n = window.prompt('Nom de la vue', v.name);
-            if (n && n.trim()) viewAction(() => tachesApi.updateView(v.id, { name: n.trim(), filters: v.filters }));
-          },
+          onRenameView: (v) => setViewModal({ view: v }),
           onDeleteView: (v) => {
             if (!window.confirm(`Supprimer la vue « ${v.name} » ? Les tâches ne sont pas touchées.`)) return;
             viewAction(() => tachesApi.deleteView(v.id)).then(() => { if (String(vid) === String(v.id)) navigate('/taches/moi'); });
@@ -432,12 +447,15 @@ function Sidebar({
         const active = String(vid) === String(v.id);
         return (
           <div key={v.id} style={{ display: 'flex', alignItems: 'center' }}>
-            <button type="button" style={{ ...sideItem(active), flex: 1, minWidth: 0 }} onClick={() => onView(v)} title={v.name}>
+            <button type="button" style={{ ...sideItem(active), flex: 1, minWidth: 0 }} onClick={() => onView(v)}
+              title={v.mine ? `${v.name}${v.shared_all || v.shared_with?.length ? ' — partagée' : ' — personnelle'}` : `${v.name} — partagée par ${v.created_by_name || 'un collègue'}`}>
               ◫ {v.name}
+              {v.mine && (v.shared_all || v.shared_with?.length > 0) && <span style={{ marginLeft: 4, fontSize: 11 }}>👥</span>}
+              {!v.mine && <span style={{ marginLeft: 4, fontSize: 11, color: M.sub }}>· {v.created_by_name || 'partagée'}</span>}
             </button>
             {active && (
               <span style={{ display: 'flex', flexShrink: 0 }}>
-                <button type="button" title="Renommer" onClick={() => onRenameView(v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 12 }}>✎</button>
+                {v.mine && <button type="button" title="Renommer ou partager" onClick={() => onRenameView(v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 12 }}>✎</button>}
                 {(canWrite || v.created_by === user?.id) && (
                   <button type="button" title="Supprimer la vue" onClick={() => onDeleteView(v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: M.sub, fontSize: 12 }}>🗑</button>
                 )}
